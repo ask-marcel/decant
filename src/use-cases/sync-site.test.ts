@@ -429,3 +429,163 @@ describe('converting several items at once', () => {
     expect(Object.keys(stateAfter(files).drives['b!one']?.items ?? {})).toEqual(['ok']);
   });
 });
+
+describe('naming the step, cause and payload behind every outcome', () => {
+  it('a first sync of a library does not warn about an unusable state file', async () => {
+    const { logger } = await run({ reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(logger.calls.every((call) => call.event !== 'sync-state.unusable')).toBe(true);
+  });
+
+  it('an unusable state file is reported as invalid json, naming the site and the cause', async () => {
+    const { logger } = await run({ files: { texts: { [STATE_PATH]: 'not json' } }, reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'c1' }] } });
+    const unusable = logger.calls.find((call) => call.event === 'sync-state.unusable');
+
+    expect(unusable?.meta).toEqual({ siteId: 'contoso,1,2', cause: 'invalid-json' });
+  });
+
+  it('a run whose finished state cannot be saved fails with the saveState reason', async () => {
+    const files = createFilesFake({ failWriteWith: { kind: 'write-failed', path: 'kb', message: 'disk full' } });
+    const reader = createDriveReaderFake();
+    const clock = createClockFake();
+    const syncSite = createSyncSite({
+      reader,
+      files,
+      logger: createLoggerFake(),
+      clock,
+      kbRoot: 'kb',
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock }),
+    });
+
+    const result = await syncSite({ site, drives: [], maxBytes: 50 * 1024 * 1024, ocrLabel: 'off', concurrency: 1, dryRun: false });
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error.step).toBe('saveState');
+    expect(result.ok ? '' : result.error.cause).toBe('write-failed');
+    expect(result.ok ? '' : result.error.message).toBe('disk full');
+  });
+
+  it('the report opens with a line counting what the run did', async () => {
+    const { files } = await run({ reader: { pages: [{ items: [item({ name: 'Demo.mp4', path: 'Films/Demo.mp4' })], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(files.written.get(REPORT_PATH)).toContain('0 converted, 0 moved, 0 archived, 1 skipped, 0 failed.');
+  });
+
+  it('a report that cannot be written names the cause it failed with', async () => {
+    const { logger } = await run({
+      files: { failWritesMatching: '_sync-report.md' },
+      reader: { pages: [{ items: [item({ name: 'Demo.mp4', path: 'Demo.mp4' })], skipped: 0, deltaLink: 'c1' }] },
+    });
+    const failed = logger.calls.find((call) => call.event === 'report.failed');
+
+    expect(failed?.meta).toEqual({ cause: 'write-failed' });
+  });
+
+  it('a library Graph refuses to list ends the run naming the enumerate step and cause', async () => {
+    const files = createFilesFake();
+    const reader = createDriveReaderFake({ failWith: { kind: 'auth', message: 'token expired' } });
+    const clock = createClockFake();
+    const syncSite = createSyncSite({
+      reader,
+      files,
+      logger: createLoggerFake(),
+      clock,
+      kbRoot: 'kb',
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock }),
+    });
+
+    const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, ocrLabel: 'off', concurrency: 1, dryRun: false });
+
+    expect(result.ok).toBe(false);
+    expect(result.ok ? '' : result.error.step).toBe('enumerate');
+    expect(result.ok ? '' : result.error.cause).toBe('auth');
+    expect(result.ok ? '' : result.error.message).toBe('token expired');
+  });
+
+  it('resuming a run says which drive it is resuming and how much is left', async () => {
+    const halfDone = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [{ kind: 'convert', item: item() }], items: {} } },
+    });
+    const { logger } = await run({ files: { texts: { [STATE_PATH]: halfDone } } });
+    const resuming = logger.calls.find((call) => call.event === 'sync.resuming');
+
+    expect(resuming?.meta).toEqual({ driveId: 'b!one', pending: 1 });
+  });
+
+  it('a document that cannot be converted is logged with its id', async () => {
+    const { logger } = await run({
+      reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'c1' }], failItems: { '01ABC': { kind: 'permanent', status: 423, message: 'locked' } } },
+    });
+    const failed = logger.calls.find((call) => call.event === 'convert.failed');
+
+    expect(failed?.meta).toMatchObject({ itemId: '01ABC' });
+  });
+
+  it('a file that cannot be moved is logged with its id and the cause', async () => {
+    const known = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      drives: {
+        'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [], items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace MOOV/Documents/old.docx.md'] } } },
+      },
+    });
+    const { logger } = await run({
+      files: { texts: { [STATE_PATH]: known }, failMoveWith: { kind: 'write-failed', path: 'x', message: 'read-only volume' } },
+      reader: { pages: [{ items: [item({ path: 'new.docx', name: 'new.docx' })], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+    const failed = logger.calls.find((call) => call.event === 'move.failed');
+
+    expect(failed?.meta).toMatchObject({ itemId: '01ABC', cause: 'write-failed' });
+  });
+
+  it('a file that cannot be put aside is logged with its id and the cause', async () => {
+    const known = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace MOOV/Documents/gone.docx.md'] } },
+        },
+      },
+    });
+    const { logger } = await run({
+      files: { texts: { [STATE_PATH]: known }, failMoveWith: { kind: 'write-failed', path: 'x', message: 'read-only volume' } },
+      reader: { pages: [{ items: [item({ kind: 'deleted' })], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+    const failed = logger.calls.find((call) => call.event === 'archive.failed');
+
+    expect(failed?.meta).toMatchObject({ itemId: '01ABC', cause: 'write-failed' });
+  });
+
+  it('a window whose state cannot be saved stops the run before the next window, losing at most one', async () => {
+    const halfDone = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [
+            { kind: 'convert', item: item({ id: 'a', path: 'a.docx' }) },
+            { kind: 'convert', item: item({ id: 'b', path: 'b.docx' }) },
+          ],
+          items: {},
+        },
+      },
+    });
+
+    const { ok: succeeded, logger } = await run({ files: { texts: { [STATE_PATH]: halfDone }, failWriteWith: { kind: 'write-failed', path: 'kb', message: 'disk full' } } });
+
+    expect(succeeded).toBe(false);
+    expect(logger.calls.filter((call) => call.event === 'convert.failed')).toHaveLength(1);
+  });
+});
