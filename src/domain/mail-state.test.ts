@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'bun:test';
-import { countThreads, emptyMailboxState, needsRender, parseMailboxState, serializeMailboxState, withFolderCursor, withLinked, withPending, withThread } from './mail-state.ts';
+import {
+  countThreads,
+  emptyMailboxState,
+  needsRender,
+  parseMailboxState,
+  serializeMailboxState,
+  withAttachment,
+  withFolderCursor,
+  withLinked,
+  withPending,
+  withThread,
+} from './mail-state.ts';
 
 const thread = { file: 'threads/2026/2026-05-12 Contrat a3f9c1.md', messageIds: ['m1', 'm2'], lastMessage: '2026-05-13T10:00:00Z', attachments: ['a.pdf'] };
 
@@ -12,14 +23,30 @@ describe('remembering where a mailbox sync got to', () => {
       folders: {},
       threads: {},
       linked: {},
+      attachments: {},
       pending: [],
     });
   });
 
   it('what one run writes, the next run reads back unchanged', () => {
-    const state = withLinked(withThread(withFolderCursor(emptyMailboxState(), 'AAMk1', 'Inbox', 'cursor-1'), 'conv-1', thread), 'b!one:01ABC', { path: '_linked/Contrat.docx.md' });
+    const linked = withLinked(withThread(withFolderCursor(emptyMailboxState(), 'AAMk1', 'Inbox', 'cursor-1'), 'conv-1', thread), 'b!one:01ABC', {
+      path: '_linked/Contrat.docx.md',
+    });
+    const state = withAttachment(linked, 'ba7816bf8f01', { name: 'Contrat.docx', paths: ['_attachments/Contrat.docx.md'] });
 
     expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
+  });
+
+  it('a state file written before the shared attachment store still loads', () => {
+    const parsed = parseMailboxState({ source: { kind: 'mailbox' } });
+
+    expect(parsed.ok && parsed.value.attachments).toEqual({});
+  });
+
+  it('an attachment stored once is recorded by its content address, under the name it was stored as', () => {
+    const state = withAttachment(emptyMailboxState(), 'ba7816bf8f01', { name: 'Scan.pdf', paths: ['_attachments/Scan.pdf', '_attachments/Scan.pdf.md'] });
+
+    expect(state.attachments['ba7816bf8f01']).toEqual({ name: 'Scan.pdf', paths: ['_attachments/Scan.pdf', '_attachments/Scan.pdf.md'] });
   });
 
   it('a folder swept for the first time is recorded even before it has a cursor', () => {

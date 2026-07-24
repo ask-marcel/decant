@@ -12,6 +12,13 @@ export type ThreadRecord = {
 
 export type LinkedRecord = { readonly path: string };
 
+// One entry per unique attachment content, keyed by its content address (see `content-hash.ts`):
+// the name it was stored under and the files it produced in the shared `_attachments` store. A file
+// sent across many threads is converted once; every thread after the first references what is on
+// disk. `name` is kept so a later run placing a different file of the same name disambiguates it
+// rather than overwriting this one.
+export type AttachmentRecord = { readonly name: string; readonly paths: ReadonlyArray<string> };
+
 export type MailboxState = {
   readonly version: 1;
   readonly source: { readonly kind: 'mailbox'; readonly id: string; readonly name: string };
@@ -19,6 +26,7 @@ export type MailboxState = {
   readonly folders: Readonly<Record<string, { readonly name: string; readonly deltaLink?: string }>>;
   readonly threads: Readonly<Record<string, ThreadRecord>>;
   readonly linked: Readonly<Record<string, LinkedRecord>>;
+  readonly attachments: Readonly<Record<string, AttachmentRecord>>;
   readonly pending: ReadonlyArray<string>;
 };
 
@@ -34,6 +42,7 @@ export const emptyMailboxState = (): MailboxState => ({
   folders: {},
   threads: {},
   linked: {},
+  attachments: {},
   pending: [],
 });
 
@@ -70,6 +79,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     folders: mapOf(raw['folders'], (entry) => ({ name: readString(entry, 'name') ?? '', deltaLink: readString(entry, 'deltaLink') })),
     threads: mapOf(raw['threads'], threadOf),
     linked: mapOf(raw['linked'], (entry) => ({ path: readString(entry, 'path') ?? '' })),
+    attachments: mapOf(raw['attachments'], (entry) => ({ name: readString(entry, 'name') ?? '', paths: stringList(entry['paths']) })),
     pending: stringList(raw['pending']),
   });
 };
@@ -85,6 +95,8 @@ export const withThread = (state: MailboxState, conversationId: string, record: 
 });
 
 export const withLinked = (state: MailboxState, key: string, record: LinkedRecord): MailboxState => ({ ...state, linked: { ...state.linked, [key]: record } });
+
+export const withAttachment = (state: MailboxState, hash: string, record: AttachmentRecord): MailboxState => ({ ...state, attachments: { ...state.attachments, [hash]: record } });
 
 export const withPending = (state: MailboxState, pending: ReadonlyArray<string>): MailboxState => ({ ...state, pending });
 
