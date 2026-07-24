@@ -54,3 +54,18 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   sanitizer patterns were built from assumption, and lint caught two as backtracking risks. When a
   regex is the checkpoint in front of a filesystem sink, prefer explicit character sets and loops
   over a clever pattern.
+
+## 2026-07-24
+
+- [gotcha] ask-marcel-office-cli 2.3.0 is breaking under a minor version bump. It removed all 77
+  flag aliases and 4 deprecated command names, and every command now hard-refuses a parameter it
+  does not declare, returning `validation_error` with code `unknown_parameter` where the library
+  surface used to silently strip the key and return data that looked like it had obeyed. Calls that
+  already used one canonical command name and one specific id flag each were untouched; anything on
+  an `--id`-style alias would have broken. Pin-read the CHANGELOG on any future bump of this package.
+
+- [decision] The mail sweep sends `top: 100` on the folder delta again, as of 2.3.0. This supersedes
+  the 2026-07-23 [gotcha] that said never pass `top` to a mail delta: 2.3.0 sends `top` as a
+  `Prefer: odata.maxpagesize` header, a page-size hint that pages through `nextLink`, not the `$top`
+  that used to read as "sync complete" and strand the rest of the folder. Drive delta stays at 1000,
+  mail at 100 to keep each response small; paging still continues if Graph caps the page lower.
