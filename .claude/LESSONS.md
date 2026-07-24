@@ -112,3 +112,19 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   `+`->`-` mutants, which cancel because `add` is always applied to `EMPTY` twice (processQueue then
   createSyncSite), so `0 - (0 - n) === n`; do not chase them without refactoring `add` out of the
   double-negation.
+
+- [gotcha] Splitting a one-line `if (!saved.ok) return saved` into a multi-line block (here to add a
+  `deps.progress.done()` before the return) drops line coverage even though behaviour is unchanged:
+  Bun counts a one-line `if` as covered the moment it executes, condition false every time, but once
+  the body is on its own lines those lines are tracked separately and read as uncovered because the
+  true branch was never taken. A mechanical refactor can therefore fail the 100% use-case gate. To
+  cover the window-save failure in `sync-mailbox` `drainQueue` (and `sync-site` `processQueue`), load
+  a resumed state with `pending` already set: `queueWork` returns early without its own save, so the
+  window save is the first write and `files-fake` `failWriteWith` makes it fail, reaching the branch.
+
+- [decision] Run progress is a `Progress` port (`start`/`step`/`done`), not the `Logger`. The counter
+  is user-facing status, drawn once per item as each window resolves; logs are diagnostics at `error`
+  level on stderr. The real adapter (`createStderrProgress`) rewrites one stderr line with `\r\x1b[K`
+  and no-ops when stderr is not a TTY, so piped and headless runs stay clean. The `process.stderr`
+  read lives in infra, not the composition root, so `build-deps` stays testable; the TTY-true branch
+  and its writer arrow are the only uncoverable spots, left as equivalent mutants.
