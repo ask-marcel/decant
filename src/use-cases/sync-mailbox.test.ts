@@ -36,8 +36,8 @@ const rendered = (over: Partial<RenderThreadOutcome> = {}): RenderThreadOutcome 
   thread: {
     record: { file: 'threads/2026/thread.md', messageIds: ['m1'], lastMessage: '2026-05-12T09:31:00Z', attachments: [] },
     linked: {},
-    attachmentsSkipped: 0,
-    attachmentsFailed: 0,
+    attachmentsSkipped: [],
+    attachmentsFailed: [],
   },
   ...over,
 });
@@ -232,7 +232,17 @@ describe('what the mailbox sync reports', () => {
 
   it('attachments left out or refused are counted alongside the conversation', async () => {
     const outcome = (): RenderThreadOutcome =>
-      rendered({ thread: { record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] }, linked: {}, attachmentsSkipped: 2, attachmentsFailed: 1 } });
+      rendered({
+        thread: {
+          record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
+          linked: {},
+          attachmentsSkipped: [
+            { path: 'a.mp4', reason: 'a kind of file this tool does not read' },
+            { path: 'b.mov', reason: 'a kind of file this tool does not read' },
+          ],
+          attachmentsFailed: [{ path: 'c.docx', reason: 'locked' }],
+        },
+      });
     const { summary } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome });
 
     expect(summary).toMatchObject({ converted: 1, skipped: 2, failed: 1 });
@@ -260,13 +270,47 @@ describe('what the mailbox sync reports', () => {
         thread: {
           record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
           linked: { 'b!one:01ABC': { path: 'kb/Mailbox/_linked/R.docx.md' } },
-          attachmentsSkipped: 0,
-          attachmentsFailed: 0,
+          attachmentsSkipped: [],
+          attachmentsFailed: [],
         },
       });
     const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome });
 
     expect(stateAfter(files).linked['b!one:01ABC']).toEqual({ path: 'kb/Mailbox/_linked/R.docx.md' });
+  });
+});
+
+describe('reporting what did not reach the knowledge base', () => {
+  const REPORT_PATH = 'kb/Mailbox/_sync-report.md';
+
+  it('an attachment left out is named in the report with the reason', async () => {
+    const outcome = (): RenderThreadOutcome =>
+      rendered({
+        thread: {
+          record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
+          linked: {},
+          attachmentsSkipped: [{ path: 'Demo.mp4', reason: 'a kind of file this tool does not read' }],
+          attachmentsFailed: [{ path: 'Contrat.docx', reason: 'permanent: cannot convert' }],
+        },
+      });
+    const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome });
+    const report = files.written.get(REPORT_PATH) ?? '';
+
+    expect(report).toContain('# What did not reach the knowledge base: Mailbox');
+    expect(report).toContain('- Demo.mp4: a kind of file this tool does not read');
+    expect(report).toContain('- Contrat.docx: permanent: cannot convert');
+  });
+
+  it('a conversation that could not be written is named in the report', async () => {
+    const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, failThread: 'conv-1' });
+
+    expect(files.written.get(REPORT_PATH)).toContain('- conversation conv-1: thread refused');
+  });
+
+  it('a run where every conversation converted cleanly writes no report', async () => {
+    const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(files.written.has(REPORT_PATH)).toBe(false);
   });
 });
 

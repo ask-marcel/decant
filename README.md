@@ -62,6 +62,7 @@ kb/
   _archive/<Site>/<Library>/...     files whose source was deleted or renamed away
   <Site>/
     .sync-state.json                what has been synced, and where the next run resumes
+    _sync-report.md                 what did not make it in, and why (only when there is something)
     <Library>/
       <SharePoint folders mirrored>/
         Roadmap.pptx.md             slide text
@@ -96,7 +97,15 @@ pdf: ./Roadmap.pptx.pdf
 | zip | a folder, one markdown file per document inside, and the archive itself |
 | jpg, png, gif, webp, bmp, tiff, heic | the image, plus markdown holding the text read out of it |
 | svg | the file, plus a markdown note pointing at it |
-| anything else | left in SharePoint and reported |
+| anything else | left in SharePoint and named in `_sync-report.md` |
+
+### What did not make it in
+
+Anything left behind is named in `_sync-report.md` beside the source it came from, newest run
+first: files of a kind this tool does not read, files above the size cap, files that could not be
+read (which are tried again on the next run), and files moved aside because the source no longer
+has them. A run that converted everything writes nothing there, so a nightly sync does not bury
+the runs that did leave something behind.
 
 ### What a mailbox sync writes
 
@@ -104,6 +113,7 @@ pdf: ./Roadmap.pptx.pdf
 kb/
   Mailbox/
     .sync-state.json                a cursor per folder, and what every conversation produced
+    _sync-report.md                 what did not make it in, and why
     _linked/                        SharePoint files the mail pointed at, each pulled once
     threads/2026/
       2026-05-12 Contrat MOOV a3f9c1.md            the whole conversation, oldest message first
@@ -116,6 +126,11 @@ Every folder is swept except Junk, Deleted Items, Drafts and Outbox, which means
 sent is included**: Sent Items is a folder like any other, and a conversation is assembled from
 every folder its messages landed in. Quoted reply chains are stripped, since the message being
 quoted is already its own section.
+
+Attachments follow the same conversion rules as SharePoint files, a zip included: it is kept and
+also unpacked, one markdown file per document inside. A signature image riding on every message of
+a thread is converted once; a revised file resent under the same name is kept beside the first
+rather than overwriting it.
 
 A first mailbox run is slow: Outlook hands back changes ten messages at a time and there is no way
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs

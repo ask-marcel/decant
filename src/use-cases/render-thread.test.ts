@@ -16,7 +16,8 @@ import { createRenderThread } from './render-thread.ts';
 import type { RenderThreadOutcome } from './render-thread.ts';
 
 const CONV = 'AAQkADk0...=';
-const THREAD_FILE = `kb/Mailbox/threads/2026/2026-05-12 Contrat MOOV ${shortHash(CONV)}.md`;
+const THREAD_RELATIVE = `threads/2026/2026-05-12 Contrat MOOV ${shortHash(CONV)}.md`;
+const THREAD_FILE = `kb/Mailbox/${THREAD_RELATIVE}`;
 const ATTACHMENT_FOLDER = `kb/Mailbox/threads/2026/2026-05-12 Contrat MOOV ${shortHash(CONV)}_attachments`;
 
 const message = (over: Partial<MailMessage> = {}): MailMessage => ({
@@ -37,14 +38,15 @@ const run = async (
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
   const reader = createMailReaderFake(seeds.reader);
+  const drive = createDriveReaderFake(seeds.drive);
   const render = createRenderThread({
     reader,
-    drive: createDriveReaderFake(seeds.drive),
+    drive,
     files,
     logger,
     clock: createClockFake(),
     mailboxRoot: 'kb/Mailbox',
-    convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake() }),
+    convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), unpackArchive: drive.localArchive }),
   });
   const result = await render({ conversationId: CONV, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', linked: seeds.linked ?? {} });
   return { outcome: result.ok ? result.value : undefined, files, logger, ok: result.ok };
@@ -159,8 +161,30 @@ describe('keeping what a conversation carried', () => {
 
   it('the head points at what the conversation carried the way a reader would open it', async () => {
     const { files } = await run({ reader: withAttachment });
+    const written = files.written.get(THREAD_FILE) ?? '';
 
-    expect(files.written.get(THREAD_FILE)).toContain(`  - ./2026-05-12 Contrat MOOV ${shortHash(CONV)}_attachments/Contrat.docx.md`);
+    expect(written).toContain('attachments:');
+    expect(written).toContain(`  - ./2026-05-12 Contrat MOOV ${shortHash(CONV)}_attachments/Contrat.docx.md`);
+    expect(written).not.toContain('  - kb/Mailbox/');
+  });
+
+  it('the conversation records who wrote last, so a reader knows how fresh it is', async () => {
+    const messages = [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z', from: { name: 'David Chang', address: 'd@example.com' }, hasAttachments: true })];
+    const attachments = { m2: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 10, isInline: false }] };
+    const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
+
+    expect(files.written.get(`${ATTACHMENT_FOLDER}/Contrat.docx.md`)).toContain('modified_by: David Chang');
+  });
+
+  it('a revised file resent under the same name is kept beside the first, not on top of it', async () => {
+    const messages = [message({ id: 'm1', hasAttachments: true }), message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true })];
+    const attachments = {
+      m1: [{ id: 'att1', name: 'Budget.xlsx', contentType: 'application/vnd', size: 4096, isInline: false }],
+      m2: [{ id: 'att2ABCDEF', name: 'Budget.xlsx', contentType: 'application/vnd', size: 5120, isInline: false }],
+    };
+    const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENT_FOLDER}/Budget.xlsx.md`, `${ATTACHMENT_FOLDER}/Budget-att2ABCD.xlsx.md`]);
   });
 
   it('a signature image riding on every message is converted once, not once per message', async () => {
@@ -181,15 +205,49 @@ describe('keeping what a conversation carried', () => {
     const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 10, isInline: false }] } };
     const { outcome, files } = await run({ reader });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsSkipped).toBe(1);
+    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsSkipped).toHaveLength(1);
     expect(files.written.has(THREAD_FILE)).toBe(true);
   });
 
-  it('a message whose attachment list cannot be read is counted as failed without losing the thread', async () => {
+  it('a message whose attachment list cannot be read names the message and the reason', async () => {
     const { outcome, files } = await run({ reader: { ...withAttachment, failAttachmentList: { kind: 'transient', message: 'timeout' } } });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsFailed).toBe(1);
+    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsFailed).toEqual([
+      { path: `${THREAD_RELATIVE}: message m1`, reason: 'could not list what it carried: timeout' },
+    ]);
     expect(files.written.has(THREAD_FILE)).toBe(true);
+  });
+
+  it('an attachment left out names itself and why, so the report can say what is missing', async () => {
+    const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 10, isInline: false }] } };
+    const { outcome } = await run({ reader });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Demo.mp4`, reason: 'a kind of file this tool does not read' }]);
+  });
+
+  it('an attachment above the size cap says so, with the cap it exceeded', async () => {
+    const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: 'Enorme.docx', contentType: 'application/vnd', size: 60 * 1024 * 1024, isInline: false }] } };
+    const { outcome } = await run({ reader });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Enorme.docx`, reason: 'larger than the 50 MB cap' }]);
+  });
+
+  it('an attachment that could not be converted names itself and the reason', async () => {
+    const { outcome } = await run({ reader: withAttachment, files: { failWritesMatching: '_attachments/' } });
+
+    const failed = outcome?.kind === 'rendered' ? outcome.thread.attachmentsFailed : [];
+
+    expect(failed).toHaveLength(1);
+    expect(failed[0]?.path.endsWith(': Contrat.docx')).toBe(true);
+    expect(failed[0]?.reason.startsWith('write-failed: ')).toBe(true);
+  });
+
+  it('a message carrying nothing is never asked what it carried', async () => {
+    const messages = [message({ id: 'm1', hasAttachments: false }), message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true })];
+    const attachments = { m2: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 10, isInline: false }] };
+    const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENT_FOLDER}/Contrat.docx.md`]);
   });
 
   it('an attachment Microsoft would not convert is counted as failed without losing the thread', async () => {
@@ -200,7 +258,7 @@ describe('keeping what a conversation carried', () => {
     };
     const { outcome } = await run({ reader, files: { failWritesMatching: '_attachments/' } });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsFailed).toBe(1);
+    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsFailed).toHaveLength(1);
   });
 });
 
@@ -213,6 +271,25 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(files.written.has('kb/Mailbox/_linked/Rapport.docx.md')).toBe(true);
     expect(files.written.get(THREAD_FILE)).toContain('linked_files:');
     expect(outcome?.kind === 'rendered' && outcome.thread.linked['b!one:01ABC']).toEqual({ path: 'kb/Mailbox/_linked/Rapport.docx.md' });
+  });
+
+  it('a linked document is stamped with where it came from, so it can be traced back', async () => {
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked } });
+    const written = files.written.get('kb/Mailbox/_linked/Rapport.docx.md') ?? '';
+
+    expect(written).toContain('source: drive b!one');
+    expect(written).toContain('site: Mailbox');
+    expect(written).toContain('library: _linked');
+    expect(written).toContain('path: Rapport.docx');
+    expect(written).toContain('synced_at: "2026-07-23T14:00:00Z"');
+  });
+
+  it('a message whose links cannot be looked up leaves the other messages of the thread intact', async () => {
+    const messages = [message({ id: 'm1' }), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })];
+    const { outcome, files } = await run({ reader: { conversations: { [CONV]: messages }, links: { m2: linked.m1 } } });
+
+    expect(outcome?.kind).toBe('rendered');
+    expect(files.written.has('kb/Mailbox/_linked/Rapport.docx.md')).toBe(true);
   });
 
   it('a document another conversation already pulled is referenced, not fetched again', async () => {

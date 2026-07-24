@@ -12,7 +12,8 @@ import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread } from './render-thread.ts';
-import type { RunSummary } from './sync-site.ts';
+import type { RunNotes, RunSummary } from './sync-site.ts';
+import { writeReport } from './sync-site.ts';
 
 export const MAIL_STATE_FILE = '.sync-state.json';
 
@@ -161,7 +162,7 @@ const renderOne = async (
   input: SyncMailboxInput,
   state: MailboxState,
   conversationId: string
-): Promise<{ readonly state: MailboxState; readonly counted: Partial<RunSummary> }> => {
+): Promise<{ readonly state: MailboxState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> }> => {
   const rendered = await deps.renderThread({
     conversationId,
     maxBytes: input.maxBytes,
@@ -170,12 +171,14 @@ const renderOne = async (
   });
   if (!rendered.ok) {
     deps.logger.warn('thread.failed', { cause: rendered.error.kind });
-    return { state, counted: { failed: 1 } };
+    return { state, counted: { failed: 1 }, notes: { failed: [{ path: `conversation ${conversationId}`, reason: rendered.error.message }] } };
   }
-  if (rendered.value.kind === 'empty') return { state, counted: { skipped: 1 } };
+  if (rendered.value.kind === 'empty') return { state, counted: { skipped: 1 }, notes: {} };
+  const thread = rendered.value.thread;
   return {
-    state: recordThread(state, conversationId, rendered.value.thread),
-    counted: { converted: 1, skipped: rendered.value.thread.attachmentsSkipped, failed: rendered.value.thread.attachmentsFailed },
+    state: recordThread(state, conversationId, thread),
+    counted: { converted: 1, skipped: thread.attachmentsSkipped.length, failed: thread.attachmentsFailed.length },
+    notes: { skipped: thread.attachmentsSkipped, failed: thread.attachmentsFailed },
   };
 };
 
@@ -202,6 +205,7 @@ export const createSyncMailbox =
 const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<RunSummary, StepError>> => {
   let current = state;
   let summary = EMPTY;
+  let notes: RunNotes = { skipped: [], failed: [], archived: [] };
   for (;;) {
     const conversationId = current.pending[0];
     if (conversationId === undefined) break;
@@ -216,8 +220,11 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
       skipped: summary.skipped + (done.counted.skipped ?? 0),
       failed: summary.failed + (done.counted.failed ?? 0),
     };
+    notes = { skipped: [...notes.skipped, ...(done.notes.skipped ?? [])], failed: [...notes.failed, ...(done.notes.failed ?? [])], archived: notes.archived };
   }
   const finished = { ...current, lastRun: deps.clock.nowIso() };
   const saved = await save(deps.files, statePath, finished, input.dryRun);
-  return saved.ok ? ok(summary) : saved;
+  if (!saved.ok) return saved;
+  await writeReport(deps, input, mailboxRoot(deps.kbRoot), 'Mailbox', summary, notes);
+  return ok(summary);
 };

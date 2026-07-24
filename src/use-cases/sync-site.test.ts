@@ -53,6 +53,71 @@ const stateAfter = (
 ): { drives: Record<string, { deltaLink?: string; pending: unknown[]; items: Record<string, { path: string; cTag: string; outputs: string[] }> }> } =>
   JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
+const REPORT_PATH = 'kb/Espace MOOV/_sync-report.md';
+
+describe('reporting what did not reach the knowledge base', () => {
+  it('a document of a type this tool does not read is named in the report', async () => {
+    const { files } = await run({ reader: { pages: [{ items: [item({ name: 'Demo.mp4', path: 'Films/Demo.mp4' })], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(files.written.get(REPORT_PATH)).toContain('- Films/Demo.mp4: a kind of file this tool does not read');
+  });
+
+  it('a document above the size cap is named with the cap it exceeded', async () => {
+    const { files } = await run({ reader: { pages: [{ items: [item({ size: 60 * 1024 * 1024 })], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(files.written.get(REPORT_PATH)).toContain('- Projets/Contrat.docx: larger than the 50 MB cap');
+  });
+
+  it('a document that could not be read is named with the reason and marked for retry', async () => {
+    const { files } = await run({
+      reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'c1' }], failItems: { '01ABC': { kind: 'permanent', status: 423, message: 'file is locked' } } },
+    });
+    const report = files.written.get(REPORT_PATH) ?? '';
+
+    expect(report).toContain('Could not be read, and will be tried again on the next run:');
+    expect(report).toContain('- Projets/Contrat.docx: permanent: file is locked');
+  });
+
+  it('a document the source no longer has is named as moved aside', async () => {
+    const known = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'c1', pending: [], items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['x.md'] } } } },
+    });
+    const { files } = await run({ files: { texts: { [STATE_PATH]: known } }, reader: { pages: [{ items: [item({ kind: 'deleted' })], skipped: 0, deltaLink: 'c2' }] } });
+
+    expect(files.written.get(REPORT_PATH)).toContain('- Projets/Contrat.docx: no longer at the source');
+  });
+
+  it('a run that converted everything writes no report at all', async () => {
+    const { files } = await run({ reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(files.written.has(REPORT_PATH)).toBe(false);
+  });
+
+  it('a dry run writes no report either', async () => {
+    const { files } = await run({ reader: { pages: [{ items: [item({ name: 'Demo.mp4', path: 'Demo.mp4' })], skipped: 0, deltaLink: 'c1' }] }, dryRun: true });
+
+    expect(files.written.has(REPORT_PATH)).toBe(false);
+  });
+
+  it('a report that cannot be written is logged without failing the run, since the documents landed', async () => {
+    const {
+      summary,
+      logger,
+      ok: succeeded,
+    } = await run({
+      files: { failWritesMatching: '_sync-report.md' },
+      reader: { pages: [{ items: [item({ name: 'Demo.mp4', path: 'Demo.mp4' })], skipped: 0, deltaLink: 'c1' }] },
+    });
+
+    expect(succeeded).toBe(true);
+    expect(summary.skipped).toBe(1);
+    expect(logger.calls.some((call) => call.event === 'report.failed')).toBe(true);
+  });
+});
+
 describe('syncing a SharePoint library into the knowledge base', () => {
   it('a library never synced converts everything it holds and remembers what it produced', async () => {
     const { summary, files } = await run({ reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-1' }] } });

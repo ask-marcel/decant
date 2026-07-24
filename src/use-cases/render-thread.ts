@@ -6,8 +6,11 @@ import type { ThreadRecord } from '../domain/mail-state.ts';
 import { renderFrontMatter } from '../domain/front-matter.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
+import { disambiguateSegment } from '../domain/kb-path.ts';
 import { participantsOf, renderThread, threadFileName, threadTitle, threadYear } from '../domain/thread.ts';
 import type { ThreadPart } from '../domain/thread.ts';
+import type { ReportEntry } from '../domain/report.ts';
+import { tooLargeReason, UNSUPPORTED_REASON } from '../domain/report.ts';
 import type { ConvertAttachment } from './convert-attachment.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
@@ -36,8 +39,8 @@ export type RenderThreadInput = {
 export type RenderedThread = {
   readonly record: ThreadRecord;
   readonly linked: Readonly<Record<string, { readonly path: string }>>;
-  readonly attachmentsSkipped: number;
-  readonly attachmentsFailed: number;
+  readonly attachmentsSkipped: ReadonlyArray<ReportEntry>;
+  readonly attachmentsFailed: ReadonlyArray<ReportEntry>;
 };
 
 export type RenderThreadOutcome = { readonly kind: 'rendered'; readonly thread: RenderedThread } | { readonly kind: 'empty' };
@@ -131,7 +134,7 @@ const pullLinked = async (deps: RenderThreadDeps, driveId: string, itemId: strin
   return { path };
 };
 
-type AttachmentTally = { readonly paths: ReadonlyArray<string>; readonly skipped: number; readonly failed: number };
+type AttachmentTally = { readonly paths: ReadonlyArray<string>; readonly skipped: ReadonlyArray<ReportEntry>; readonly failed: ReadonlyArray<ReportEntry> };
 
 const attachmentsOf = async (
   deps: RenderThreadDeps,
@@ -141,23 +144,28 @@ const attachmentsOf = async (
   stamp: DocumentStamp
 ): Promise<AttachmentTally> => {
   const paths: string[] = [];
+  const skipped: ReportEntry[] = [];
+  const failed: ReportEntry[] = [];
   // A signature logo rides on every message of a thread, so the same file is offered many times.
-  // Converting it once is both correct and far cheaper: the name is what identifies it on disk.
-  const seen = new Set<string>();
-  let skipped = 0;
-  let failed = 0;
+  // Two attachments count as the same when their name and their length both match: converting one
+  // of those twice writes the same bytes twice. A revised file resent under the same name has a
+  // different length, so it is kept too, under a name of its own rather than overwriting the first.
+  const converted = new Set<string>();
+  const usedNames = new Set<string>();
   for (const part of parts.filter((candidate) => candidate.message.hasAttachments)) {
     const listed = await deps.reader.attachments(part.message.id);
     if (!listed.ok) {
-      failed += 1;
+      failed.push({ path: `message ${part.message.id}`, reason: `could not list what it carried: ${listed.error.message}` });
       continue;
     }
-    for (const attachment of listed.value.filter((candidate) => !seen.has(candidate.name))) {
-      seen.add(attachment.name);
-      const outcome = await deps.convertAttachment({ messageId: part.message.id, attachment, folder, stamp, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel });
+    for (const attachment of listed.value.filter((candidate) => !converted.has(`${candidate.name}:${candidate.size}`))) {
+      converted.add(`${attachment.name}:${attachment.size}`);
+      const asName = usedNames.has(attachment.name) ? disambiguateSegment(attachment.name, attachment.id) : attachment.name;
+      usedNames.add(asName);
+      const outcome = await deps.convertAttachment({ messageId: part.message.id, attachment, folder, stamp, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, asName });
       if (outcome.kind === 'converted') paths.push(...outcome.outputs);
-      if (outcome.kind === 'skipped') skipped += 1;
-      if (outcome.kind === 'failed') failed += 1;
+      if (outcome.kind === 'skipped') skipped.push({ path: attachment.name, reason: outcome.reason === 'too-large' ? tooLargeReason(input.maxBytes) : UNSUPPORTED_REASON });
+      if (outcome.kind === 'failed') failed.push({ path: attachment.name, reason: outcome.reason });
     }
   }
   return { paths, skipped, failed };
@@ -201,13 +209,16 @@ const writeThread = async (
     `${header}\n\n${renderThread({ conversationId: input.conversationId, subject: first.subject, parts })}\n`
   );
   if (!written.ok) return err({ kind: 'permanent', message: written.error.message });
+  // Named with the conversation they arrived in: two threads can each carry an `image002.wmz`, and
+  // a report listing the bare name twice tells the reader nothing about which is which.
+  const inThread = (entries: ReadonlyArray<ReportEntry>): ReadonlyArray<ReportEntry> => entries.map((entry) => ({ ...entry, path: `${relative}: ${entry.path}` }));
   return ok({
     kind: 'rendered',
     thread: {
       record: { file: relative, messageIds: parts.map((part) => part.message.id), lastMessage: last.received, attachments: attachments.paths },
       linked: links.linked,
-      attachmentsSkipped: attachments.skipped,
-      attachmentsFailed: attachments.failed,
+      attachmentsSkipped: inThread(attachments.skipped),
+      attachmentsFailed: inThread(attachments.failed),
     },
   });
 };

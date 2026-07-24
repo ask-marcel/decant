@@ -35,6 +35,13 @@ replace `%24` with `$`, and leave every other percent-escape alone.
 not export, so a download hands back `base64` (or `text`) in the result and we write it ourselves.
 The 1M-character inline guard is part of that same unexported module, so it does not apply to us.
 
+## A command can throw as well as fail
+
+`execute` is typed as returning a `Result`, but it can still raise: the package decodes base64 with
+`atob`, which throws `InvalidCharacterError: The string contains invalid characters` on a malformed
+payload. Seen live on a mail attachment, where it ended an entire mailbox run. The adapter therefore
+wraps every call in a `try`/`catch` and reports a throw as a permanent error for that one item.
+
 ## Errors
 
 ```ts

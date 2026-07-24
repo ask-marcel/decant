@@ -255,6 +255,33 @@ describe('reacting to the ways Graph fails', () => {
     expect(recorded).toHaveLength(1);
   });
 
+  it('a command that throws instead of answering fails that one call, not the whole run', async () => {
+    const thrower: MarcelCommand = {
+      execute: async () => {
+        throw new Error('The string contains invalid characters.');
+      },
+    };
+    const reader = createDriveReaderFromApi({ graph: {}, fs: {}, commands: { 'download-drive-item-content': thrower }, sleep: async () => undefined });
+
+    expect(await reader.bytes({ driveId: 'b!one', itemId: '01A' })).toEqual({
+      ok: false,
+      error: { kind: 'permanent', message: 'The string contains invalid characters.' },
+    });
+  });
+
+  it('a command that throws something that is not an error is still reported readably', async () => {
+    const thrower: MarcelCommand = {
+      execute: async () => {
+        throw 'malformed base64';
+      },
+    };
+    const reader = createDriveReaderFromApi({ graph: {}, fs: {}, commands: { 'download-drive-item-content': thrower }, sleep: async () => undefined });
+    const fetched = await reader.bytes({ driveId: 'b!one', itemId: '01A' });
+
+    expect(fetched.ok).toBe(false);
+    expect(fetched.ok === false && fetched.error.message.length).toBeGreaterThan(0);
+  });
+
   it('asking for a command this version of the library does not have is reported clearly', async () => {
     const reader = createDriveReaderFromApi({ graph: {}, fs: {}, commands: {}, sleep: async () => undefined });
 

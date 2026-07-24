@@ -2,9 +2,10 @@ import { planFile } from '../domain/conversion-plan.ts';
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
-import { safeSegment } from '../domain/kb-path.ts';
+import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
+import type { ArchiveEntry } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import type { MailAttachment, MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { Ocr } from './ports/ocr.ts';
@@ -13,6 +14,8 @@ export type ConvertAttachmentDeps = {
   readonly reader: MailReader;
   readonly files: Files;
   readonly ocr: Ocr;
+  // Unpacking reads a file already on disk, which is all this needs of the wider drive reader.
+  readonly unpackArchive: (path: string) => Promise<Result<ReadonlyArray<ArchiveEntry>, { readonly kind: string; readonly message: string }>>;
 };
 
 export type ConvertAttachmentInput = {
@@ -22,6 +25,9 @@ export type ConvertAttachmentInput = {
   readonly stamp: DocumentStamp;
   readonly maxBytes: number;
   readonly ocrLabel: string;
+  // What to call the file on disk. Given when two different attachments of one conversation share
+  // a name, so both are kept rather than one overwriting the other.
+  readonly asName?: string;
 };
 
 export type AttachmentOutcome =
@@ -91,10 +97,31 @@ const asImage = async (context: Context): Promise<AttachmentOutcome> =>
 const asVector = async (context: Context): Promise<AttachmentOutcome> =>
   rawAndMarkdown(context, async () => ({ text: VECTOR_NOTE, stamp: { ...context.input.stamp, image: `./${context.name}` } }));
 
-// An archive attached to a mail is kept as it came: unpacking needs a Graph round trip the mail
-// side does not have, and the bytes beside the thread are still readable by hand.
-const asArchive = async (context: Context): Promise<AttachmentOutcome> =>
-  rawAndMarkdown(context, async () => ({ text: `_This archive was kept as it came. Open \`./${context.name}\` to read what is inside._`, stamp: context.input.stamp }));
+// An archive is kept as it came and also unpacked, one markdown file per document inside, so a
+// contract sent as a zip is as readable as one sent on its own.
+const asArchive = async (context: Context): Promise<AttachmentOutcome> => {
+  const raw = await context.deps.reader.attachmentBytes(context.input.messageId, context.input.attachment.id);
+  if (!raw.ok) return failure(raw.error);
+  const folder = `${context.input.folder}/${safeSegment(context.name.slice(0, context.name.lastIndexOf('.')))}`;
+  const archivePath = `${folder}/${context.name}`;
+  const wroteRaw = await context.deps.files.writeBytes(archivePath, raw.value);
+  if (!wroteRaw.ok) return failure(wroteRaw.error);
+  const entries = await context.deps.unpackArchive(archivePath);
+  if (!entries.ok) return { kind: 'failed', reason: `${entries.error.kind}: ${entries.error.message}` };
+  return writeArchiveEntries(context, folder, archivePath, entries.value);
+};
+
+const writeArchiveEntries = async (context: Context, folder: string, archivePath: string, entries: ReadonlyArray<ArchiveEntry>): Promise<AttachmentOutcome> => {
+  const outputs: string[] = [archivePath];
+  for (const entry of entries) {
+    const path = `${folder}/${safeRelPath(entry.path.split('/'))}.md`;
+    const stamp = { ...context.input.stamp, zipEntry: entry.path };
+    const written = await context.deps.files.writeText(path, kbDocument(stamp, entry.text ?? entry.note ?? NO_TEXT_NOTE));
+    if (!written.ok) return failure(written.error);
+    outputs.push(path);
+  }
+  return { kind: 'converted', outputs };
+};
 
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<AttachmentOutcome>>> = {
   document: asMarkdown,
@@ -113,5 +140,5 @@ export const createConvertAttachment =
   async (input) => {
     const decision = planFile({ name: input.attachment.name, size: input.attachment.size }, input.maxBytes);
     if (decision.kind === 'skip') return { kind: 'skipped', reason: decision.reason };
-    return CONVERTERS[decision.route]({ deps, input, name: safeSegment(input.attachment.name) });
+    return CONVERTERS[decision.route]({ deps, input, name: safeSegment(input.asName ?? input.attachment.name) });
   };

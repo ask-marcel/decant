@@ -2,6 +2,7 @@ import { parseDriveDelta } from '../domain/drive-item.ts';
 import type { DriveDeltaPage } from '../domain/drive-item.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
+import { formatError } from '../domain/utilities/format-error.ts';
 import type { ArchiveEntry, DriveReader, DriveReaderError, DriveSummary, ItemRef, SiteSummary } from '../use-cases/ports/drive-reader.ts';
 
 // The slice of the ask-marcel-office-cli surface this adapter drives. Typed against what the
@@ -74,18 +75,30 @@ const toBytes = (value: unknown): Result<Uint8Array, DriveReaderError> => {
 // and the mailbox readers run through this, so a throttle is handled the same way on either side.
 export type MarcelCall = (name: string, params: Record<string, string>, local?: boolean) => Promise<Result<unknown, DriveReaderError>>;
 
+// A command is expected to answer with a Result, but it can still throw: decoding malformed base64
+// raises `InvalidCharacterError` from inside the library, for one. A throw here would end the whole
+// run over a single unreadable file, so it is turned into an error for that one call instead.
+const attempt = async (command: MarcelCommand, api: MarcelApi, params: Record<string, string>, local: boolean): Promise<Result<unknown, DriveReaderError>> => {
+  try {
+    const raw = local && command.executeLocal ? await command.executeLocal(api.fs, params) : await command.execute(api.graph, params);
+    return raw.ok ? ok(raw.value) : err(translate(raw.error));
+  } catch (error) {
+    return err({ kind: 'permanent', message: formatError(error) });
+  }
+};
+
 export const createMarcelCall = (api: MarcelApi): MarcelCall => {
   const pause = api.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   return async (name, params, local = false) => {
     const command = api.commands[name];
     if (command === undefined) return err({ kind: 'permanent', message: `unknown command: ${name}` });
     let last: DriveReaderError = { kind: 'permanent', message: `${name} never ran` };
-    for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
-      const raw = local && command.executeLocal ? await command.executeLocal(api.fs, params) : await command.execute(api.graph, params);
-      if (raw.ok) return ok(raw.value);
-      last = translate(raw.error);
-      if (!isWorthRetrying(last) || attempt === RETRY_DELAYS_MS.length) return err(last);
-      await pause(delayFor(last, attempt));
+    for (let tries = 0; tries <= RETRY_DELAYS_MS.length; tries += 1) {
+      const outcome = await attempt(command, api, params, local);
+      if (outcome.ok) return outcome;
+      last = outcome.error;
+      if (!isWorthRetrying(last) || tries === RETRY_DELAYS_MS.length) return err(last);
+      await pause(delayFor(last, tries));
     }
     return err(last);
   };

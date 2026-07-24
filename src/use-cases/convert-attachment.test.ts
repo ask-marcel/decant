@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import type { FilesFake, FilesFakeSeed } from '../test-helpers/files-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
+import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
+import type { DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
 import type { MailReaderSeed } from '../test-helpers/mail-reader-fake.ts';
 import { createMailReaderFake } from '../test-helpers/mail-reader-fake.ts';
 import type { OcrSeed } from '../test-helpers/ocr-fake.ts';
@@ -32,10 +34,11 @@ const attachment = (over: Partial<MailAttachment> = {}): MailAttachment => ({
 
 const run = async (
   over: Partial<MailAttachment> = {},
-  seeds: { reader?: MailReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed; maxBytes?: number } = {}
+  seeds: { reader?: MailReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed; drive?: DriveReaderSeed; maxBytes?: number } = {}
 ): Promise<{ outcome: AttachmentOutcome; files: FilesFake }> => {
   const files = createFilesFake(seeds.files);
-  const convert = createConvertAttachment({ reader: createMailReaderFake(seeds.reader), files, ocr: createOcrFake(seeds.ocr) });
+  const drive = createDriveReaderFake(seeds.drive);
+  const convert = createConvertAttachment({ reader: createMailReaderFake(seeds.reader), files, ocr: createOcrFake(seeds.ocr), unpackArchive: drive.localArchive });
   const outcome = await convert({
     messageId: 'm1',
     attachment: attachment(over),
@@ -116,12 +119,36 @@ describe('keeping what was attached to a mail', () => {
     expect(files.written.get(`${FOLDER}/Logo.svg.md`)).toContain('Open the file beside this note');
   });
 
-  it('an archive attachment is kept as it came, with a note saying so', async () => {
-    const { outcome, files } = await run({ name: 'Livraison.zip' });
+  it('an archive attachment becomes a folder holding one markdown file per document inside it', async () => {
+    const entries = [
+      { path: 'notes.docx', text: '# Notes' },
+      { path: 'sous-dossier/deck.pptx', text: '## Slide 1' },
+    ];
+    const { outcome, files } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: entries } });
 
     expect(outcome.kind).toBe('converted');
-    expect(files.binary.has(`${FOLDER}/Livraison.zip`)).toBe(true);
-    expect(files.written.get(`${FOLDER}/Livraison.zip.md`)).toContain('kept as it came');
+    expect(files.binary.has(`${FOLDER}/Livraison/Livraison.zip`)).toBe(true);
+    expect(files.written.get(`${FOLDER}/Livraison/notes.docx.md`)).toContain('# Notes');
+    expect(files.written.get(`${FOLDER}/Livraison/sous-dossier/deck.pptx.md`)).toContain('## Slide 1');
+  });
+
+  it('a document unpacked from an archive records where it sat inside it', async () => {
+    const { files } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
+
+    expect(files.written.get(`${FOLDER}/Livraison/notes.docx.md`)).toContain('zip_entry: notes.docx');
+  });
+
+  it('a document inside an archive that could not be converted keeps the reason in its place', async () => {
+    const { files } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: [{ path: 'video.mp4', note: 'unsupported entry' }] } });
+
+    expect(files.written.get(`${FOLDER}/Livraison/video.mp4.md`)).toContain('unsupported entry');
+  });
+
+  it('an archive that cannot be unpacked is reported after its bytes were kept', async () => {
+    const { outcome, files } = await run({ name: 'Livraison.zip' }, { drive: { failWith: { kind: 'permanent', message: 'not a zip' } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'permanent: not a zip' });
+    expect(files.binary.has(`${FOLDER}/Livraison/Livraison.zip`)).toBe(true);
   });
 
   it('a signature image inlined in the mail is handled like any other picture', async () => {
