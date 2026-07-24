@@ -98,3 +98,17 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   window. A window interrupted mid-flight re-runs, and every write is idempotent (same bytes to the
   same paths), so a partial window costs a redo, never a corruption. Default 4; `--concurrency 1` is
   the old strictly-sequential behaviour.
+
+- [gotcha] A per-iteration save-guard in a loop that also saves once at the end cannot be killed by
+  asserting the run failed, when the fake fails every write. In `sync-site` `processQueue` the guard
+  `if (!saved.ok) return saved` (and the same shape in `sync-mailbox` `drainQueue`) survived mutation
+  to `if (false)`: under `files-fake` `failWriteWith` the window save AND the final `createSyncSite`
+  save both fail, so `ok === false` holds whether the loop stops at the window or runs to the end and
+  trips the final save. The distinguishing observable is how much work was attempted: seed two pending
+  items at `concurrency: 1` and assert exactly one `convert.failed` was logged. The real run stops
+  after window one; the mutant runs into window two and logs a second. This is the technique for the
+  run-sync/sync-site mutation debt flagged in the earlier 2026-07-24 [gotcha]: both files are now at
+  94.83% / 93.90%. The remaining survivors there are genuinely equivalent, chiefly the six `add`
+  `+`->`-` mutants, which cancel because `add` is always applied to `EMPTY` twice (processQueue then
+  createSyncSite), so `0 - (0 - n) === n`; do not chase them without refactoring `add` out of the
+  double-negation.
