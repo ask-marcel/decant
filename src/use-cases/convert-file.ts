@@ -94,6 +94,14 @@ const withSlideText = async (context: Context, pdfPath: string): Promise<Convert
   return written.ok ? { kind: 'converted', outputs: [pdfPath, written.value] } : failure(written.error);
 };
 
+// A PDF with a text layer yields it straight. One without (a scan) is read by OCR from the copy on
+// disk, and only when OCR finds nothing does the note stand in for the text.
+const pdfText = async (context: Context, rawPath: string, extracted: string): Promise<{ readonly body: string; readonly ocr?: string }> => {
+  if (extracted.trim().length > 0) return { body: extracted };
+  const read = await context.deps.ocr.read(rawPath);
+  return read.ok && read.value.trim().length > 0 ? { body: read.value, ocr: context.input.ocrLabel } : { body: SCANNED_PDF_NOTE };
+};
+
 const convertPdf = async (context: Context): Promise<ConvertOutcome> => {
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
   const raw = await context.deps.reader.bytes(ref);
@@ -103,8 +111,9 @@ const convertPdf = async (context: Context): Promise<ConvertOutcome> => {
   if (!wroteRaw.ok) return failure(wroteRaw.error);
   const text = await context.deps.reader.markdown(ref);
   if (!text.ok) return failure(text.error);
-  const stamp = { ...context.stamp, pdf: `./${context.name}` };
-  const written = await writeMarkdown(context, `${context.name}.md`, stamp, text.value.trim().length === 0 ? SCANNED_PDF_NOTE : text.value);
+  const read = await pdfText(context, rawPath, text.value);
+  const stamp = { ...context.stamp, pdf: `./${context.name}`, ocr: read.ocr };
+  const written = await writeMarkdown(context, `${context.name}.md`, stamp, read.body);
   return written.ok ? { kind: 'converted', outputs: [rawPath, written.value] } : failure(written.error);
 };
 

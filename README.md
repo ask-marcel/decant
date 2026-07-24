@@ -14,7 +14,7 @@ used as a library, which owns authentication, paging and document conversion. Se
 
 - [Bun](https://bun.sh) 1.2 or newer
 - A Microsoft 365 account already signed in: run `ask-marcel-office login` once (a browser opens)
-- `paddleocr` on PATH to read text out of images (optional; without it images are still copied)
+- `paddleocr` on PATH to read text out of images and scanned PDFs (optional; without it the files are still copied)
 
 ## Install
 
@@ -52,8 +52,8 @@ clear message instead of waiting for input.
 | `--since <day>` | With `--mailbox`, only conversations touched since this day (`2026-01-31`) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
-| `--no-ocr` | Do not read text out of images |
-| `--ocr-lang <code>` | Language used to read images (default `en`) |
+| `--no-ocr` | Do not read text out of images or scanned PDFs |
+| `--ocr-lang <code>` | Language used to read images and scanned PDFs (default `en`) |
 
 ## What lands in `kb/`
 

@@ -91,7 +91,7 @@ export const USAGE = [
   '  --since <day>       with --mailbox, only conversations touched since this day',
   '  --dry-run           show what would be done, write nothing',
   '  --max-size-mb <n>   skip files larger than this (default 50)',
-  '  --no-ocr            do not read text out of images',
-  '  --ocr-lang <code>   language for reading images (default en)',
+  '  --no-ocr            do not read text out of images or scanned PDFs',
+  '  --ocr-lang <code>   language for reading images and scanned PDFs (default en)',
   '  --yes, -y           take the saved choices instead of asking',
 ].join('\n');

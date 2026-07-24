@@ -92,6 +92,34 @@ describe('keeping what was attached to a mail', () => {
     expect(files.written.get(`${FOLDER}/Scan.pdf.md`)).toContain('carries no text layer');
   });
 
+  it('a scanned PDF attachment has its pages read by OCR when it carries no text layer', async () => {
+    const { files } = await run({ name: 'Scan.pdf' }, { reader: { attachmentTexts: { att1: '' } }, ocr: { texts: { [`${FOLDER}/Scan.pdf`]: 'Invoice total 1200 EUR' } } });
+    const written = files.written.get(`${FOLDER}/Scan.pdf.md`) ?? '';
+
+    expect(written).toContain('Invoice total 1200 EUR');
+    expect(written).toContain('ocr: paddleocr (en)');
+  });
+
+  it('a PDF attachment that has a text layer keeps that text rather than a note', async () => {
+    const { files } = await run({ name: 'Contrat.pdf' }, { reader: { attachmentTexts: { att1: 'The signed contract.' } } });
+    const written = files.written.get(`${FOLDER}/Contrat.pdf.md`) ?? '';
+
+    expect(written).toContain('The signed contract.');
+    expect(written).not.toContain('carries no text layer');
+  });
+
+  it('a PDF attachment whose text layer is only whitespace is treated as scanned and read by OCR', async () => {
+    const { files } = await run({ name: 'Scan.pdf' }, { reader: { attachmentTexts: { att1: '   ' } }, ocr: { texts: { [`${FOLDER}/Scan.pdf`]: 'Read by OCR' } } });
+
+    expect(files.written.get(`${FOLDER}/Scan.pdf.md`) ?? '').toContain('Read by OCR');
+  });
+
+  it('a scanned PDF attachment whose OCR finds only whitespace still falls back to the note', async () => {
+    const { files } = await run({ name: 'Scan.pdf' }, { reader: { attachmentTexts: { att1: '' } }, ocr: { texts: { [`${FOLDER}/Scan.pdf`]: '   ' } } });
+
+    expect(files.written.get(`${FOLDER}/Scan.pdf.md`) ?? '').toContain('carries no text layer');
+  });
+
   it('a photo attachment is kept, with the text read out of it', async () => {
     const { outcome, files } = await run({ name: 'Tableau.jpg' }, { ocr: { texts: { [`${FOLDER}/Tableau.jpg`]: 'Sprint 4 backlog' } } });
     const written = files.written.get(`${FOLDER}/Tableau.jpg.md`) ?? '';
@@ -223,5 +251,30 @@ describe('keeping what was attached to a mail', () => {
     const { outcome } = await run({ name: 'Q1/Q2: budget.docx' });
 
     expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Q1_Q2_ budget.docx.md`] });
+  });
+
+  it('a deck attachment keeps the text read from it rather than a note', async () => {
+    const { files } = await run({ name: 'Roadmap.pptx' }, { reader: { attachmentTexts: { att1: 'Slide content here' } } });
+
+    expect(files.written.get(`${FOLDER}/Roadmap.pptx.md`)).toContain('Slide content here');
+  });
+
+  it('a deck attachment whose text is only whitespace lands with a note beside its PDF', async () => {
+    const { files } = await run({ name: 'Vide.pptx' }, { reader: { attachmentTexts: { att1: '   ' } } });
+
+    expect(files.written.get(`${FOLDER}/Vide.pptx.md`)).toContain('No text could be read');
+  });
+
+  it('a drawing attachment lands with exactly the file and its note, named for the drawing', async () => {
+    const { outcome, files } = await run({ name: 'Logo.svg' });
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Logo.svg`, `${FOLDER}/Logo.svg.md`] });
+    expect(files.written.get(`${FOLDER}/Logo.svg.md`)).toContain('image: ./Logo.svg');
+  });
+
+  it('an archive attachment lands with the archive file and one markdown per entry, in order', async () => {
+    const { outcome } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Livraison/Livraison.zip`, `${FOLDER}/Livraison/notes.docx.md`] });
   });
 });

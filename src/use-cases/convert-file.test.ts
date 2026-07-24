@@ -106,6 +106,44 @@ describe('converting one document out of a library', () => {
     expect(files.written.get('kb/Espace MOOV/Documents/Scan.pdf.md')).toContain('carries no text layer');
   });
 
+  it('a scanned PDF has its pages read by OCR when it carries no text layer', async () => {
+    const { files } = await run(
+      { name: 'Scan.pdf', path: 'Scan.pdf' },
+      { reader: { markdown: { '01ABC': '' } }, ocr: { texts: { 'kb/Espace MOOV/Documents/Scan.pdf': 'Invoice total 1200 EUR' } } }
+    );
+    const written = files.written.get('kb/Espace MOOV/Documents/Scan.pdf.md') ?? '';
+
+    expect(written).toContain('Invoice total 1200 EUR');
+    expect(written).toContain('ocr: paddleocr (en)');
+  });
+
+  it('a PDF that already has a text layer is not sent to OCR', async () => {
+    const { files } = await run(
+      { name: 'Contrat.pdf', path: 'Contrat.pdf' },
+      { reader: { markdown: { '01ABC': 'The real text layer.' } }, ocr: { texts: { 'kb/Espace MOOV/Documents/Contrat.pdf': 'OCR fallback text' } } }
+    );
+    const written = files.written.get('kb/Espace MOOV/Documents/Contrat.pdf.md') ?? '';
+
+    expect(written).toContain('The real text layer.');
+    expect(written).not.toContain('OCR fallback text');
+    expect(written).not.toContain('ocr:');
+  });
+
+  it('a PDF whose text layer is only whitespace is treated as scanned and read by OCR', async () => {
+    const { files } = await run(
+      { name: 'Scan.pdf', path: 'Scan.pdf' },
+      { reader: { markdown: { '01ABC': '   ' } }, ocr: { texts: { 'kb/Espace MOOV/Documents/Scan.pdf': 'Read by OCR' } } }
+    );
+
+    expect(files.written.get('kb/Espace MOOV/Documents/Scan.pdf.md') ?? '').toContain('Read by OCR');
+  });
+
+  it('a scanned PDF whose OCR finds only whitespace still falls back to the note', async () => {
+    const { files } = await run({ name: 'Scan.pdf', path: 'Scan.pdf' }, { reader: { markdown: { '01ABC': '' } }, ocr: { texts: { 'kb/Espace MOOV/Documents/Scan.pdf': '   ' } } });
+
+    expect(files.written.get('kb/Espace MOOV/Documents/Scan.pdf.md') ?? '').toContain('carries no text layer');
+  });
+
   it('a photo is kept as it is, with the text read out of it beside it', async () => {
     const { outcome, files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace MOOV/Documents/Tableau.jpg': 'Sprint 4 backlog' } } });
     const written = files.written.get('kb/Espace MOOV/Documents/Tableau.jpg.md') ?? '';
@@ -248,5 +286,42 @@ describe('converting one document out of a library', () => {
     const { outcome } = await run({}, { files: { failWriteWith: { kind: 'write-failed', path: 'kb', message: 'disk full' } } });
 
     expect(outcome).toEqual({ kind: 'failed', reason: 'write-failed: disk full' });
+  });
+
+  it('a deck reads its text back from the file it named, not from an empty request', async () => {
+    const { files } = await run({ name: 'Roadmap.pptx', path: 'Roadmap.pptx' });
+
+    expect(files.written.get('kb/Espace MOOV/Documents/Roadmap.pptx.md')).toContain('converted 01ABC');
+  });
+
+  it('a deck whose text is only whitespace still lands with a note beside its PDF', async () => {
+    const { files } = await run({ name: 'Vide.pptx', path: 'Vide.pptx' }, { reader: { markdown: { '01ABC': '   ' } } });
+
+    expect(files.written.get('kb/Espace MOOV/Documents/Vide.pptx.md')).toContain('No text could be read');
+  });
+
+  it('a photo lands with exactly the picture and its read-out text, nothing more', async () => {
+    const { outcome } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace MOOV/Documents/Tableau.jpg': 'Sprint 4 backlog' } } });
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Tableau.jpg', 'kb/Espace MOOV/Documents/Tableau.jpg.md'] });
+  });
+
+  it('a photo whose OCR reads only whitespace lands with a note instead of blank text', async () => {
+    const { files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace MOOV/Documents/Tableau.jpg': '   ' } } });
+
+    expect(files.written.get('kb/Espace MOOV/Documents/Tableau.jpg.md')).toContain('No text could be read');
+  });
+
+  it('a drawing lands with exactly the file and its note, each named for the drawing', async () => {
+    const { outcome, files } = await run({ name: 'Logo.svg', path: 'Logo.svg' });
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Logo.svg', 'kb/Espace MOOV/Documents/Logo.svg.md'] });
+    expect(files.written.get('kb/Espace MOOV/Documents/Logo.svg.md')).toContain('image: ./Logo.svg');
+  });
+
+  it('an archive lands with the archive file and one markdown per entry, in order', async () => {
+    const { outcome } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Livraison/Livraison.zip', 'kb/Espace MOOV/Documents/Livraison/notes.docx.md'] });
   });
 });

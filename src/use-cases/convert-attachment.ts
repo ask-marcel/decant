@@ -80,11 +80,19 @@ const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promi
   return written.ok ? { kind: 'converted', outputs: [rawPath, written.value] } : failure(written.error);
 };
 
+// A PDF with a text layer yields it straight. One without (a scan) is read by OCR from the copy on
+// disk, and only when OCR finds nothing does the note stand in for the text.
+const pdfText = async (context: Context, rawPath: string, extracted: string): Promise<{ readonly body: string; readonly ocr?: string }> => {
+  if (extracted.trim().length > 0) return { body: extracted };
+  const read = await context.deps.ocr.read(rawPath);
+  return read.ok && read.value.trim().length > 0 ? { body: read.value, ocr: context.input.ocrLabel } : { body: SCANNED_PDF_NOTE };
+};
+
 const asPdf = async (context: Context): Promise<AttachmentOutcome> =>
-  rawAndMarkdown(context, async () => {
+  rawAndMarkdown(context, async (rawPath) => {
     const text = await context.deps.reader.attachmentMarkdown(context.input.messageId, context.input.attachment.id);
-    const body = text.ok && text.value.trim().length > 0 ? text.value : SCANNED_PDF_NOTE;
-    return { text: body, stamp: { ...context.input.stamp, pdf: `./${context.name}` } };
+    const read = await pdfText(context, rawPath, text.ok ? text.value : '');
+    return { text: read.body, stamp: { ...context.input.stamp, pdf: `./${context.name}`, ocr: read.ocr } };
   });
 
 const asImage = async (context: Context): Promise<AttachmentOutcome> =>
