@@ -70,10 +70,12 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
       const raw = await call('list-mail-child-folders', { mailFolderId: folderId, top: '200' });
       return raw.ok ? ok(parseMailFolders(raw.value)) : raw;
     },
-    // Deliberately no `top`: Outlook's message delta truncates when given a page size, answering
-    // with an "up to date" cursor and dropping the rest of the folder for good.
+    // `top` is safe since ask-marcel-office-cli 2.3.0: it is sent as `Prefer: odata.maxpagesize`, a
+    // page-size hint that pages correctly, not the `$top` that used to read as "sync complete" and
+    // drop the rest of the folder. A page of 100 cuts round trips on a large folder while keeping
+    // each response small; paging continues through `nextLink` if Graph caps the page lower.
     folderDelta: async (folderId) =>
-      delta('list-mail-folder-messages-delta', { mailFolderId: folderId, select: 'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients' }),
+      delta('list-mail-folder-messages-delta', { mailFolderId: folderId, top: '100', select: 'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients' }),
     deltaFrom: async (cursor) => delta('next-page', { url: cursor }),
     conversation: async (conversationId) => {
       const raw = await call('list-conversation-messages', { conversationId, select: 'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients' });

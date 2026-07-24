@@ -31,12 +31,12 @@ describe('reading a mailbox through the ask-marcel library', () => {
     expect(recorded[0]?.params).toMatchObject({ mailFolderId: 'AAMk1' });
   });
 
-  it('a folder sweep never asks for a page size, which would silently truncate the folder', async () => {
+  it('a folder sweep asks for a page size, which 2.3.0 pages through instead of truncating', async () => {
     const { reader, recorded } = readerFor({ 'list-mail-folder-messages-delta': ok({ value: [] }) });
 
     await reader.folderDelta('AAMk1');
 
-    expect(recorded[0]?.params['top']).toBeUndefined();
+    expect(recorded[0]?.params['top']).toBe('100');
     expect(recorded[0]?.params).toMatchObject({ mailFolderId: 'AAMk1' });
   });
 

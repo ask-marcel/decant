@@ -64,21 +64,21 @@ Some `api_error`s are synthesized client-side with an invented status (400 when 
 where a file was expected, 404 for a missing local file, 500 for an unexpected envelope), so
 `status` is not always an HTTP status.
 
-## Mail delta truncates when given a page size
+## Mail delta and page size (truncation fixed in v2.3.0)
 
-Verified against a live 67-message Inbox on 2026-07-23: calling
+History, verified against a live 67-message Inbox on 2026-07-23 under v2.2.0: calling
 `list-mail-folder-messages-delta` with `top: 2` returned **2 messages and a `deltaLink`** (not a
 `nextLink`), and following that cursor returned zero. The other 65 messages were unreachable, with
-the sync believing itself complete. The same call without `top` pages correctly, ten messages at a
-time, with a `nextLink` until the last page.
+the sync believing itself complete. Under v2.2.0 the same call without `top` paged correctly, ten
+messages at a time, with a `nextLink` until the last page.
 
-So the mail sweep never sends `top`. Drive delta is the opposite: `top: 1000` there is safe and
-saves round trips. **v2.3.0 fixed the truncation**: `top` on a mail delta is now sent as a
-`Prefer: odata.maxpagesize` header, which pages normally instead of reading a satisfied `$top` as
-"sync complete", so passing it is safe again and buys only fewer round trips. The sweep still omits
-it (revisiting that is a next step, not part of the upgrade); this history stays because the
-pre-2.3.0 behaviour was a silent data-loss trap worth remembering. Note `skip` and `orderby` are no
-longer accepted on the mail delta, and `filter`/`orderby` are gone from the two drive deltas.
+**v2.3.0 fixed the truncation**: `top` on a mail delta is now sent as a `Prefer: odata.maxpagesize`
+header, which pages normally instead of reading a satisfied `$top` as "sync complete". So the sweep
+now sends `top: 100` (drive delta uses `top: 1000`), cutting round trips on a large folder while
+keeping each response small; paging continues through `nextLink` if Graph caps the page lower. The
+pre-2.3.0 history stays here because it was a silent data-loss trap worth remembering. Note `skip`
+and `orderby` are no longer accepted on the mail delta, and `filter`/`orderby` are gone from the two
+drive deltas.
 
 The cost of this is real: ten messages per request means a mailbox with a 6000-message archive
 needs some 600 sequential requests on its first run. Later runs read only what changed.
