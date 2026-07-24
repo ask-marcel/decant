@@ -35,6 +35,10 @@ export type SyncSiteInput = {
   readonly maxBytes: number;
   readonly ocrLabel: string;
   readonly dryRun: boolean;
+  // How many items to convert at once. Each item's outputs are its own, so a window of them runs in
+  // parallel and the manifest updates fold afterwards; a window interrupted re-runs, writing the
+  // same bytes to the same paths.
+  readonly concurrency: number;
 };
 
 export type RunSummary = {
@@ -160,15 +164,18 @@ const processQueue = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: Dri
   let notes = NO_NOTES;
   for (;;) {
     const driveState = current.drives[drive.id];
-    const work = driveState?.pending[0];
-    if (driveState === undefined || work === undefined) return ok({ state: current, summary, notes });
-    const done = await applyWork(deps, input, drive, driveState, work);
-    const advanced = withDrive(current, drive.id, { ...done.drive, pending: driveState.pending.slice(1) });
+    if (driveState === undefined || driveState.pending.length === 0) return ok({ state: current, summary, notes });
+    const window = driveState.pending.slice(0, input.concurrency);
+    const results = await Promise.all(window.map((work) => applyWork(deps, input, drive, driveState, work)));
+    const folded = results.reduce((manifest, done) => done.update(manifest), driveState);
+    const advanced = withDrive(current, drive.id, { ...folded, pending: driveState.pending.slice(window.length) });
     const saved = await save(deps.files, statePath, advanced, input.dryRun);
     if (!saved.ok) return saved;
     current = advanced;
-    summary = add(summary, done.counted);
-    notes = mergeNotes(notes, done.notes ?? {});
+    for (const done of results) {
+      summary = add(summary, done.counted);
+      notes = mergeNotes(notes, done.notes ?? {});
+    }
   }
 };
 
@@ -182,15 +189,17 @@ const mergeNotes = (left: RunNotes, right: Partial<RunNotes>): RunNotes => ({
   archived: [...left.archived, ...(right.archived ?? [])],
 });
 
-type WorkOutcome = { readonly drive: DriveState; readonly counted: Partial<RunSummary>; readonly notes?: Partial<RunNotes> };
+// The IO (converting, moving, archiving) happens now; the manifest change it implies comes back as a
+// function so a whole window's updates fold onto the manifest in order, after the parallel IO.
+type WorkOutcome = { readonly update: (drive: DriveState) => DriveState; readonly counted: Partial<RunSummary>; readonly notes?: Partial<RunNotes> };
 
 const applyWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, driveState: DriveState, work: WorkItem): Promise<WorkOutcome> => {
   if (work.kind === 'archive') return archiveOutputs(deps, input, drive, driveState, work.itemId, work.outputs);
-  if (work.kind === 'move') return moveOutputs(deps, input, drive, driveState, work.item, work.from, work.outputs);
-  return convertOne(deps, input, drive, driveState, work.item);
+  if (work.kind === 'move') return moveOutputs(deps, input, drive, work.item, work.from, work.outputs);
+  return convertOne(deps, input, drive, work.item);
 };
 
-const convertOne = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, driveState: DriveState, item: DriveItem): Promise<WorkOutcome> => {
+const convertOne = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, item: DriveItem): Promise<WorkOutcome> => {
   const outcome = await deps.convertFile({
     item,
     driveId: drive.id,
@@ -202,24 +211,16 @@ const convertOne = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: Drive
   });
   if (outcome.kind === 'failed') {
     deps.logger.warn('convert.failed', { itemId: item.id, reason: outcome.reason });
-    return { drive: driveState, counted: { failed: 1 }, notes: { failed: [{ path: item.path, reason: outcome.reason }] } };
+    return { update: (manifest) => manifest, counted: { failed: 1 }, notes: { failed: [{ path: item.path, reason: outcome.reason }] } };
   }
   const outputs = outcome.kind === 'converted' ? outcome.outputs : [];
-  const recorded = recordItem(driveState, item.id, { path: item.path, cTag: item.cTag, outputs });
-  if (outcome.kind === 'converted') return { drive: recorded, counted: { converted: 1 } };
+  const update = (manifest: DriveState): DriveState => recordItem(manifest, item.id, { path: item.path, cTag: item.cTag, outputs });
+  if (outcome.kind === 'converted') return { update, counted: { converted: 1 } };
   const reason = outcome.reason === 'too-large' ? tooLargeReason(input.maxBytes) : UNSUPPORTED_REASON;
-  return { drive: recorded, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason }] } };
+  return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason }] } };
 };
 
-const moveOutputs = async (
-  deps: SyncSiteDeps,
-  input: SyncSiteInput,
-  drive: DriveSummary,
-  driveState: DriveState,
-  item: DriveItem,
-  from: string,
-  outputs: ReadonlyArray<string>
-): Promise<WorkOutcome> => {
+const moveOutputs = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, item: DriveItem, from: string, outputs: ReadonlyArray<string>): Promise<WorkOutcome> => {
   const libraryRoot = libraryRootOf(deps.kbRoot, input.site, drive);
   const moved = remapOutputs(outputs, outputPrefix(libraryRoot, from), outputPrefix(libraryRoot, item.path));
   for (const [index, target] of moved.entries()) {
@@ -228,7 +229,7 @@ const moveOutputs = async (
     const done = await deps.files.move(source, target);
     if (!done.ok) deps.logger.warn('move.failed', { itemId: item.id, cause: done.error.kind });
   }
-  return { drive: renameItem(driveState, item.id, item.path, moved), counted: { moved: 1 } };
+  return { update: (manifest) => renameItem(manifest, item.id, item.path, moved), counted: { moved: 1 } };
 };
 
 const archiveOutputs = async (
@@ -247,7 +248,7 @@ const archiveOutputs = async (
   }
   const known = driveState.items[itemId];
   return {
-    drive: forgetItem(driveState, itemId),
+    update: (manifest) => forgetItem(manifest, itemId),
     counted: { archived: 1 },
     notes: { archived: [{ path: known?.path ?? itemId, reason: 'no longer at the source' }] },
   };

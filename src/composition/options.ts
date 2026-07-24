@@ -12,6 +12,7 @@ export type Options = {
   readonly maxSizeMb: number;
   readonly ocr: boolean;
   readonly ocrLang: string;
+  readonly concurrency: number;
   readonly assumeYes: boolean;
   readonly mailbox: boolean;
   readonly since?: string;
@@ -26,17 +27,19 @@ const DEFAULTS: Options = {
   maxSizeMb: 50,
   ocr: true,
   ocrLang: 'en',
+  concurrency: 4,
   assumeYes: false,
   mailbox: false,
 };
 
-const FLAGS_WITH_VALUE = new Set(['--site-id', '--site-url', '--drive-id', '--max-size-mb', '--ocr-lang', '--since']);
+const FLAGS_WITH_VALUE = new Set(['--site-id', '--site-url', '--drive-id', '--max-size-mb', '--ocr-lang', '--concurrency', '--since']);
 
 const withValue = (options: Options, flag: string, value: string): Result<Options, OptionsError> => {
   if (flag === '--site-id') return ok({ ...options, siteId: value });
   if (flag === '--site-url') return ok({ ...options, siteUrl: value });
   if (flag === '--drive-id') return ok({ ...options, driveIds: [...options.driveIds, value] });
   if (flag === '--ocr-lang') return ok({ ...options, ocrLang: value });
+  if (flag === '--concurrency') return withConcurrency(options, value);
   if (flag === '--since') return withSince(options, value);
   return withSize(options, value);
 };
@@ -45,6 +48,13 @@ const withSize = (options: Options, value: string): Result<Options, OptionsError
   const size = Number(value);
   if (!Number.isFinite(size) || size <= 0) return err({ kind: 'bad-option', message: `--max-size-mb expects a positive number, got: ${value}` });
   return ok({ ...options, maxSizeMb: size });
+};
+
+// A whole number of items in flight at once. One means the old strictly-sequential behaviour.
+const withConcurrency = (options: Options, value: string): Result<Options, OptionsError> => {
+  const count = Number(value);
+  if (!Number.isInteger(count) || count < 1) return err({ kind: 'bad-option', message: `--concurrency expects a whole number of at least 1, got: ${value}` });
+  return ok({ ...options, concurrency: count });
 };
 
 // A day, not a moment: mail is filtered on the date it arrived.
@@ -91,6 +101,7 @@ export const USAGE = [
   '  --since <day>       with --mailbox, only conversations touched since this day',
   '  --dry-run           show what would be done, write nothing',
   '  --max-size-mb <n>   skip files larger than this (default 50)',
+  '  --concurrency <n>   how many items to convert at once (default 4)',
   '  --no-ocr            do not read text out of images or scanned PDFs',
   '  --ocr-lang <code>   language for reading images and scanned PDFs (default en)',
   '  --yes, -y           take the saved choices instead of asking',

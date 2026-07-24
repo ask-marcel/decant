@@ -44,7 +44,7 @@ const run = async (
       return ok(EMPTY_SUMMARY);
     },
   });
-  const result = await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'paddleocr (en)', dryRun: false, ...over });
+  const result = await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'paddleocr (en)', concurrency: 4, dryRun: false, ...over });
   return { calls, mailboxRuns, prompt, ok: result.ok, error: result.ok ? undefined : result.error.message };
 };
 
@@ -237,7 +237,7 @@ describe('when the knowledge base itself cannot be read', () => {
       syncMailbox: async () => ok(EMPTY_SUMMARY),
     });
 
-    await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'off', dryRun: false });
+    await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
 
     expect(prompt.shown[0]).toContain('Espace MOOV  (new)');
     expect(calls).toHaveLength(1);
@@ -254,7 +254,7 @@ describe('when the knowledge base itself cannot be read', () => {
       syncMailbox: async () => ok(EMPTY_SUMMARY),
     });
 
-    expect((await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', dryRun: false })).ok).toBe(false);
+    expect((await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false })).ok).toBe(false);
   });
 });
 
@@ -300,7 +300,7 @@ describe('when one site in a refresh fails', () => {
       syncMailbox: async () => ok(EMPTY_SUMMARY),
     });
 
-    const result = await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', dryRun: false });
+    const result = await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
 
     expect(result.ok).toBe(false);
     expect(calls).toHaveLength(1);

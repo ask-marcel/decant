@@ -31,6 +31,7 @@ export type RunSyncInput = {
   readonly driveIds: ReadonlyArray<string>;
   readonly maxBytes: number;
   readonly ocrLabel: string;
+  readonly concurrency: number;
   readonly dryRun: boolean;
   readonly mailbox?: boolean;
   readonly since?: string;
@@ -65,7 +66,7 @@ const librariesFor = async (deps: RunSyncDeps, site: SiteRef, wanted: ReadonlyAr
 const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, drives: ReadonlyArray<DriveSummary>): Promise<Result<RunSummary, StepError>> => {
   if (drives.length === 0) return failed('sync', 'no-library', `no library chosen for ${site.name}`);
   deps.logger.info('sync.started', { siteId: site.id, libraries: drives.length });
-  const summary = await deps.syncSite({ site, drives, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, dryRun: input.dryRun });
+  const summary = await deps.syncSite({ site, drives, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, concurrency: input.concurrency, dryRun: input.dryRun });
   if (summary.ok) deps.prompt.show(renderSummary(site.name, summary.value, input.dryRun));
   return summary;
 };

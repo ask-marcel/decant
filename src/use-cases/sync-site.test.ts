@@ -30,7 +30,7 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 });
 
 const run = async (
-  seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; dryRun?: boolean } = {}
+  seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number } = {}
 ): Promise<{ summary: RunSummary; files: FilesFake; logger: LoggerFake; ok: boolean }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
@@ -44,7 +44,7 @@ const run = async (
     kbRoot: 'kb',
     convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock }),
   });
-  const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', dryRun: seeds.dryRun ?? false });
+  const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', concurrency: seeds.concurrency ?? 1, dryRun: seeds.dryRun ?? false });
   return { summary: result.ok ? result.value : ({} as RunSummary), files, logger, ok: result.ok };
 };
 
@@ -310,6 +310,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       ],
       maxBytes: 50 * 1024 * 1024,
       ocrLabel: 'paddleocr (en)',
+      concurrency: 1,
       dryRun: false,
     });
 
@@ -380,5 +381,51 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     const { ok } = await run({ reader: { failWith: { kind: 'auth', message: 'token expired' } } });
 
     expect(ok).toBe(false);
+  });
+});
+
+describe('converting several items at once', () => {
+  const threeItems: DriveReaderSeed = {
+    pages: [
+      {
+        items: [item({ id: 'a', name: 'A.docx', path: 'A.docx' }), item({ id: 'b', name: 'B.docx', path: 'B.docx' }), item({ id: 'c', name: 'C.docx', path: 'C.docx' })],
+        skipped: 0,
+        deltaLink: 'c1',
+      },
+    ],
+  };
+
+  it('every item in a window is converted and recorded, whatever order they finish in', async () => {
+    const { summary, files } = await run({ reader: threeItems, concurrency: 3 });
+
+    expect(summary.converted).toBe(3);
+    expect(Object.keys(stateAfter(files).drives['b!one']?.items ?? {}).sort((left, right) => left.localeCompare(right))).toEqual(['a', 'b', 'c']);
+  });
+
+  it('a window of items saves the state once, not once per item', async () => {
+    const wide = await run({ reader: threeItems, concurrency: 3 });
+    const narrow = await run({ reader: threeItems, concurrency: 1 });
+    const savesAt = (files: FilesFake): number => files.writeLog.filter((path) => path === STATE_PATH).length;
+
+    expect(savesAt(wide.files)).toBe(3);
+    expect(savesAt(wide.files)).toBeLessThan(savesAt(narrow.files));
+  });
+
+  it('the same items converted at any width land the identical manifest', async () => {
+    const wide = stateAfter((await run({ reader: threeItems, concurrency: 3 })).files).drives['b!one']?.items;
+    const narrow = stateAfter((await run({ reader: threeItems, concurrency: 1 })).files).drives['b!one']?.items;
+
+    expect(wide).toEqual(narrow);
+  });
+
+  it('an item that fails in a window leaves the ones converted beside it recorded', async () => {
+    const reader: DriveReaderSeed = {
+      pages: [{ items: [item({ id: 'ok', name: 'Ok.docx', path: 'Ok.docx' }), item({ id: 'bad', name: 'Bad.docx', path: 'Bad.docx' })], skipped: 0, deltaLink: 'c1' }],
+      failItems: { bad: { kind: 'permanent', message: 'locked' } },
+    };
+    const { summary, files } = await run({ reader, concurrency: 2 });
+
+    expect(summary).toMatchObject({ converted: 1, failed: 1 });
+    expect(Object.keys(stateAfter(files).drives['b!one']?.items ?? {})).toEqual(['ok']);
   });
 });

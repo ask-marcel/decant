@@ -8,6 +8,9 @@ export type FilesFake = Files & {
   readonly written: Map<string, string>;
   readonly binary: Map<string, Uint8Array>;
   readonly moves: Array<{ readonly from: string; readonly to: string }>;
+  // Every text-write path in order, so a test can count how often a file was written, not just its
+  // final contents: proof that a window of work saves the state once, not once per item.
+  readonly writeLog: Array<string>;
 };
 
 export type FilesFakeSeed = {
@@ -27,10 +30,12 @@ export const createFilesFake = (seed: FilesFakeSeed = {}): FilesFake => {
   const written = new Map<string, string>(Object.entries(seed.texts ?? {}));
   const binary = new Map<string, Uint8Array>();
   const moves: Array<{ from: string; to: string }> = [];
+  const writeLog: string[] = [];
   return {
     written,
     binary,
     moves,
+    writeLog,
     readText: async (path) => {
       if (seed.failReadWith) return err(seed.failReadWith);
       const text = written.get(path);
@@ -44,6 +49,7 @@ export const createFilesFake = (seed: FilesFakeSeed = {}): FilesFake => {
     writeText: async (path, content) => {
       if (seed.failWriteWith) return err(seed.failWriteWith);
       if (seed.failWritesMatching !== undefined && path.includes(seed.failWritesMatching)) return err({ kind: 'write-failed', path, message: `cannot write ${path}` });
+      writeLog.push(path);
       written.set(path, content);
       return ok(undefined);
     },

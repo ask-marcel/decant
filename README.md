@@ -52,6 +52,7 @@ clear message instead of waiting for input.
 | `--since <day>` | With `--mailbox`, only conversations touched since this day (`2026-01-31`) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
+| `--concurrency <n>` | How many items to convert at once (default 4); `1` is strictly sequential |
 | `--no-ocr` | Do not read text out of images or scanned PDFs |
 | `--ocr-lang <code>` | Language used to read images and scanned PDFs (default `en`) |
 

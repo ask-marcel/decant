@@ -40,7 +40,7 @@ describe('wiring the command together', () => {
       clock: createClockFake(),
     });
 
-    const summaries = await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'paddleocr (en)', dryRun: false });
+    const summaries = await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'paddleocr (en)', concurrency: 1, dryRun: false });
 
     expect(summaries).toEqual({ ok: true, value: [] });
   });
@@ -63,7 +63,7 @@ describe('wiring the command together', () => {
       clock: createClockFake(),
     });
 
-    const summaries = await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', dryRun: false });
+    const summaries = await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
 
     expect(summaries.ok && summaries.value).toHaveLength(1);
     expect(JSON.parse(files.written.get(statePath) ?? '{}').drives['b!two'].deltaLink).toBe('cursor-1');
@@ -85,6 +85,6 @@ describe('wiring the command together', () => {
       clock: createClockFake(),
     });
 
-    expect(await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', dryRun: false })).toEqual({ ok: true, value: [] });
+    expect(await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false })).toEqual({ ok: true, value: [] });
   });
 });

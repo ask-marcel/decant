@@ -7,8 +7,19 @@ describe('reading what the operator asked for', () => {
   it('running the command with nothing else picks a source and writes for real', () => {
     expect(parse('')).toEqual({
       ok: true,
-      value: { command: 'sync', driveIds: [], dryRun: false, maxSizeMb: 50, ocr: true, ocrLang: 'en', assumeYes: false, mailbox: false },
+      value: { command: 'sync', driveIds: [], dryRun: false, maxSizeMb: 50, ocr: true, ocrLang: 'en', concurrency: 4, assumeYes: false, mailbox: false },
     });
+  });
+
+  it('how many items convert at once can be set, and defaults to four', () => {
+    expect(parse('--concurrency 8')).toMatchObject({ value: { concurrency: 8 } });
+    expect(parse('').ok && parse('')).toMatchObject({ value: { concurrency: 4 } });
+  });
+
+  it('a concurrency that is not a whole number of at least one is refused', () => {
+    expect(parse('--concurrency 0')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--concurrency expects a whole number of at least 1, got: 0' } });
+    expect(parse('--concurrency 2.5').ok).toBe(false);
+    expect(parse('--concurrency lots').ok).toBe(false);
   });
 
   it('the mailbox can be named outright, so the picker is not shown', () => {
