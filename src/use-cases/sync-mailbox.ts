@@ -1,8 +1,18 @@
 import type { MailFolder } from '../domain/mail-folder.ts';
 import { syncableFolders } from '../domain/mail-folder.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
-import type { MailboxState, ThreadRecord } from '../domain/mail-state.ts';
-import { emptyMailboxState, needsRender, parseMailboxState, serializeMailboxState, withFolderCursor, withLinked, withPending, withThread } from '../domain/mail-state.ts';
+import type { AttachmentRecord, MailboxState, ThreadRecord } from '../domain/mail-state.ts';
+import {
+  emptyMailboxState,
+  needsRender,
+  parseMailboxState,
+  serializeMailboxState,
+  withAttachment,
+  withFolderCursor,
+  withLinked,
+  withPending,
+  withThread,
+} from '../domain/mail-state.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -168,6 +178,7 @@ const renderOne = async (
     maxBytes: input.maxBytes,
     ocrLabel: input.ocrLabel,
     linked: state.linked,
+    attachments: state.attachments,
   });
   if (!rendered.ok) {
     deps.logger.warn('thread.failed', { cause: rendered.error.kind });
@@ -185,10 +196,11 @@ const renderOne = async (
 const recordThread = (
   state: MailboxState,
   conversationId: string,
-  thread: { readonly record: ThreadRecord; readonly linked: Readonly<Record<string, { readonly path: string }>> }
+  thread: { readonly record: ThreadRecord; readonly linked: Readonly<Record<string, { readonly path: string }>>; readonly attachments: Readonly<Record<string, AttachmentRecord>> }
 ): MailboxState => {
   const withRecord = withThread(state, conversationId, thread.record);
-  return Object.entries(thread.linked).reduce((carried, [key, record]) => withLinked(carried, key, record), withRecord);
+  const withLinks = Object.entries(thread.linked).reduce((carried, [key, record]) => withLinked(carried, key, record), withRecord);
+  return Object.entries(thread.attachments).reduce((carried, [hash, record]) => withAttachment(carried, hash, record), withLinks);
 };
 
 export const createSyncMailbox =

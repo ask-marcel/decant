@@ -36,6 +36,7 @@ const rendered = (over: Partial<RenderThreadOutcome> = {}): RenderThreadOutcome 
   thread: {
     record: { file: 'threads/2026/thread.md', messageIds: ['m1'], lastMessage: '2026-05-12T09:31:00Z', attachments: [] },
     linked: {},
+    attachments: {},
     attachmentsSkipped: [],
     attachmentsFailed: [],
   },
@@ -67,8 +68,13 @@ const run = async (
 
 const stateAfter = (
   files: FilesFake
-): { folders: Record<string, { name: string; deltaLink?: string }>; threads: Record<string, unknown>; pending: string[]; linked: Record<string, unknown> } =>
-  JSON.parse(files.written.get(STATE_PATH) ?? '{}');
+): {
+  folders: Record<string, { name: string; deltaLink?: string }>;
+  threads: Record<string, unknown>;
+  pending: string[];
+  linked: Record<string, unknown>;
+  attachments: Record<string, unknown>;
+} => JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
 describe('syncing a mailbox into the knowledge base', () => {
   it('a mailbox never synced writes one file per conversation it found', async () => {
@@ -236,6 +242,7 @@ describe('what the mailbox sync reports', () => {
         thread: {
           record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
           linked: {},
+          attachments: {},
           attachmentsSkipped: [
             { path: 'a.mp4', reason: 'a kind of file this tool does not read' },
             { path: 'b.mov', reason: 'a kind of file this tool does not read' },
@@ -270,6 +277,7 @@ describe('what the mailbox sync reports', () => {
         thread: {
           record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
           linked: { 'b!one:01ABC': { path: 'kb/Mailbox/_linked/R.docx.md' } },
+          attachments: {},
           attachmentsSkipped: [],
           attachmentsFailed: [],
         },
@@ -277,6 +285,22 @@ describe('what the mailbox sync reports', () => {
     const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome });
 
     expect(stateAfter(files).linked['b!one:01ABC']).toEqual({ path: 'kb/Mailbox/_linked/R.docx.md' });
+  });
+
+  it('the attachments one conversation stored are remembered, so the next conversation dedupes against them', async () => {
+    const outcome = (): RenderThreadOutcome =>
+      rendered({
+        thread: {
+          record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
+          linked: {},
+          attachments: { ba7816bf8f01: { name: 'Contrat.docx', paths: ['kb/Mailbox/_attachments/Contrat.docx.md'] } },
+          attachmentsSkipped: [],
+          attachmentsFailed: [],
+        },
+      });
+    const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome });
+
+    expect(stateAfter(files).attachments['ba7816bf8f01']).toEqual({ name: 'Contrat.docx', paths: ['kb/Mailbox/_attachments/Contrat.docx.md'] });
   });
 });
 
@@ -289,6 +313,7 @@ describe('reporting what did not reach the knowledge base', () => {
         thread: {
           record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
           linked: {},
+          attachments: {},
           attachmentsSkipped: [{ path: 'Demo.mp4', reason: 'a kind of file this tool does not read' }],
           attachmentsFailed: [{ path: 'Contrat.docx', reason: 'permanent: cannot convert' }],
         },

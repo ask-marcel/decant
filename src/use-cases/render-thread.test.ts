@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'bun:test';
+import { contentHash } from '../domain/content-hash.ts';
+import type { AttachmentRecord } from '../domain/mail-state.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import { shortHash } from '../domain/thread.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
@@ -18,7 +20,10 @@ import type { RenderThreadOutcome } from './render-thread.ts';
 const CONV = 'AAQkADk0...=';
 const THREAD_RELATIVE = `threads/2026/2026-05-12 Contrat MOOV ${shortHash(CONV)}.md`;
 const THREAD_FILE = `kb/Mailbox/${THREAD_RELATIVE}`;
-const ATTACHMENT_FOLDER = `kb/Mailbox/threads/2026/2026-05-12 Contrat MOOV ${shortHash(CONV)}_attachments`;
+// Attachments live in one store shared across every thread, not in a folder beside each thread.
+const ATTACHMENTS_STORE = 'kb/Mailbox/_attachments';
+// The bytes the mail-reader fake hands back for attachment `att1`, so a test can address its store copy.
+const bytesOf = (attachmentId: string): Uint8Array => new TextEncoder().encode(`bytes ${attachmentId}`);
 
 const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   id: 'm1',
@@ -33,7 +38,13 @@ const message = (over: Partial<MailMessage> = {}): MailMessage => ({
 });
 
 const run = async (
-  seeds: { reader?: MailReaderSeed; drive?: DriveReaderSeed; files?: FilesFakeSeed; linked?: Record<string, { path: string }> } = {}
+  seeds: {
+    reader?: MailReaderSeed;
+    drive?: DriveReaderSeed;
+    files?: FilesFakeSeed;
+    linked?: Record<string, { path: string }>;
+    attachments?: Record<string, AttachmentRecord>;
+  } = {}
 ): Promise<{ outcome: RenderThreadOutcome | undefined; files: FilesFake; logger: LoggerFake; ok: boolean }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
@@ -48,7 +59,7 @@ const run = async (
     mailboxRoot: 'kb/Mailbox',
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), unpackArchive: drive.localArchive }),
   });
-  const result = await render({ conversationId: CONV, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', linked: seeds.linked ?? {} });
+  const result = await render({ conversationId: CONV, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', linked: seeds.linked ?? {}, attachments: seeds.attachments ?? {} });
   return { outcome: result.ok ? result.value : undefined, files, logger, ok: result.ok };
 };
 
@@ -91,7 +102,7 @@ describe('writing one conversation as one file', () => {
     const conversations = { [CONV]: [message({ hasAttachments: true })] };
     const attachments = { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 10, isInline: false }] };
     const { files } = await run({ reader: { conversations, attachments } });
-    const written = files.written.get(`${ATTACHMENT_FOLDER}/Contrat.docx.md`) ?? '';
+    const written = files.written.get(`${ATTACHMENTS_STORE}/Contrat.docx.md`) ?? '';
 
     expect(written).toContain(`source: conversation ${CONV}`);
     expect(written).toContain('site: Mailbox');
@@ -152,19 +163,19 @@ describe('keeping what a conversation carried', () => {
     attachments: { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false }] },
   };
 
-  it('an attachment is converted into a folder beside the conversation and listed in its head', async () => {
+  it('an attachment is converted once into the shared store and listed in the head', async () => {
     const { outcome, files } = await run({ reader: withAttachment });
 
-    expect(files.written.has(`${ATTACHMENT_FOLDER}/Contrat.docx.md`)).toBe(true);
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENT_FOLDER}/Contrat.docx.md`]);
+    expect(files.written.has(`${ATTACHMENTS_STORE}/Contrat.docx.md`)).toBe(true);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENTS_STORE}/Contrat.docx.md`]);
   });
 
-  it('the head points at what the conversation carried the way a reader would open it', async () => {
+  it('the head points at the shared store, climbing out of the thread folder to reach it', async () => {
     const { files } = await run({ reader: withAttachment });
     const written = files.written.get(THREAD_FILE) ?? '';
 
     expect(written).toContain('attachments:');
-    expect(written).toContain(`  - ./2026-05-12 Contrat MOOV ${shortHash(CONV)}_attachments/Contrat.docx.md`);
+    expect(written).toContain('  - ../../_attachments/Contrat.docx.md');
     expect(written).not.toContain('  - kb/Mailbox/');
   });
 
@@ -173,18 +184,20 @@ describe('keeping what a conversation carried', () => {
     const attachments = { m2: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 10, isInline: false }] };
     const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
 
-    expect(files.written.get(`${ATTACHMENT_FOLDER}/Contrat.docx.md`)).toContain('modified_by: David Chang');
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Contrat.docx.md`)).toContain('modified_by: David Chang');
   });
 
-  it('a revised file resent under the same name is kept beside the first, not on top of it', async () => {
+  it('a revised file resent under the same name is stored beside the first, told apart by content', async () => {
     const messages = [message({ id: 'm1', hasAttachments: true }), message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true })];
     const attachments = {
       m1: [{ id: 'att1', name: 'Budget.xlsx', contentType: 'application/vnd', size: 4096, isInline: false }],
-      m2: [{ id: 'att2ABCDEF', name: 'Budget.xlsx', contentType: 'application/vnd', size: 5120, isInline: false }],
+      m2: [{ id: 'att2', name: 'Budget.xlsx', contentType: 'application/vnd', size: 5120, isInline: false }],
     };
     const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
+    const stored = outcome?.kind === 'rendered' ? outcome.thread.record.attachments : [];
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENT_FOLDER}/Budget.xlsx.md`, `${ATTACHMENT_FOLDER}/Budget-att2ABCD.xlsx.md`]);
+    expect(stored[0]).toBe(`${ATTACHMENTS_STORE}/Budget.xlsx.md`);
+    expect(stored[1]).toMatch(/^kb\/Mailbox\/_attachments\/Budget-[0-9a-f]{8}\.xlsx\.md$/);
   });
 
   it('a signature image riding on every message is converted once, not once per message', async () => {
@@ -192,7 +205,48 @@ describe('keeping what a conversation carried', () => {
     const signature = [{ id: 'sig', name: 'image001.png', contentType: 'image/png', size: 100, isInline: true }];
     const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments: { m1: signature, m2: signature } } });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENT_FOLDER}/image001.png`, `${ATTACHMENT_FOLDER}/image001.png.md`]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENTS_STORE}/image001.png`, `${ATTACHMENTS_STORE}/image001.png.md`]);
+  });
+
+  it('a file another conversation already stored is referenced, not converted again', async () => {
+    const store: Record<string, AttachmentRecord> = { [contentHash(bytesOf('att1'))]: { name: 'Contrat.docx', paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`] } };
+    const { outcome, files } = await run({ reader: withAttachment, attachments: store });
+
+    expect(files.written.has(`${ATTACHMENTS_STORE}/Contrat.docx.md`)).toBe(false);
+    expect(files.written.get(THREAD_FILE)).toContain('  - ../../_attachments/Contrat.docx.md');
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENTS_STORE}/Contrat.docx.md`]);
+  });
+
+  it('what a conversation stored is handed back, keyed by content, for the next conversation to reuse', async () => {
+    const { outcome } = await run({ reader: withAttachment });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.attachments[contentHash(bytesOf('att1'))]).toEqual({
+      name: 'Contrat.docx',
+      paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`],
+    });
+  });
+
+  it('a different file whose name is already taken in the store is told apart by its content', async () => {
+    const store: Record<string, AttachmentRecord> = { otherhash000: { name: 'Contrat.docx', paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`] } };
+    const { outcome } = await run({ reader: withAttachment, attachments: store });
+    const stored = outcome?.kind === 'rendered' ? outcome.thread.record.attachments : [];
+
+    expect(stored[0]).toMatch(/^kb\/Mailbox\/_attachments\/Contrat-[0-9a-f]{8}\.docx\.md$/);
+  });
+
+  it('a message flagged as carrying nothing is passed over even when attachments are listed for it', async () => {
+    const messages = [message({ id: 'm1', hasAttachments: false })];
+    const attachments = { m1: [{ id: 'att1', name: 'Ghost.docx', contentType: 'application/vnd', size: 10, isInline: false }] };
+    const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([]);
+  });
+
+  it('an attachment whose bytes cannot be fetched is counted as failed, and the thread still lands', async () => {
+    const { outcome, files } = await run({ reader: { ...withAttachment, failCalls: { attachmentBytes: { kind: 'transient', message: 'timeout' } } } });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsFailed).toEqual([{ path: `${THREAD_RELATIVE}: Contrat.docx`, reason: 'transient: timeout' }]);
+    expect(files.written.has(THREAD_FILE)).toBe(true);
   });
 
   it('a message that carries nothing is never asked for its attachments', async () => {
@@ -247,7 +301,7 @@ describe('keeping what a conversation carried', () => {
     const attachments = { m2: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 10, isInline: false }] };
     const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENT_FOLDER}/Contrat.docx.md`]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENTS_STORE}/Contrat.docx.md`]);
   });
 
   it('an attachment Microsoft would not convert is counted as failed without losing the thread', async () => {

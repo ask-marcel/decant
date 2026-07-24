@@ -1,12 +1,14 @@
+import { relative as pathBetween } from 'node:path';
+import { contentHash } from '../domain/content-hash.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { kbDocument } from '../domain/kb-document.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
-import type { ThreadRecord } from '../domain/mail-state.ts';
+import type { AttachmentRecord, ThreadRecord } from '../domain/mail-state.ts';
 import { renderFrontMatter } from '../domain/front-matter.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
-import { disambiguateSegment } from '../domain/kb-path.ts';
+import { disambiguateSegment, safeSegment } from '../domain/kb-path.ts';
 import { participantsOf, renderThread, threadFileName, threadTitle, threadYear } from '../domain/thread.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
@@ -16,7 +18,7 @@ import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
-import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
+import type { MailAttachment, MailReader, MailReaderError } from './ports/mail-reader.ts';
 
 export type RenderThreadDeps = {
   readonly reader: MailReader;
@@ -34,11 +36,15 @@ export type RenderThreadInput = {
   readonly ocrLabel: string;
   // Files already pulled from SharePoint by an earlier thread, so one link is fetched once.
   readonly linked: Readonly<Record<string, { readonly path: string }>>;
+  // The shared attachment store as earlier threads left it, keyed by content address, so a file
+  // sent across many threads is converted once and later threads reference what is on disk.
+  readonly attachments: Readonly<Record<string, AttachmentRecord>>;
 };
 
 export type RenderedThread = {
   readonly record: ThreadRecord;
   readonly linked: Readonly<Record<string, { readonly path: string }>>;
+  readonly attachments: Readonly<Record<string, AttachmentRecord>>;
   readonly attachmentsSkipped: ReadonlyArray<ReportEntry>;
   readonly attachmentsFailed: ReadonlyArray<ReportEntry>;
 };
@@ -134,41 +140,74 @@ const pullLinked = async (deps: RenderThreadDeps, driveId: string, itemId: strin
   return { path };
 };
 
-type AttachmentTally = { readonly paths: ReadonlyArray<string>; readonly skipped: ReadonlyArray<ReportEntry>; readonly failed: ReadonlyArray<ReportEntry> };
+const ATTACHMENTS_FOLDER = '_attachments';
 
-const attachmentsOf = async (
+type AttachmentTally = {
+  readonly paths: ReadonlyArray<string>;
+  readonly store: Readonly<Record<string, AttachmentRecord>>;
+  readonly skipped: ReadonlyArray<ReportEntry>;
+  readonly failed: ReadonlyArray<ReportEntry>;
+};
+
+type Placed = { readonly paths: ReadonlyArray<string>; readonly skipped?: ReportEntry; readonly failed?: ReportEntry };
+
+// One attachment into the shared store. Its content address decides everything: a content already
+// stored is referenced without being converted again; a new content is converted once, under its
+// own name, disambiguated by content hash only when a different file already holds that name.
+const placeAttachment = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
-  parts: ReadonlyArray<ThreadPart>,
-  folder: string,
+  store: Record<string, AttachmentRecord>,
+  usedNames: Set<string>,
+  messageId: string,
+  attachment: MailAttachment,
   stamp: DocumentStamp
-): Promise<AttachmentTally> => {
+): Promise<Placed> => {
+  // The size cap is checked before the bytes are pulled, so a file past it is reported without ever
+  // being downloaded. A kind we do not read is caught by the converter, which is the one authority
+  // on that; by then the file is already in hand, so the only skip it can report is unsupported.
+  if (attachment.size > input.maxBytes) return { paths: [], skipped: { path: attachment.name, reason: tooLargeReason(input.maxBytes) } };
+  const raw = await deps.reader.attachmentBytes(messageId, attachment.id);
+  if (!raw.ok) return { paths: [], failed: { path: attachment.name, reason: `${raw.error.kind}: ${raw.error.message}` } };
+  const hash = contentHash(raw.value);
+  const seen = store[hash];
+  if (seen !== undefined) return { paths: seen.paths };
+  const desired = safeSegment(attachment.name);
+  const asName = usedNames.has(desired) ? disambiguateSegment(attachment.name, hash) : desired;
+  const folder = `${deps.mailboxRoot}/${ATTACHMENTS_FOLDER}`;
+  const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, asName });
+  if (outcome.kind === 'skipped') return { paths: [], skipped: { path: attachment.name, reason: UNSUPPORTED_REASON } };
+  if (outcome.kind === 'failed') return { paths: [], failed: { path: attachment.name, reason: outcome.reason } };
+  store[hash] = { name: asName, paths: outcome.outputs };
+  usedNames.add(asName);
+  return { paths: outcome.outputs };
+};
+
+const attachmentsOf = async (deps: RenderThreadDeps, input: RenderThreadInput, parts: ReadonlyArray<ThreadPart>, stamp: DocumentStamp): Promise<AttachmentTally> => {
+  const store: Record<string, AttachmentRecord> = { ...input.attachments };
+  const usedNames = new Set<string>(Object.values(store).map((record) => record.name));
   const paths: string[] = [];
   const skipped: ReportEntry[] = [];
   const failed: ReportEntry[] = [];
   // A signature logo rides on every message of a thread, so the same file is offered many times.
-  // Two attachments count as the same when their name and their length both match: converting one
-  // of those twice writes the same bytes twice. A revised file resent under the same name has a
-  // different length, so it is kept too, under a name of its own rather than overwriting the first.
-  const converted = new Set<string>();
-  const usedNames = new Set<string>();
+  // Name and length identify a repeat before it is even fetched, so it is pulled once per thread,
+  // not once per message; the content address then dedupes it across every other thread as well.
+  const seenInThread = new Set<string>();
   for (const part of parts.filter((candidate) => candidate.message.hasAttachments)) {
     const listed = await deps.reader.attachments(part.message.id);
     if (!listed.ok) {
       failed.push({ path: `message ${part.message.id}`, reason: `could not list what it carried: ${listed.error.message}` });
       continue;
     }
-    for (const attachment of listed.value.filter((candidate) => !converted.has(`${candidate.name}:${candidate.size}`))) {
-      converted.add(`${attachment.name}:${attachment.size}`);
-      const asName = usedNames.has(attachment.name) ? disambiguateSegment(attachment.name, attachment.id) : attachment.name;
-      usedNames.add(asName);
-      const outcome = await deps.convertAttachment({ messageId: part.message.id, attachment, folder, stamp, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, asName });
-      if (outcome.kind === 'converted') paths.push(...outcome.outputs);
-      if (outcome.kind === 'skipped') skipped.push({ path: attachment.name, reason: outcome.reason === 'too-large' ? tooLargeReason(input.maxBytes) : UNSUPPORTED_REASON });
-      if (outcome.kind === 'failed') failed.push({ path: attachment.name, reason: outcome.reason });
+    for (const attachment of listed.value.filter((candidate) => !seenInThread.has(`${candidate.name}:${candidate.size}`))) {
+      seenInThread.add(`${attachment.name}:${attachment.size}`);
+      const placed = await placeAttachment(deps, input, store, usedNames, part.message.id, attachment, stamp);
+      for (const path of placed.paths) if (!paths.includes(path)) paths.push(path);
+      if (placed.skipped) skipped.push(placed.skipped);
+      if (placed.failed) failed.push(placed.failed);
     }
   }
-  return { paths, skipped, failed };
+  return { paths, store, skipped, failed };
 };
 
 export const createRenderThread =
@@ -194,16 +233,18 @@ const writeThread = async (
 ): Promise<Result<RenderThreadOutcome, MailReaderError>> => {
   const fileName = threadFileName({ conversationId: input.conversationId, subject: first.subject, firstReceived: first.received });
   const relative = `threads/${threadYear(first.received)}/${fileName}`;
-  const folder = `${deps.mailboxRoot}/threads/${threadYear(first.received)}/${fileName.replace(/\.md$/, '')}_attachments`;
   const stamp = stampFor(deps, input, first, last);
-  const attachments = await attachmentsOf(deps, input, parts, folder, stamp);
+  const attachments = await attachmentsOf(deps, input, parts, stamp);
   const links = await linkedFiles(
     deps,
     input,
     parts.map((part) => part.message)
   );
+  // Attachments live in the shared store one level up from the thread, so their references climb out
+  // of the thread's own folder rather than sitting beside it.
   const here = `${deps.mailboxRoot}/threads/${threadYear(first.received)}`;
-  const header = threadHeader(input, parts, first, last, stamp.syncedAt, relativeTo(here, attachments.paths), relativeTo(deps.mailboxRoot, links.paths));
+  const attachmentRefs = attachments.paths.map((path) => pathBetween(here, path));
+  const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, relativeTo(deps.mailboxRoot, links.paths));
   const written = await deps.files.writeText(
     `${deps.mailboxRoot}/${relative}`,
     `${header}\n\n${renderThread({ conversationId: input.conversationId, subject: first.subject, parts })}\n`
@@ -217,6 +258,7 @@ const writeThread = async (
     thread: {
       record: { file: relative, messageIds: parts.map((part) => part.message.id), lastMessage: last.received, attachments: attachments.paths },
       linked: links.linked,
+      attachments: attachments.store,
       attachmentsSkipped: inThread(attachments.skipped),
       attachmentsFailed: inThread(attachments.failed),
     },

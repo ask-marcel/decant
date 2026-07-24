@@ -114,10 +114,10 @@ kb/
   Mailbox/
     .sync-state.json                a cursor per folder, and what every conversation produced
     _sync-report.md                 what did not make it in, and why
+    _attachments/                   every file a mail carried, stored once by content
     _linked/                        SharePoint files the mail pointed at, each pulled once
     threads/2026/
       2026-05-12 Contrat MOOV a3f9c1.md            the whole conversation, oldest message first
-      2026-05-12 Contrat MOOV a3f9c1_attachments/  what those messages carried
 ```
 
 One file per conversation, not per message. Its name is the day the thread started, its subject,
@@ -128,9 +128,10 @@ every folder its messages landed in. Quoted reply chains are stripped, since the
 quoted is already its own section.
 
 Attachments follow the same conversion rules as SharePoint files, a zip included: it is kept and
-also unpacked, one markdown file per document inside. A signature image riding on every message of
-a thread is converted once; a revised file resent under the same name is kept beside the first
-rather than overwriting it.
+also unpacked, one markdown file per document inside. Every attachment is stored once in the shared
+`_attachments/` folder, addressed by the SHA-256 of its bytes, so a file sent across many threads is
+converted a single time and every conversation after the first references the copy already on disk.
+Two different files that happen to share a name are told apart by a short content fingerprint.
 
 A first mailbox run is slow: Outlook hands back changes ten messages at a time and there is no way
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
