@@ -16,6 +16,7 @@ import type { Clock } from './ports/clock.ts';
 import type { DriveReader, DriveSummary } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
+import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 
 export const STATE_FILE_NAME = '.sync-state.json';
@@ -26,6 +27,7 @@ export type SyncSiteDeps = {
   readonly convertFile: ConvertFile;
   readonly clock: Clock;
   readonly logger: Logger;
+  readonly progress: Progress;
   readonly kbRoot: string;
 };
 
@@ -158,19 +160,36 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
   return saved.ok ? ok({ state: next }) : saved;
 };
 
+// What the moving counter names for each item: the path it sits at, or the id of one being archived.
+const labelOf = (work: WorkItem): string => (work.kind === 'archive' ? work.itemId : work.item.path);
+
 const processQueue = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, state: SiteState, statePath: string): Promise<Result<DriveOutcome, StepError>> => {
   let current = state;
   let summary = EMPTY;
   let notes = NO_NOTES;
+  deps.progress.start(current.drives[drive.id]?.pending.length ?? 0, 'Converting');
   for (;;) {
     const driveState = current.drives[drive.id];
-    if (driveState === undefined || driveState.pending.length === 0) return ok({ state: current, summary, notes });
+    if (driveState === undefined || driveState.pending.length === 0) {
+      deps.progress.done();
+      return ok({ state: current, summary, notes });
+    }
     const window = driveState.pending.slice(0, input.concurrency);
-    const results = await Promise.all(window.map((work) => applyWork(deps, input, drive, driveState, work)));
+    const results = await Promise.all(
+      window.map((work) =>
+        applyWork(deps, input, drive, driveState, work).then((outcome) => {
+          deps.progress.step(labelOf(work));
+          return outcome;
+        })
+      )
+    );
     const folded = results.reduce((manifest, done) => done.update(manifest), driveState);
     const advanced = withDrive(current, drive.id, { ...folded, pending: driveState.pending.slice(window.length) });
     const saved = await save(deps.files, statePath, advanced, input.dryRun);
-    if (!saved.ok) return saved;
+    if (!saved.ok) {
+      deps.progress.done();
+      return saved;
+    }
     current = advanced;
     for (const done of results) {
       summary = add(summary, done.counted);

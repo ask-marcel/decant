@@ -10,6 +10,8 @@ import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import { createMailReaderFake } from '../test-helpers/mail-reader-fake.ts';
 import type { MailReaderSeed } from '../test-helpers/mail-reader-fake.ts';
+import { createProgressFake } from '../test-helpers/progress-fake.ts';
+import type { ProgressFake } from '../test-helpers/progress-fake.ts';
 import type { RenderThreadInput, RenderThreadOutcome } from './render-thread.ts';
 import { createSyncMailbox } from './sync-mailbox.ts';
 import type { RunSummary } from './sync-site.ts';
@@ -53,15 +55,26 @@ const run = async (
     outcome?: (input: RenderThreadInput) => RenderThreadOutcome;
     failThread?: string;
   } = {}
-): Promise<{ summary: RunSummary; files: FilesFake; logger: LoggerFake; asked: string[]; ok: boolean; error?: StepError; reader: ReturnType<typeof createMailReaderFake> }> => {
+): Promise<{
+  summary: RunSummary;
+  files: FilesFake;
+  logger: LoggerFake;
+  progress: ProgressFake;
+  asked: string[];
+  ok: boolean;
+  error?: StepError;
+  reader: ReturnType<typeof createMailReaderFake>;
+}> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
+  const progress = createProgressFake();
   const reader = createMailReaderFake(seeds.reader);
   const asked: string[] = [];
   const syncMailbox = createSyncMailbox({
     reader,
     files,
     logger,
+    progress,
     clock: createClockFake(),
     kbRoot: 'kb',
     renderThread: async (input) => {
@@ -77,7 +90,7 @@ const run = async (
     dryRun: seeds.dryRun ?? false,
     since: seeds.since,
   });
-  return { summary: result.ok ? result.value : ({} as RunSummary), files, logger, asked, ok: result.ok, error: result.ok ? undefined : result.error, reader };
+  return { summary: result.ok ? result.value : ({} as RunSummary), files, logger, progress, asked, ok: result.ok, error: result.ok ? undefined : result.error, reader };
 };
 
 const stateAfter = (
@@ -198,6 +211,17 @@ describe('syncing a mailbox into the knowledge base', () => {
 
     expect(asked).toEqual(['conv-9']);
     expect(logger.calls.some((call) => call.event === 'mail.resuming')).toBe(true);
+  });
+
+  it('a window whose state cannot be saved ends the run naming the save step', async () => {
+    const halfDone = serializeMailboxState({ ...emptyMailboxState(), pending: ['conv-9'] });
+    const { ok: succeeded, error } = await run({
+      files: { texts: { [STATE_PATH]: halfDone }, failWriteWith: { kind: 'write-failed', path: 'kb', message: 'disk full' } },
+      reader: { folders: [folder()] },
+    });
+
+    expect(succeeded).toBe(false);
+    expect(error?.step).toBe('saveMailState');
   });
 });
 
@@ -428,6 +452,14 @@ describe('rendering several conversations at once', () => {
 
     expect(summary.converted).toBe(3);
     expect([...asked].sort((left, right) => left.localeCompare(right))).toEqual(['conv-a', 'conv-b', 'conv-c']);
+  });
+
+  it('the progress counter shows the total up front and ticks once per conversation', async () => {
+    const { progress } = await run({ reader: threeConversations, concurrency: 3 });
+
+    expect(progress.started).toEqual([{ total: 3, what: 'Rendering' }]);
+    expect(progress.steps).toHaveLength(3);
+    expect(progress.dones).toHaveLength(1);
   });
 
   it('a window of conversations saves the state once, not once per conversation', async () => {

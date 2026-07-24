@@ -139,6 +139,10 @@ A first mailbox run is slow: Outlook hands back changes ten messages at a time a
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
 are cheap, reading only what changed. `--since` narrows what gets *written*, not what gets swept.
 
+While it works, a counter on the terminal shows how far it has got (`Converting 128/6002 …`), so a
+long run is never silent. It draws only when stderr is a terminal, so piping the output to a file or
+running headless leaves no counter behind.
+
 ## Re-running
 
 Each run stores the cursor Graph gives it, so a second run reads only what changed: an unchanged

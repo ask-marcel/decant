@@ -18,6 +18,7 @@ import { ok } from '../domain/result.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
+import type { Progress } from './ports/progress.ts';
 import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
@@ -33,6 +34,7 @@ export type SyncMailboxDeps = {
   readonly renderThread: RenderThread;
   readonly clock: Clock;
   readonly logger: Logger;
+  readonly progress: Progress;
   readonly kbRoot: string;
 };
 
@@ -224,14 +226,25 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
   let current = state;
   let summary = EMPTY;
   let notes: RunNotes = { skipped: [], failed: [], archived: [] };
+  deps.progress.start(current.pending.length, 'Rendering');
   for (;;) {
     if (current.pending.length === 0) break;
     const window = current.pending.slice(0, input.concurrency);
-    const results = await Promise.all(window.map((conversationId) => renderOne(deps, input, current, conversationId)));
+    const results = await Promise.all(
+      window.map((conversationId) =>
+        renderOne(deps, input, current, conversationId).then((outcome) => {
+          deps.progress.step(conversationId);
+          return outcome;
+        })
+      )
+    );
     const folded = results.reduce((carried, done) => done.apply(carried), current);
     const advanced = withPending(folded, current.pending.slice(window.length));
     const saved = await save(deps.files, statePath, advanced, input.dryRun);
-    if (!saved.ok) return saved;
+    if (!saved.ok) {
+      deps.progress.done();
+      return saved;
+    }
     current = advanced;
     for (const done of results) {
       summary = {
@@ -243,6 +256,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
       notes = { skipped: [...notes.skipped, ...(done.notes.skipped ?? [])], failed: [...notes.failed, ...(done.notes.failed ?? [])], archived: notes.archived };
     }
   }
+  deps.progress.done();
   const finished = { ...current, lastRun: deps.clock.nowIso() };
   const saved = await save(deps.files, statePath, finished, input.dryRun);
   if (!saved.ok) return saved;

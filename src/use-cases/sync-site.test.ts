@@ -9,6 +9,8 @@ import { createFilesFake } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
+import { createProgressFake } from '../test-helpers/progress-fake.ts';
+import type { ProgressFake } from '../test-helpers/progress-fake.ts';
 import { createConvertFile } from './convert-file.ts';
 import { createSyncSite } from './sync-site.ts';
 import type { RunSummary } from './sync-site.ts';
@@ -31,21 +33,23 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 
 const run = async (
   seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number } = {}
-): Promise<{ summary: RunSummary; files: FilesFake; logger: LoggerFake; ok: boolean }> => {
+): Promise<{ summary: RunSummary; files: FilesFake; logger: LoggerFake; progress: ProgressFake; ok: boolean }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
+  const progress = createProgressFake();
   const reader = createDriveReaderFake(seeds.reader);
   const clock = createClockFake();
   const syncSite = createSyncSite({
     reader,
     files,
     logger,
+    progress,
     clock,
     kbRoot: 'kb',
     convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock }),
   });
   const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', concurrency: seeds.concurrency ?? 1, dryRun: seeds.dryRun ?? false });
-  return { summary: result.ok ? result.value : ({} as RunSummary), files, logger, ok: result.ok };
+  return { summary: result.ok ? result.value : ({} as RunSummary), files, logger, progress, ok: result.ok };
 };
 
 const stateAfter = (
@@ -300,7 +304,15 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       ],
     });
     const clock = createClockFake();
-    const syncSite = createSyncSite({ reader, files, logger, clock, kbRoot: 'kb', convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock }) });
+    const syncSite = createSyncSite({
+      reader,
+      files,
+      logger,
+      progress: createProgressFake(),
+      clock,
+      kbRoot: 'kb',
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock }),
+    });
 
     const result = await syncSite({
       site,
@@ -402,6 +414,14 @@ describe('converting several items at once', () => {
     expect(Object.keys(stateAfter(files).drives['b!one']?.items ?? {}).sort((left, right) => left.localeCompare(right))).toEqual(['a', 'b', 'c']);
   });
 
+  it('the progress counter shows the total up front and ticks once per item, named by its path', async () => {
+    const { progress } = await run({ reader: threeItems, concurrency: 3 });
+
+    expect(progress.started).toEqual([{ total: 3, what: 'Converting' }]);
+    expect([...progress.steps].sort((left, right) => left.localeCompare(right))).toEqual(['A.docx', 'B.docx', 'C.docx']);
+    expect(progress.dones).toHaveLength(1);
+  });
+
   it('a window of items saves the state once, not once per item', async () => {
     const wide = await run({ reader: threeItems, concurrency: 3 });
     const narrow = await run({ reader: threeItems, concurrency: 1 });
@@ -452,6 +472,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
       reader,
       files,
       logger: createLoggerFake(),
+      progress: createProgressFake(),
       clock,
       kbRoot: 'kb',
       convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock }),
@@ -489,6 +510,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
       reader,
       files,
       logger: createLoggerFake(),
+      progress: createProgressFake(),
       clock,
       kbRoot: 'kb',
       convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock }),

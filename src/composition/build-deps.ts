@@ -7,6 +7,7 @@ import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
 import { createWinstonLogger } from '../infra/logger.ts';
 import { createBunShell, createNoOcr, createPaddleOcr } from '../infra/ocr-paddle.ts';
+import { createStderrProgress } from '../infra/progress-bar.ts';
 import { createStdinPrompt } from '../infra/prompt-stdin.ts';
 import { createConvertAttachment } from '../use-cases/convert-attachment.ts';
 import { createConvertFile } from '../use-cases/convert-file.ts';
@@ -17,6 +18,7 @@ import type { MailReader } from '../use-cases/ports/mail-reader.ts';
 import type { Files } from '../use-cases/ports/files.ts';
 import type { Logger } from '../use-cases/ports/logger.ts';
 import type { Ocr } from '../use-cases/ports/ocr.ts';
+import type { Progress } from '../use-cases/ports/progress.ts';
 import type { Prompt } from '../use-cases/ports/prompt.ts';
 import { createRunSync } from '../use-cases/run-sync.ts';
 import type { RunSync } from '../use-cases/run-sync.ts';
@@ -39,6 +41,7 @@ export type DepOverrides = {
   readonly ocr?: Ocr;
   readonly prompt?: Prompt;
   readonly clock?: Clock;
+  readonly progress?: Progress;
 };
 
 // `interactive: false` keeps a lapsed sign-in from opening a browser mid-run: the call fails with
@@ -65,11 +68,12 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const mail = overrides.mail ?? createMailReaderFromCall(createMarcelCall(api));
   const ocr = overrides.ocr ?? (config.ocr ? createPaddleOcr({ shell: createBunShell(), lang: config.ocrLang }) : createNoOcr());
   const prompt = overrides.prompt ?? createStdinPrompt(() => console);
+  const progress = overrides.progress ?? createStderrProgress();
   const convertFile = createConvertFile({ reader, files, ocr, clock });
-  const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, kbRoot: config.kbRoot });
+  const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot });
   const listSyncedSources = createListSyncedSources({ files, logger, kbRoot: config.kbRoot });
   const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, unpackArchive: reader.localArchive });
   const renderThread = createRenderThread({ reader: mail, drive: reader, files, convertAttachment, clock, logger, mailboxRoot: `${config.kbRoot}/Mailbox` });
-  const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, kbRoot: config.kbRoot });
+  const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot });
   return { logger, runSync: createRunSync({ reader, prompt, logger, syncSite, listSyncedSources, savedDrives: savedDrivesFrom(files, logger, config.kbRoot), syncMailbox }) };
 };
