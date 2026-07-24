@@ -8,7 +8,7 @@ import type { AttachmentRecord, ThreadRecord } from '../domain/mail-state.ts';
 import { renderFrontMatter } from '../domain/front-matter.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
-import { disambiguateSegment, safeSegment } from '../domain/kb-path.ts';
+import { disambiguateSegment } from '../domain/kb-path.ts';
 import { participantsOf, renderThread, threadFileName, threadTitle, threadYear } from '../domain/thread.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
@@ -152,13 +152,13 @@ type AttachmentTally = {
 type Placed = { readonly paths: ReadonlyArray<string>; readonly skipped?: ReportEntry; readonly failed?: ReportEntry };
 
 // One attachment into the shared store. Its content address decides everything: a content already
-// stored is referenced without being converted again; a new content is converted once, under its
-// own name, disambiguated by content hash only when a different file already holds that name.
+// stored is referenced without being converted again; a new content is converted once, under a name
+// that always carries a short slice of that address so the name is fixed by the bytes alone. That is
+// what lets conversations render at the same time without ever racing to claim a name on disk.
 const placeAttachment = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
   store: Record<string, AttachmentRecord>,
-  usedNames: Set<string>,
   messageId: string,
   attachment: MailAttachment,
   stamp: DocumentStamp
@@ -172,20 +172,17 @@ const placeAttachment = async (
   const hash = contentHash(raw.value);
   const seen = store[hash];
   if (seen !== undefined) return { paths: seen.paths };
-  const desired = safeSegment(attachment.name);
-  const asName = usedNames.has(desired) ? disambiguateSegment(attachment.name, hash) : desired;
+  const asName = disambiguateSegment(attachment.name, hash);
   const folder = `${deps.mailboxRoot}/${ATTACHMENTS_FOLDER}`;
   const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, asName });
   if (outcome.kind === 'skipped') return { paths: [], skipped: { path: attachment.name, reason: UNSUPPORTED_REASON } };
   if (outcome.kind === 'failed') return { paths: [], failed: { path: attachment.name, reason: outcome.reason } };
   store[hash] = { name: asName, paths: outcome.outputs };
-  usedNames.add(asName);
   return { paths: outcome.outputs };
 };
 
 const attachmentsOf = async (deps: RenderThreadDeps, input: RenderThreadInput, parts: ReadonlyArray<ThreadPart>, stamp: DocumentStamp): Promise<AttachmentTally> => {
   const store: Record<string, AttachmentRecord> = { ...input.attachments };
-  const usedNames = new Set<string>(Object.values(store).map((record) => record.name));
   const paths: string[] = [];
   const skipped: ReportEntry[] = [];
   const failed: ReportEntry[] = [];
@@ -201,7 +198,7 @@ const attachmentsOf = async (deps: RenderThreadDeps, input: RenderThreadInput, p
     }
     for (const attachment of listed.value.filter((candidate) => !seenInThread.has(`${candidate.name}:${candidate.size}`))) {
       seenInThread.add(`${attachment.name}:${attachment.size}`);
-      const placed = await placeAttachment(deps, input, store, usedNames, part.message.id, attachment, stamp);
+      const placed = await placeAttachment(deps, input, store, part.message.id, attachment, stamp);
       for (const path of placed.paths) if (!paths.includes(path)) paths.push(path);
       if (placed.skipped) skipped.push(placed.skipped);
       if (placed.failed) failed.push(placed.failed);

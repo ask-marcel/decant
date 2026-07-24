@@ -132,7 +132,8 @@ Attachments follow the same conversion rules as SharePoint files, a zip included
 also unpacked, one markdown file per document inside. Every attachment is stored once in the shared
 `_attachments/` folder, addressed by the SHA-256 of its bytes, so a file sent across many threads is
 converted a single time and every conversation after the first references the copy already on disk.
-Two different files that happen to share a name are told apart by a short content fingerprint.
+Each is stored under its own name plus a short slice of that address (`Contrat-a3f9c1b2.docx`), which
+fixes the name to the bytes so conversations rendering in parallel never collide on disk.
 
 A first mailbox run is slow: Outlook hands back changes ten messages at a time and there is no way
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs

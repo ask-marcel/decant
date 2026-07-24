@@ -44,7 +44,15 @@ const rendered = (over: Partial<RenderThreadOutcome> = {}): RenderThreadOutcome 
 });
 
 const run = async (
-  seeds: { reader?: MailReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; since?: string; outcome?: (input: RenderThreadInput) => RenderThreadOutcome; failThread?: string } = {}
+  seeds: {
+    reader?: MailReaderSeed;
+    files?: FilesFakeSeed;
+    dryRun?: boolean;
+    since?: string;
+    concurrency?: number;
+    outcome?: (input: RenderThreadInput) => RenderThreadOutcome;
+    failThread?: string;
+  } = {}
 ): Promise<{ summary: RunSummary; files: FilesFake; logger: LoggerFake; asked: string[]; ok: boolean; error?: StepError; reader: ReturnType<typeof createMailReaderFake> }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
@@ -62,7 +70,13 @@ const run = async (
       return ok(seeds.outcome === undefined ? rendered() : seeds.outcome(input));
     },
   });
-  const result = await syncMailbox({ maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', dryRun: seeds.dryRun ?? false, since: seeds.since });
+  const result = await syncMailbox({
+    maxBytes: 50 * 1024 * 1024,
+    ocrLabel: 'paddleocr (en)',
+    concurrency: seeds.concurrency ?? 1,
+    dryRun: seeds.dryRun ?? false,
+    since: seeds.since,
+  });
   return { summary: result.ok ? result.value : ({} as RunSummary), files, logger, asked, ok: result.ok, error: result.ok ? undefined : result.error, reader };
 };
 
@@ -390,5 +404,60 @@ describe('when the mailbox or the disk refuses', () => {
 
     expect(summary.converted).toBe(1);
     expect(logger.calls.some((call) => call.event === 'mail-state.unusable')).toBe(true);
+  });
+});
+
+describe('rendering several conversations at once', () => {
+  const threeConversations: MailReaderSeed = {
+    folders: [folder()],
+    pages: [
+      {
+        messages: [
+          message({ id: 'a', conversationId: 'conv-a' }),
+          message({ id: 'b', conversationId: 'conv-b', received: '2026-05-13T00:00:00Z' }),
+          message({ id: 'c', conversationId: 'conv-c', received: '2026-05-14T00:00:00Z' }),
+        ],
+        skipped: 0,
+        deltaLink: 'c1',
+      },
+    ],
+  };
+
+  it('a window renders every conversation and records them all', async () => {
+    const { summary, asked } = await run({ reader: threeConversations, concurrency: 3 });
+
+    expect(summary.converted).toBe(3);
+    expect([...asked].sort((left, right) => left.localeCompare(right))).toEqual(['conv-a', 'conv-b', 'conv-c']);
+  });
+
+  it('a window of conversations saves the state once, not once per conversation', async () => {
+    const wide = await run({ reader: threeConversations, concurrency: 3 });
+    const narrow = await run({ reader: threeConversations, concurrency: 1 });
+    const savesAt = (files: FilesFake): number => files.writeLog.filter((path) => path === STATE_PATH).length;
+
+    expect(savesAt(wide.files)).toBe(3);
+    expect(savesAt(wide.files)).toBeLessThan(savesAt(narrow.files));
+  });
+
+  const twoConversations: MailReaderSeed = {
+    folders: [folder()],
+    pages: [
+      { messages: [message({ id: 'a', conversationId: 'conv-a' }), message({ id: 'b', conversationId: 'conv-b', received: '2026-05-13T00:00:00Z' })], skipped: 0, deltaLink: 'c1' },
+    ],
+  };
+
+  it('a conversation that fails in a window leaves the ones rendered beside it recorded', async () => {
+    const { summary, files } = await run({ reader: twoConversations, failThread: 'conv-a', concurrency: 2 });
+
+    expect(summary).toMatchObject({ converted: 1, failed: 1 });
+    expect(Object.keys(stateAfter(files).threads)).toEqual(['conv-b']);
+  });
+
+  it('an empty conversation in a window leaves the ones rendered beside it recorded', async () => {
+    const outcome = (input: RenderThreadInput): RenderThreadOutcome => (input.conversationId === 'conv-a' ? { kind: 'empty' } : rendered());
+    const { summary, files } = await run({ reader: twoConversations, outcome, concurrency: 2 });
+
+    expect(summary).toMatchObject({ converted: 1, skipped: 1 });
+    expect(Object.keys(stateAfter(files).threads)).toEqual(['conv-b']);
   });
 });

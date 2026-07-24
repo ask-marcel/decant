@@ -40,6 +40,10 @@ export type SyncMailboxInput = {
   readonly maxBytes: number;
   readonly ocrLabel: string;
   readonly dryRun: boolean;
+  // How many conversations to render at once. Attachments are stored under a name fixed by their
+  // content, so a window of conversations writes without racing; the store threads through as each
+  // window's results fold onto it in order, saved once per window.
+  readonly concurrency: number;
   // Only conversations touched on or after this day are written. Applied to what the sweep
   // returned rather than to the sweep itself: Outlook's delta does not narrow by date.
   readonly since?: string;
@@ -167,12 +171,14 @@ const finishQueue = async (
   return saved.ok ? ok(queued) : saved;
 };
 
+// The render (with its IO) happens now; what it adds to the mailbox state comes back as a function
+// so a whole window's results fold onto the state in order, after the parallel renders.
 const renderOne = async (
   deps: SyncMailboxDeps,
   input: SyncMailboxInput,
   state: MailboxState,
   conversationId: string
-): Promise<{ readonly state: MailboxState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> }> => {
+): Promise<{ readonly apply: (state: MailboxState) => MailboxState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> }> => {
   const rendered = await deps.renderThread({
     conversationId,
     maxBytes: input.maxBytes,
@@ -182,12 +188,12 @@ const renderOne = async (
   });
   if (!rendered.ok) {
     deps.logger.warn('thread.failed', { cause: rendered.error.kind });
-    return { state, counted: { failed: 1 }, notes: { failed: [{ path: `conversation ${conversationId}`, reason: rendered.error.message }] } };
+    return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: `conversation ${conversationId}`, reason: rendered.error.message }] } };
   }
-  if (rendered.value.kind === 'empty') return { state, counted: { skipped: 1 }, notes: {} };
+  if (rendered.value.kind === 'empty') return { apply: (carried) => carried, counted: { skipped: 1 }, notes: {} };
   const thread = rendered.value.thread;
   return {
-    state: recordThread(state, conversationId, thread),
+    apply: (carried) => recordThread(carried, conversationId, thread),
     counted: { converted: 1, skipped: thread.attachmentsSkipped.length, failed: thread.attachmentsFailed.length },
     notes: { skipped: thread.attachmentsSkipped, failed: thread.attachmentsFailed },
   };
@@ -219,20 +225,23 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
   let summary = EMPTY;
   let notes: RunNotes = { skipped: [], failed: [], archived: [] };
   for (;;) {
-    const conversationId = current.pending[0];
-    if (conversationId === undefined) break;
-    const done = await renderOne(deps, input, current, conversationId);
-    const advanced = withPending(done.state, done.state.pending.slice(1));
+    if (current.pending.length === 0) break;
+    const window = current.pending.slice(0, input.concurrency);
+    const results = await Promise.all(window.map((conversationId) => renderOne(deps, input, current, conversationId)));
+    const folded = results.reduce((carried, done) => done.apply(carried), current);
+    const advanced = withPending(folded, current.pending.slice(window.length));
     const saved = await save(deps.files, statePath, advanced, input.dryRun);
     if (!saved.ok) return saved;
     current = advanced;
-    summary = {
-      ...summary,
-      converted: summary.converted + (done.counted.converted ?? 0),
-      skipped: summary.skipped + (done.counted.skipped ?? 0),
-      failed: summary.failed + (done.counted.failed ?? 0),
-    };
-    notes = { skipped: [...notes.skipped, ...(done.notes.skipped ?? [])], failed: [...notes.failed, ...(done.notes.failed ?? [])], archived: notes.archived };
+    for (const done of results) {
+      summary = {
+        ...summary,
+        converted: summary.converted + (done.counted.converted ?? 0),
+        skipped: summary.skipped + (done.counted.skipped ?? 0),
+        failed: summary.failed + (done.counted.failed ?? 0),
+      };
+      notes = { skipped: [...notes.skipped, ...(done.notes.skipped ?? [])], failed: [...notes.failed, ...(done.notes.failed ?? [])], archived: notes.archived };
+    }
   }
   const finished = { ...current, lastRun: deps.clock.nowIso() };
   const saved = await save(deps.files, statePath, finished, input.dryRun);

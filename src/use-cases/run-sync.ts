@@ -73,7 +73,7 @@ const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, dr
 
 const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<RunSummary, StepError>> => {
   deps.logger.info('mailbox.started', {});
-  const summary = await deps.syncMailbox({ maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, dryRun: input.dryRun, since: input.since });
+  const summary = await deps.syncMailbox({ maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, concurrency: input.concurrency, dryRun: input.dryRun, since: input.since });
   if (summary.ok) deps.prompt.show(renderSummary(MAILBOX_NAME, summary.value, input.dryRun));
   return summary;
 };
