@@ -69,3 +69,32 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   `Prefer: odata.maxpagesize` header, a page-size hint that pages through `nextLink`, not the `$top`
   that used to read as "sync complete" and strand the rest of the folder. Drive delta stays at 1000,
   mail at 100 to keep each response small; paging still continues if Graph caps the page lower.
+
+- [gotcha] The big use-case files carry pre-existing sub-90% mutation debt (run-sync ~81%, sync-site
+  ~86%, convert-file/convert-attachment/render-thread ~85-88% before cleanup). The scaffold's
+  "90.77%" is the all-files aggregate, lifted by many 100% domain files; `mutate:changed` gates on
+  the aggregate of the *changed* files only, so touching a single large use-case file often trips the
+  90 break threshold even when the change itself is mutation-clean. Budget for either cleaning the
+  file to 90 or tracking the debt; the survivors are mostly unkilled guard clauses (`if (!x.ok)`
+  mutated to `if (false)`), logger-payload object literals mutated to `{}`, and `?.` optional chains.
+
+- [gotcha] `crypto.subtle.digest('SHA-256', bytes)` fails typecheck under this repo's TS: a plain
+  `Uint8Array` is `Uint8Array<ArrayBufferLike>`, which is not assignable to `BufferSource` (the
+  SharedArrayBuffer case), and it is async besides. `new Bun.CryptoHasher('sha256').update(bytes)
+  .digest('hex')` is synchronous, allocation-free, and typechecks. Prefer it for hashing in this Bun
+  repo (`src/domain/content-hash.ts`).
+
+- [decision] Mailbox attachments in the shared `_attachments` store are always named
+  `<name>-<hash8>.<ext>`, never readable-name-with-a-suffix-only-on-clash. The on-clash form needed a
+  sequential `usedNames` set to detect a collision, which races under `--concurrency`: two different
+  files of the same name in one window would both write `<name>` and one would overwrite the other. A
+  name fixed purely by the content address lets conversations place files in parallel without
+  colliding. See [[content-hash]] / `render-thread.ts` `placeAttachment`.
+
+- [decision] `--concurrency` parallelises the IO per window and folds pure state deltas afterwards,
+  the same shape in `sync-site` `processQueue` and `sync-mailbox` `drainQueue`: `applyWork` /
+  `renderOne` return an update *function* `(state) => state`, a window of them runs N-wide through
+  `Promise.all`, then the updates reduce onto the manifest/mailbox-state and the state saves once per
+  window. A window interrupted mid-flight re-runs, and every write is idempotent (same bytes to the
+  same paths), so a partial window costs a redo, never a corruption. Default 4; `--concurrency 1` is
+  the old strictly-sequential behaviour.
