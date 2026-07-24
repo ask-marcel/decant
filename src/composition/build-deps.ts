@@ -6,7 +6,7 @@ import { createDriveReaderFromApi, createMarcelCall } from '../infra/drive-reade
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
 import { createWinstonLogger } from '../infra/logger.ts';
-import { createBunShell, createPaddleOcr } from '../infra/ocr-paddle.ts';
+import { createBunShell, createNoOcr, createPaddleOcr } from '../infra/ocr-paddle.ts';
 import { createStdinPrompt } from '../infra/prompt-stdin.ts';
 import { createConvertAttachment } from '../use-cases/convert-attachment.ts';
 import { createConvertFile } from '../use-cases/convert-file.ts';
@@ -63,7 +63,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const api = realApi(config.interactive);
   const reader = overrides.reader ?? createDriveReaderFromApi(api);
   const mail = overrides.mail ?? createMailReaderFromCall(createMarcelCall(api));
-  const ocr = overrides.ocr ?? createPaddleOcr({ shell: createBunShell(), lang: config.ocrLang });
+  const ocr = overrides.ocr ?? (config.ocr ? createPaddleOcr({ shell: createBunShell(), lang: config.ocrLang }) : createNoOcr());
   const prompt = overrides.prompt ?? createStdinPrompt(() => console);
   const convertFile = createConvertFile({ reader, files, ocr, clock });
   const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, kbRoot: config.kbRoot });

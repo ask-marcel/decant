@@ -12,7 +12,11 @@ const configFor = (env: Readonly<Record<string, string | undefined>>): ReturnTyp
 
 describe('reading the run configuration', () => {
   it('an empty environment writes to the default knowledge base folder and stays quiet', () => {
-    expect(configFor({})).toEqual({ logLevel: 'error', kbRoot: 'kb', ocrLang: 'en', interactive: true });
+    expect(configFor({})).toEqual({ logLevel: 'error', kbRoot: 'kb', ocrLang: 'en', ocr: true, interactive: true });
+  });
+
+  it('reading images can be turned off in the configuration', () => {
+    expect(readConfig({ env: {}, ocrLang: 'en', interactive: true, ocr: false })).toMatchObject({ ocr: false });
   });
 
   it('the environment can move the knowledge base and raise the log level', () => {

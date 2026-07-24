@@ -42,6 +42,10 @@ export const createPaddleOcr = (options: PaddleOptions): Ocr => ({
   },
 });
 
+// Chosen when the run turned OCR off (`--no-ocr`): every read reports "unavailable", so an image or
+// a scanned PDF falls back to its note and no `ocr:` line ever claims text was read.
+export const createNoOcr = (): Ocr => ({ read: async () => err({ kind: 'unavailable', message: 'ocr disabled' }) });
+
 export const createBunShell = (): Shell => async (command) => {
   const [binary, ...args] = command;
   const spawned = Bun.spawn([binary ?? '', ...args], { stdout: 'pipe', stderr: 'pipe' });

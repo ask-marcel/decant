@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { createPaddleOcr } from './ocr-paddle.ts';
+import { createNoOcr, createPaddleOcr } from './ocr-paddle.ts';
 import type { ShellRun } from './ocr-paddle.ts';
 
 // Trimmed from a real `paddleocr ocr -i probe.png --lang en` run: the dump holds many quoted keys,
@@ -61,5 +61,13 @@ describe('reading the text out of an image', () => {
     const read = await ocr.read('photo.jpg');
 
     expect(read.ok === false && read.error.kind).toBe('unavailable');
+  });
+});
+
+describe('a run with reading turned off', () => {
+  it('reports every read as unavailable, so a file falls back to its note without OCR', async () => {
+    const read = await createNoOcr().read('kb/Site/Documents/Scan.pdf');
+
+    expect(read).toEqual({ ok: false, error: { kind: 'unavailable', message: 'ocr disabled' } });
   });
 });
