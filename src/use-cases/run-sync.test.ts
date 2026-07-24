@@ -3,12 +3,13 @@ import { ok } from '../domain/result.ts';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import type { DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
+import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import { createPromptFake } from '../test-helpers/prompt-fake.ts';
 import type { PromptFake } from '../test-helpers/prompt-fake.ts';
 import type { SyncedSource } from '../domain/sync-state.ts';
 import { createRunSync } from './run-sync.ts';
 import type { RunSyncInput } from './run-sync.ts';
-import type { SyncSiteInput } from './sync-site.ts';
+import type { RunSummary, SyncSiteInput } from './sync-site.ts';
 import type { SyncMailboxInput } from './sync-mailbox.ts';
 
 const sites = [
@@ -25,14 +26,25 @@ const run = async (
   answers: ReadonlyArray<string>,
   over: Partial<RunSyncInput> = {},
   seeds: { reader?: DriveReaderSeed; synced?: ReadonlyArray<SyncedSource>; savedDrives?: ReadonlyArray<{ id: string; name: string }> } = {}
-): Promise<{ calls: SyncSiteInput[]; mailboxRuns: SyncMailboxInput[]; prompt: PromptFake; ok: boolean; error?: string }> => {
+): Promise<{
+  calls: SyncSiteInput[];
+  mailboxRuns: SyncMailboxInput[];
+  prompt: PromptFake;
+  logger: LoggerFake;
+  ok: boolean;
+  error?: string;
+  step?: string;
+  cause?: string;
+  summaries?: ReadonlyArray<RunSummary>;
+}> => {
   const calls: SyncSiteInput[] = [];
   const mailboxRuns: SyncMailboxInput[] = [];
   const prompt = createPromptFake(answers);
+  const logger = createLoggerFake();
   const runSync = createRunSync({
     reader: createDriveReaderFake({ sites, drives, ...seeds.reader }),
     prompt,
-    logger: createLoggerFake(),
+    logger,
     syncSite: async (input) => {
       calls.push(input);
       return ok(EMPTY_SUMMARY);
@@ -45,7 +57,17 @@ const run = async (
     },
   });
   const result = await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'paddleocr (en)', concurrency: 4, dryRun: false, ...over });
-  return { calls, mailboxRuns, prompt, ok: result.ok, error: result.ok ? undefined : result.error.message };
+  return {
+    calls,
+    mailboxRuns,
+    prompt,
+    logger,
+    ok: result.ok,
+    error: result.ok ? undefined : result.error.message,
+    step: result.ok ? undefined : result.error.step,
+    cause: result.ok ? undefined : result.error.cause,
+    summaries: result.ok ? result.value : undefined,
+  };
 };
 
 describe('choosing what to sync', () => {
@@ -318,5 +340,152 @@ describe('telling the operator what happened', () => {
     const { calls } = await run(['1', '1'], { dryRun: true });
 
     expect(calls[0]?.dryRun).toBe(true);
+  });
+});
+
+describe('stopping with the step and reason named', () => {
+  it('picking the second source in the list syncs that site', async () => {
+    const { calls } = await run(['2', '1']);
+
+    expect(calls[0]?.site.name).toBe('Direction');
+  });
+
+  it('an answer with no number in it stops the run, naming the pickSite step and reason', async () => {
+    const { ok: succeeded, error, step, cause } = await run([',']);
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('pickSite');
+    expect(cause).toBe('bad-choice');
+    expect(error).toBe('choose one site');
+  });
+
+  it('a source answer nobody offered names the pickSite step', async () => {
+    const { ok: succeeded, error, step } = await run(['9']);
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('pickSite');
+    expect(error).toBe('no such choice: 9');
+  });
+
+  it('a library number the site does not offer stops the run at the pickLibraries step', async () => {
+    const { ok: succeeded, error, step } = await run(['1', '9']);
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('pickLibraries');
+    expect(error).toBe('no such choice: 9');
+  });
+
+  it('answering the library question with a letter names the pickLibraries step and reason', async () => {
+    const { ok: succeeded, error, step, cause } = await run(['1', 'u']);
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('pickLibraries');
+    expect(cause).toBe('bad-choice');
+    expect(error).toBe('choose libraries by number, or all');
+  });
+
+  it('a library list Graph refuses names the listDrives step', async () => {
+    const { ok: succeeded, step } = await run([], { siteId: 'contoso,1,2' }, { reader: { failWith: { kind: 'auth', message: 'not authenticated' } } });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('listDrives');
+  });
+
+  it('a named library the site does not have stops at the sync step with no-library', async () => {
+    const { ok: succeeded, error, step, cause } = await run([], { siteId: 'contoso,1,2', driveIds: ['b!absent'] });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('sync');
+    expect(cause).toBe('no-library');
+    expect(error).toContain('no library chosen');
+  });
+
+  it('an id no site answers to names the siteById step', async () => {
+    const { ok: succeeded, step } = await run([], { siteId: 'contoso,9,9', driveIds: ['b!one'] });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('siteById');
+  });
+
+  it('an address no site answers to names the siteByUrl step', async () => {
+    const { ok: succeeded, step } = await run([], { siteUrl: 'https://tenant.sharepoint.com/sites/absent' });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('siteByUrl');
+  });
+
+  it('a site list Graph refuses ends the run at the listSites step', async () => {
+    const { ok: succeeded, step } = await run([], {}, { reader: { failWith: { kind: 'auth', message: 'not authenticated' } } });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('listSites');
+  });
+});
+
+describe('what a finished run carries back', () => {
+  it('syncing one site returns that run summary', async () => {
+    const { summaries } = await run(['1', '1']);
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries?.[0]).toEqual(EMPTY_SUMMARY);
+  });
+
+  it('syncing the mailbox returns that run summary', async () => {
+    const { summaries } = await run([], { mailbox: true });
+
+    expect(summaries).toHaveLength(1);
+    expect(summaries?.[0]).toEqual(EMPTY_SUMMARY);
+  });
+
+  it('a site sync logs that it started with the site id and library count', async () => {
+    const { logger } = await run(['1', '1']);
+    const started = logger.calls.find((call) => call.event === 'sync.started');
+
+    expect(started?.meta).toEqual({ siteId: 'contoso,1,2', libraries: 1 });
+  });
+});
+
+describe('when a source run fails after it began', () => {
+  it('a mailbox run that fails is not reported as a summary', async () => {
+    const prompt = createPromptFake();
+    const runSync = createRunSync({
+      reader: createDriveReaderFake({ sites, drives }),
+      prompt,
+      logger: createLoggerFake(),
+      syncSite: async () => ok(EMPTY_SUMMARY),
+      listSyncedSources: async () => ok([]),
+      savedDrives: async () => [],
+      syncMailbox: async () => ({ ok: false, error: { step: 'mailbox', cause: 'auth', message: 'token expired' } }),
+    });
+
+    const result = await runSync({ command: 'sync', mailbox: true, driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+
+    expect(result.ok).toBe(false);
+    expect(prompt.shown.some((text) => text.startsWith('Mailbox:'))).toBe(false);
+  });
+
+  it('a refresh stops when the mailbox run fails, without moving on to the sites', async () => {
+    const calls: SyncSiteInput[] = [];
+    const synced = [
+      { kind: 'mailbox' as const, id: 'me', name: 'Mailbox', lastRun: '2026-07-22T09:00:00Z', fileCount: 12 },
+      { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 },
+    ];
+    const runSync = createRunSync({
+      reader: createDriveReaderFake({ sites, drives }),
+      prompt: createPromptFake(),
+      logger: createLoggerFake(),
+      syncSite: async (input) => {
+        calls.push(input);
+        return ok(EMPTY_SUMMARY);
+      },
+      listSyncedSources: async () => ok(synced),
+      savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
+      syncMailbox: async () => ({ ok: false, error: { step: 'mailbox', cause: 'auth', message: 'token expired' } }),
+    });
+
+    const result = await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+
+    expect(result.ok).toBe(false);
+    expect(calls).toEqual([]);
   });
 });
