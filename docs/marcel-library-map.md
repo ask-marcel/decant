@@ -1,6 +1,6 @@
 # Using `ask-marcel-office-cli` as a library
 
-Verified against v2.2.0 sources. This is what the `MarcelPort` adapter in `src/infra/` must
+Verified against v2.3.0 sources. This is what the `MarcelPort` adapter in `src/infra/` must
 handle; the CLI binary is not used anywhere in this repo.
 
 ## Call shape
@@ -17,9 +17,12 @@ Four things bite here:
 
 **Params are `Record<string, string>`, flat.** Booleans are the strings `'true'` / `'false'`,
 numbers are numeric strings. The keys are the canonical camelCase option keys, never the CLI's
-kebab flags and never a CLI alias: `get-drive-delta` takes `itemId`, and `folderId` (which works
-on the command line) is rejected by the schema. `list-mail-folders` is built on a `.strict()`
-schema, so an unrecognised key is an error rather than being ignored.
+kebab flags: `get-drive-delta` takes `itemId`, not `folderId`. As of v2.3.0 the flag-alias system
+is gone (77 aliases, 4 deprecated command names removed) and every command refuses a key it does
+not declare, returning a `validation_error` with code `unknown_parameter` that names the supported
+flags; earlier versions silently stripped unknown keys on the library surface and returned data
+that looked like it had obeyed. So a param typo now fails the call, which the adapter maps to a
+permanent (non-retried) error. This is why the call sites use one canonical spelling each.
 
 **Every ok-value is typed `unknown`.** The registry erases per-command types. Narrowing from
 `unknown` to a typed record is our job, and it belongs in `src/domain/` where it is pure and
@@ -70,8 +73,12 @@ the sync believing itself complete. The same call without `top` pages correctly,
 time, with a `nextLink` until the last page.
 
 So the mail sweep never sends `top`. Drive delta is the opposite: `top: 1000` there is safe and
-saves round trips. A fix is planned in the package itself; the sweep is safe either way, and once
-it lands the only gain from passing `top` again is fewer round trips.
+saves round trips. **v2.3.0 fixed the truncation**: `top` on a mail delta is now sent as a
+`Prefer: odata.maxpagesize` header, which pages normally instead of reading a satisfied `$top` as
+"sync complete", so passing it is safe again and buys only fewer round trips. The sweep still omits
+it (revisiting that is a next step, not part of the upgrade); this history stays because the
+pre-2.3.0 behaviour was a silent data-loss trap worth remembering. Note `skip` and `orderby` are no
+longer accepted on the mail delta, and `filter`/`orderby` are gone from the two drive deltas.
 
 The cost of this is real: ten messages per request means a mailbox with a 6000-message archive
 needs some 600 sequential requests on its first run. Later runs read only what changed.
@@ -99,7 +106,7 @@ Params are listed with their canonical keys; `?` marks optional.
 | `get-sharepoint-site-by-path` | `hostname`, `path` | one `site` |
 | `list-sharepoint-site-drives` | `siteId`, OData minus `skip` | `{ value: drive[] }` |
 | `get-drive-root-item` | `driveId`, `select?`, `expand?` | one `driveItem` |
-| `get-drive-delta` | `driveId`, `itemId`, OData minus `skip` | `{ value: driveItem[], '@odata.nextLink'?, '@odata.deltaLink'? }` |
+| `get-drive-delta` | `driveId`, `itemId`, `top?`, `select?`, `expand?` (no `filter`, `orderby`, `skip`) | `{ value: driveItem[], '@odata.nextLink'?, '@odata.deltaLink'? }` |
 | `list-folder-files` | `driveId`, `itemId`, `tenantId?`, OData minus `skip` | `{ value: driveItem[] }` |
 | `next-page` | `url` (absolute, `https://graph.microsoft.com/v1.0/...`) | the originating shape |
 | `download-drive-item-content` | `driveId`, `itemId`, `tenantId?` | `{ contentType, size, text }` when the bytes are valid UTF-8, else `{ contentType, size, base64 }` |
@@ -108,7 +115,7 @@ Params are listed with their canonical keys; `?` marks optional.
 | `convert-local-file-to-markdown` | `path`, `includeMetadata?`, `inlineImages?`, `keepQuoted?`, `includeImages?`, `maxCells?` | single file: `{ contentType, size, text }`; zip: `{ count, files: [{ path, contentType, size, text } \| { path, note }] }` |
 | `list-mail-folders` | OData only, strict schema | `{ value: mailFolder[] }`; **no `wellKnownName` in v1.0**, so Junk/Deleted/Drafts/Outbox can only be matched by localised `displayName` |
 | `list-mail-child-folders` | `mailFolderId`, OData | `{ value: mailFolder[] }` |
-| `list-mail-folder-messages-delta` | `mailFolderId`, OData | `{ value: message[], '@odata.nextLink'?, '@odata.deltaLink'? }` |
+| `list-mail-folder-messages-delta` | `mailFolderId`, `top?`, `select?`, `filter?`, `expand?` (no `skip`, `orderby`) | `{ value: message[], '@odata.nextLink'?, '@odata.deltaLink'? }` |
 | `list-conversation-messages` | `conversationId`, `top?`, `skip?`, `select?`, `expand?` (no `filter`, no `orderby`) | `{ value: message[] }`, unordered |
 | `convert-mail-to-markdown` | `messageId`, `inlineImages?`, `keepQuoted?` | `{ contentType: 'text/markdown', size, text, note? }` |
 | `list-mail-attachments` | `messageId`, OData | `{ value: attachment[] }`; omitting `select` injects `id,name,contentType,size,isInline` |

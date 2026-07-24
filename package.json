@@ -31,7 +31,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "ask-marcel-office-cli": "^2.2.0",
+    "ask-marcel-office-cli": "^2.3.0",
     "winston": "^3.19.0"
   }
 }
