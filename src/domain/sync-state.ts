@@ -46,11 +46,18 @@ const parseIdentity = (source: Record<string, unknown>): Result<SourceIdentity, 
   return ok({ kind, id, name });
 };
 
+// A site counts the documents its libraries hold; a mailbox counts its conversations, since one
+// conversation is one file in the knowledge base.
+const countFiles = (raw: Record<string, unknown>): number => {
+  const threads = raw['threads'];
+  return countItems(raw['drives']) + (isRecord(threads) ? Object.keys(threads).length : 0);
+};
+
 export const parseSyncedSource = (raw: unknown): Result<SyncedSource, SyncStateError> => {
   if (!isRecord(raw)) return malformed('sync state is not an object');
   const source = raw['source'];
   if (!isRecord(source)) return malformed('sync state has no source object');
   const identity = parseIdentity(source);
   if (!identity.ok) return identity;
-  return ok({ ...identity.value, lastRun: readString(raw, 'lastRun') ?? NEVER_RUN, fileCount: countItems(raw['drives']) });
+  return ok({ ...identity.value, lastRun: readString(raw, 'lastRun') ?? NEVER_RUN, fileCount: countFiles(raw) });
 };

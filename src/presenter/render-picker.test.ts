@@ -6,17 +6,24 @@ const rows = [
   { id: 'b', name: 'Direction', webUrl: 'https://y' },
 ];
 
+const mailbox = { id: 'me', name: 'Mailbox', webUrl: '' };
+
 describe('showing the operator what there is to sync', () => {
   it('each site is numbered, and the ones already synced say when and how much', () => {
-    const rendered = renderSitePicker(rows);
+    const rendered = renderSitePicker(rows, mailbox);
 
     expect(rendered).toContain('  1) Espace MOOV  (synced 2026-07-22, 143 files)');
-    expect(renderSitePicker([{ id: 'c', name: 'Solo', webUrl: '', synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 1 } }])).toContain('1 file)');
+    expect(renderSitePicker([{ id: 'c', name: 'Solo', webUrl: '', synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 1 } }], mailbox)).toContain('1 file)');
     expect(rendered).toContain('  2) Direction  (new)');
   });
 
   it('the ways out of the picker are spelled out', () => {
-    expect(renderSitePicker(rows)).toContain('u = refresh everything already synced, q = quit.');
+    expect(renderSitePicker(rows, mailbox)).toContain('u = refresh everything already synced, q = quit.');
+  });
+
+  it('the mailbox is offered beside the sites, marked the same way', () => {
+    expect(renderSitePicker(rows, mailbox)).toContain('  m) My mailbox  (new)');
+    expect(renderSitePicker(rows, { ...mailbox, synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 42 } })).toContain('m) My mailbox  (synced 2026-07-22, 42 files)');
   });
 
   it('libraries are offered the same way, several at a time', () => {

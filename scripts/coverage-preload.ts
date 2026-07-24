@@ -19,6 +19,7 @@ import '../src/infra/clock-system.ts';
 import '../src/infra/drive-reader-marcel.ts';
 import '../src/infra/files-bun.ts';
 import '../src/infra/logger.ts';
+import '../src/infra/mail-reader-marcel.ts';
 import '../src/infra/ocr-paddle.ts';
 import '../src/infra/prompt-stdin.ts';
 

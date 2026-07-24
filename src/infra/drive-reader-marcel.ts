@@ -70,10 +70,13 @@ const toBytes = (value: unknown): Result<Uint8Array, DriveReaderError> => {
   return text === undefined ? missing('bytes') : ok(new TextEncoder().encode(text));
 };
 
-export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
-  const pause = api.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+// One command call, with the retry policy and the error translation applied. Both the SharePoint
+// and the mailbox readers run through this, so a throttle is handled the same way on either side.
+export type MarcelCall = (name: string, params: Record<string, string>, local?: boolean) => Promise<Result<unknown, DriveReaderError>>;
 
-  const call = async (name: string, params: Record<string, string>, local = false): Promise<Result<unknown, DriveReaderError>> => {
+export const createMarcelCall = (api: MarcelApi): MarcelCall => {
+  const pause = api.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  return async (name, params, local = false) => {
     const command = api.commands[name];
     if (command === undefined) return err({ kind: 'permanent', message: `unknown command: ${name}` });
     let last: DriveReaderError = { kind: 'permanent', message: `${name} never ran` };
@@ -86,6 +89,10 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
     }
     return err(last);
   };
+};
+
+export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
+  const call = createMarcelCall(api);
 
   const delta = async (params: Record<string, string>): Promise<Result<DriveDeltaPage, DriveReaderError>> => {
     const raw = await call('get-drive-delta', params);

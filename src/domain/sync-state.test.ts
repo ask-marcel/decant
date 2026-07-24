@@ -15,6 +15,12 @@ describe('reading the sync state left by a previous run', () => {
     expect(parsed).toEqual({ ok: true, value: { kind: 'site', id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 3 } });
   });
 
+  it('a synced mailbox is counted by its conversations, one file each', () => {
+    const state = { source: { kind: 'mailbox', id: 'me', name: 'Mailbox' }, lastRun: '2026-07-22T09:00:00Z', threads: { 'conv-1': {}, 'conv-2': {} } };
+
+    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'mailbox', id: 'me', name: 'Mailbox', lastRun: '2026-07-22T09:00:00Z', fileCount: 2 } });
+  });
+
   it('a source that has never completed a run reports no files and no last run', () => {
     const parsed = parseSyncedSource({ source: { kind: 'mailbox', id: 'me', name: 'Mailbox' } });
 

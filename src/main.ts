@@ -22,6 +22,8 @@ const run = async (): Promise<number> => {
     maxBytes: options.value.maxSizeMb * MB,
     ocrLabel: options.value.ocr ? `paddleocr (${options.value.ocrLang})` : 'off',
     dryRun: options.value.dryRun,
+    mailbox: options.value.mailbox,
+    since: options.value.since,
   });
   if (!summaries.ok) {
     printLine(`failed at ${summaries.error.step}: ${summaries.error.message}`);

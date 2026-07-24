@@ -3,8 +3,8 @@
 A Bun CLI that mirrors Microsoft 365 content into a local `kb/` folder as markdown, so agents
 running on this machine can read company knowledge without calling Microsoft Graph themselves.
 
-Today it syncs **SharePoint document libraries**. Mailbox sync (conversations with their
-attachments and linked files) is designed but not built yet; see `.claude/PLAN.md`.
+It syncs **SharePoint document libraries** and your **Outlook mailbox**, the latter as one markdown
+file per conversation with its attachments and the SharePoint files it links to.
 
 Graph access goes through [`ask-marcel-office-cli`](https://www.npmjs.com/package/ask-marcel-office-cli)
 used as a library, which owns authentication, paging and document conversion. See
@@ -28,8 +28,9 @@ bun install
 bun run sync
 ```
 
-Lists every SharePoint site you can read, marking the ones already in `kb/` with when they last
-synced and how many files they hold. Pick a number, pick one or more libraries, and it syncs.
+Lists every SharePoint site you can read plus your mailbox, marking the ones already in `kb/` with
+when they last synced and how much they hold. Pick a number and one or more libraries, or press
+`m` for your mailbox, and it syncs.
 
 To refresh everything already synced, without being asked anything:
 
@@ -47,6 +48,8 @@ clear message instead of waiting for input.
 | `--site-id <id>` | Sync this site without showing the picker |
 | `--site-url <url>` | Sync the site at this address, for sites the search index does not list |
 | `--drive-id <id>` | Sync only this library; repeat for several |
+| `--mailbox` | Sync your Outlook mailbox without showing the picker |
+| `--since <day>` | With `--mailbox`, only conversations touched since this day (`2026-01-31`) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
 | `--no-ocr` | Do not read text out of images |
@@ -94,6 +97,29 @@ pdf: ./Roadmap.pptx.pdf
 | jpg, png, gif, webp, bmp, tiff, heic | the image, plus markdown holding the text read out of it |
 | svg | the file, plus a markdown note pointing at it |
 | anything else | left in SharePoint and reported |
+
+### What a mailbox sync writes
+
+```
+kb/
+  Mailbox/
+    .sync-state.json                a cursor per folder, and what every conversation produced
+    _linked/                        SharePoint files the mail pointed at, each pulled once
+    threads/2026/
+      2026-05-12 Contrat MOOV a3f9c1.md            the whole conversation, oldest message first
+      2026-05-12 Contrat MOOV a3f9c1_attachments/  what those messages carried
+```
+
+One file per conversation, not per message. Its name is the day the thread started, its subject,
+and a fingerprint of the thread, so a reply rewrites the same file instead of making a new one.
+Every folder is swept except Junk, Deleted Items, Drafts and Outbox, which means **the mail you
+sent is included**: Sent Items is a folder like any other, and a conversation is assembled from
+every folder its messages landed in. Quoted reply chains are stripped, since the message being
+quoted is already its own section.
+
+A first mailbox run is slow: Outlook hands back changes ten messages at a time and there is no way
+to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
+are cheap, reading only what changed. `--since` narrows what gets *written*, not what gets swept.
 
 ## Re-running
 

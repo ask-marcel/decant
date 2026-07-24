@@ -13,6 +13,8 @@ export type Options = {
   readonly ocr: boolean;
   readonly ocrLang: string;
   readonly assumeYes: boolean;
+  readonly mailbox: boolean;
+  readonly since?: string;
 };
 
 export type OptionsError = { readonly kind: 'bad-option'; readonly message: string };
@@ -25,15 +27,17 @@ const DEFAULTS: Options = {
   ocr: true,
   ocrLang: 'en',
   assumeYes: false,
+  mailbox: false,
 };
 
-const FLAGS_WITH_VALUE = new Set(['--site-id', '--site-url', '--drive-id', '--max-size-mb', '--ocr-lang']);
+const FLAGS_WITH_VALUE = new Set(['--site-id', '--site-url', '--drive-id', '--max-size-mb', '--ocr-lang', '--since']);
 
 const withValue = (options: Options, flag: string, value: string): Result<Options, OptionsError> => {
   if (flag === '--site-id') return ok({ ...options, siteId: value });
   if (flag === '--site-url') return ok({ ...options, siteUrl: value });
   if (flag === '--drive-id') return ok({ ...options, driveIds: [...options.driveIds, value] });
   if (flag === '--ocr-lang') return ok({ ...options, ocrLang: value });
+  if (flag === '--since') return withSince(options, value);
   return withSize(options, value);
 };
 
@@ -43,9 +47,16 @@ const withSize = (options: Options, value: string): Result<Options, OptionsError
   return ok({ ...options, maxSizeMb: size });
 };
 
+// A day, not a moment: mail is filtered on the date it arrived.
+const SINCE_DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+const withSince = (options: Options, value: string): Result<Options, OptionsError> =>
+  SINCE_DAY.test(value) ? ok({ ...options, since: value }) : err({ kind: 'bad-option', message: `--since expects a day like 2026-01-31, got: ${value}` });
+
 const withFlag = (options: Options, flag: string): Result<Options, OptionsError> => {
   if (flag === '--dry-run') return ok({ ...options, dryRun: true });
   if (flag === '--no-ocr') return ok({ ...options, ocr: false });
+  if (flag === '--mailbox') return ok({ ...options, mailbox: true });
   if (flag === '--yes' || flag === '-y') return ok({ ...options, assumeYes: true });
   return err({ kind: 'bad-option', message: `unknown option: ${flag}` });
 };
@@ -76,6 +87,8 @@ export const USAGE = [
   '  --site-id <id>      sync this site without showing the picker',
   '  --site-url <url>    sync the site at this address (for sites the search index misses)',
   '  --drive-id <id>     sync only this library; repeat for several',
+  '  --mailbox           sync your Outlook mailbox without showing the picker',
+  '  --since <day>       with --mailbox, only conversations touched since this day',
   '  --dry-run           show what would be done, write nothing',
   '  --max-size-mb <n>   skip files larger than this (default 50)',
   '  --no-ocr            do not read text out of images',

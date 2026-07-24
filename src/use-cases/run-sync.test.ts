@@ -9,6 +9,7 @@ import type { SyncedSource } from '../domain/sync-state.ts';
 import { createRunSync } from './run-sync.ts';
 import type { RunSyncInput } from './run-sync.ts';
 import type { SyncSiteInput } from './sync-site.ts';
+import type { SyncMailboxInput } from './sync-mailbox.ts';
 
 const sites = [
   { id: 'contoso,1,2', name: 'Espace MOOV', webUrl: 'https://tenant.sharepoint.com/sites/moov' },
@@ -24,8 +25,9 @@ const run = async (
   answers: ReadonlyArray<string>,
   over: Partial<RunSyncInput> = {},
   seeds: { reader?: DriveReaderSeed; synced?: ReadonlyArray<SyncedSource>; savedDrives?: ReadonlyArray<{ id: string; name: string }> } = {}
-): Promise<{ calls: SyncSiteInput[]; prompt: PromptFake; ok: boolean; error?: string }> => {
+): Promise<{ calls: SyncSiteInput[]; mailboxRuns: SyncMailboxInput[]; prompt: PromptFake; ok: boolean; error?: string }> => {
   const calls: SyncSiteInput[] = [];
+  const mailboxRuns: SyncMailboxInput[] = [];
   const prompt = createPromptFake(answers);
   const runSync = createRunSync({
     reader: createDriveReaderFake({ sites, drives, ...seeds.reader }),
@@ -37,9 +39,13 @@ const run = async (
     },
     listSyncedSources: async () => ok(seeds.synced ?? []),
     savedDrives: async () => seeds.savedDrives ?? [{ id: 'b!one', name: 'Documents' }],
+    syncMailbox: async (input) => {
+      mailboxRuns.push(input);
+      return ok(EMPTY_SUMMARY);
+    },
   });
   const result = await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'paddleocr (en)', dryRun: false, ...over });
-  return { calls, prompt, ok: result.ok, error: result.ok ? undefined : result.error.message };
+  return { calls, mailboxRuns, prompt, ok: result.ok, error: result.ok ? undefined : result.error.message };
 };
 
 describe('choosing what to sync', () => {
@@ -160,6 +166,60 @@ describe('refreshing everything already synced', () => {
   });
 });
 
+describe('syncing the mailbox', () => {
+  it('choosing m at the picker syncs the mailbox and no site', async () => {
+    const { mailboxRuns, calls, prompt } = await run(['m']);
+
+    expect(mailboxRuns).toHaveLength(1);
+    expect(calls).toEqual([]);
+    expect(prompt.shown.at(-1)).toContain('Mailbox:');
+  });
+
+  it('the mailbox is offered in the picker beside the sites', async () => {
+    const { prompt } = await run(['m']);
+
+    expect(prompt.shown[0]).toContain('m) My mailbox  (new)');
+  });
+
+  it('a mailbox already synced is marked with when it ran and how many conversations it holds', async () => {
+    const synced = [{ kind: 'mailbox' as const, id: 'me', name: 'Mailbox', lastRun: '2026-07-22T09:00:00Z', fileCount: 42 }];
+    const { prompt } = await run(['m'], {}, { synced });
+
+    expect(prompt.shown[0]).toContain('m) My mailbox  (synced 2026-07-22, 42 files)');
+  });
+
+  it('naming the mailbox outright skips the picker', async () => {
+    const { mailboxRuns, prompt } = await run([], { mailbox: true });
+
+    expect(mailboxRuns).toHaveLength(1);
+    expect(prompt.asked).toEqual([]);
+  });
+
+  it('a day to sync from is passed through to the mailbox run', async () => {
+    const { mailboxRuns } = await run([], { mailbox: true, since: '2026-01-31' });
+
+    expect(mailboxRuns[0]).toMatchObject({ since: '2026-01-31', dryRun: false });
+  });
+
+  it('a refresh includes the mailbox when it is already in the knowledge base', async () => {
+    const synced = [
+      { kind: 'mailbox' as const, id: 'me', name: 'Mailbox', lastRun: '2026-07-22T09:00:00Z', fileCount: 42 },
+      { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 },
+    ];
+    const { mailboxRuns, calls } = await run([], { command: 'update' }, { synced });
+
+    expect(mailboxRuns).toHaveLength(1);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('a refresh leaves the mailbox alone when it was never synced', async () => {
+    const synced = [{ kind: 'site' as const, id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 }];
+    const { mailboxRuns } = await run([], { command: 'update' }, { synced });
+
+    expect(mailboxRuns).toEqual([]);
+  });
+});
+
 describe('when the knowledge base itself cannot be read', () => {
   it('the picker still opens, simply marking nothing as synced', async () => {
     const calls: SyncSiteInput[] = [];
@@ -174,6 +234,7 @@ describe('when the knowledge base itself cannot be read', () => {
       },
       listSyncedSources: async () => ({ ok: false, error: { step: 'listSyncedSources', cause: 'read-failed', message: 'kb unreadable' } }),
       savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
+      syncMailbox: async () => ok(EMPTY_SUMMARY),
     });
 
     await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'off', dryRun: false });
@@ -190,6 +251,7 @@ describe('when the knowledge base itself cannot be read', () => {
       syncSite: async () => ok(EMPTY_SUMMARY),
       listSyncedSources: async () => ({ ok: false, error: { step: 'listSyncedSources', cause: 'read-failed', message: 'kb unreadable' } }),
       savedDrives: async () => [],
+      syncMailbox: async () => ok(EMPTY_SUMMARY),
     });
 
     expect((await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', dryRun: false })).ok).toBe(false);
@@ -235,6 +297,7 @@ describe('when one site in a refresh fails', () => {
       },
       listSyncedSources: async () => ok(synced),
       savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
+      syncMailbox: async () => ok(EMPTY_SUMMARY),
     });
 
     const result = await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', dryRun: false });

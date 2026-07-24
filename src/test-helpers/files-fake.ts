@@ -17,6 +17,8 @@ export type FilesFakeSeed = {
   readonly failListWith?: FilesError;
   readonly failWriteWith?: FilesError;
   readonly failMoveWith?: FilesError;
+  // Fails only the writes whose path contains this text, so one file can fail while the rest land.
+  readonly failWritesMatching?: string;
 };
 
 const notFound = (path: string): Result<never, FilesError> => err({ kind: 'not-found', path, message: `no such path: ${path}` });
@@ -41,6 +43,7 @@ export const createFilesFake = (seed: FilesFakeSeed = {}): FilesFake => {
     },
     writeText: async (path, content) => {
       if (seed.failWriteWith) return err(seed.failWriteWith);
+      if (seed.failWritesMatching !== undefined && path.includes(seed.failWritesMatching)) return err({ kind: 'write-failed', path, message: `cannot write ${path}` });
       written.set(path, content);
       return ok(undefined);
     },

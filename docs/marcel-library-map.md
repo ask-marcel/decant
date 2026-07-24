@@ -54,6 +54,21 @@ Some `api_error`s are synthesized client-side with an invented status (400 when 
 where a file was expected, 404 for a missing local file, 500 for an unexpected envelope), so
 `status` is not always an HTTP status.
 
+## Mail delta truncates when given a page size
+
+Verified against a live 67-message Inbox on 2026-07-23: calling
+`list-mail-folder-messages-delta` with `top: 2` returned **2 messages and a `deltaLink`** (not a
+`nextLink`), and following that cursor returned zero. The other 65 messages were unreachable, with
+the sync believing itself complete. The same call without `top` pages correctly, ten messages at a
+time, with a `nextLink` until the last page.
+
+So the mail sweep never sends `top`. Drive delta is the opposite: `top: 1000` there is safe and
+saves round trips. A fix is planned in the package itself; the sweep is safe either way, and once
+it lands the only gain from passing `top` again is fewer round trips.
+
+The cost of this is real: ten messages per request means a mailbox with a 6000-message archive
+needs some 600 sequential requests on its first run. Later runs read only what changed.
+
 ## Timeouts: already handled
 
 The Graph client sets its own `AbortSignal.timeout` on every request: 60s for JSON calls, 5min for
@@ -84,7 +99,7 @@ Params are listed with their canonical keys; `?` marks optional.
 | `download-drive-item-as-pdf` | `driveId`, `itemId`, `tenantId?` | `{ contentType: 'application/pdf', size, base64 }`; a plain-text source short-circuits to `{ ..., text, passthrough: true, note }` |
 | `download-drive-item-as-markdown` | `driveId`, `itemId`, `tenantId?`, `includeMetadata?`, `inlineImages?`, `keepQuoted?`, `maxCells?` | `{ contentType: 'text/markdown' \| 'text/plain', size, text }` |
 | `convert-local-file-to-markdown` | `path`, `includeMetadata?`, `inlineImages?`, `keepQuoted?`, `includeImages?`, `maxCells?` | single file: `{ contentType, size, text }`; zip: `{ count, files: [{ path, contentType, size, text } \| { path, note }] }` |
-| `list-mail-folders` | OData only, strict schema | `{ value: mailFolder[] }` |
+| `list-mail-folders` | OData only, strict schema | `{ value: mailFolder[] }`; **no `wellKnownName` in v1.0**, so Junk/Deleted/Drafts/Outbox can only be matched by localised `displayName` |
 | `list-mail-child-folders` | `mailFolderId`, OData | `{ value: mailFolder[] }` |
 | `list-mail-folder-messages-delta` | `mailFolderId`, OData | `{ value: message[], '@odata.nextLink'?, '@odata.deltaLink'? }` |
 | `list-conversation-messages` | `conversationId`, `top?`, `skip?`, `select?`, `expand?` (no `filter`, no `orderby`) | `{ value: message[] }`, unordered |

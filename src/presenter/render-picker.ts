@@ -7,8 +7,17 @@ const mark = (row: PickerRow): string => (row.synced === undefined ? 'new' : `sy
 
 const line = (row: PickerRow, index: number): string => `${String(index + 1).padStart(3)}) ${row.name}  (${mark(row)})`;
 
-export const renderSitePicker = (rows: ReadonlyArray<PickerRow>): string =>
-  ['SharePoint sites you can read:', '', ...rows.map(line), '', 'Choose a number, or paste a site address.', 'u = refresh everything already synced, q = quit.'].join('\n');
+export const renderSitePicker = (rows: ReadonlyArray<PickerRow>, mailbox: PickerRow): string =>
+  [
+    'SharePoint sites you can read:',
+    '',
+    ...rows.map(line),
+    '',
+    `  m) My mailbox  (${mark(mailbox)})`,
+    '',
+    'Choose a number, m for your mailbox, or paste a site address.',
+    'u = refresh everything already synced, q = quit.',
+  ].join('\n');
 
 export const renderLibraryPicker = (rows: ReadonlyArray<PickerRow>): string =>
   ['Libraries in this site:', '', ...rows.map(line), '', 'Choose one or more numbers (1,3), or all.'].join('\n');
