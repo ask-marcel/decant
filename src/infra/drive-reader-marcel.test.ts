@@ -49,14 +49,14 @@ const readerFor = (
 describe('reading SharePoint through the ask-marcel library', () => {
   it('the sites the user can open come back with the name the picker shows', async () => {
     const { reader } = readerFor({
-      'search-all-accessible-sites': [ok({ value: [{ id: 'contoso,1,2', displayName: 'Espace MOOV', webUrl: 'https://tenant.sharepoint.com/sites/X' }, { name: 'no id' }] })],
+      'search-all-accessible-sites': [ok({ value: [{ id: 'contoso,1,2', displayName: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' }, { name: 'no id' }] })],
     });
 
-    expect(await reader.listSites()).toEqual({ ok: true, value: [{ id: 'contoso,1,2', name: 'Espace MOOV', webUrl: 'https://tenant.sharepoint.com/sites/X' }] });
+    expect(await reader.listSites()).toEqual({ ok: true, value: [{ id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' }] });
   });
 
   it('a site address is looked up by its host and path, the way Graph addresses sites', async () => {
-    const { reader, recorded } = readerFor({ 'get-sharepoint-site-by-path': [ok({ id: 'contoso,1,2', displayName: 'Espace MOOV' })] });
+    const { reader, recorded } = readerFor({ 'get-sharepoint-site-by-path': [ok({ id: 'contoso,1,2', displayName: 'Espace Contoso' })] });
 
     const found = await reader.siteByUrl('https://tenant.sharepoint.com/sites/Espace/');
 
@@ -74,9 +74,9 @@ describe('reading SharePoint through the ask-marcel library', () => {
   });
 
   it('a site named by id comes back with the name the knowledge base files it under', async () => {
-    const { reader, recorded } = readerFor({ 'get-sharepoint-site': [ok({ id: 'contoso,1,2', displayName: 'Espace MOOV', webUrl: 'https://x' })] });
+    const { reader, recorded } = readerFor({ 'get-sharepoint-site': [ok({ id: 'contoso,1,2', displayName: 'Espace Contoso', webUrl: 'https://x' })] });
 
-    expect(await reader.siteById('contoso,1,2')).toEqual({ ok: true, value: { id: 'contoso,1,2', name: 'Espace MOOV', webUrl: 'https://x' } });
+    expect(await reader.siteById('contoso,1,2')).toEqual({ ok: true, value: { id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://x' } });
     expect(recorded[0]?.params).toEqual({ siteId: 'contoso,1,2' });
   });
 

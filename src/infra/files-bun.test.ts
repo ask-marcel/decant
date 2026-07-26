@@ -4,9 +4,9 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBunFiles } from './files-bun.ts';
 
-const root = mkdtempSync(join(tmpdir(), 'moov-kb-'));
-mkdirSync(join(root, 'Espace MOOV'));
-writeFileSync(join(root, 'Espace MOOV', 'state.json'), '{"version":1}');
+const root = mkdtempSync(join(tmpdir(), 'contoso-kb-'));
+mkdirSync(join(root, 'Espace Contoso'));
+writeFileSync(join(root, 'Espace Contoso', 'state.json'), '{"version":1}');
 writeFileSync(join(root, 'loose.txt'), 'not a directory');
 
 afterAll(() => {
@@ -15,7 +15,7 @@ afterAll(() => {
 
 describe('reading the knowledge base from disk', () => {
   it('a state file written by an earlier run is read back verbatim', async () => {
-    expect(await createBunFiles().readText(join(root, 'Espace MOOV', 'state.json'))).toEqual({ ok: true, value: '{"version":1}' });
+    expect(await createBunFiles().readText(join(root, 'Espace Contoso', 'state.json'))).toEqual({ ok: true, value: '{"version":1}' });
   });
 
   it('asking for a file that was never written reports it as missing', async () => {
@@ -25,7 +25,7 @@ describe('reading the knowledge base from disk', () => {
   });
 
   it('listing the knowledge base returns its source folders and ignores loose files', async () => {
-    expect(await createBunFiles().listDirectoryNames(root)).toEqual({ ok: true, value: ['Espace MOOV'] });
+    expect(await createBunFiles().listDirectoryNames(root)).toEqual({ ok: true, value: ['Espace Contoso'] });
   });
 
   it('listing a knowledge base that does not exist yet reports it as missing', async () => {
@@ -66,7 +66,7 @@ describe('reading the knowledge base from disk', () => {
   });
 
   it('a knowledge base that cannot be written to is reported rather than thrown', async () => {
-    const written = await createBunFiles().writeText(join(root, 'Espace MOOV', 'state.json', 'nested.md'), 'body');
+    const written = await createBunFiles().writeText(join(root, 'Espace Contoso', 'state.json', 'nested.md'), 'body');
 
     expect(written.ok === false && written.error.kind).toBe('write-failed');
   });
