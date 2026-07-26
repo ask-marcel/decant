@@ -3,7 +3,7 @@ import type { ReportRun } from './report.ts';
 import { appendReportRun, hasSomethingToReport, renderReportRun, reportHeading, tooLargeReason, UNSUPPORTED_REASON } from './report.ts';
 
 const run = (over: Partial<ReportRun> = {}): ReportRun => ({
-  source: 'Espace MOOV',
+  source: 'Espace Contoso',
   at: '2026-07-24T09:00:00Z',
   counts: '12 converted, 0 moved, 0 archived, 2 skipped, 1 failed.',
   skipped: [],
@@ -92,7 +92,7 @@ describe('keeping the report across runs', () => {
   it('the first run opens the file with a heading naming the source', () => {
     const written = appendReportRun(undefined, run({ skipped: [{ path: 'a.mp4', reason: UNSUPPORTED_REASON }] }));
 
-    expect(written.startsWith(`${reportHeading('Espace MOOV')}\n`)).toBe(true);
+    expect(written.startsWith(`${reportHeading('Espace Contoso')}\n`)).toBe(true);
     expect(written).toContain('- a.mp4: a kind of file this tool does not read');
   });
 
@@ -109,7 +109,7 @@ describe('keeping the report across runs', () => {
     const first = appendReportRun(undefined, run({ skipped: [{ path: 'a.mp4', reason: UNSUPPORTED_REASON }] }));
     const second = appendReportRun(first, run({ at: '2026-07-25T09:00:00Z', failed: [{ path: 'b.docx', reason: 'locked' }] }));
 
-    expect(second.split(reportHeading('Espace MOOV'))).toHaveLength(2);
+    expect(second.split(reportHeading('Espace Contoso'))).toHaveLength(2);
   });
 
   it('the file ends with exactly one newline, however many runs it holds', () => {

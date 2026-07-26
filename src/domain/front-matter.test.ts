@@ -5,7 +5,7 @@ describe('stamping a generated markdown file with where it came from', () => {
   it('a converted document carries its source, its path and when it was synced', () => {
     const rendered = renderFrontMatter([
       ['source', 'https://tenant.sharepoint.com/sites/X/Roadmap.pptx'],
-      ['site', 'Espace MOOV'],
+      ['site', 'Espace Contoso'],
       ['path', '/Projets/2026/Roadmap.pptx'],
       ['last_modified', '2026-05-12T09:31:00Z'],
       ['synced_at', '2026-07-23T14:00:00Z'],
@@ -15,7 +15,7 @@ describe('stamping a generated markdown file with where it came from', () => {
       [
         '---',
         'source: https://tenant.sharepoint.com/sites/X/Roadmap.pptx',
-        'site: Espace MOOV',
+        'site: Espace Contoso',
         'path: /Projets/2026/Roadmap.pptx',
         'last_modified: "2026-05-12T09:31:00Z"',
         'synced_at: "2026-07-23T14:00:00Z"',
@@ -27,10 +27,10 @@ describe('stamping a generated markdown file with where it came from', () => {
   it('a field that has no value is left out rather than written empty', () => {
     expect(
       renderFrontMatter([
-        ['site', 'Espace MOOV'],
+        ['site', 'Espace Contoso'],
         ['modified_by', undefined],
       ])
-    ).toBe(['---', 'site: Espace MOOV', '---'].join('\n'));
+    ).toBe(['---', 'site: Espace Contoso', '---'].join('\n'));
   });
 
   it('a document title holding a colon is quoted so the block stays readable as YAML', () => {
@@ -74,7 +74,7 @@ describe('stamping a generated markdown file with where it came from', () => {
   });
 
   it('a run of spaces inside a name is collapsed to one, and the changed value is quoted', () => {
-    expect(renderFrontMatter([['name', 'Espace  MOOV']])).toBe(['---', 'name: "Espace MOOV"', '---'].join('\n'));
+    expect(renderFrontMatter([['name', 'Espace  Contoso']])).toBe(['---', 'name: "Espace Contoso"', '---'].join('\n'));
   });
 
   it('a name that opens with a digit is quoted, since a reader would take it for a number or a date', () => {
@@ -87,18 +87,18 @@ describe('stamping a generated markdown file with where it came from', () => {
   });
 
   it('padding around a name is trimmed away, and the trimmed value is quoted so nothing looks lost', () => {
-    expect(renderFrontMatter([['name', ' Espace MOOV ']])).toBe(['---', 'name: "Espace MOOV"', '---'].join('\n'));
+    expect(renderFrontMatter([['name', ' Espace Contoso ']])).toBe(['---', 'name: "Espace Contoso"', '---'].join('\n'));
   });
 });
 
 describe('joining the stamp to the converted body', () => {
   it('the body follows the block after one blank line', () => {
-    expect(withFrontMatter(renderFrontMatter([['site', 'Espace MOOV']]), '# Roadmap\n\nSlide one.')).toBe(
-      ['---', 'site: Espace MOOV', '---', '', '# Roadmap', '', 'Slide one.', ''].join('\n')
+    expect(withFrontMatter(renderFrontMatter([['site', 'Espace Contoso']]), '# Roadmap\n\nSlide one.')).toBe(
+      ['---', 'site: Espace Contoso', '---', '', '# Roadmap', '', 'Slide one.', ''].join('\n')
     );
   });
 
   it('a document that converted to nothing still gets its stamp', () => {
-    expect(withFrontMatter(renderFrontMatter([['site', 'Espace MOOV']]), '')).toBe(['---', 'site: Espace MOOV', '---', ''].join('\n'));
+    expect(withFrontMatter(renderFrontMatter([['site', 'Espace Contoso']]), '')).toBe(['---', 'site: Espace Contoso', '---', ''].join('\n'));
   });
 });

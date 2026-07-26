@@ -56,7 +56,7 @@ describe('remembering where a mailbox sync got to', () => {
   });
 
   it('a state file belonging to a site is not mistaken for a mailbox', () => {
-    expect(parseMailboxState({ source: { kind: 'site', id: 'contoso,1,2', name: 'Espace MOOV' } })).toEqual({
+    expect(parseMailboxState({ source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso' } })).toEqual({
       ok: false,
       error: { kind: 'malformed', message: 'state is not a mailbox' },
     });

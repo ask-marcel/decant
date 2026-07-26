@@ -5,14 +5,14 @@ describe('reading the sync state left by a previous run', () => {
   it('a site synced yesterday is reported with its name and how many files it holds', () => {
     const state = {
       version: 1,
-      source: { kind: 'site', id: 'contoso,1,2', name: 'Espace MOOV' },
+      source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso' },
       lastRun: '2026-07-22T09:00:00Z',
       drives: { 'b!one': { items: { a: {}, b: {} } }, 'b!two': { items: { c: {} } } },
     };
 
     const parsed = parseSyncedSource(state);
 
-    expect(parsed).toEqual({ ok: true, value: { kind: 'site', id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 3 } });
+    expect(parsed).toEqual({ ok: true, value: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 3 } });
   });
 
   it('a synced mailbox is counted by its conversations, one file each', () => {
@@ -52,7 +52,7 @@ describe('reading the sync state left by a previous run', () => {
   });
 
   it('a source missing its id is rejected as malformed', () => {
-    const parsed = parseSyncedSource({ source: { kind: 'site', name: 'Espace MOOV' } });
+    const parsed = parseSyncedSource({ source: { kind: 'site', name: 'Espace Contoso' } });
 
     expect(parsed).toEqual({ ok: false, error: { kind: 'malformed', message: 'source is missing id or name' } });
   });
@@ -64,7 +64,7 @@ describe('reading the sync state left by a previous run', () => {
   });
 
   it('a source whose id was written as a number is rejected as malformed', () => {
-    const parsed = parseSyncedSource({ source: { kind: 'site', id: 42, name: 'Espace MOOV' } });
+    const parsed = parseSyncedSource({ source: { kind: 'site', id: 42, name: 'Espace Contoso' } });
 
     expect(parsed).toEqual({ ok: false, error: { kind: 'malformed', message: 'source is missing id or name' } });
   });

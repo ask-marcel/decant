@@ -5,7 +5,7 @@ import { participantsOf, renderThread, shortHash, threadFileName, threadTitle, t
 const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   id: 'm1',
   conversationId: 'AAQkADk0...=',
-  subject: 'Contrat MOOV',
+  subject: 'Contrat Contoso',
   received: '2026-05-12T09:31:00Z',
   hasAttachments: false,
   from: { name: 'Jane Doe', address: 'jane@example.com' },
@@ -16,14 +16,14 @@ const message = (over: Partial<MailMessage> = {}): MailMessage => ({
 
 describe('naming the file a conversation lives in', () => {
   it('the name is the day it started, its subject and a fingerprint of the thread', () => {
-    expect(threadFileName({ conversationId: 'AAQkADk0...=', subject: 'Contrat MOOV', firstReceived: '2026-05-12T09:31:00Z' })).toBe(
-      `2026-05-12 Contrat MOOV ${shortHash('AAQkADk0...=')}.md`
+    expect(threadFileName({ conversationId: 'AAQkADk0...=', subject: 'Contrat Contoso', firstReceived: '2026-05-12T09:31:00Z' })).toBe(
+      `2026-05-12 Contrat Contoso ${shortHash('AAQkADk0...=')}.md`
     );
   });
 
   it('a reply keeps the thread under its original subject, so the file never renames', () => {
-    const started = { conversationId: 'c1', subject: 'Contrat MOOV', firstReceived: '2026-05-12T09:31:00Z' };
-    const replied = { conversationId: 'c1', subject: 'RE: RE: Contrat MOOV', firstReceived: '2026-05-12T09:31:00Z' };
+    const started = { conversationId: 'c1', subject: 'Contrat Contoso', firstReceived: '2026-05-12T09:31:00Z' };
+    const replied = { conversationId: 'c1', subject: 'RE: RE: Contrat Contoso', firstReceived: '2026-05-12T09:31:00Z' };
 
     expect(threadFileName(replied)).toBe(threadFileName(started));
   });
@@ -94,9 +94,9 @@ describe('writing a conversation as one document', () => {
       { message: message({ id: 'm1' }), body: 'Here is the contract.' },
     ];
 
-    expect(renderThread({ conversationId: 'c1', subject: 'RE: Contrat MOOV', parts })).toBe(
+    expect(renderThread({ conversationId: 'c1', subject: 'RE: Contrat Contoso', parts })).toBe(
       [
-        '# Contrat MOOV',
+        '# Contrat Contoso',
         '',
         '## 2026-05-12 09:31 — Jane Doe to Vincent DELACOURT',
         '',
@@ -123,7 +123,7 @@ describe('writing a conversation as one document', () => {
       },
     ];
 
-    const rendered = renderThread({ conversationId: 'c1', subject: 'Contrat MOOV', parts });
+    const rendered = renderThread({ conversationId: 'c1', subject: 'Contrat Contoso', parts });
 
     expect(rendered).toContain('## 2026-05-12 11:00 — Vincent DELACOURT to Jane Doe');
     expect(rendered).toContain('Confirmed, signing today.');

@@ -3,9 +3,9 @@ import { annotate, parseSelection } from './picker.ts';
 
 describe('showing what can be synced', () => {
   it('a site already in the knowledge base is marked with when it ran and what it holds', () => {
-    const rows = annotate([{ id: 'a', name: 'Espace MOOV', webUrl: 'https://x' }], { a: { lastRun: '2026-07-22T09:00:00Z', fileCount: 143 } });
+    const rows = annotate([{ id: 'a', name: 'Espace Contoso', webUrl: 'https://x' }], { a: { lastRun: '2026-07-22T09:00:00Z', fileCount: 143 } });
 
-    expect(rows).toEqual([{ id: 'a', name: 'Espace MOOV', webUrl: 'https://x', synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 143 } }]);
+    expect(rows).toEqual([{ id: 'a', name: 'Espace Contoso', webUrl: 'https://x', synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 143 } }]);
   });
 
   it('a site never synced carries no mark', () => {

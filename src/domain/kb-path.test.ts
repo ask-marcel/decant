@@ -55,11 +55,11 @@ describe('turning a SharePoint name into somewhere safe to write', () => {
   });
 
   it('a folder trail becomes a relative path under the knowledge base', () => {
-    expect(text(safeRelPath(['Espace MOOV', 'Projets: 2026', 'Roadmap.pptx']))).toBe('Espace MOOV/Projets_ 2026/Roadmap.pptx');
+    expect(text(safeRelPath(['Espace Contoso', 'Projets: 2026', 'Roadmap.pptx']))).toBe('Espace Contoso/Projets_ 2026/Roadmap.pptx');
   });
 
   it('empty folder names are dropped rather than producing a doubled separator', () => {
-    expect(text(safeRelPath(['Espace MOOV', '', 'Roadmap.pptx']))).toBe('Espace MOOV/Roadmap.pptx');
+    expect(text(safeRelPath(['Espace Contoso', '', 'Roadmap.pptx']))).toBe('Espace Contoso/Roadmap.pptx');
   });
 });
 

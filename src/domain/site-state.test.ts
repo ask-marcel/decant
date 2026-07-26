@@ -12,7 +12,7 @@ import {
   withDrive,
 } from './site-state.ts';
 
-const site = { id: 'contoso,1,2', name: 'Espace MOOV', webUrl: 'https://tenant.sharepoint.com/sites/X' };
+const site = { id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' };
 
 describe('remembering where a site sync got to', () => {
   it('a site never synced starts with no libraries and no last run', () => {

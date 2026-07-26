@@ -3,7 +3,7 @@ import { kbDocument, stampOf } from './kb-document.ts';
 
 const base = {
   source: 'https://tenant.sharepoint.com/sites/X/Roadmap.pptx',
-  site: 'Espace MOOV',
+  site: 'Espace Contoso',
   library: 'Documents',
   path: 'Projets/Roadmap.pptx',
   lastModified: '2026-05-12T09:31:00Z',
@@ -16,7 +16,7 @@ describe('stamping a converted document', () => {
       [
         '---',
         'source: https://tenant.sharepoint.com/sites/X/Roadmap.pptx?web=1',
-        'site: Espace MOOV',
+        'site: Espace Contoso',
         'library: Documents',
         'path: Projets/Roadmap.pptx',
         'last_modified: "2026-05-12T09:31:00Z"',
