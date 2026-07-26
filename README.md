@@ -77,11 +77,14 @@ picker shows each one's address alongside the name so they can be told apart bef
 a sync would otherwise land in a folder another site's `.sync-state.json` already claims, it is
 written under a disambiguated one instead (`<Site>-<hash>/`) rather than merging into it.
 
-Every generated markdown file opens with where it came from:
+Every generated markdown file opens with where it came from. A `source` that is a real SharePoint or
+OneDrive link carries `?web=1`, so clicking it opens the browser viewer directly instead of prompting
+to launch a desktop app; a mail conversation or a linked-drive-item source, neither a real URL, is
+left as its plain label.
 
 ```yaml
 ---
-source: https://tenant.sharepoint.com/sites/X/Roadmap.pptx
+source: https://tenant.sharepoint.com/sites/X/Roadmap.pptx?web=1
 site: Espace MOOV
 library: Documents
 path: Projets/Roadmap.pptx

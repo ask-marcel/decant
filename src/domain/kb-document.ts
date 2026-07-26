@@ -16,9 +16,19 @@ export type DocumentStamp = {
   readonly zipEntry?: string;
 };
 
+// A drive-item source is a real SharePoint/OneDrive link; a mail conversation or linked-drive source
+// is a synthetic label (`conversation <id>`, `drive <id>`), never a URL, and is left exactly as
+// given. `web=1` opens SharePoint's browser viewer directly rather than prompting for the desktop app.
+const withWebParam = (source: string): string => {
+  if (!source.startsWith('http://') && !source.startsWith('https://')) return source;
+  const url = new URL(source);
+  url.searchParams.set('web', '1');
+  return url.toString();
+};
+
 export const stampOf = (stamp: DocumentStamp): string =>
   renderFrontMatter([
-    ['source', stamp.source],
+    ['source', withWebParam(stamp.source)],
     ['site', stamp.site],
     ['library', stamp.library],
     ['path', stamp.path],

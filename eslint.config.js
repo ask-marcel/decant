@@ -114,6 +114,14 @@ export default [
       'sonarjs/cognitive-complexity': 'off', // we already cap function size; this is noise
     },
   },
+  {
+    // A test asserting URL-formatting behaviour (e.g. kb-document.test.ts's plain-http case)
+    // needs a literal http:// as inert fixture data, never a real outbound call. Scoped to
+    // *.test.ts only, so the rule still catches a real hardcoded insecure endpoint in src/**.
+    // Project-level severity change with a comment — never an inline ignore (rule 15).
+    files: ['**/*.test.ts'],
+    rules: { 'sonarjs/no-clear-text-protocols': 'off' },
+  },
   // Non-source paths must not be linted: Stryker copies the tree into .stryker-tmp/
   // during a run, reports/ is output, and the config file itself would trip no-undef
   // on `process` (it runs under Node semantics, not the **/*.ts globals block).

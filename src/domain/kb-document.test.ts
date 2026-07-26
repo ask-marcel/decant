@@ -15,7 +15,7 @@ describe('stamping a converted document', () => {
     expect(stampOf({ ...base, modifiedBy: 'Jane Doe', pdf: './Roadmap.pptx.pdf' })).toBe(
       [
         '---',
-        'source: https://tenant.sharepoint.com/sites/X/Roadmap.pptx',
+        'source: https://tenant.sharepoint.com/sites/X/Roadmap.pptx?web=1',
         'site: Espace MOOV',
         'library: Documents',
         'path: Projets/Roadmap.pptx',
@@ -45,5 +45,17 @@ describe('stamping a converted document', () => {
 
   it('the converted text follows the stamp', () => {
     expect(kbDocument(base, '# Roadmap')).toContain('---\n\n# Roadmap');
+  });
+
+  it('a source that is not a URL, a conversation or a linked drive label, is left exactly as given', () => {
+    expect(stampOf({ ...base, source: 'conversation AAMkAG' })).toContain('source: conversation AAMkAG');
+  });
+
+  it('a source URL that already carries a query string keeps it, and adds web alongside', () => {
+    expect(stampOf({ ...base, source: 'https://tenant.sharepoint.com/x?foo=bar' })).toContain('source: https://tenant.sharepoint.com/x?foo=bar&web=1');
+  });
+
+  it('a plain, non-secure source URL is opened in the browser too', () => {
+    expect(stampOf({ ...base, source: 'http://tenant.sharepoint.com/x' })).toContain('source: http://tenant.sharepoint.com/x?web=1');
   });
 });
