@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'bun:test';
-import { countSyncedItems, emptySiteState, forgetItem, parseSiteState, recordItem, renameItem, serializeSiteState, withDrive } from './site-state.ts';
+import {
+  belongsToAnotherSite,
+  countSyncedItems,
+  emptySiteState,
+  forgetItem,
+  parseSiteState,
+  recordItem,
+  renameItem,
+  serializeSiteState,
+  siteIdHash,
+  withDrive,
+} from './site-state.ts';
 
 const site = { id: 'contoso,1,2', name: 'Espace MOOV', webUrl: 'https://tenant.sharepoint.com/sites/X' };
 
@@ -52,6 +63,18 @@ describe('remembering where a site sync got to', () => {
     });
 
     expect(countSyncedItems(state)).toBe(3);
+  });
+
+  it('a state file recorded under a different site id belongs to someone else, even at the same path', () => {
+    const state = emptySiteState({ id: 'site-a', name: 'Team Site', webUrl: '' });
+
+    expect(belongsToAnotherSite(state, { id: 'site-b', name: 'Team Site', webUrl: '' })).toBe(true);
+    expect(belongsToAnotherSite(state, { id: 'site-a', name: 'Team Site', webUrl: '' })).toBe(false);
+  });
+
+  it('the same site id always hashes to the same suffix, so a resumed run finds its own disambiguated folder', () => {
+    expect(siteIdHash('site-a')).toBe(siteIdHash('site-a'));
+    expect(siteIdHash('site-a')).not.toBe(siteIdHash('site-b'));
   });
 });
 

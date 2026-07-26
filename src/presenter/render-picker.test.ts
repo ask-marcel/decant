@@ -29,6 +29,16 @@ describe('showing the operator what there is to sync', () => {
   it('libraries are offered the same way, several at a time', () => {
     expect(renderLibraryPicker([{ id: 'b!one', name: 'Documents', webUrl: '' }])).toContain('Choose one or more numbers (1,3), or all.');
   });
+
+  it('a row hinted because its name collides with another shows its address, so the two can be told apart', () => {
+    const hinted = [{ id: 'a', name: 'Team Site', webUrl: 'https://tenant.sharepoint.com', hint: 'https://tenant.sharepoint.com' }];
+
+    expect(renderSitePicker(hinted, mailbox)).toContain('  1) Team Site  [https://tenant.sharepoint.com]  (new)');
+  });
+
+  it('a row with no colliding name shows no address, same as today', () => {
+    expect(renderSitePicker(rows, mailbox)).toContain('  2) Direction  (new)');
+  });
 });
 
 describe('telling the operator what happened', () => {

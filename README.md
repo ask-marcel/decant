@@ -72,6 +72,11 @@ kb/
         Contrat.pdf.md              its text layer
 ```
 
+Two different SharePoint sites can share a display name (most often an unedited template title). The
+picker shows each one's address alongside the name so they can be told apart before choosing, and if
+a sync would otherwise land in a folder another site's `.sync-state.json` already claims, it is
+written under a disambiguated one instead (`<Site>-<hash>/`) rather than merging into it.
+
 Every generated markdown file opens with where it came from:
 
 ```yaml

@@ -1,10 +1,10 @@
 import type { DriveItem } from '../domain/drive-item.ts';
-import { safeSegment } from '../domain/kb-path.ts';
+import { disambiguateSegment, safeSegment } from '../domain/kb-path.ts';
 import { archivePath, outputPrefix, remapOutputs } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { DriveState, SiteRef, SiteState } from '../domain/site-state.ts';
-import { emptySiteState, forgetItem, parseSiteState, recordItem, renameItem, serializeSiteState, withDrive } from '../domain/site-state.ts';
+import { belongsToAnotherSite, emptySiteState, forgetItem, parseSiteState, recordItem, renameItem, serializeSiteState, siteIdHash, withDrive } from '../domain/site-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import { buildWorklist } from '../domain/worklist.ts';
 import type { ReportEntry, ReportRun } from '../domain/report.ts';
@@ -65,11 +65,11 @@ const add = (left: RunSummary, right: Partial<RunSummary>): RunSummary => ({
   queued: left.queued + (right.queued ?? 0),
 });
 
-const siteRoot = (kbRoot: string, site: SiteRef): string => `${kbRoot}/${safeSegment(site.name)}`;
+const siteRoot = (kbRoot: string, segment: string): string => `${kbRoot}/${segment}`;
 
-const libraryRootOf = (kbRoot: string, site: SiteRef, drive: DriveSummary): string => `${siteRoot(kbRoot, site)}/${safeSegment(drive.name)}`;
+const libraryRootOf = (kbRoot: string, segment: string, drive: DriveSummary): string => `${siteRoot(kbRoot, segment)}/${safeSegment(drive.name)}`;
 
-const archiveRootOf = (kbRoot: string, site: SiteRef, drive: DriveSummary): string => `${kbRoot}/_archive/${safeSegment(site.name)}/${safeSegment(drive.name)}`;
+const archiveRootOf = (kbRoot: string, segment: string, drive: DriveSummary): string => `${kbRoot}/_archive/${segment}/${safeSegment(drive.name)}`;
 
 export const loadState = async (files: Files, path: string, site: SiteRef, logger: Logger): Promise<SiteState> => {
   const text = await files.readText(path);
@@ -85,11 +85,30 @@ const unusable = (logger: Logger, site: SiteRef, cause: string): SiteState => {
   return emptySiteState(site);
 };
 
+// Two sites can share a display name, so the default path can hold someone else's file: that
+// folder's own state names its real owner (`SiteState.source.id`), checked once here before
+// anything is read or written under it. A collision moves this site into a disambiguated folder
+// instead, the other site's file untouched; the common, uncollided case costs the one read below.
+type ResolvedSite = { readonly segment: string; readonly state: SiteState };
+
+const resolveSite = async (deps: SyncSiteDeps, site: SiteRef): Promise<ResolvedSite> => {
+  const defaultSegment = safeSegment(site.name);
+  const defaultState = await loadState(deps.files, `${siteRoot(deps.kbRoot, defaultSegment)}/${STATE_FILE_NAME}`, site, deps.logger);
+  if (!belongsToAnotherSite(defaultState, site)) return { segment: defaultSegment, state: defaultState };
+  deps.logger.warn('sync.site-name-collision', { siteId: site.id, name: site.name });
+  const segment = disambiguateSegment(site.name, siteIdHash(site.id));
+  return { segment, state: await loadState(deps.files, `${siteRoot(deps.kbRoot, segment)}/${STATE_FILE_NAME}`, site, deps.logger) };
+};
+
+export type ResolvedInput = SyncSiteInput & { readonly segment: string };
+
 export const createSyncSite =
   (deps: SyncSiteDeps): SyncSite =>
-  async (input) => {
-    const statePath = `${siteRoot(deps.kbRoot, input.site)}/${STATE_FILE_NAME}`;
-    let state = await loadState(deps.files, statePath, input.site, deps.logger);
+  async (rawInput) => {
+    const resolved = await resolveSite(deps, rawInput.site);
+    const input: ResolvedInput = { ...rawInput, segment: resolved.segment };
+    const statePath = `${siteRoot(deps.kbRoot, resolved.segment)}/${STATE_FILE_NAME}`;
+    let state = resolved.state;
     let summary = EMPTY;
     let notes = NO_NOTES;
     for (const drive of input.drives) {
@@ -102,7 +121,7 @@ export const createSyncSite =
     const finished = { ...state, lastRun: deps.clock.nowIso() };
     const saved = await save(deps.files, statePath, finished, input.dryRun);
     if (!saved.ok) return saved;
-    await writeReport(deps, input, siteRoot(deps.kbRoot, input.site), input.site.name, summary, notes);
+    await writeReport(deps, input, siteRoot(deps.kbRoot, resolved.segment), input.site.name, summary, notes);
     return ok(summary);
   };
 
@@ -138,7 +157,7 @@ const save = async (files: Files, path: string, state: SiteState, dryRun: boolea
 
 type DriveOutcome = { readonly state: SiteState; readonly summary: RunSummary; readonly notes: RunNotes };
 
-const syncDrive = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, state: SiteState, statePath: string): Promise<Result<DriveOutcome, StepError>> => {
+const syncDrive = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, state: SiteState, statePath: string): Promise<Result<DriveOutcome, StepError>> => {
   const queued = await queueWork(deps, input, drive, state, statePath);
   if (!queued.ok) return queued;
   if (input.dryRun) return ok({ state: queued.value.state, summary: add(EMPTY, { queued: queued.value.state.drives[drive.id]?.pending.length ?? 0 }), notes: NO_NOTES });
@@ -163,7 +182,7 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
 // What the moving counter names for each item: the path it sits at, or the id of one being archived.
 const labelOf = (work: WorkItem): string => (work.kind === 'archive' ? work.itemId : work.item.path);
 
-const processQueue = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, state: SiteState, statePath: string): Promise<Result<DriveOutcome, StepError>> => {
+const processQueue = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, state: SiteState, statePath: string): Promise<Result<DriveOutcome, StepError>> => {
   let current = state;
   let summary = EMPTY;
   let notes = NO_NOTES;
@@ -213,17 +232,17 @@ const mergeNotes = (left: RunNotes, right: Partial<RunNotes>): RunNotes => ({
 // function so a whole window's updates fold onto the manifest in order, after the parallel IO.
 type WorkOutcome = { readonly update: (drive: DriveState) => DriveState; readonly counted: Partial<RunSummary>; readonly notes?: Partial<RunNotes> };
 
-const applyWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, driveState: DriveState, work: WorkItem): Promise<WorkOutcome> => {
+const applyWork = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, driveState: DriveState, work: WorkItem): Promise<WorkOutcome> => {
   if (work.kind === 'archive') return archiveOutputs(deps, input, drive, driveState, work.itemId, work.outputs);
   if (work.kind === 'move') return moveOutputs(deps, input, drive, work.item, work.from, work.outputs);
   return convertOne(deps, input, drive, work.item);
 };
 
-const convertOne = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, item: DriveItem): Promise<WorkOutcome> => {
+const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, item: DriveItem): Promise<WorkOutcome> => {
   const outcome = await deps.convertFile({
     item,
     driveId: drive.id,
-    libraryRoot: libraryRootOf(deps.kbRoot, input.site, drive),
+    libraryRoot: libraryRootOf(deps.kbRoot, input.segment, drive),
     site: input.site.name,
     library: drive.name,
     maxBytes: input.maxBytes,
@@ -240,8 +259,8 @@ const convertOne = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: Drive
   return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason }] } };
 };
 
-const moveOutputs = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, item: DriveItem, from: string, outputs: ReadonlyArray<string>): Promise<WorkOutcome> => {
-  const libraryRoot = libraryRootOf(deps.kbRoot, input.site, drive);
+const moveOutputs = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, item: DriveItem, from: string, outputs: ReadonlyArray<string>): Promise<WorkOutcome> => {
+  const libraryRoot = libraryRootOf(deps.kbRoot, input.segment, drive);
   const moved = remapOutputs(outputs, outputPrefix(libraryRoot, from), outputPrefix(libraryRoot, item.path));
   for (const [index, target] of moved.entries()) {
     const source = outputs[index];
@@ -254,14 +273,14 @@ const moveOutputs = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: Driv
 
 const archiveOutputs = async (
   deps: SyncSiteDeps,
-  input: SyncSiteInput,
+  input: ResolvedInput,
   drive: DriveSummary,
   driveState: DriveState,
   itemId: string,
   outputs: ReadonlyArray<string>
 ): Promise<WorkOutcome> => {
-  const libraryRoot = libraryRootOf(deps.kbRoot, input.site, drive);
-  const archiveRoot = archiveRootOf(deps.kbRoot, input.site, drive);
+  const libraryRoot = libraryRootOf(deps.kbRoot, input.segment, drive);
+  const archiveRoot = archiveRootOf(deps.kbRoot, input.segment, drive);
   for (const output of outputs) {
     const done = await deps.files.move(output, archivePath(archiveRoot, libraryRoot, output));
     if (!done.ok) deps.logger.warn('archive.failed', { itemId, cause: done.error.kind });

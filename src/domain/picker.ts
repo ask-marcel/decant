@@ -8,9 +8,23 @@ export type PickerRow = {
   readonly name: string;
   readonly webUrl: string;
   readonly synced?: SyncedMark;
+  readonly hint?: string;
 };
 
 export type Choosable = { readonly id: string; readonly name: string; readonly webUrl?: string };
+
+// Two different sites can carry the same display name (an unedited template title, most often), and
+// with it look identical in a numbered list. Anything sharing a name with another source in the same
+// listing is hinted with its own address, so the operator can tell them apart before choosing.
+const collidingNames = (sources: ReadonlyArray<Choosable>): ReadonlySet<string> => {
+  const seen = new Set<string>();
+  const collided = new Set<string>();
+  for (const source of sources) {
+    if (seen.has(source.name)) collided.add(source.name);
+    seen.add(source.name);
+  }
+  return collided;
+};
 
 export type Selection =
   | { readonly kind: 'rows'; readonly indices: ReadonlyArray<number> }
@@ -23,11 +37,14 @@ export type SelectionError = { readonly kind: 'bad-choice'; readonly message: st
 
 // A source already in the knowledge base is marked so the operator sees at a glance what is new,
 // what is stale, and how much each one already holds.
-export const annotate = (sources: ReadonlyArray<Choosable>, synced: Readonly<Record<string, SyncedMark>>): ReadonlyArray<PickerRow> =>
-  sources.map((source) => {
+export const annotate = (sources: ReadonlyArray<Choosable>, synced: Readonly<Record<string, SyncedMark>>): ReadonlyArray<PickerRow> => {
+  const collided = collidingNames(sources);
+  return sources.map((source) => {
     const mark = synced[source.id];
-    return { id: source.id, name: source.name, webUrl: source.webUrl ?? '', ...(mark === undefined ? {} : { synced: mark }) };
+    const webUrl = source.webUrl ?? '';
+    return { id: source.id, name: source.name, webUrl, ...(mark === undefined ? {} : { synced: mark }), ...(collided.has(source.name) ? { hint: webUrl } : {}) };
   });
+};
 
 const parseIndex = (token: string, count: number): Result<number, SelectionError> => {
   const index = Number(token);

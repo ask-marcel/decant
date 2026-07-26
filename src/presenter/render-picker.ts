@@ -5,7 +5,9 @@ const files = (count: number): string => (count === 1 ? '1 file' : `${count} fil
 
 const mark = (row: PickerRow): string => (row.synced === undefined ? 'new' : `synced ${row.synced.lastRun.slice(0, 10)}, ${files(row.synced.fileCount)}`);
 
-const line = (row: PickerRow, index: number): string => `${String(index + 1).padStart(3)}) ${row.name}  (${mark(row)})`;
+const hint = (row: PickerRow): string => (row.hint === undefined ? '' : `  [${row.hint}]`);
+
+const line = (row: PickerRow, index: number): string => `${String(index + 1).padStart(3)}) ${row.name}${hint(row)}  (${mark(row)})`;
 
 export const renderSitePicker = (rows: ReadonlyArray<PickerRow>, mailbox: PickerRow): string =>
   [

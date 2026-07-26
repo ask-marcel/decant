@@ -11,6 +11,21 @@ describe('showing what can be synced', () => {
   it('a site never synced carries no mark', () => {
     expect(annotate([{ id: 'b', name: 'Autre' }], {})).toEqual([{ id: 'b', name: 'Autre', webUrl: '' }]);
   });
+
+  it('two sources sharing a name are each hinted with their own address, so the operator can tell them apart before choosing', () => {
+    const rows = annotate(
+      [
+        { id: 'contoso,1,1', name: 'Team Site', webUrl: 'https://tenant.sharepoint.com' },
+        { id: 'contoso,1,2', name: 'Team Site', webUrl: 'https://tenant.sharepoint.com/sites/X' },
+      ],
+      {}
+    );
+
+    expect(rows).toEqual([
+      { id: 'contoso,1,1', name: 'Team Site', webUrl: 'https://tenant.sharepoint.com', hint: 'https://tenant.sharepoint.com' },
+      { id: 'contoso,1,2', name: 'Team Site', webUrl: 'https://tenant.sharepoint.com/sites/X', hint: 'https://tenant.sharepoint.com/sites/X' },
+    ]);
+  });
 });
 
 describe('reading what the operator chose', () => {

@@ -617,3 +617,29 @@ describe('naming the step, cause and payload behind every outcome', () => {
     expect(logger.calls.filter((call) => call.event === 'convert.failed')).toHaveLength(1);
   });
 });
+
+describe('a site name that collides with another site already on disk', () => {
+  it('a colliding site is synced under a disambiguated folder, leaving the other site untouched', async () => {
+    const existing = { id: 'contoso,9,9', name: 'Team Site', webUrl: 'https://tenant.sharepoint.com' };
+    const incoming = { id: 'contoso,1,2', name: 'Team Site', webUrl: 'https://tenant.sharepoint.com/sites/X' };
+    const existingText = serializeSiteState({ version: 1, source: { kind: 'site', ...existing }, lastRun: '2026-07-20T00:00:00Z', drives: {} });
+    const files = createFilesFake({ texts: { 'kb/Team Site/.sync-state.json': existingText } });
+    const reader = createDriveReaderFake({ pages: [{ items: [item({ path: 'A.docx' })], skipped: 0, deltaLink: 'c1' }] });
+    const logger = createLoggerFake();
+    const syncSite = createSyncSite({
+      reader,
+      files,
+      logger,
+      progress: createProgressFake(),
+      clock: createClockFake(),
+      kbRoot: 'kb',
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock: createClockFake() }),
+    });
+
+    await syncSite({ site: incoming, drives, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', concurrency: 1, dryRun: false });
+
+    expect(files.written.get('kb/Team Site/.sync-state.json')).toBe(existingText);
+    expect([...files.written.keys()].some((path) => path.startsWith('kb/Team Site-') && path.endsWith('.sync-state.json'))).toBe(true);
+    expect(logger.calls.find((call) => call.event === 'sync.site-name-collision')?.meta).toEqual({ siteId: 'contoso,1,2', name: 'Team Site' });
+  });
+});

@@ -86,6 +86,17 @@ export const parseSiteState = (raw: unknown): Result<SiteState, SiteStateError> 
 
 export const countSyncedItems = (state: SiteState): number => Object.values(state.drives).reduce((total, drive) => total + Object.keys(drive.items).length, 0);
 
+// Two sites can share a display name and so alias onto the same folder path. A freshly-created
+// `emptySiteState(site)` always carries that same site's own id, so this only ever reads true when
+// a state file genuinely loaded off disk belongs to a different site than the one being synced now.
+export const belongsToAnotherSite = (state: SiteState, site: SiteRef): boolean => state.source.id !== site.id;
+
+// A real site id embeds the tenant hostname (`tenant.sharepoint.com,guid,guid`), shared by every
+// site in the tenant, so slicing the id itself would not distinguish two colliding sites. Hashing
+// first spreads that difference across the whole string before `disambiguateSegment` (kb-path.ts)
+// takes its slice.
+export const siteIdHash = (id: string): string => new Bun.CryptoHasher('sha256').update(id).digest('hex');
+
 export const withDrive = (state: SiteState, driveId: string, drive: DriveState): SiteState => ({ ...state, drives: { ...state.drives, [driveId]: drive } });
 
 export const recordItem = (drive: DriveState, itemId: string, entry: ManifestEntry): DriveState => ({ ...drive, items: { ...drive.items, [itemId]: entry } });
