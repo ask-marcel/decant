@@ -3,39 +3,44 @@ import { err, ok } from '../domain/result.ts';
 import { formatError } from '../domain/utilities/format-error.ts';
 import type { Ocr, OcrError } from '../use-cases/ports/ocr.ts';
 
-// PaddleOCR prints what it read on stdout, so the package's own ProcessRunner (whose stdio is
-// always inherited) cannot be reused here: this adapter needs the output, not just the exit code.
+// RapidOCR's own CLI prints a free-text dataclass repr and its `--lang_type` flag only feeds
+// visualisation, never the recognizer (confirmed by reading its source), so this drives the Python
+// API directly through a bundled script instead: clean JSON out, and the language actually applies.
 export type ShellRun = { readonly exitCode: number; readonly stdout: string; readonly stderr: string };
 
 export type Shell = (command: ReadonlyArray<string>) => Promise<ShellRun>;
 
-export type PaddleOptions = {
+export type RapidOptions = {
   readonly shell: Shell;
   readonly lang: string;
   readonly binary?: string;
 };
 
-const argsFor = (binary: string, path: string, lang: string): ReadonlyArray<string> => [binary, 'ocr', '-i', path, '--lang', lang];
+const SCRIPT_PATH = `${import.meta.dir}/rapidocr-run.py`;
 
-// The CLI prints a Python record per page. The recognised lines are the quoted strings inside that
-// record's `rec_texts` list, and nothing else in the dump is text the image actually held.
-const REC_TEXTS = /'rec_texts':\s*\[([^\]]*)\]/g;
-const QUOTED = /'([^']*)'/g;
-
-const textFrom = (stdout: string): string =>
-  [...stdout.matchAll(REC_TEXTS)]
-    .flatMap((page) => [...(page[1] ?? '').matchAll(QUOTED)].map((line) => line[1] ?? ''))
-    .filter((line) => line.trim().length > 0)
-    .join('\n');
+const argsFor = (binary: string, path: string, lang: string): ReadonlyArray<string> => [binary, SCRIPT_PATH, path, lang];
 
 const lastLine = (text: string): string => text.trim().split('\n').slice(-1)[0] ?? '';
 
-export const createPaddleOcr = (options: PaddleOptions): Ocr => ({
+const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
+
+// Each entry is `{box, txt, score}`; only the recognised text lines are what the image actually said.
+const textsFrom = (stdout: string): string => {
+  const parsed: unknown = JSON.parse(stdout);
+  if (!Array.isArray(parsed)) return '';
+  return parsed
+    .filter(isRecord)
+    .map((entry) => entry['txt'])
+    .filter((txt): txt is string => typeof txt === 'string')
+    .join('\n');
+};
+
+export const createRapidOcr = (options: RapidOptions): Ocr => ({
   read: async (path): Promise<Result<string, OcrError>> => {
     try {
-      const run = await options.shell(argsFor(options.binary ?? 'paddleocr', path, options.lang));
-      if (run.exitCode !== 0) return err({ kind: 'failed', message: lastLine(run.stderr) || `paddleocr exited ${run.exitCode}` });
-      return ok(textFrom(run.stdout));
+      const run = await options.shell(argsFor(options.binary ?? 'python3', path, options.lang));
+      if (run.exitCode !== 0) return err({ kind: 'failed', message: lastLine(run.stderr) || `rapidocr exited ${run.exitCode}` });
+      return ok(textsFrom(run.stdout));
     } catch (error) {
       return err({ kind: 'unavailable', message: formatError(error) });
     }

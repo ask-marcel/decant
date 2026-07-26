@@ -14,7 +14,7 @@ used as a library, which owns authentication, paging and document conversion. Se
 
 - [Bun](https://bun.sh) 1.2 or newer
 - A Microsoft 365 account already signed in: run `ask-marcel-office login` once (a browser opens)
-- `paddleocr` on PATH to read text out of images and scanned PDFs (optional; without it the files are still copied)
+- Python 3 with [`rapidocr`](https://pypi.org/project/rapidocr/) installed, to read text out of images and scanned PDFs (optional; without it the files are still copied)
 
 ## Install
 
@@ -195,7 +195,7 @@ the incremental cache does not notice new test files.
 src/
   domain/        pure logic: paths, front matter, conversion planning, delta diffing, state
   use-cases/     orchestration against ports; ports/ holds the port types
-  infra/         adapters: the Graph library, Bun filesystem, PaddleOCR, Winston, stdin
+  infra/         adapters: the Graph library, Bun filesystem, RapidOCR, Winston, stdin
   presenter/     pure renderers plus the single stdout writer
   composition/   option parsing, configuration, dependency wiring
   test-helpers/  hand-written fakes and builders

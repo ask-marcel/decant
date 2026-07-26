@@ -137,5 +137,5 @@ own `Files` port for those.
 
 `ProcessRunner` (`createBunProcessRunner()`) is **not** usable here. Its only method is
 `runInherit`, whose stdio is always inherited by the parent process, so there is no way to capture
-a subprocess's stdout. PaddleOCR's recognized text arrives on stdout, so this repo needs its own
-process port that captures output.
+a subprocess's stdout. RapidOCR's recognized text arrives on stdout (as JSON, via a bundled Python
+script), so this repo needs its own process port that captures output.

@@ -40,7 +40,7 @@ describe('wiring the command together', () => {
       clock: createClockFake(),
     });
 
-    const summaries = await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'paddleocr (en)', concurrency: 1, dryRun: false });
+    const summaries = await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'rapidocr (en)', concurrency: 1, dryRun: false });
 
     expect(summaries).toEqual({ ok: true, value: [] });
   });
