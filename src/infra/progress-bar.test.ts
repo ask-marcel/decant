@@ -82,4 +82,17 @@ describe('showing how far a conversion has got', () => {
     expect(writes.at(-1)).toContain('slow-scan.jpg');
     expect(writes.at(-1)).toContain('2/3');
   });
+
+  it('the line names only the oldest running item, even with several running at once, so a wide window never wraps the terminal', () => {
+    const { bar, writes } = capture();
+
+    bar.start(3, 'Converting');
+    bar.begin('A.docx');
+    bar.begin('B.docx');
+    bar.begin('C.docx');
+
+    expect(writes.at(-1)).toContain('A.docx');
+    expect(writes.at(-1)).not.toContain('B.docx');
+    expect(writes.at(-1)).not.toContain('C.docx');
+  });
 });
