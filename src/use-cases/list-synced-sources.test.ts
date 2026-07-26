@@ -5,7 +5,7 @@ import { createListSyncedSources } from './list-synced-sources.ts';
 
 const siteState = JSON.stringify({
   version: 1,
-  source: { kind: 'site', id: 'contoso,1,2', name: 'Espace MOOV' },
+  source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso' },
   lastRun: '2026-07-22T09:00:00Z',
   drives: { 'b!one': { items: { a: {}, b: {} } } },
 });
@@ -13,13 +13,13 @@ const siteState = JSON.stringify({
 describe('showing which sources have already been synced', () => {
   it('a knowledge base holding one synced site reports that site with its file count', async () => {
     const files = createFilesFake({
-      directories: { kb: ['Espace MOOV'] },
-      texts: { 'kb/Espace MOOV/.sync-state.json': siteState },
+      directories: { kb: ['Espace Contoso'] },
+      texts: { 'kb/Espace Contoso/.sync-state.json': siteState },
     });
 
     const sources = await createListSyncedSources({ files, logger: createLoggerFake(), kbRoot: 'kb' })();
 
-    expect(sources).toEqual({ ok: true, value: [{ kind: 'site', id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 2 }] });
+    expect(sources).toEqual({ ok: true, value: [{ kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 2 }] });
   });
 
   it('a knowledge base that does not exist yet reports no synced sources', async () => {
@@ -40,13 +40,13 @@ describe('showing which sources have already been synced', () => {
 
   it('a corrupt folder alongside a healthy one leaves the healthy source in the list', async () => {
     const files = createFilesFake({
-      directories: { kb: ['Broken', 'Espace MOOV'] },
-      texts: { 'kb/Broken/.sync-state.json': 'not json at all', 'kb/Espace MOOV/.sync-state.json': siteState },
+      directories: { kb: ['Broken', 'Espace Contoso'] },
+      texts: { 'kb/Broken/.sync-state.json': 'not json at all', 'kb/Espace Contoso/.sync-state.json': siteState },
     });
 
     const sources = await createListSyncedSources({ files, logger: createLoggerFake(), kbRoot: 'kb' })();
 
-    expect(sources.ok && sources.value.map((source) => source.name)).toEqual(['Espace MOOV']);
+    expect(sources.ok && sources.value.map((source) => source.name)).toEqual(['Espace Contoso']);
   });
 
   it('a corrupt state file is skipped and warned about so the run can continue', async () => {

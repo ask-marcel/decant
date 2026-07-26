@@ -18,7 +18,7 @@ const stamp: DocumentStamp = {
   source: 'https://outlook.office.com/mail/id/m1',
   site: 'Mailbox',
   library: 'Inbox',
-  path: 'Contrat MOOV',
+  path: 'Contrat Contoso',
   lastModified: '2026-05-12T09:31:00Z',
   syncedAt: '2026-07-23T14:00:00Z',
 };

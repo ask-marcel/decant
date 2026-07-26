@@ -13,7 +13,7 @@ import type { RunSummary, SyncSiteInput } from './sync-site.ts';
 import type { SyncMailboxInput } from './sync-mailbox.ts';
 
 const sites = [
-  { id: 'contoso,1,2', name: 'Espace MOOV', webUrl: 'https://tenant.sharepoint.com/sites/moov' },
+  { id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/contoso' },
   { id: 'contoso,3,4', name: 'Direction', webUrl: 'https://tenant.sharepoint.com/sites/dir' },
 ];
 const drives = [
@@ -75,15 +75,15 @@ describe('choosing what to sync', () => {
     const { calls } = await run(['1', '1']);
 
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.site.name).toBe('Espace MOOV');
+    expect(calls[0]?.site.name).toBe('Espace Contoso');
     expect(calls[0]?.drives).toEqual([{ id: 'b!one', name: 'Documents' }]);
   });
 
   it('the site list marks what is already synced, so the operator sees what is new', async () => {
-    const synced = [{ kind: 'site' as const, id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 }];
+    const synced = [{ kind: 'site' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 }];
     const { prompt } = await run(['1', '1'], {}, { synced });
 
-    expect(prompt.shown[0]).toContain('Espace MOOV  (synced 2026-07-22, 143 files)');
+    expect(prompt.shown[0]).toContain('Espace Contoso  (synced 2026-07-22, 143 files)');
     expect(prompt.shown[0]).toContain('Direction  (new)');
   });
 
@@ -116,7 +116,7 @@ describe('choosing what to sync', () => {
   it('a site named by id is filed under its real name, not under the id', async () => {
     const { calls } = await run([], { siteId: 'contoso,1,2', driveIds: ['b!one'] });
 
-    expect(calls[0]?.site).toEqual({ id: 'contoso,1,2', name: 'Espace MOOV', webUrl: 'https://tenant.sharepoint.com/sites/moov' });
+    expect(calls[0]?.site).toEqual({ id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/contoso' });
   });
 
   it('an id no site answers to stops the run rather than making a folder named after it', async () => {
@@ -127,9 +127,9 @@ describe('choosing what to sync', () => {
   });
 
   it('naming a site by address skips the picker too', async () => {
-    const { calls } = await run(['1'], { siteUrl: 'https://tenant.sharepoint.com/sites/moov' });
+    const { calls } = await run(['1'], { siteUrl: 'https://tenant.sharepoint.com/sites/contoso' });
 
-    expect(calls[0]?.site.name).toBe('Espace MOOV');
+    expect(calls[0]?.site.name).toBe('Espace Contoso');
   });
 
   it('an answer nobody offered stops the run with the reason', async () => {
@@ -155,7 +155,7 @@ describe('choosing what to sync', () => {
 
 describe('refreshing everything already synced', () => {
   const synced = [
-    { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 },
+    { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 },
     { kind: 'mailbox' as const, id: 'me', name: 'Mailbox', lastRun: '2026-07-22T09:00:00Z', fileCount: 12 },
   ];
 
@@ -164,7 +164,7 @@ describe('refreshing everything already synced', () => {
 
     expect(prompt.asked).toEqual([]);
     expect(calls).toHaveLength(1);
-    expect(calls[0]?.site.name).toBe('Espace MOOV');
+    expect(calls[0]?.site.name).toBe('Espace Contoso');
   });
 
   it('the update command repeats the libraries the earlier run chose', async () => {
@@ -226,7 +226,7 @@ describe('syncing the mailbox', () => {
   it('a refresh includes the mailbox when it is already in the knowledge base', async () => {
     const synced = [
       { kind: 'mailbox' as const, id: 'me', name: 'Mailbox', lastRun: '2026-07-22T09:00:00Z', fileCount: 42 },
-      { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 },
+      { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 },
     ];
     const { mailboxRuns, calls } = await run([], { command: 'update' }, { synced });
 
@@ -235,7 +235,7 @@ describe('syncing the mailbox', () => {
   });
 
   it('a refresh leaves the mailbox alone when it was never synced', async () => {
-    const synced = [{ kind: 'site' as const, id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 }];
+    const synced = [{ kind: 'site' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 }];
     const { mailboxRuns } = await run([], { command: 'update' }, { synced });
 
     expect(mailboxRuns).toEqual([]);
@@ -261,7 +261,7 @@ describe('when the knowledge base itself cannot be read', () => {
 
     await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
 
-    expect(prompt.shown[0]).toContain('Espace MOOV  (new)');
+    expect(prompt.shown[0]).toContain('Espace Contoso  (new)');
     expect(calls).toHaveLength(1);
   });
 
@@ -305,7 +305,7 @@ describe('when a library cannot be listed', () => {
 describe('when one site in a refresh fails', () => {
   it('the run stops there, so the failure is not buried under later sites', async () => {
     const synced = [
-      { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 1 },
+      { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 1 },
       { kind: 'site' as const, id: 'contoso,3,4', name: 'Direction', lastRun: '2026-07-22T09:00:00Z', fileCount: 1 },
     ];
     const calls: SyncSiteInput[] = [];
@@ -333,7 +333,7 @@ describe('telling the operator what happened', () => {
   it('the run reports what it did once it is finished', async () => {
     const { prompt } = await run(['1', '1']);
 
-    expect(prompt.shown.at(-1)).toBe('Espace MOOV: 2 converted, 0 moved, 0 archived, 0 skipped, 0 failed.');
+    expect(prompt.shown.at(-1)).toBe('Espace Contoso: 2 converted, 0 moved, 0 archived, 0 skipped, 0 failed.');
   });
 
   it('a dry run passes the intent through, so nothing is written', async () => {
@@ -468,7 +468,7 @@ describe('when a source run fails after it began', () => {
     const calls: SyncSiteInput[] = [];
     const synced = [
       { kind: 'mailbox' as const, id: 'me', name: 'Mailbox', lastRun: '2026-07-22T09:00:00Z', fileCount: 12 },
-      { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace MOOV', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 },
+      { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 },
     ];
     const runSync = createRunSync({
       reader: createDriveReaderFake({ sites, drives }),

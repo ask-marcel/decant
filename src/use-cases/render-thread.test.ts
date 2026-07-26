@@ -19,7 +19,7 @@ import { createRenderThread } from './render-thread.ts';
 import type { RenderThreadOutcome } from './render-thread.ts';
 
 const CONV = 'AAQkADk0...=';
-const THREAD_RELATIVE = `threads/2026/2026-05-12 Contrat MOOV ${shortHash(CONV)}.md`;
+const THREAD_RELATIVE = `threads/2026/2026-05-12 Contrat Contoso ${shortHash(CONV)}.md`;
 const THREAD_FILE = `kb/Mailbox/${THREAD_RELATIVE}`;
 // Attachments live in one store shared across every thread, not in a folder beside each thread.
 const ATTACHMENTS_STORE = 'kb/Mailbox/_attachments';
@@ -32,7 +32,7 @@ const storedName = (name: string, attachmentId: string): string => disambiguateS
 const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   id: 'm1',
   conversationId: CONV,
-  subject: 'Contrat MOOV',
+  subject: 'Contrat Contoso',
   received: '2026-05-12T09:31:00Z',
   hasAttachments: false,
   from: { name: 'Jane Doe', address: 'jane@example.com' },
@@ -74,7 +74,7 @@ describe('writing one conversation as one file', () => {
 
     expect(outcome).toMatchObject({ kind: 'rendered' });
     const written = files.written.get(THREAD_FILE) ?? '';
-    expect(written).toContain('# Contrat MOOV');
+    expect(written).toContain('# Contrat Contoso');
     expect(written).toContain('Here is the contract.');
     expect(written).toContain('Agreed.');
   });
@@ -89,7 +89,7 @@ describe('writing one conversation as one file', () => {
         '---',
         `source: conversation ${CONV}`,
         'site: Mailbox',
-        'subject: Contrat MOOV',
+        'subject: Contrat Contoso',
         'participants:',
         '  - Jane Doe',
         '  - Vincent DELACOURT',
@@ -133,7 +133,7 @@ describe('writing one conversation as one file', () => {
     const { outcome } = await run({ reader: { conversations } });
 
     expect(outcome?.kind === 'rendered' && outcome.thread.record).toMatchObject({
-      file: `threads/2026/2026-05-12 Contrat MOOV ${shortHash(CONV)}.md`,
+      file: `threads/2026/2026-05-12 Contrat Contoso ${shortHash(CONV)}.md`,
       messageIds: ['m1', 'm2'],
       lastMessage: '2026-05-13T10:00:00Z',
     });

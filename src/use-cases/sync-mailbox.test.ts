@@ -24,7 +24,7 @@ const folder = (over: Partial<MailFolder> = {}): MailFolder => ({ id: 'AAMk-inbo
 const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   id: 'm1',
   conversationId: 'conv-1',
-  subject: 'Contrat MOOV',
+  subject: 'Contrat Contoso',
   received: '2026-05-12T09:31:00Z',
   hasAttachments: false,
   from: { name: 'Jane Doe', address: 'jane@example.com' },

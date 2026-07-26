@@ -32,8 +32,8 @@ const run = async (
   const outcome = await convert({
     item: item(over),
     driveId: 'b!one',
-    libraryRoot: 'kb/Espace MOOV/Documents',
-    site: 'Espace MOOV',
+    libraryRoot: 'kb/Espace Contoso/Documents',
+    site: 'Espace Contoso',
     library: 'Documents',
     maxBytes: 50 * 1024 * 1024,
     ocrLabel: 'paddleocr (en)',
@@ -45,13 +45,13 @@ describe('converting one document out of a library', () => {
   it('a Word document lands as markdown under the same folders it had in SharePoint', async () => {
     const { outcome, files } = await run({}, { reader: { markdown: { '01ABC': '# Contrat\n\nClause one.' } } });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Projets/Contrat.docx.md'] });
-    expect(files.written.get('kb/Espace MOOV/Documents/Projets/Contrat.docx.md')).toContain('# Contrat');
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Projets/Contrat.docx.md'] });
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toContain('# Contrat');
   });
 
   it('the markdown carries where it came from, when it changed and who changed it', async () => {
     const { files } = await run({});
-    const written = files.written.get('kb/Espace MOOV/Documents/Projets/Contrat.docx.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md') ?? '';
 
     expect(written).toContain('source: https://tenant.sharepoint.com/sites/X/Contrat.docx');
     expect(written).toContain('path: Projets/Contrat.docx');
@@ -62,56 +62,56 @@ describe('converting one document out of a library', () => {
   it('a document at the top of the library lands directly in the library folder', async () => {
     const { outcome } = await run({ name: 'Note.docx', path: 'Note.docx' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Note.docx.md'] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Note.docx.md'] });
   });
 
   it('a name the filesystem cannot hold is made safe before anything is written', async () => {
     const { outcome } = await run({ name: 'Q1/Q2.docx', path: 'Projets: 2026/Q1/Q2.docx' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Projets_ 2026/Q1/Q1_Q2.docx.md'] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Projets_ 2026/Q1/Q1_Q2.docx.md'] });
   });
 
   it('a document that converted to nothing still lands, with a note in place of the text', async () => {
     const { files } = await run({}, { reader: { markdown: { '01ABC': '   ' } } });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Projets/Contrat.docx.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toContain('No text could be read');
   });
 
   it('a deck lands as markdown for its text and a PDF for its slides, each pointing at the other', async () => {
     const { outcome, files } = await run({ name: 'Roadmap.pptx', path: 'Roadmap.pptx' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Roadmap.pptx.pdf', 'kb/Espace MOOV/Documents/Roadmap.pptx.md'] });
-    expect(files.written.get('kb/Espace MOOV/Documents/Roadmap.pptx.md')).toContain('pdf: ./Roadmap.pptx.pdf');
-    expect(files.binary.has('kb/Espace MOOV/Documents/Roadmap.pptx.pdf')).toBe(true);
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Roadmap.pptx.pdf', 'kb/Espace Contoso/Documents/Roadmap.pptx.md'] });
+    expect(files.written.get('kb/Espace Contoso/Documents/Roadmap.pptx.md')).toContain('pdf: ./Roadmap.pptx.pdf');
+    expect(files.binary.has('kb/Espace Contoso/Documents/Roadmap.pptx.pdf')).toBe(true);
   });
 
   it('a deck in the old format has its text read back from the PDF, since nothing else can read it', async () => {
     const { outcome, files } = await run({ name: 'Vieux.ppt', path: 'Vieux.ppt' });
-    const reader = files.written.get('kb/Espace MOOV/Documents/Vieux.ppt.md') ?? '';
+    const reader = files.written.get('kb/Espace Contoso/Documents/Vieux.ppt.md') ?? '';
 
     expect(outcome.kind).toBe('converted');
-    expect(reader).toContain('converted kb/Espace MOOV/Documents/Vieux.ppt.pdf');
+    expect(reader).toContain('converted kb/Espace Contoso/Documents/Vieux.ppt.pdf');
   });
 
   it('a PDF is kept as it is, with its text beside it and a pointer back to the file', async () => {
     const { outcome, files } = await run({ name: 'Contrat.pdf', path: 'Contrat.pdf' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Contrat.pdf', 'kb/Espace MOOV/Documents/Contrat.pdf.md'] });
-    expect(files.written.get('kb/Espace MOOV/Documents/Contrat.pdf.md')).toContain('pdf: ./Contrat.pdf');
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Contrat.pdf', 'kb/Espace Contoso/Documents/Contrat.pdf.md'] });
+    expect(files.written.get('kb/Espace Contoso/Documents/Contrat.pdf.md')).toContain('pdf: ./Contrat.pdf');
   });
 
   it('a scanned PDF says so, so a reader knows to look at the pages rather than the text', async () => {
     const { files } = await run({ name: 'Scan.pdf', path: 'Scan.pdf' }, { reader: { markdown: { '01ABC': '' } } });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Scan.pdf.md')).toContain('carries no text layer');
+    expect(files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md')).toContain('carries no text layer');
   });
 
   it('a scanned PDF has its pages read by OCR when it carries no text layer', async () => {
     const { files } = await run(
       { name: 'Scan.pdf', path: 'Scan.pdf' },
-      { reader: { markdown: { '01ABC': '' } }, ocr: { texts: { 'kb/Espace MOOV/Documents/Scan.pdf': 'Invoice total 1200 EUR' } } }
+      { reader: { markdown: { '01ABC': '' } }, ocr: { texts: { 'kb/Espace Contoso/Documents/Scan.pdf': 'Invoice total 1200 EUR' } } }
     );
-    const written = files.written.get('kb/Espace MOOV/Documents/Scan.pdf.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md') ?? '';
 
     expect(written).toContain('Invoice total 1200 EUR');
     expect(written).toContain('ocr: paddleocr (en)');
@@ -120,9 +120,9 @@ describe('converting one document out of a library', () => {
   it('a PDF that already has a text layer is not sent to OCR', async () => {
     const { files } = await run(
       { name: 'Contrat.pdf', path: 'Contrat.pdf' },
-      { reader: { markdown: { '01ABC': 'The real text layer.' } }, ocr: { texts: { 'kb/Espace MOOV/Documents/Contrat.pdf': 'OCR fallback text' } } }
+      { reader: { markdown: { '01ABC': 'The real text layer.' } }, ocr: { texts: { 'kb/Espace Contoso/Documents/Contrat.pdf': 'OCR fallback text' } } }
     );
-    const written = files.written.get('kb/Espace MOOV/Documents/Contrat.pdf.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Contrat.pdf.md') ?? '';
 
     expect(written).toContain('The real text layer.');
     expect(written).not.toContain('OCR fallback text');
@@ -132,21 +132,24 @@ describe('converting one document out of a library', () => {
   it('a PDF whose text layer is only whitespace is treated as scanned and read by OCR', async () => {
     const { files } = await run(
       { name: 'Scan.pdf', path: 'Scan.pdf' },
-      { reader: { markdown: { '01ABC': '   ' } }, ocr: { texts: { 'kb/Espace MOOV/Documents/Scan.pdf': 'Read by OCR' } } }
+      { reader: { markdown: { '01ABC': '   ' } }, ocr: { texts: { 'kb/Espace Contoso/Documents/Scan.pdf': 'Read by OCR' } } }
     );
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Scan.pdf.md') ?? '').toContain('Read by OCR');
+    expect(files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md') ?? '').toContain('Read by OCR');
   });
 
   it('a scanned PDF whose OCR finds only whitespace still falls back to the note', async () => {
-    const { files } = await run({ name: 'Scan.pdf', path: 'Scan.pdf' }, { reader: { markdown: { '01ABC': '' } }, ocr: { texts: { 'kb/Espace MOOV/Documents/Scan.pdf': '   ' } } });
+    const { files } = await run(
+      { name: 'Scan.pdf', path: 'Scan.pdf' },
+      { reader: { markdown: { '01ABC': '' } }, ocr: { texts: { 'kb/Espace Contoso/Documents/Scan.pdf': '   ' } } }
+    );
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Scan.pdf.md') ?? '').toContain('carries no text layer');
+    expect(files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md') ?? '').toContain('carries no text layer');
   });
 
   it('a photo is kept as it is, with the text read out of it beside it', async () => {
-    const { outcome, files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace MOOV/Documents/Tableau.jpg': 'Sprint 4 backlog' } } });
-    const written = files.written.get('kb/Espace MOOV/Documents/Tableau.jpg.md') ?? '';
+    const { outcome, files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace Contoso/Documents/Tableau.jpg': 'Sprint 4 backlog' } } });
+    const written = files.written.get('kb/Espace Contoso/Documents/Tableau.jpg.md') ?? '';
 
     expect(outcome.kind).toBe('converted');
     expect(written).toContain('image: ./Tableau.jpg');
@@ -157,20 +160,20 @@ describe('converting one document out of a library', () => {
   it('a photo holding no readable text still lands, with a note instead', async () => {
     const { files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Tableau.jpg.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Tableau.jpg.md')).toContain('No text could be read');
   });
 
   it('a photo whose text could not be read at all still lands, without claiming it was read', async () => {
     const { files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { failWith: { kind: 'unavailable', message: 'paddleocr not installed' } } });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Tableau.jpg.md')).not.toContain('ocr:');
+    expect(files.written.get('kb/Espace Contoso/Documents/Tableau.jpg.md')).not.toContain('ocr:');
   });
 
   it('a drawing is kept as it is, with a note telling a reader to open the file', async () => {
     const { outcome, files } = await run({ name: 'Logo.svg', path: 'Logo.svg' });
 
     expect(outcome.kind).toBe('converted');
-    expect(files.written.get('kb/Espace MOOV/Documents/Logo.svg.md')).toContain('Open the file beside this note');
+    expect(files.written.get('kb/Espace Contoso/Documents/Logo.svg.md')).toContain('Open the file beside this note');
   });
 
   it('an archive becomes a folder holding one markdown file per document inside it', async () => {
@@ -181,40 +184,40 @@ describe('converting one document out of a library', () => {
     const { outcome, files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: entries } });
 
     expect(outcome.kind).toBe('converted');
-    expect(files.written.get('kb/Espace MOOV/Documents/Livraison/notes.docx.md')).toContain('# Notes');
-    expect(files.written.get('kb/Espace MOOV/Documents/Livraison/sous-dossier/deck.pptx.md')).toContain('## Slide 1');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/notes.docx.md')).toContain('# Notes');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/sous-dossier/deck.pptx.md')).toContain('## Slide 1');
   });
 
   it('a file inside an archive records where it sat in the archive', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Livraison/notes.docx.md')).toContain('zip_entry: notes.docx');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/notes.docx.md')).toContain('zip_entry: notes.docx');
   });
 
   it('a file inside an archive that could not be converted keeps the reason in its place', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'video.mp4', note: 'unsupported entry' }] } });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Livraison/video.mp4.md')).toContain('unsupported entry');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/video.mp4.md')).toContain('unsupported entry');
   });
 
   it('a rich-text document is rendered to PDF first, then read back from it', async () => {
     const { outcome, files } = await run({ name: 'Note.rtf', path: 'Note.rtf' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Note.rtf.pdf', 'kb/Espace MOOV/Documents/Note.rtf.md'] });
-    expect(files.written.get('kb/Espace MOOV/Documents/Note.rtf.md')).toContain('converted kb/Espace MOOV/Documents/Note.rtf.pdf');
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Note.rtf.pdf', 'kb/Espace Contoso/Documents/Note.rtf.md'] });
+    expect(files.written.get('kb/Espace Contoso/Documents/Note.rtf.md')).toContain('converted kb/Espace Contoso/Documents/Note.rtf.pdf');
   });
 
   it('a deck whose text is read straight from SharePoint does not go through the PDF', async () => {
     const { files } = await run({ name: 'Roadmap.pptx', path: 'Roadmap.pptx' }, { reader: { markdown: { '01ABC': '## Slide 1' } } });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Roadmap.pptx.md')).toContain('## Slide 1');
+    expect(files.written.get('kb/Espace Contoso/Documents/Roadmap.pptx.md')).toContain('## Slide 1');
   });
 
   it('a deck that produced no text at all still lands, with a note and its PDF', async () => {
     const { outcome, files } = await run({ name: 'Vide.pptx', path: 'Vide.pptx' }, { reader: { markdown: { '01ABC': '' } } });
 
     expect(outcome.kind).toBe('converted');
-    expect(files.written.get('kb/Espace MOOV/Documents/Vide.pptx.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Vide.pptx.md')).toContain('No text could be read');
   });
 
   it('a deck whose PDF cannot be rendered is reported, and no markdown claims to describe it', async () => {
@@ -252,14 +255,14 @@ describe('converting one document out of a library', () => {
   it('the archive itself is kept beside what was unpacked from it', async () => {
     const { outcome, files } = await run({ name: 'Livraison.zip', path: 'Projets/Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
-    expect(outcome.kind === 'converted' && outcome.outputs[0]).toBe('kb/Espace MOOV/Documents/Projets/Livraison/Livraison.zip');
-    expect(files.binary.has('kb/Espace MOOV/Documents/Projets/Livraison/Livraison.zip')).toBe(true);
+    expect(outcome.kind === 'converted' && outcome.outputs[0]).toBe('kb/Espace Contoso/Documents/Projets/Livraison/Livraison.zip');
+    expect(files.binary.has('kb/Espace Contoso/Documents/Projets/Livraison/Livraison.zip')).toBe(true);
   });
 
   it('an entry with neither text nor reason still lands, so nothing inside an archive disappears', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'mystere.bin' }] } });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Livraison/mystere.bin.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/mystere.bin.md')).toContain('No text could be read');
   });
 
   it('an archive that cannot be unpacked is reported after its bytes were kept', async () => {
@@ -291,37 +294,37 @@ describe('converting one document out of a library', () => {
   it('a deck reads its text back from the file it named, not from an empty request', async () => {
     const { files } = await run({ name: 'Roadmap.pptx', path: 'Roadmap.pptx' });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Roadmap.pptx.md')).toContain('converted 01ABC');
+    expect(files.written.get('kb/Espace Contoso/Documents/Roadmap.pptx.md')).toContain('converted 01ABC');
   });
 
   it('a deck whose text is only whitespace still lands with a note beside its PDF', async () => {
     const { files } = await run({ name: 'Vide.pptx', path: 'Vide.pptx' }, { reader: { markdown: { '01ABC': '   ' } } });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Vide.pptx.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Vide.pptx.md')).toContain('No text could be read');
   });
 
   it('a photo lands with exactly the picture and its read-out text, nothing more', async () => {
-    const { outcome } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace MOOV/Documents/Tableau.jpg': 'Sprint 4 backlog' } } });
+    const { outcome } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace Contoso/Documents/Tableau.jpg': 'Sprint 4 backlog' } } });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Tableau.jpg', 'kb/Espace MOOV/Documents/Tableau.jpg.md'] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Tableau.jpg', 'kb/Espace Contoso/Documents/Tableau.jpg.md'] });
   });
 
   it('a photo whose OCR reads only whitespace lands with a note instead of blank text', async () => {
-    const { files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace MOOV/Documents/Tableau.jpg': '   ' } } });
+    const { files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace Contoso/Documents/Tableau.jpg': '   ' } } });
 
-    expect(files.written.get('kb/Espace MOOV/Documents/Tableau.jpg.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Tableau.jpg.md')).toContain('No text could be read');
   });
 
   it('a drawing lands with exactly the file and its note, each named for the drawing', async () => {
     const { outcome, files } = await run({ name: 'Logo.svg', path: 'Logo.svg' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Logo.svg', 'kb/Espace MOOV/Documents/Logo.svg.md'] });
-    expect(files.written.get('kb/Espace MOOV/Documents/Logo.svg.md')).toContain('image: ./Logo.svg');
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Logo.svg', 'kb/Espace Contoso/Documents/Logo.svg.md'] });
+    expect(files.written.get('kb/Espace Contoso/Documents/Logo.svg.md')).toContain('image: ./Logo.svg');
   });
 
   it('an archive lands with the archive file and one markdown per entry, in order', async () => {
     const { outcome } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace MOOV/Documents/Livraison/Livraison.zip', 'kb/Espace MOOV/Documents/Livraison/notes.docx.md'] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Livraison/Livraison.zip', 'kb/Espace Contoso/Documents/Livraison/notes.docx.md'] });
   });
 });

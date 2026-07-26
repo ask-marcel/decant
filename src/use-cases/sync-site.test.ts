@@ -15,9 +15,9 @@ import { createConvertFile } from './convert-file.ts';
 import { createSyncSite } from './sync-site.ts';
 import type { RunSummary } from './sync-site.ts';
 
-const site = { id: 'contoso,1,2', name: 'Espace MOOV', webUrl: 'https://tenant.sharepoint.com/sites/X' };
+const site = { id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' };
 const drives = [{ id: 'b!one', name: 'Documents' }];
-const STATE_PATH = 'kb/Espace MOOV/.sync-state.json';
+const STATE_PATH = 'kb/Espace Contoso/.sync-state.json';
 
 const item = (over: Partial<DriveItem> = {}): DriveItem => ({
   id: '01ABC',
@@ -57,7 +57,7 @@ const stateAfter = (
 ): { drives: Record<string, { deltaLink?: string; pending: unknown[]; items: Record<string, { path: string; cTag: string; outputs: string[] }> }> } =>
   JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
-const REPORT_PATH = 'kb/Espace MOOV/_sync-report.md';
+const REPORT_PATH = 'kb/Espace Contoso/_sync-report.md';
 
 describe('reporting what did not reach the knowledge base', () => {
   it('a document of a type this tool does not read is named in the report', async () => {
@@ -127,11 +127,11 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     const { summary, files } = await run({ reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-1' }] } });
 
     expect(summary.converted).toBe(1);
-    expect(files.written.has('kb/Espace MOOV/Documents/Projets/Contrat.docx.md')).toBe(true);
+    expect(files.written.has('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toBe(true);
     expect(stateAfter(files).drives['b!one']?.items['01ABC']).toEqual({
       path: 'Projets/Contrat.docx',
       cTag: 'c1',
-      outputs: ['kb/Espace MOOV/Documents/Projets/Contrat.docx.md'],
+      outputs: ['kb/Espace Contoso/Documents/Projets/Contrat.docx.md'],
     });
   });
 
@@ -172,7 +172,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     const { summary, files, logger } = await run({ files: { texts: { [STATE_PATH]: halfDone } } });
 
     expect(summary.converted).toBe(1);
-    expect(files.written.has('kb/Espace MOOV/Documents/Projets/Contrat.docx.md')).toBe(true);
+    expect(files.written.has('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toBe(true);
     expect(logger.calls.some((call) => call.event === 'sync.resuming')).toBe(true);
   });
 
@@ -193,7 +193,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace MOOV/Documents/Projets/Contrat.docx.md'] } },
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/Projets/Contrat.docx.md'] } },
         },
       },
     });
@@ -202,7 +202,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     const { summary, files } = await run({ files: { texts: { [STATE_PATH]: known } }, reader: { pages: [{ items: [renamed], skipped: 0, deltaLink: 'cursor-2' }] } });
 
     expect(summary).toEqual({ converted: 0, moved: 1, archived: 0, skipped: 0, failed: 0, queued: 0 });
-    expect(files.moves).toEqual([{ from: 'kb/Espace MOOV/Documents/Projets/Contrat.docx.md', to: 'kb/Espace MOOV/Documents/Archive/Contrat signe.docx.md' }]);
+    expect(files.moves).toEqual([{ from: 'kb/Espace Contoso/Documents/Projets/Contrat.docx.md', to: 'kb/Espace Contoso/Documents/Archive/Contrat signe.docx.md' }]);
     expect(stateAfter(files).drives['b!one']?.items['01ABC']?.path).toBe('Archive/Contrat signe.docx');
   });
 
@@ -216,7 +216,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace MOOV/Documents/Projets/Contrat.docx.md'] } },
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/Projets/Contrat.docx.md'] } },
         },
       },
     });
@@ -227,7 +227,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     });
 
     expect(summary.archived).toBe(1);
-    expect(files.moves).toEqual([{ from: 'kb/Espace MOOV/Documents/Projets/Contrat.docx.md', to: 'kb/_archive/Espace MOOV/Documents/Projets/Contrat.docx.md' }]);
+    expect(files.moves).toEqual([{ from: 'kb/Espace Contoso/Documents/Projets/Contrat.docx.md', to: 'kb/_archive/Espace Contoso/Documents/Projets/Contrat.docx.md' }]);
     expect(stateAfter(files).drives['b!one']?.items).toEqual({});
   });
 
@@ -272,8 +272,8 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           deltaLink: 'cursor-1',
           pending: [],
           items: {
-            renamed: { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace MOOV/Documents/old.docx.md'] },
-            gone: { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace MOOV/Documents/gone.docx.md'] },
+            renamed: { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/old.docx.md'] },
+            gone: { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/gone.docx.md'] },
           },
         },
       },
@@ -327,8 +327,8 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     });
 
     expect(result.ok && result.value.converted).toBe(2);
-    expect(files.written.has('kb/Espace MOOV/Documents/a.docx.md')).toBe(true);
-    expect(files.written.has('kb/Espace MOOV/Site Assets/b.docx.md')).toBe(true);
+    expect(files.written.has('kb/Espace Contoso/Documents/a.docx.md')).toBe(true);
+    expect(files.written.has('kb/Espace Contoso/Site Assets/b.docx.md')).toBe(true);
   });
 
   it('a file that cannot be moved is reported without losing what the manifest knows', async () => {
@@ -337,7 +337,12 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
       drives: {
-        'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [], items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace MOOV/Documents/old.docx.md'] } } },
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/old.docx.md'] } },
+        },
       },
     });
 
@@ -360,7 +365,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace MOOV/Documents/gone.docx.md'] } },
+          items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/gone.docx.md'] } },
         },
       },
     });
@@ -558,7 +563,12 @@ describe('naming the step, cause and payload behind every outcome', () => {
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
       drives: {
-        'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [], items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace MOOV/Documents/old.docx.md'] } } },
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/old.docx.md'] } },
+        },
       },
     });
     const { logger } = await run({
@@ -580,7 +590,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace MOOV/Documents/gone.docx.md'] } },
+          items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/gone.docx.md'] } },
         },
       },
     });
