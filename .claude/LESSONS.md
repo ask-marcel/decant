@@ -128,3 +128,28 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   and no-ops when stderr is not a TTY, so piped and headless runs stay clean. The `process.stderr`
   read lives in infra, not the composition root, so `build-deps` stays testable; the TTY-true branch
   and its writer arrow are the only uncoverable spots, left as equivalent mutants.
+
+## 2026-07-26
+
+- [gotcha] A batch rename across test fixtures can collide with a real identifier that happens to
+  share the same substring. Renaming the "Espace MOOV" site-name fixture to "Espace Contoso" across
+  21 test files, `build-deps.test.ts` also held `MOOV_KB_LOG_LEVEL`/`MOOV_KB_ROOT`, the actual env
+  var names read by `config.ts` and documented in `README.md`. A blind find-and-replace would have
+  renamed those too, breaking the test without touching the production contract to match. Before a
+  batch string rename, grep the substring together with its neighbours (here `MOOV_KB`) to separate
+  fixture text from something that is actually a contract, then handle the contract as its own
+  confirmed change.
+
+- [decision] Landing a branch whose commits already fit the pre-commit size gate (10 files / 300
+  lines) onto a `main` that has diverged, with files touched on both sides: rebase onto the new
+  `main` tip rather than making one merge commit. A single merge commit carries the whole branch's
+  cumulative diff and re-trips the same size gate every original commit already respected; rebasing
+  replays the original commits one at a time, so only the commit(s) that actually touch a conflicting
+  file need conflict resolution, and every replayed commit still lands under the gate. `git merge
+  --no-ff --no-commit` first is a cheap way to see the true conflict set before choosing rebase, then
+  `git merge --abort` and rebase for real.
+
+- [gotcha] This repo has no git remote at all (confirmed via `git remote -v` and `gh repo view`):
+  two local worktrees share one checkout, the primary one holding `main`. "Push" here means
+  fast-forwarding or merging into that local `main` checkout, not a network push; there is nowhere
+  else for commits to go until a remote is deliberately added.
