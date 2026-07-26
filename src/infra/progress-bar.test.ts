@@ -58,4 +58,28 @@ describe('showing how far a conversion has got', () => {
 
     expect(writes).toEqual([]);
   });
+
+  it('an item that has begun but not finished shows on the line, so a slow item does not look like the run has stopped', () => {
+    const { bar, writes } = capture();
+
+    bar.start(2, 'Converting');
+    bar.begin('Projets/slow-scan.jpg');
+
+    expect(writes.at(-1)).toContain('Projets/slow-scan.jpg');
+    expect(writes.at(-1)).toContain('0/2');
+  });
+
+  it('once the fast items in a window finish, the line still names whichever one is still running', () => {
+    const { bar, writes } = capture();
+
+    bar.start(3, 'Converting');
+    bar.begin('A.docx');
+    bar.begin('B.docx');
+    bar.begin('slow-scan.jpg');
+    bar.step('A.docx');
+    bar.step('B.docx');
+
+    expect(writes.at(-1)).toContain('slow-scan.jpg');
+    expect(writes.at(-1)).toContain('2/3');
+  });
 });

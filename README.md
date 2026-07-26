@@ -140,7 +140,9 @@ to ask for more, so a mailbox with thousands of messages takes thousands of roun
 are cheap, reading only what changed. `--since` narrows what gets *written*, not what gets swept.
 
 While it works, a counter on the terminal shows how far it has got (`Converting 128/6002 …`), so a
-long run is never silent. It draws only when stderr is a terminal, so piping the output to a file or
+long run is never silent. The line names whatever is still being read from the source, not just the
+last item that finished, so one slow file does not look like the run has stopped while `--concurrency`
+siblings finish around it. It draws only when stderr is a terminal, so piping the output to a file or
 running headless leaves no counter behind.
 
 ## Re-running

@@ -8,15 +8,31 @@ export const createProgressBar = (write: (text: string) => void): Progress => {
   let total = 0;
   let done = 0;
   let what = '';
+  let running = new Set<string>();
+  // While anything else is still running, the line names all of it, so a slow item stays visible
+  // after its faster window-siblings have each stepped past it. Falls back to the label just passed
+  // in when nothing is tracked as running, which is what a bare `step()` call (no `begin()` first)
+  // relied on before this port grew a `begin`.
+  const render = (label: string): void => {
+    if (total === 0) return;
+    const current = running.size > 0 ? [...running].join(', ') : label;
+    write(`\r\x1b[K${what} ${done}/${total}  ${current}`);
+  };
   return {
     start: (count, label) => {
       total = count;
       done = 0;
       what = label;
+      running = new Set();
+    },
+    begin: (label) => {
+      running.add(label);
+      render(label);
     },
     step: (label) => {
+      running.delete(label);
       done += 1;
-      if (total > 0) write(`\r\x1b[K${what} ${done}/${total}  ${label}`);
+      render(label);
     },
     done: () => {
       if (total > 0 && done > 0) write('\n');
@@ -28,6 +44,7 @@ export const createProgressBar = (write: (text: string) => void): Progress => {
 // counter would only litter the log, so every call does nothing.
 export const createNoProgress = (): Progress => ({
   start: () => undefined,
+  begin: () => undefined,
   step: () => undefined,
   done: () => undefined,
 });

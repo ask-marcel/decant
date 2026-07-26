@@ -231,12 +231,13 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
     if (current.pending.length === 0) break;
     const window = current.pending.slice(0, input.concurrency);
     const results = await Promise.all(
-      window.map((conversationId) =>
-        renderOne(deps, input, current, conversationId).then((outcome) => {
+      window.map((conversationId) => {
+        deps.progress.begin(conversationId);
+        return renderOne(deps, input, current, conversationId).then((outcome) => {
           deps.progress.step(conversationId);
           return outcome;
-        })
-      )
+        });
+      })
     );
     const folded = results.reduce((carried, done) => done.apply(carried), current);
     const advanced = withPending(folded, current.pending.slice(window.length));

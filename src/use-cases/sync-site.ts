@@ -176,12 +176,13 @@ const processQueue = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: Dri
     }
     const window = driveState.pending.slice(0, input.concurrency);
     const results = await Promise.all(
-      window.map((work) =>
-        applyWork(deps, input, drive, driveState, work).then((outcome) => {
+      window.map((work) => {
+        deps.progress.begin(labelOf(work));
+        return applyWork(deps, input, drive, driveState, work).then((outcome) => {
           deps.progress.step(labelOf(work));
           return outcome;
-        })
-      )
+        });
+      })
     );
     const folded = results.reduce((manifest, done) => done.update(manifest), driveState);
     const advanced = withDrive(current, drive.id, { ...folded, pending: driveState.pending.slice(window.length) });

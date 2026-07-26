@@ -422,6 +422,12 @@ describe('converting several items at once', () => {
     expect(progress.dones).toHaveLength(1);
   });
 
+  it('every item in the window announces itself as begun before any of them finish', async () => {
+    const { progress } = await run({ reader: threeItems, concurrency: 3 });
+
+    expect([...progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(['A.docx', 'B.docx', 'C.docx']);
+  });
+
   it('a window of items saves the state once, not once per item', async () => {
     const wide = await run({ reader: threeItems, concurrency: 3 });
     const narrow = await run({ reader: threeItems, concurrency: 1 });

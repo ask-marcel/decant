@@ -462,6 +462,12 @@ describe('rendering several conversations at once', () => {
     expect(progress.dones).toHaveLength(1);
   });
 
+  it('every conversation in the window announces itself as begun before any of them finish', async () => {
+    const { progress } = await run({ reader: threeConversations, concurrency: 3 });
+
+    expect([...progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(['conv-a', 'conv-b', 'conv-c']);
+  });
+
   it('a window of conversations saves the state once, not once per conversation', async () => {
     const wide = await run({ reader: threeConversations, concurrency: 3 });
     const narrow = await run({ reader: threeConversations, concurrency: 1 });
