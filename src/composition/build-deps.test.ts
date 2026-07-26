@@ -46,14 +46,14 @@ describe('wiring the command together', () => {
   });
 
   it('a refresh repeats the libraries the earlier run recorded for that site', async () => {
-    const statePath = 'kb/Espace MOOV/.sync-state.json';
+    const statePath = 'kb/Espace Contoso/.sync-state.json';
     const state = JSON.stringify({
       version: 1,
-      source: { kind: 'site', id: 'contoso,1,2', name: 'Espace MOOV', webUrl: 'https://x' },
+      source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://x' },
       lastRun: '2026-07-22T09:00:00Z',
       drives: { 'b!two': { name: 'Site Assets', pending: [], items: {} } },
     });
-    const files = createFilesFake({ directories: { kb: ['Espace MOOV'] }, texts: { [statePath]: state } });
+    const files = createFilesFake({ directories: { kb: ['Espace Contoso'] }, texts: { [statePath]: state } });
     const deps = buildDeps(configFor({}), {
       files,
       logger: createLoggerFake(),
