@@ -1,4 +1,4 @@
-# MOOV knowledge base
+# Knowledge base sync CLI
 
 A Bun CLI that mirrors Microsoft 365 content into a local `kb/` folder as markdown, so agents
 running on this machine can read company knowledge without calling Microsoft Graph themselves.
@@ -85,7 +85,7 @@ left as its plain label.
 ```yaml
 ---
 source: https://tenant.sharepoint.com/sites/X/Roadmap.pptx?web=1
-site: Espace MOOV
+site: Espace Contoso
 library: Documents
 path: Projets/Roadmap.pptx
 last_modified: "2026-05-12T09:31:00Z"
@@ -126,7 +126,7 @@ kb/
     _attachments/                   every file a mail carried, stored once by content
     _linked/                        SharePoint files the mail pointed at, each pulled once
     threads/2026/
-      2026-05-12 Contrat MOOV a3f9c1.md            the whole conversation, oldest message first
+      2026-05-12 Contrat Contoso a3f9c1.md            the whole conversation, oldest message first
 ```
 
 One file per conversation, not per message. Its name is the day the thread started, its subject,
@@ -169,8 +169,8 @@ Read once at startup, in `src/composition/config.ts`:
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `MOOV_KB_ROOT` | Folder the knowledge base is written to | `kb` |
-| `MOOV_KB_LOG_LEVEL` | Winston level; logs go to stderr, output to stdout | `error` |
+| `KB_ROOT` | Folder the knowledge base is written to | `kb` |
+| `KB_LOG_LEVEL` | Winston level; logs go to stderr, output to stdout | `error` |
 
 ## Development
 

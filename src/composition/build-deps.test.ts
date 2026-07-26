@@ -20,7 +20,7 @@ describe('reading the run configuration', () => {
   });
 
   it('the environment can move the knowledge base and raise the log level', () => {
-    expect(configFor({ MOOV_KB_LOG_LEVEL: 'debug', MOOV_KB_ROOT: 'other-kb' })).toMatchObject({ logLevel: 'debug', kbRoot: 'other-kb' });
+    expect(configFor({ KB_LOG_LEVEL: 'debug', KB_ROOT: 'other-kb' })).toMatchObject({ logLevel: 'debug', kbRoot: 'other-kb' });
   });
 
   it('the language chosen for the run reaches the configuration', () => {
@@ -31,7 +31,7 @@ describe('reading the run configuration', () => {
 describe('wiring the command together', () => {
   it('the wired run reads the knowledge base folder named in the configuration', async () => {
     const files = createFilesFake({ directories: { 'other-kb': [] } });
-    const deps = buildDeps(configFor({ MOOV_KB_ROOT: 'other-kb' }), {
+    const deps = buildDeps(configFor({ KB_ROOT: 'other-kb' }), {
       files,
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),

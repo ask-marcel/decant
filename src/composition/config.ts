@@ -16,8 +16,8 @@ export type ConfigInput = {
 // The only module that reads the environment: every other layer takes its values as parameters, so
 // nothing downstream depends on process.env, and the composition root stays testable.
 export const readConfig = (input: ConfigInput): Config => ({
-  logLevel: input.env['MOOV_KB_LOG_LEVEL'] ?? 'error',
-  kbRoot: input.env['MOOV_KB_ROOT'] ?? 'kb',
+  logLevel: input.env['KB_LOG_LEVEL'] ?? 'error',
+  kbRoot: input.env['KB_ROOT'] ?? 'kb',
   ocrLang: input.ocrLang,
   ocr: input.ocr ?? true,
   interactive: input.interactive,
