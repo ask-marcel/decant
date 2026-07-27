@@ -163,7 +163,7 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
       const page = parseDriveDelta(raw.value);
       return page.ok ? ok(page.value) : err({ kind: 'permanent', message: page.error.message });
     },
-    markdown: async (ref) => markdownOf('download-drive-item-as-markdown', { driveId: ref.driveId, itemId: ref.itemId }),
+    markdown: async (ref) => markdownOf('download-drive-item-as-markdown', { driveId: ref.driveId, itemId: ref.itemId, includeMetadata: 'true' }),
     pdf: async (ref) => bytesOf('download-drive-item-as-pdf', ref),
     bytes: async (ref) => bytesOf('download-drive-item-content', ref),
     localMarkdown: async (path) => markdownOf('convert-local-file-to-markdown', { path }, true),

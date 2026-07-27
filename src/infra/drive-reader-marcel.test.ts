@@ -155,6 +155,14 @@ describe('reading SharePoint through the ask-marcel library', () => {
     expect(await reader.markdown({ driveId: 'b!one', itemId: '01A' })).toEqual({ ok: true, value: '# Contrat' });
   });
 
+  it('every document conversion asks for the metadata section, so comments and tracked changes are never left behind', async () => {
+    const { reader, recorded } = readerFor({ 'download-drive-item-as-markdown': [ok({ text: '# Contrat' })] });
+
+    await reader.markdown({ driveId: 'b!one', itemId: '01A' });
+
+    expect(recorded[0]?.params).toEqual({ driveId: 'b!one', itemId: '01A', includeMetadata: 'true' });
+  });
+
   it('a rendered PDF comes back as the bytes it was encoded as', async () => {
     const { reader } = readerFor({ 'download-drive-item-as-pdf': [ok({ contentType: 'application/pdf', base64: Buffer.from('%PDF-1.7').toString('base64') })] });
 

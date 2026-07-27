@@ -105,7 +105,7 @@ describe('reading a mailbox through the ask-marcel library', () => {
     const { reader, recorded } = readerFor({ 'convert-mail-attachment-to-markdown': ok({ text: '# Contrat' }) });
 
     expect(await reader.attachmentMarkdown('m1', 'att1')).toEqual({ ok: true, value: '# Contrat' });
-    expect(recorded[0]?.params).toEqual({ messageId: 'm1', attachmentId: 'att1' });
+    expect(recorded[0]?.params).toEqual({ messageId: 'm1', attachmentId: 'att1', includeMetadata: 'true' });
   });
 
   it('an attachment rendered to PDF comes back as bytes', async () => {

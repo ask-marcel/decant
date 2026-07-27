@@ -108,6 +108,13 @@ pdf: ./Roadmap.pptx.pdf
 | svg | the file, plus a markdown note pointing at it |
 | anything else | left in SharePoint and named in `_sync-report.md` |
 
+A document carries more than the text it shows. Every conversion, in SharePoint and on mail
+attachments alike, also asks for the side channel the rendered body hides: comments and threaded
+replies, tracked insertions and deletions, hidden text, external hyperlinks, and a flag for embedded
+macros. It arrives as a metadata section under the document's text. Office formats (and their
+macro-enabled and template variants) and OpenDocument carry one; on every other kind of file there
+is nothing to add and the request changes nothing.
+
 ### What did not make it in
 
 Anything left behind is named in `_sync-report.md` beside the source it came from, newest run

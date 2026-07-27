@@ -91,7 +91,7 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
       const raw = await call('list-mail-attachments', { messageId });
       return raw.ok ? ok(listOf(raw.value).flatMap(toAttachment)) : raw;
     },
-    attachmentMarkdown: async (messageId, attachmentId) => textOf('convert-mail-attachment-to-markdown', { messageId, attachmentId }),
+    attachmentMarkdown: async (messageId, attachmentId) => textOf('convert-mail-attachment-to-markdown', { messageId, attachmentId, includeMetadata: 'true' }),
     attachmentPdf: async (messageId, attachmentId) => bytesOf('convert-mail-attachment-to-pdf', { messageId, attachmentId }),
     attachmentBytes: async (messageId, attachmentId) => bytesOf('get-mail-attachment', { messageId, attachmentId }),
     sharepointLinks: async (messageId) => {
