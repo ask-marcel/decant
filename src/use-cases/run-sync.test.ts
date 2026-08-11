@@ -93,6 +93,27 @@ describe('choosing what to sync', () => {
     expect(calls[0]?.drives).toEqual(drives);
   });
 
+  it('choosing every site syncs each one, taking every library in each', async () => {
+    const { calls } = await run(['all']);
+
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso', 'Direction']);
+    expect(calls.every((call) => call.drives.length === 2)).toBe(true);
+  });
+
+  it('choosing a few sites by number syncs exactly those, and asks nothing more', async () => {
+    const three = [...sites, { id: 'contoso,5,6', name: 'Ventes', webUrl: 'https://tenant.sharepoint.com/sites/ventes' }];
+    const { calls, prompt } = await run(['1,3'], {}, { reader: { sites: three } });
+
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso', 'Ventes']);
+    expect(prompt.asked).toEqual(['Source:']);
+  });
+
+  it('every site is reported as it finishes, not only once the whole run is over', async () => {
+    const { prompt } = await run(['all']);
+
+    expect(prompt.shown.filter((text) => text.includes('converted'))).toHaveLength(2);
+  });
+
   it('pasting a site address reaches a site the list does not show', async () => {
     const { calls } = await run(['https://tenant.sharepoint.com/sites/dir', '1']);
 
@@ -356,7 +377,7 @@ describe('stopping with the step and reason named', () => {
     expect(succeeded).toBe(false);
     expect(step).toBe('pickSite');
     expect(cause).toBe('bad-choice');
-    expect(error).toBe('choose one site');
+    expect(error).toBe('choose at least one site');
   });
 
   it('a source answer nobody offered names the pickSite step', async () => {

@@ -32,6 +32,10 @@ Lists every SharePoint site you can read plus your mailbox, marking the ones alr
 when they last synced and how much they hold. Pick a number and one or more libraries, or press
 `m` for your mailbox, and it syncs.
 
+Several sites can be taken at once: `1,3` for those two, or `all` for every site on the list. Taking
+more than one site takes every library in each without asking, since the point of choosing them
+together is not being asked once per site. Each site is summarised as it finishes.
+
 To refresh everything already synced, without being asked anything:
 
 ```bash

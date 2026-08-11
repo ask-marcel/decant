@@ -17,6 +17,10 @@ describe('showing the operator what there is to sync', () => {
     expect(rendered).toContain('  2) Direction  (new)');
   });
 
+  it('the site picker says that every site can be taken at once', () => {
+    expect(renderSitePicker(rows, mailbox)).toContain('all');
+  });
+
   it('the ways out of the picker are spelled out', () => {
     expect(renderSitePicker(rows, mailbox)).toContain('u = refresh everything already synced, q = quit.');
   });

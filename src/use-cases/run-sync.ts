@@ -56,11 +56,13 @@ const chooseLibraries = async (deps: RunSyncDeps, drives: ReadonlyArray<DriveSum
   return ok(chosen.value.indices.flatMap((index) => (drives[index] === undefined ? [] : [drives[index]])));
 };
 
-const librariesFor = async (deps: RunSyncDeps, site: SiteRef, wanted: ReadonlyArray<string>): Promise<Result<ReadonlyArray<DriveSummary>, StepError>> => {
+// `ask` is false once more than one site was chosen: putting the library question to the operator
+// once per site is exactly what choosing them together was meant to avoid, so every library is taken.
+const librariesFor = async (deps: RunSyncDeps, site: SiteRef, wanted: ReadonlyArray<string>, ask: boolean): Promise<Result<ReadonlyArray<DriveSummary>, StepError>> => {
   const drives = await deps.reader.listDrives(site.id);
   if (!drives.ok) return failed('listDrives', drives.error.kind, drives.error.message);
   if (wanted.length > 0) return ok(drives.value.filter((drive) => wanted.includes(drive.id)));
-  return chooseLibraries(deps, drives.value);
+  return ask ? chooseLibraries(deps, drives.value) : ok(drives.value);
 };
 
 const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, drives: ReadonlyArray<DriveSummary>): Promise<Result<RunSummary, StepError>> => {
@@ -108,15 +110,19 @@ const siteAt = async (deps: RunSyncDeps, url: string): Promise<Result<SiteRef, S
   return found.ok ? ok(found.value) : failed('siteByUrl', found.error.kind, found.error.message);
 };
 
-type Chosen = SiteRef | 'update-all' | 'quit' | 'mailbox';
+type Chosen = ReadonlyArray<SiteRef> | 'update-all' | 'quit' | 'mailbox';
+
+const oneSite = (found: Result<SiteRef, StepError>): Result<Chosen, StepError> => (found.ok ? ok([found.value]) : found);
 
 const resolve = async (deps: RunSyncDeps, choice: Selection, sites: ReadonlyArray<SiteRef>): Promise<Result<Chosen, StepError>> => {
   if (choice.kind === 'quit') return ok('quit');
   if (choice.kind === 'mailbox') return ok('mailbox');
   if (choice.kind === 'update-all') return ok('update-all');
-  if (choice.kind === 'address') return siteAt(deps, choice.url);
-  const site = sites[choice.indices[0] ?? -1];
-  return site === undefined ? failed('pickSite', 'bad-choice', 'choose one site') : ok(site);
+  if (choice.kind === 'address') return oneSite(await siteAt(deps, choice.url));
+  // Selecting by position rather than by index lookup: `parseSelection` has already refused any
+  // number outside the list, so there is no missing-site case left to guard against here.
+  const chosen = sites.filter((_site, index) => choice.indices.includes(index));
+  return chosen.length === 0 ? failed('pickSite', 'bad-choice', 'choose at least one site') : ok(chosen);
 };
 
 const chooseSite = async (deps: RunSyncDeps): Promise<Result<Chosen, StepError>> => {
@@ -132,11 +138,19 @@ const chooseSite = async (deps: RunSyncDeps): Promise<Result<Chosen, StepError>>
 
 const oneSummary = (summary: Result<RunSummary, StepError>): Result<ReadonlyArray<RunSummary>, StepError> => (summary.ok ? ok([summary.value]) : summary);
 
-const runOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef): Promise<Result<ReadonlyArray<RunSummary>, StepError>> => {
-  const drives = await librariesFor(deps, site, input.driveIds);
-  if (!drives.ok) return drives;
-  const summary = await syncOne(deps, input, site, drives.value);
-  return summary.ok ? ok([summary.value]) : summary;
+// Each site is summarised as it lands, so a run over many of them reports along the way. A site that
+// fails stops the run there rather than burying the reason under the ones after it; every site
+// finished before it keeps what it wrote, and a re-run resumes from its own checkpoint.
+const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyArray<SiteRef>): Promise<Result<ReadonlyArray<RunSummary>, StepError>> => {
+  const summaries: RunSummary[] = [];
+  for (const site of chosen) {
+    const drives = await librariesFor(deps, site, input.driveIds, chosen.length === 1);
+    if (!drives.ok) return drives;
+    const summary = await syncOne(deps, input, site, drives.value);
+    if (!summary.ok) return summary;
+    summaries.push(summary.value);
+  }
+  return ok(summaries);
 };
 
 export const createRunSync =
@@ -145,11 +159,11 @@ export const createRunSync =
     if (input.command === 'update') return updateEverything(deps, input);
     if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
     const named = await siteFromOptions(deps, input);
-    if (named !== undefined) return named.ok ? runOne(deps, input, named.value) : named;
+    if (named !== undefined) return named.ok ? runMany(deps, input, [named.value]) : named;
     const chosen = await chooseSite(deps);
     if (!chosen.ok) return chosen;
     if (chosen.value === 'quit') return ok([]);
     if (chosen.value === 'update-all') return updateEverything(deps, input);
     if (chosen.value === 'mailbox') return oneSummary(await syncTheMailbox(deps, input));
-    return runOne(deps, input, chosen.value);
+    return runMany(deps, input, chosen.value);
   };
