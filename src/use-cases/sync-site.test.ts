@@ -127,12 +127,37 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     const { summary, files } = await run({ reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-1' }] } });
 
     expect(summary.converted).toBe(1);
-    expect(files.written.has('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toBe(true);
+    expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toBe(true);
     expect(stateAfter(files).drives['b!one']?.items['01ABC']).toEqual({
       path: 'Projets/Contrat.docx',
       cTag: 'c1',
-      outputs: ['kb/Espace Contoso/Documents/Projets/Contrat.docx.md'],
+      outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md'],
     });
+  });
+
+  it('a document edited on a later day leaves no copy behind under the day it used to carry', async () => {
+    const known = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'c1',
+          pending: [],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md'] } },
+        },
+      },
+    });
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: known } },
+      reader: { pages: [{ items: [item({ cTag: 'c2', lastModified: '2026-06-01T10:00:00Z' })], skipped: 0, deltaLink: 'c2' }] },
+    });
+
+    expect(files.written.has('kb/Espace Contoso/Documents/2026-06-01/Projets/Contrat.docx.md')).toBe(true);
+    expect(files.moves).toEqual([
+      { from: 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md', to: 'kb/_archive/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md' },
+    ]);
   });
 
   it('the cursor Graph handed back is stored, so the next run reads only what changed', async () => {
@@ -172,7 +197,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     const { summary, files, logger } = await run({ files: { texts: { [STATE_PATH]: halfDone } } });
 
     expect(summary.converted).toBe(1);
-    expect(files.written.has('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toBe(true);
+    expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toBe(true);
     expect(logger.calls.some((call) => call.event === 'sync.resuming')).toBe(true);
   });
 
@@ -193,7 +218,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/Projets/Contrat.docx.md'] } },
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md'] } },
         },
       },
     });
@@ -202,7 +227,9 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     const { summary, files } = await run({ files: { texts: { [STATE_PATH]: known } }, reader: { pages: [{ items: [renamed], skipped: 0, deltaLink: 'cursor-2' }] } });
 
     expect(summary).toEqual({ converted: 0, moved: 1, archived: 0, skipped: 0, failed: 0, queued: 0 });
-    expect(files.moves).toEqual([{ from: 'kb/Espace Contoso/Documents/Projets/Contrat.docx.md', to: 'kb/Espace Contoso/Documents/Archive/Contrat signe.docx.md' }]);
+    expect(files.moves).toEqual([
+      { from: 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md', to: 'kb/Espace Contoso/Documents/2026-05-12/Archive/Contrat signe.docx.md' },
+    ]);
     expect(stateAfter(files).drives['b!one']?.items['01ABC']?.path).toBe('Archive/Contrat signe.docx');
   });
 
@@ -216,7 +243,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/Projets/Contrat.docx.md'] } },
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md'] } },
         },
       },
     });
@@ -227,7 +254,9 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     });
 
     expect(summary.archived).toBe(1);
-    expect(files.moves).toEqual([{ from: 'kb/Espace Contoso/Documents/Projets/Contrat.docx.md', to: 'kb/_archive/Espace Contoso/Documents/Projets/Contrat.docx.md' }]);
+    expect(files.moves).toEqual([
+      { from: 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md', to: 'kb/_archive/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md' },
+    ]);
     expect(stateAfter(files).drives['b!one']?.items).toEqual({});
   });
 
@@ -272,8 +301,8 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           deltaLink: 'cursor-1',
           pending: [],
           items: {
-            renamed: { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/old.docx.md'] },
-            gone: { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/gone.docx.md'] },
+            renamed: { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/old.docx.md'] },
+            gone: { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/gone.docx.md'] },
           },
         },
       },
@@ -327,8 +356,8 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     });
 
     expect(result.ok && result.value.converted).toBe(2);
-    expect(files.written.has('kb/Espace Contoso/Documents/a.docx.md')).toBe(true);
-    expect(files.written.has('kb/Espace Contoso/Site Assets/b.docx.md')).toBe(true);
+    expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/a.docx.md')).toBe(true);
+    expect(files.written.has('kb/Espace Contoso/Site Assets/2026-05-12/b.docx.md')).toBe(true);
   });
 
   it('a file that cannot be moved is reported without losing what the manifest knows', async () => {
@@ -341,7 +370,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/old.docx.md'] } },
+          items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/old.docx.md'] } },
         },
       },
     });
@@ -365,7 +394,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/gone.docx.md'] } },
+          items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/gone.docx.md'] } },
         },
       },
     });
@@ -567,7 +596,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/old.docx.md'] } },
+          items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/old.docx.md'] } },
         },
       },
     });
@@ -590,7 +619,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/gone.docx.md'] } },
+          items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/gone.docx.md'] } },
         },
       },
     });

@@ -4,6 +4,7 @@ import type { DriveItem } from '../domain/drive-item.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
+import { datedRoot } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { Clock } from './ports/clock.ts';
@@ -43,10 +44,11 @@ type Context = {
 
 const failure = (error: DriveReaderError | FilesError): ConvertOutcome => ({ kind: 'failed', reason: `${error.kind}: ${error.message}` });
 
+// The day the document last changed, then the folders it had in SharePoint underneath it.
 const targetDir = (input: ConvertFileInput): string => {
-  const folders = input.item.path.split('/').slice(0, -1);
-  const relative = safeRelPath(folders);
-  return relative.length === 0 ? input.libraryRoot : `${input.libraryRoot}/${relative}`;
+  const day = datedRoot(input.libraryRoot, input.item.lastModified);
+  const relative = safeRelPath(input.item.path.split('/').slice(0, -1));
+  return relative.length === 0 ? day : `${day}/${relative}`;
 };
 
 const stampFor = (input: ConvertFileInput, clock: Clock): DocumentStamp => ({
