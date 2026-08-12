@@ -64,17 +64,27 @@ clear message instead of waiting for input.
 
 ```
 kb/
-  _archive/<Site>/<Library>/...     files whose source was deleted or renamed away
+  _archive/<Site>/<Library>/...     files whose source was deleted, renamed, or changed away
   <Site>/
     .sync-state.json                what has been synced, and where the next run resumes
     _sync-report.md                 what did not make it in, and why (only when there is something)
     <Library>/
-      <SharePoint folders mirrored>/
-        Roadmap.pptx.md             slide text
-        Roadmap.pptx.pdf            the rendered deck
-        Contrat.pdf                 the original
-        Contrat.pdf.md              its text layer
+      2026-05-12/                   the day each document last changed at the source
+        <SharePoint folders mirrored>/
+          Roadmap.pptx.md           slide text
+          Roadmap.pptx.pdf          the rendered deck
+          Contrat.pdf               the original
+          Contrat.pdf.md            its text layer
 ```
+
+Every document is filed under the day it last changed at the source, not the day it was synced, with
+the folders it had in SharePoint underneath: the day is what you usually want to scan by, and the
+folders are what keep two same-named documents apart. A document whose source reports no date at all
+goes under `undated/`.
+
+Because the day comes from the document itself, editing one at the source files it afresh under its
+new day. The copy under the old day is not left behind as a duplicate: it is moved into `_archive/`,
+where anything the source no longer has already goes.
 
 Two different SharePoint sites can share a display name (most often an unedited template title). The
 picker shows each one's address alongside the name so they can be told apart before choosing, and if
@@ -136,12 +146,15 @@ kb/
     _sync-report.md                 what did not make it in, and why
     _attachments/                   every file a mail carried, stored once by content
     _linked/                        SharePoint files the mail pointed at, each pulled once
-    threads/2026/
-      2026-05-12 Contrat Contoso a3f9c1.md            the whole conversation, oldest message first
+    threads/2026-05-20/                               the day the conversation was last active
+      Contrat Contoso a3f9c1.md                       the whole conversation, oldest message first
 ```
 
-One file per conversation, not per message. Its name is the day the thread started, its subject,
-and a fingerprint of the thread, so a reply rewrites the same file instead of making a new one.
+One file per conversation, not per message, named for its subject and a fingerprint of the thread so
+two conversations sharing a subject keep their own files. The folder is the day of the conversation's
+**latest** message, so a thread sorts by when it was last active rather than when it began. That means
+a reply moves the file into the new day's folder: the conversation stays one file, but its path
+changes as the thread continues, so do not link to it by path from outside `kb/`.
 Every folder is swept except Junk, Deleted Items, Drafts and Outbox, which means **the mail you
 sent is included**: Sent Items is a folder like any other, and a conversation is assembled from
 every folder its messages landed in. Quoted reply chains are stripped, since the message being
@@ -170,7 +183,8 @@ Each run stores the cursor Graph gives it, so a second run reads only what chang
 library converts nothing. State is written after every single file, so stopping a run mid-way
 (Ctrl-C) loses at most the file in flight, and the next run picks up from the same place. A file
 renamed in SharePoint is moved on disk rather than converted again; a file deleted there has its
-markdown moved into `kb/_archive/`.
+markdown moved into `kb/_archive/`, as does the older copy of a file that was edited and so now
+belongs under a later day.
 
 `kb/` is generated content and is gitignored.
 

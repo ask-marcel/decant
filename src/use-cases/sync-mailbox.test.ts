@@ -36,7 +36,7 @@ const message = (over: Partial<MailMessage> = {}): MailMessage => ({
 const rendered = (over: Partial<RenderThreadOutcome> = {}): RenderThreadOutcome => ({
   kind: 'rendered',
   thread: {
-    record: { file: 'threads/2026/thread.md', messageIds: ['m1'], lastMessage: '2026-05-12T09:31:00Z', attachments: [] },
+    record: { file: 'threads/2026-05-12/thread.md', messageIds: ['m1'], lastMessage: '2026-05-12T09:31:00Z', attachments: [] },
     linked: {},
     attachments: {},
     attachmentsSkipped: [],
@@ -227,7 +227,7 @@ describe('syncing a mailbox into the knowledge base', () => {
 
 describe('running a mailbox sync again', () => {
   const known = serializeMailboxState(
-    withThread(emptyMailboxState(), 'conv-1', { file: 'threads/2026/thread.md', messageIds: ['m1'], lastMessage: '2026-05-12T09:31:00Z', attachments: [] })
+    withThread(emptyMailboxState(), 'conv-1', { file: 'threads/2026-05-12/thread.md', messageIds: ['m1'], lastMessage: '2026-05-12T09:31:00Z', attachments: [] })
   );
 
   it('a conversation the sweep resurfaced unchanged is left alone', async () => {

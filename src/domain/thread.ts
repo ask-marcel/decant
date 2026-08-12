@@ -47,13 +47,16 @@ export const threadTitle = (subject: string): string => {
   return bare.length === 0 ? 'No subject' : bare;
 };
 
-export const threadFileName = (thread: { readonly conversationId: string; readonly subject: string; readonly firstReceived: string }): string => {
-  const day = thread.firstReceived.slice(0, 10);
+// The day is the folder the conversation sits in, so the name itself is the subject and a
+// fingerprint: enough to tell two threads sharing a subject apart, and stable as the thread grows.
+export const threadFileName = (thread: { readonly conversationId: string; readonly subject: string }): string => {
   const title = safeSegment(threadTitle(thread.subject)).slice(0, SUBJECT_LIMIT);
-  return `${day} ${title} ${shortHash(thread.conversationId)}.md`;
+  return `${title} ${shortHash(thread.conversationId)}.md`;
 };
 
-export const threadYear = (firstReceived: string): string => firstReceived.slice(0, 4);
+// A conversation is filed under the day it was last active rather than the day it started, so a
+// thread sorts by its latest message. A reply therefore moves the file to the new day's folder.
+export const threadDay = (lastReceived: string): string => lastReceived.slice(0, 10);
 
 const nameOf = (who: Correspondent | undefined): string => who?.name ?? 'Unknown sender';
 

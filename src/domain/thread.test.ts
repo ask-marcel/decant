@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { MailMessage } from './mail-message.ts';
-import { participantsOf, renderThread, shortHash, threadFileName, threadTitle, threadYear } from './thread.ts';
+import { participantsOf, renderThread, shortHash, threadDay, threadFileName, threadTitle } from './thread.ts';
 
 const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   id: 'm1',
@@ -15,15 +15,13 @@ const message = (over: Partial<MailMessage> = {}): MailMessage => ({
 });
 
 describe('naming the file a conversation lives in', () => {
-  it('the name is the day it started, its subject and a fingerprint of the thread', () => {
-    expect(threadFileName({ conversationId: 'AAQkADk0...=', subject: 'Contrat Contoso', firstReceived: '2026-05-12T09:31:00Z' })).toBe(
-      `2026-05-12 Contrat Contoso ${shortHash('AAQkADk0...=')}.md`
-    );
+  it('the name is its subject and a fingerprint of the thread, since the day is the folder it sits in', () => {
+    expect(threadFileName({ conversationId: 'AAQkADk0...=', subject: 'Contrat Contoso' })).toBe(`Contrat Contoso ${shortHash('AAQkADk0...=')}.md`);
   });
 
   it('a reply keeps the thread under its original subject, so the file never renames', () => {
-    const started = { conversationId: 'c1', subject: 'Contrat Contoso', firstReceived: '2026-05-12T09:31:00Z' };
-    const replied = { conversationId: 'c1', subject: 'RE: RE: Contrat Contoso', firstReceived: '2026-05-12T09:31:00Z' };
+    const started = { conversationId: 'c1', subject: 'Contrat Contoso' };
+    const replied = { conversationId: 'c1', subject: 'RE: RE: Contrat Contoso' };
 
     expect(threadFileName(replied)).toBe(threadFileName(started));
   });
@@ -37,6 +35,11 @@ describe('naming the file a conversation lives in', () => {
     expect(threadTitle('RE:Contrat')).toBe('Contrat');
   });
 
+  it('a subject padded with spaces is trimmed, before and after its reply markers are stripped', () => {
+    expect(threadTitle('   Contrat   ')).toBe('Contrat');
+    expect(threadTitle('  RE:   Contrat  ')).toBe('Contrat');
+  });
+
   it('a subject that merely contains a marker keeps it, since only a prefix says how mail travelled', () => {
     expect(threadTitle('Contrat re: signature')).toBe('Contrat re: signature');
     expect(threadTitle('REF: Contrat')).toBe('REF: Contrat');
@@ -48,23 +51,23 @@ describe('naming the file a conversation lives in', () => {
   });
 
   it('a thread with no subject at all still gets a readable name', () => {
-    expect(threadFileName({ conversationId: 'c1', subject: '   ', firstReceived: '2026-05-12T09:31:00Z' })).toContain('No subject');
+    expect(threadFileName({ conversationId: 'c1', subject: '   ' })).toContain('No subject');
     expect(threadTitle('RE:')).toBe('No subject');
   });
 
   it('a subject the filesystem cannot hold is made safe', () => {
-    expect(threadFileName({ conversationId: 'c1', subject: 'Q1/Q2: budget', firstReceived: '2026-05-12T09:31:00Z' })).toContain('Q1_Q2_ budget');
+    expect(threadFileName({ conversationId: 'c1', subject: 'Q1/Q2: budget' })).toContain('Q1_Q2_ budget');
   });
 
   it('a very long subject is shortened so the path stays writable', () => {
-    const name = threadFileName({ conversationId: 'c1', subject: 'a'.repeat(300), firstReceived: '2026-05-12T09:31:00Z' });
+    const name = threadFileName({ conversationId: 'c1', subject: 'a'.repeat(300) });
 
     expect(name.length).toBeLessThan(110);
   });
 
   it('two different threads sharing a day and a subject still get their own file', () => {
-    const first = threadFileName({ conversationId: 'c1', subject: 'Contrat', firstReceived: '2026-05-12T09:31:00Z' });
-    const second = threadFileName({ conversationId: 'c2', subject: 'Contrat', firstReceived: '2026-05-12T09:31:00Z' });
+    const first = threadFileName({ conversationId: 'c1', subject: 'Contrat' });
+    const second = threadFileName({ conversationId: 'c2', subject: 'Contrat' });
 
     expect(first).not.toBe(second);
   });
@@ -74,8 +77,8 @@ describe('naming the file a conversation lives in', () => {
     expect(shortHash('AAQkADk0...=')).toHaveLength(6);
   });
 
-  it('threads are filed by the year they started', () => {
-    expect(threadYear('2026-05-12T09:31:00Z')).toBe('2026');
+  it('threads are filed by the day of their latest message, so a thread sorts by when it was last active', () => {
+    expect(threadDay('2026-05-12T09:31:00Z')).toBe('2026-05-12');
   });
 });
 
@@ -161,6 +164,13 @@ describe('writing a conversation as one document', () => {
     expect(rendered).toContain('_This message had no readable body._');
   });
 
+  it('a first line that mentions a header field mid-sentence is kept, since only a line opening with one is a header', () => {
+    const body = 'Please check the **Subject:** field before sending.\n\nThe rest follows.';
+    const rendered = renderThread({ conversationId: 'c1', subject: 'Kick-off', parts: [{ message: message(), body }] });
+
+    expect(rendered).toContain('Please check the **Subject:** field before sending.');
+  });
+
   it('a body that merely mentions those words keeps them, since only a leading block is a header', () => {
     const body = 'As agreed:\n\n**Subject:** is the wrong word here.';
     const rendered = renderThread({ conversationId: 'c1', subject: 'Kick-off', parts: [{ message: message(), body }] });
@@ -198,5 +208,20 @@ describe('listing who took part in a conversation', () => {
 
   it('a conversation with nobody named lists nobody', () => {
     expect(participantsOf([{ message: message({ from: undefined, to: [] }), body: '' }])).toEqual([]);
+  });
+
+  it('the names are sorted, so the same people read the same way whatever order they wrote in', () => {
+    const parts = [
+      { message: message({ from: { name: 'Zoe Wang', address: 'z@example.com' }, to: [{ name: 'Adam Bell', address: 'a@example.com' }] }), body: '' },
+      { message: message({ id: 'm2', from: { name: 'Marc Petit', address: 'm@example.com' }, to: [] }), body: '' },
+    ];
+
+    expect(participantsOf(parts)).toEqual(['Adam Bell', 'Marc Petit', 'Zoe Wang']);
+  });
+
+  it('a message with no sender still counts the people it was written to', () => {
+    const parts = [{ message: message({ from: undefined, to: [{ name: 'Jane Doe', address: 'j@example.com' }] }), body: '' }];
+
+    expect(participantsOf(parts)).toEqual(['Jane Doe']);
   });
 });

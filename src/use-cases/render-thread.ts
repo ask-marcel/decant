@@ -9,7 +9,7 @@ import { renderFrontMatter } from '../domain/front-matter.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
-import { participantsOf, renderThread, threadFileName, threadTitle, threadYear } from '../domain/thread.ts';
+import { participantsOf, renderThread, threadDay, threadFileName, threadTitle } from '../domain/thread.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { tooLargeReason, UNSUPPORTED_REASON } from '../domain/report.ts';
@@ -228,8 +228,8 @@ const writeThread = async (
   first: MailMessage,
   last: MailMessage
 ): Promise<Result<RenderThreadOutcome, MailReaderError>> => {
-  const fileName = threadFileName({ conversationId: input.conversationId, subject: first.subject, firstReceived: first.received });
-  const relative = `threads/${threadYear(first.received)}/${fileName}`;
+  const fileName = threadFileName({ conversationId: input.conversationId, subject: first.subject });
+  const relative = `threads/${threadDay(last.received)}/${fileName}`;
   const stamp = stampFor(deps, input, first, last);
   const attachments = await attachmentsOf(deps, input, parts, stamp);
   const links = await linkedFiles(
@@ -239,7 +239,7 @@ const writeThread = async (
   );
   // Attachments live in the shared store one level up from the thread, so their references climb out
   // of the thread's own folder rather than sitting beside it.
-  const here = `${deps.mailboxRoot}/threads/${threadYear(first.received)}`;
+  const here = `${deps.mailboxRoot}/threads/${threadDay(last.received)}`;
   const attachmentRefs = attachments.paths.map((path) => pathBetween(here, path));
   const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, relativeTo(deps.mailboxRoot, links.paths));
   const written = await deps.files.writeText(
