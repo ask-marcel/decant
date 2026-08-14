@@ -153,3 +153,48 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   two local worktrees share one checkout, the primary one holding `main`. "Push" here means
   fast-forwarding or merging into that local `main` checkout, not a network push; there is nowhere
   else for commits to go until a remote is deliberately added.
+
+## 2026-08-14
+
+- [gotcha] `disambiguateSegment(name, id)` takes the first 8 characters of the id, which
+  disambiguates nothing when ids share a prefix, and Graph ids do. Every item in one drive starts
+  `01W25LGY...`, and a site id is `<tenant>.sharepoint.com,<guid>,<guid>`, so two sites in the same
+  tenant agree for the first 20-odd characters. Two same-named sites would have landed in the same
+  folder either way, which is the bug the suffix was added to fix. `siteIdHash` (sha256, in
+  `src/domain/site-state.ts`) is what makes the suffix distinguishing. Hash before slicing whenever
+  a shared-prefix identifier is the source of a short suffix.
+
+- [gotcha] Deleting well-tested code can fail the mutation gate even when nothing newly written is
+  weak. Moving the day-folder logic out of `thread.ts` dropped the aggregate to 89.67% against a
+  break threshold of 90, though every line written that day was mutation-clean: the removed block was
+  the well-covered share of that file, so what remained (subject trimming, the header-line anchor,
+  participant sorting) became a much larger fraction of a smaller file and its PRE-EXISTING debt
+  surfaced. The fix is tests for the debt the deletion exposed, not for the change itself: 4 tests in
+  `output-paths.test.ts` (88.10 -> 97.62%) and 4 in `thread.test.ts` (85.86 -> 88.89%) brought the
+  aggregate to 90.59%. Expect this on any commit that removes a tested block from a mixed-coverage
+  file, and read the per-file table before assuming the new code is at fault.
+
+- [decision] The terminal is a sink with a checkpoint in front of it, the same way the filesystem has
+  one in `kb-path.ts`. `printLine` (`src/presenter/output.ts`) drops C0 except tab and newline, plus
+  DEL and C1, from everything it prints. The bug that motivated it: the operator's picker answer
+  echoed back into a refusal carried a raw ESC from an arrow key, so `no such choice: ^[[Au` moved
+  the cursor up a row and overwrote the line above with itself, leaving `bun run sync` exiting 1 with
+  nothing visible on screen. Text reaching stdout comes either from Graph (a site or file name) or
+  from the operator's own input, so neither is trusted. Printable characters in any script pass
+  through untouched, so a name like 工作组网站 still prints as itself.
+
+- [gotcha] RapidOCR's dotted-path params take enum members, never strings.
+  `RapidOCR(params={"Rec.lang_type": "en"})` raises `TypeError: The value of Rec.lang_type must be
+  Enum Type.`; it needs `LangRec("en")` from `rapidocr.utils.typings`, which is what
+  `src/infra/rapidocr-run.py` does. `Cls.lang_type` has to be left at its default: RapidOCR's own
+  `default_models.yaml` ships only a `ch` classifier, so overriding it fails at construction. `Det`
+  has both, but the shared detector locates Latin-script text fine, so only `Rec` is set. Simplifying
+  that file back to a plain string breaks OCR at engine construction, before an image is ever read.
+
+- [gotcha] Slide or PDF markdown that arrives as one run-on wall of text with no spaces between words
+  comes from upstream's PDF text extraction (`unpdf`, inside ask-marcel-office-cli), not from
+  anything here. Checked against a real synced file: line 12 was 34,252 characters on a single line.
+  The only whitespace folding in this repo is `front-matter.ts` `/\s+/g -> ' '` applied to front
+  matter *values*; a document body goes through `withFrontMatter` untouched. Do not look for the
+  cause in `convert-file.ts` or `kb-document.ts`. A fix belongs in the library, or in a
+  post-extraction word-splitter this repo does not have and has not been asked for.
