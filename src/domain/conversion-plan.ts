@@ -13,21 +13,27 @@ export type FileDecision =
 export type PlannedFile = { readonly name: string; readonly size: number };
 
 // Partial, because the key set is open: any extension not listed here is one we do not handle.
+// A Loop page (`.loop`, and the same page under its older `.fluid` name, and a `.whiteboard`) holds
+// no body of its own: the text lives in the Fluid service and Graph renders it on request. It is a
+// document all the same, because the reader asks Graph for that rendering and hands back markdown.
 const ROUTE_BY_EXTENSION: Readonly<Partial<Record<string, ConversionRoute>>> = {
   csv: 'document',
   doc: 'document',
   docm: 'document',
   docx: 'document',
+  fluid: 'document',
   htm: 'document',
   html: 'document',
   json: 'document',
   log: 'document',
+  loop: 'document',
   md: 'document',
   msg: 'document',
   odp: 'document',
   ods: 'document',
   odt: 'document',
   txt: 'document',
+  whiteboard: 'document',
   xls: 'document',
   xlsm: 'document',
   xlsx: 'document',
