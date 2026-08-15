@@ -69,6 +69,35 @@ describe('wiring the command together', () => {
     expect(JSON.parse(files.written.get(statePath) ?? '{}').drives['b!two'].deltaLink).toBe('cursor-1');
   });
 
+  it('two sites sharing a name each refresh their own libraries, not the first one to be filed', async () => {
+    // The second site's folder carries the suffix `disambiguateSegment` gives it: sha256 of its id, first 8.
+    const first = 'kb/Team Site/.sync-state.json';
+    const second = 'kb/Team Site-7b75821a/.sync-state.json';
+    const stateFor = (id: string, driveId: string): string =>
+      JSON.stringify({
+        version: 1,
+        source: { kind: 'site', id, name: 'Team Site', webUrl: 'https://tenant.sharepoint.com' },
+        lastRun: '2026-07-22T09:00:00Z',
+        drives: { [driveId]: { name: 'Documents', pending: [], items: {} } },
+      });
+    const files = createFilesFake({
+      directories: { kb: ['Team Site', 'Team Site-7b75821a'] },
+      texts: { [first]: stateFor('contoso,aaa,1', 'b!alpha'), [second]: stateFor('contoso,bbb,2', 'b!beta') },
+    });
+    const deps = buildDeps(configFor({}), {
+      files,
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake(),
+      ocr: createOcrFake(),
+      prompt: createPromptFake(),
+      clock: createClockFake(),
+    });
+
+    await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+
+    expect(Object.keys(JSON.parse(files.written.get(second) ?? '{}').drives)).toEqual(['b!beta']);
+  });
+
   it('the real wiring builds without reaching Microsoft, so a run only signs in when it needs to', () => {
     const deps = buildDeps(configFor({}), { files: createFilesFake(), logger: createLoggerFake(), prompt: createPromptFake(), clock: createClockFake(), ocr: createOcrFake() });
 

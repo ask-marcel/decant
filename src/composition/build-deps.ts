@@ -24,8 +24,7 @@ import { createRunSync } from '../use-cases/run-sync.ts';
 import type { RunSync } from '../use-cases/run-sync.ts';
 import { createRenderThread } from '../use-cases/render-thread.ts';
 import { createSyncMailbox } from '../use-cases/sync-mailbox.ts';
-import { createSyncSite, loadState, STATE_FILE_NAME } from '../use-cases/sync-site.ts';
-import { safeSegment } from '../domain/kb-path.ts';
+import { createSyncSite, resolveSite } from '../use-cases/sync-site.ts';
 import type { Config } from './config.ts';
 
 export type BuiltDeps = {
@@ -51,10 +50,12 @@ const realApi = (interactive: boolean): MarcelApi => {
   return { graph: marcel.graph, fs: marcel.fs, commands: commands as Readonly<Partial<Record<string, MarcelCommand>>> };
 };
 
+// Resolved the same way the sync itself resolves it: two sites can share a display name, and the
+// name alone would hand the second site the first one's libraries to refresh.
 const savedDrivesFrom =
   (files: Files, logger: Logger, kbRoot: string) =>
   async (site: SiteRef): Promise<ReadonlyArray<DriveSummary>> => {
-    const state = await loadState(files, `${kbRoot}/${safeSegment(site.name)}/${STATE_FILE_NAME}`, site, logger);
+    const { state } = await resolveSite({ files, logger, kbRoot }, site);
     return Object.entries(state.drives).map(([id, drive]) => ({ id, name: drive.name }));
   };
 

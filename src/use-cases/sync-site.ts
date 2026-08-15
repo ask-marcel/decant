@@ -89,9 +89,13 @@ const unusable = (logger: Logger, site: SiteRef, cause: string): SiteState => {
 // folder's own state names its real owner (`SiteState.source.id`), checked once here before
 // anything is read or written under it. A collision moves this site into a disambiguated folder
 // instead, the other site's file untouched; the common, uncollided case costs the one read below.
-type ResolvedSite = { readonly segment: string; readonly state: SiteState };
+export type ResolvedSite = { readonly segment: string; readonly state: SiteState };
 
-const resolveSite = async (deps: SyncSiteDeps, site: SiteRef): Promise<ResolvedSite> => {
+// Narrower than `SyncSiteDeps` on purpose: anything that needs to find a site's folder can ask,
+// without owning a converter or a progress bar. `SyncSiteDeps` satisfies it as it stands.
+export type ResolveSiteDeps = { readonly files: Files; readonly logger: Logger; readonly kbRoot: string };
+
+export const resolveSite = async (deps: ResolveSiteDeps, site: SiteRef): Promise<ResolvedSite> => {
   const defaultSegment = safeSegment(site.name);
   const defaultState = await loadState(deps.files, `${siteRoot(deps.kbRoot, defaultSegment)}/${STATE_FILE_NAME}`, site, deps.logger);
   if (!belongsToAnotherSite(defaultState, site)) return { segment: defaultSegment, state: defaultState };
