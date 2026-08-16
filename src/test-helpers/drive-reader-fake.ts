@@ -1,4 +1,4 @@
-import type { DriveDeltaPage } from '../domain/drive-item.ts';
+import type { DriveDeltaPage, DriveItem } from '../domain/drive-item.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { ArchiveEntry, DriveReader, DriveReaderError, DriveSummary, ItemRef, SiteSummary } from '../use-cases/ports/drive-reader.ts';
@@ -11,6 +11,9 @@ export type DriveReaderSeed = {
   readonly sites?: ReadonlyArray<SiteSummary>;
   readonly drives?: ReadonlyArray<DriveSummary>;
   readonly rootItemId?: string;
+  // Items answered for by id, for the single-item read a linked file uses. An id with no entry is
+  // reported missing, the way Graph answers for a file the caller cannot reach.
+  readonly items?: Readonly<Record<string, DriveItem>>;
   // Delta pages served in order: the first call gets the first page, and so on.
   readonly pages?: ReadonlyArray<DriveDeltaPage>;
   readonly markdown?: Readonly<Record<string, string>>;
@@ -50,6 +53,12 @@ export const createDriveReaderFake = (seed: DriveReaderSeed = {}): DriveReaderFa
     },
     listDrives: async () => (seed.failWith ? err(seed.failWith) : ok(seed.drives ?? [])),
     rootItemId: async () => (seed.failWith ? err(seed.failWith) : ok(seed.rootItemId ?? '01ROOT')),
+    item: async (ref) => {
+      calls.push(`item:${ref.itemId}`);
+      if (seed.failWith) return err(seed.failWith);
+      const found = seed.items?.[ref.itemId];
+      return found === undefined ? missing(`item ${ref.itemId}`) : ok(found);
+    },
     delta: async () => {
       calls.push('delta');
       return seed.failWith ? err(seed.failWith) : nextPage();

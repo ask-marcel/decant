@@ -63,7 +63,10 @@ const modifiedByOf = (item: Record<string, unknown>): string | undefined => {
   return isRecord(by) && isRecord(by['user']) ? readString(by['user'], 'displayName') : undefined;
 };
 
-const parseItem = (raw: unknown): DriveItem | undefined => {
+// Exported for the single-item read as well as the sweep: a file reached by a link in an email is
+// the same kind of thing as a file found by walking a library, and reading it twice two ways is how
+// the two drift apart.
+export const parseItem = (raw: unknown): DriveItem | undefined => {
   if (!isRecord(raw)) return undefined;
   const id = readString(raw, 'id');
   const name = readString(raw, 'name');

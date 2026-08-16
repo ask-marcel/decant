@@ -1,4 +1,4 @@
-import { parseDriveDelta } from '../domain/drive-item.ts';
+import { parseDriveDelta, parseItem } from '../domain/drive-item.ts';
 import type { DriveDeltaPage } from '../domain/drive-item.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
@@ -155,6 +155,12 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
       if (!raw.ok) return raw;
       const id = readString(raw.value, 'id');
       return id === undefined ? missing('root item id') : ok(id);
+    },
+    item: async (ref) => {
+      const raw = await call('get-drive-item', { driveId: ref.driveId, itemId: ref.itemId });
+      if (!raw.ok) return raw;
+      const parsed = parseItem(raw.value);
+      return parsed === undefined ? missing('drive item') : ok(parsed);
     },
     delta: async (ref) => delta({ driveId: ref.driveId, itemId: ref.itemId, top: '1000' }),
     deltaFrom: async (cursor) => {

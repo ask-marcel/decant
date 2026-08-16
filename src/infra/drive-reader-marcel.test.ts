@@ -34,6 +34,7 @@ const registry = (
     'download-drive-item-as-pdf',
     'download-drive-item-content',
     'convert-local-file-to-markdown',
+    'get-drive-item',
   ];
   return Object.fromEntries(names.map((name) => [name, command(name)]));
 };
@@ -200,6 +201,43 @@ describe('reading SharePoint through the ask-marcel library', () => {
       ],
     });
     expect(recorded[0]?.local).toBe(true);
+  });
+
+  it('a single drive item is read for the name, size and date that decide where it is filed', async () => {
+    const { reader, recorded } = readerFor({
+      'get-drive-item': [
+        ok({
+          id: '01ITEM',
+          name: 'Process standardization.pptx',
+          size: 240000,
+          lastModifiedDateTime: '2026-05-27T09:14:00Z',
+          webUrl: 'https://tenant.sharepoint.com/sites/team/Shared%20Documents/Decks/Process%20standardization.pptx',
+          parentReference: { path: '/drives/b!one/root:/Decks' },
+          lastModifiedBy: { user: { displayName: 'Dana Okonkwo' } },
+        }),
+      ],
+    });
+
+    const item = await reader.item({ driveId: 'b!one', itemId: '01ITEM' });
+
+    expect(item.ok && item.value).toEqual({
+      id: '01ITEM',
+      name: 'Process standardization.pptx',
+      kind: 'file',
+      size: 240000,
+      path: 'Decks/Process standardization.pptx',
+      lastModified: '2026-05-27T09:14:00Z',
+      cTag: '',
+      webUrl: 'https://tenant.sharepoint.com/sites/team/Shared%20Documents/Decks/Process%20standardization.pptx',
+      modifiedBy: 'Dana Okonkwo',
+    });
+    expect(recorded[0]).toMatchObject({ name: 'get-drive-item', params: { driveId: 'b!one', itemId: '01ITEM' } });
+  });
+
+  it('an item Graph answered for in a shape we do not know is refused rather than filed from nothing', async () => {
+    const { reader } = readerFor({ 'get-drive-item': [ok({ id: '01ITEM' })] });
+
+    expect(await reader.item({ driveId: 'b!one', itemId: '01ITEM' })).toEqual({ ok: false, error: { kind: 'permanent', message: 'Graph returned no drive item' } });
   });
 });
 

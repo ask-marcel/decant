@@ -1,5 +1,5 @@
 import type { Result } from '../../domain/result.ts';
-import type { DriveDeltaPage } from '../../domain/drive-item.ts';
+import type { DriveDeltaPage, DriveItem } from '../../domain/drive-item.ts';
 
 // How a call against Microsoft Graph can fail, in the terms this sync reacts to: `throttled` and
 // `transient` are worth retrying, `permanent` is not, and `auth` ends the run.
@@ -27,6 +27,9 @@ export type DriveReader = {
   readonly siteById: (siteId: string) => Promise<Result<SiteSummary, DriveReaderError>>;
   readonly listDrives: (siteId: string) => Promise<Result<ReadonlyArray<DriveSummary>, DriveReaderError>>;
   readonly rootItemId: (driveId: string) => Promise<Result<string, DriveReaderError>>;
+  // One item on its own, for a file reached by a link rather than by sweeping a library: the name,
+  // size and date decide where it is filed and whether it is converted at all.
+  readonly item: (ref: ItemRef) => Promise<Result<DriveItem, DriveReaderError>>;
   readonly delta: (ref: ItemRef) => Promise<Result<DriveDeltaPage, DriveReaderError>>;
   readonly deltaFrom: (cursor: string) => Promise<Result<DriveDeltaPage, DriveReaderError>>;
   readonly markdown: (ref: ItemRef) => Promise<Result<string, DriveReaderError>>;
