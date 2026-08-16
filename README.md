@@ -32,6 +32,12 @@ Lists every SharePoint site you can read plus your mailbox, marking the ones alr
 when they last synced and how much they hold. Pick a number and one or more libraries, or press
 `m` for your mailbox, and it syncs.
 
+Your Loop workspaces are on that list too, shown as `Loop - <workspace>`. A workspace keeps its
+pages in a container no site listing returns, so they are found through the `.pod` manifest each one
+carries; from there a workspace is synced exactly like a site, and `update` refreshes it with the
+rest. A workspace nobody has opened may be missing from the index for a while: sync it by container
+id with `--site-id` when that happens.
+
 Several sites can be taken at once: `1,3` for those two, or `all` for every site on the list. Taking
 more than one site takes every library in each without asking, since the point of choosing them
 together is not being asked once per site. Each site is summarised as it finishes.

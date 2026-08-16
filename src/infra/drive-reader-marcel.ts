@@ -136,11 +136,32 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
     return raw.ok ? toBytes(raw.value) : raw;
   };
 
+  const siteOf = async (siteId: string): Promise<Result<SiteSummary, DriveReaderError>> => {
+    const raw = await call('get-sharepoint-site', { siteId });
+    if (!raw.ok) return raw;
+    const site = toSite(raw.value)[0];
+    return site === undefined ? missing('site') : ok(site);
+  };
+
+  const workspacesOf = async (pods: ReadonlyArray<unknown>): Promise<Result<ReadonlyArray<SiteSummary>, DriveReaderError>> => {
+    const found: SiteSummary[] = [];
+    for (const id of pods.flatMap(containerId)) {
+      const workspace = await siteOf(id);
+      if (!workspace.ok) return workspace;
+      found.push(workspace.value);
+    }
+    return ok(found);
+  };
+
   return {
     listSites: async () => {
       const raw = await call('search-all-accessible-sites', { query: '*' });
       if (!raw.ok) return raw;
-      return ok(listOf(raw.value).flatMap(toSite));
+      const pods = await call('search-all-files', { query: `filetype:${POD_EXTENSION}` });
+      if (!pods.ok) return pods;
+      const workspaces = await workspacesOf(listOf(pods.value));
+      if (!workspaces.ok) return workspaces;
+      return ok([...listOf(raw.value).flatMap(toSite), ...workspaces.value]);
     },
     siteByUrl: async (url) => {
       const parsed = parseSiteUrl(url);
@@ -150,12 +171,7 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
       const site = toSite(raw.value)[0];
       return site === undefined ? missing('site') : ok(site);
     },
-    siteById: async (siteId) => {
-      const raw = await call('get-sharepoint-site', { siteId });
-      if (!raw.ok) return raw;
-      const site = toSite(raw.value)[0];
-      return site === undefined ? missing('site') : ok(site);
-    },
+    siteById: siteOf,
     listDrives: async (siteId) => {
       const raw = await call('list-sharepoint-site-drives', { siteId });
       if (!raw.ok) return raw;
@@ -197,10 +213,39 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
   };
 };
 
+// A Loop workspace holds its pages in a SharePoint Embedded container, which no site listing
+// returns: neither the search over sites nor the drives a site declares knows the container exists.
+// What every workspace does keep is one `.pod` manifest beside its pages, and the file index has
+// that, so one manifest found is one workspace. Graph addresses the container as a site all the
+// same, so the row below goes through the picker, the sweep and the state file unchanged.
+const POD_EXTENSION = 'pod';
+
+const WORKSPACE_PREFIX = 'Loop - ';
+
+// A container answers as a site under `/contentstorage/`, carrying the workspace's display name and
+// nothing to say the pages are Loop pages. Named by id rather than chosen from the list, it would
+// otherwise be filed under a second name, and one workspace would become two folders. The segment
+// after that path is a container id in one of two shapes (`CSP_<guid>` for a shared workspace, an
+// opaque token for a personal one), so the path itself is the only part worth matching on.
+const CONTAINER_PATH = '/contentstorage/';
+
+const siteName = (name: string, webUrl: string): string => (webUrl.includes(CONTAINER_PATH) ? `${WORKSPACE_PREFIX}${name}` : name);
+
 const toSite = (value: unknown): ReadonlyArray<SiteSummary> => {
   const id = readString(value, 'id');
   const name = readString(value, 'displayName') ?? readString(value, 'name');
-  return id === undefined || name === undefined ? [] : [{ id, name, webUrl: readString(value, 'webUrl') ?? '' }];
+  const webUrl = readString(value, 'webUrl') ?? '';
+  return id === undefined || name === undefined ? [] : [{ id, name: siteName(name, webUrl), webUrl }];
+};
+
+// The manifest names its container in Loop's own host form (`loop.cloud.microsoft,<guid>,<guid>`),
+// while a site lookup answers with the tenant-host form. Both address the same container, so the id
+// found here is resolved before it is used: an id from the index and an id from a lookup would
+// otherwise be two sources for one workspace, and the second one would sync it all over again.
+const containerId = (value: unknown): ReadonlyArray<string> => {
+  const parent = isRecord(value) ? value['parentReference'] : undefined;
+  const siteId = readString(parent, 'siteId');
+  return siteId === undefined ? [] : [siteId];
 };
 
 const toDrive = (value: unknown): ReadonlyArray<DriveSummary> => {

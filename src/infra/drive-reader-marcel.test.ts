@@ -24,6 +24,7 @@ const registry = (
   });
   const names = [
     'search-all-accessible-sites',
+    'search-all-files',
     'get-sharepoint-site-by-path',
     'get-sharepoint-site',
     'list-sharepoint-site-drives',
@@ -57,6 +58,32 @@ describe('reading SharePoint through the ask-marcel library', () => {
     expect(await reader.listSites()).toEqual({ ok: true, value: [{ id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' }] });
   });
 
+  it('a Loop workspace is offered beside the sites, under the identity a site lookup gives it', async () => {
+    const { reader, recorded } = readerFor({
+      'search-all-accessible-sites': [ok({ value: [{ id: 'contoso,1,2', displayName: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' }] })],
+      'search-all-files': [
+        ok({ value: [{ name: 'Equipe Contoso.pod', webUrl: 'https://loop.cloud.microsoft/join?podId=abc', parentReference: { siteId: 'loop.cloud.microsoft,3,4' } }] }),
+      ],
+      'get-sharepoint-site': [ok({ id: 'contoso,3,4', displayName: 'Equipe Contoso', webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_3' })],
+    });
+
+    expect(await reader.listSites()).toEqual({
+      ok: true,
+      value: [
+        { id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' },
+        { id: 'contoso,3,4', name: 'Loop - Equipe Contoso', webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_3' },
+      ],
+    });
+    expect(recorded[1]).toEqual({ name: 'search-all-files', params: { query: 'filetype:pod' }, local: false });
+    expect(recorded[2]).toEqual({ name: 'get-sharepoint-site', params: { siteId: 'loop.cloud.microsoft,3,4' }, local: false });
+  });
+
+  it('a workspace manifest that names no container is left out rather than filed under nothing', async () => {
+    const { reader } = readerFor({ 'search-all-files': [ok({ value: [{ name: 'Orphan.pod' }] })] });
+
+    expect(await reader.listSites()).toEqual({ ok: true, value: [] });
+  });
+
   it('a site address is looked up by its host and path, the way Graph addresses sites', async () => {
     const { reader, recorded } = readerFor({ 'get-sharepoint-site-by-path': [ok({ id: 'contoso,1,2', displayName: 'Espace Contoso' })] });
 
@@ -80,6 +107,26 @@ describe('reading SharePoint through the ask-marcel library', () => {
 
     expect(await reader.siteById('contoso,1,2')).toEqual({ ok: true, value: { id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://x' } });
     expect(recorded[0]?.params).toEqual({ siteId: 'contoso,1,2' });
+  });
+
+  it('a workspace named by its container id is filed under the name the picker offers for it', async () => {
+    const { reader } = readerFor({
+      'get-sharepoint-site': [ok({ id: 'contoso,3,4', displayName: 'Equipe Contoso', webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_3' })],
+    });
+
+    expect(await reader.siteById('contoso,3,4')).toEqual({
+      ok: true,
+      value: { id: 'contoso,3,4', name: 'Loop - Equipe Contoso', webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_3' },
+    });
+  });
+
+  it('a personal workspace, whose container is named after nothing, is still filed as a workspace', async () => {
+    const { reader } = readerFor({ 'get-sharepoint-site': [ok({ id: 'contoso,5,6', displayName: 'My workspace', webUrl: 'https://tenant.sharepoint.com/contentstorage/x8FNO' })] });
+
+    expect(await reader.siteById('contoso,5,6')).toEqual({
+      ok: true,
+      value: { id: 'contoso,5,6', name: 'Loop - My workspace', webUrl: 'https://tenant.sharepoint.com/contentstorage/x8FNO' },
+    });
   });
 
   it('an id no site answers to is reported rather than guessed at', async () => {
