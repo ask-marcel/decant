@@ -46,8 +46,8 @@ export type RenderedThread = {
   readonly record: ThreadRecord;
   readonly linked: Readonly<Record<string, LinkedRecord>>;
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
-  readonly attachmentsSkipped: ReadonlyArray<ReportEntry>;
-  readonly attachmentsFailed: ReadonlyArray<ReportEntry>;
+  readonly filesSkipped: ReadonlyArray<ReportEntry>;
+  readonly filesFailed: ReadonlyArray<ReportEntry>;
 };
 
 export type RenderThreadOutcome = { readonly kind: 'rendered'; readonly thread: RenderedThread } | { readonly kind: 'empty' };
@@ -102,38 +102,50 @@ const threadHeader = (
     ['linked_files', linked],
   ]);
 
+// What one linked document came to: the files it produced, or the one line saying why it produced
+// none. Same shape as `Placed` for an attachment, so both feed the report the same way.
+type Pulled = { readonly record?: LinkedRecord; readonly skipped?: ReportEntry; readonly failed?: ReportEntry };
+
+type LinkedTally = {
+  readonly paths: ReadonlyArray<string>;
+  readonly linked: Record<string, LinkedRecord>;
+  readonly skipped: ReadonlyArray<ReportEntry>;
+  readonly failed: ReadonlyArray<ReportEntry>;
+};
+
 // A file already pulled for another thread is referenced, not fetched again: the same weekly report
 // linked from thirty mails is one document on disk.
-const linkedFiles = async (
-  deps: RenderThreadDeps,
-  input: RenderThreadInput,
-  messages: ReadonlyArray<MailMessage>
-): Promise<{ readonly paths: ReadonlyArray<string>; readonly linked: Record<string, LinkedRecord> }> => {
+const linkedFiles = async (deps: RenderThreadDeps, input: RenderThreadInput, messages: ReadonlyArray<MailMessage>): Promise<LinkedTally> => {
   const linked: Record<string, LinkedRecord> = { ...input.linked };
   const paths: string[] = [];
+  const skipped: ReportEntry[] = [];
+  const failed: ReportEntry[] = [];
   for (const message of messages) {
     const found = await deps.reader.sharepointLinks(message.id);
     if (!found.ok) continue;
     for (const link of found.value) {
       const key = `${link.driveId}:${link.itemId}`;
-      const known = linked[key] ?? (await pullLinked(deps, input, link.driveId, link.itemId, link.name));
-      if (known === undefined) continue;
-      linked[key] = known;
-      for (const path of known.paths) if (!paths.includes(path)) paths.push(path);
+      const already = linked[key];
+      const pulled = already === undefined ? await pullLinked(deps, input, link.driveId, link.itemId, link.name) : { record: already };
+      if (pulled.skipped !== undefined) skipped.push(pulled.skipped);
+      if (pulled.failed !== undefined) failed.push(pulled.failed);
+      if (pulled.record === undefined) continue;
+      linked[key] = pulled.record;
+      for (const path of pulled.record.paths) if (!paths.includes(path)) paths.push(path);
     }
   }
-  return { paths, linked };
+  return { paths, linked, skipped, failed };
 };
 
 // The same route a file found by walking a library takes. A linked document is read for its own
 // metadata first, because the name in the link cannot say when the file changed, how big it is, or
 // what kind of thing it is: the day decides the folder, the size decides whether it is pulled at
 // all, and the kind decides whether a deck also renders a PDF beside its text.
-const pullLinked = async (deps: RenderThreadDeps, input: RenderThreadInput, driveId: string, itemId: string, name: string): Promise<LinkedRecord | undefined> => {
+const pullLinked = async (deps: RenderThreadDeps, input: RenderThreadInput, driveId: string, itemId: string, name: string): Promise<Pulled> => {
   const found = await deps.drive.item({ driveId, itemId });
   if (!found.ok) {
     deps.logger.warn('linked.failed', { itemId, name, cause: found.error.kind });
-    return undefined;
+    return { failed: { path: name, reason: `${found.error.kind}: ${found.error.message}` } };
   }
   const outcome = await deps.convertFile({
     item: found.value,
@@ -144,9 +156,10 @@ const pullLinked = async (deps: RenderThreadDeps, input: RenderThreadInput, driv
     maxBytes: input.maxBytes,
     ocrLabel: input.ocrLabel,
   });
-  if (outcome.kind === 'converted') return { paths: outcome.outputs };
+  if (outcome.kind === 'converted') return { record: { paths: outcome.outputs } };
   deps.logger.warn(outcome.kind === 'skipped' ? 'linked.skipped' : 'linked.failed', { itemId, name, cause: outcome.reason });
-  return undefined;
+  if (outcome.kind === 'failed') return { failed: { path: name, reason: outcome.reason } };
+  return { skipped: { path: name, reason: outcome.reason === 'too-large' ? tooLargeReason(input.maxBytes) : UNSUPPORTED_REASON } };
 };
 
 const ATTACHMENTS_FOLDER = '_attachments';
@@ -265,8 +278,8 @@ const writeThread = async (
       record: { file: relative, messageIds: parts.map((part) => part.message.id), lastMessage: last.received, attachments: attachments.paths },
       linked: links.linked,
       attachments: attachments.store,
-      attachmentsSkipped: inThread(attachments.skipped),
-      attachmentsFailed: inThread(attachments.failed),
+      filesSkipped: inThread([...attachments.skipped, ...links.skipped]),
+      filesFailed: inThread([...attachments.failed, ...links.failed]),
     },
   });
 };

@@ -196,8 +196,8 @@ const renderOne = async (
   const thread = rendered.value.thread;
   return {
     apply: (carried) => recordThread(carried, conversationId, thread),
-    counted: { converted: 1, skipped: thread.attachmentsSkipped.length, failed: thread.attachmentsFailed.length },
-    notes: { skipped: thread.attachmentsSkipped, failed: thread.attachmentsFailed },
+    counted: { converted: 1, skipped: thread.filesSkipped.length, failed: thread.filesFailed.length },
+    notes: { skipped: thread.filesSkipped, failed: thread.filesFailed },
   };
 };
 

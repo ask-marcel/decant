@@ -265,7 +265,7 @@ describe('keeping what a conversation carried', () => {
   it('an attachment whose bytes cannot be fetched is counted as failed, and the thread still lands', async () => {
     const { outcome, files } = await run({ reader: { ...withAttachment, failCalls: { attachmentBytes: { kind: 'transient', message: 'timeout' } } } });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsFailed).toEqual([{ path: `${THREAD_RELATIVE}: Contrat.docx`, reason: 'transient: timeout' }]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([{ path: `${THREAD_RELATIVE}: Contrat.docx`, reason: 'transient: timeout' }]);
     expect(files.written.has(THREAD_FILE)).toBe(true);
   });
 
@@ -299,16 +299,14 @@ describe('keeping what a conversation carried', () => {
     const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 10, isInline: false }] } };
     const { outcome, files } = await run({ reader });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsSkipped).toHaveLength(1);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toHaveLength(1);
     expect(files.written.has(THREAD_FILE)).toBe(true);
   });
 
   it('a message whose attachment list cannot be read names the message and the reason', async () => {
     const { outcome, files } = await run({ reader: { ...withAttachment, failAttachmentList: { kind: 'transient', message: 'timeout' } } });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsFailed).toEqual([
-      { path: `${THREAD_RELATIVE}: message m1`, reason: 'could not list what it carried: timeout' },
-    ]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([{ path: `${THREAD_RELATIVE}: message m1`, reason: 'could not list what it carried: timeout' }]);
     expect(files.written.has(THREAD_FILE)).toBe(true);
   });
 
@@ -316,20 +314,20 @@ describe('keeping what a conversation carried', () => {
     const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 10, isInline: false }] } };
     const { outcome } = await run({ reader });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Demo.mp4`, reason: 'a kind of file this tool does not read' }]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Demo.mp4`, reason: 'a kind of file this tool does not read' }]);
   });
 
   it('an attachment above the size cap says so, with the cap it exceeded', async () => {
     const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: 'Enorme.docx', contentType: 'application/vnd', size: 60 * 1024 * 1024, isInline: false }] } };
     const { outcome } = await run({ reader });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Enorme.docx`, reason: 'larger than the 50 MB cap' }]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Enorme.docx`, reason: 'larger than the 50 MB cap' }]);
   });
 
   it('an attachment that could not be converted names itself and the reason', async () => {
     const { outcome } = await run({ reader: withAttachment, files: { failWritesMatching: '_attachments/' } });
 
-    const failed = outcome?.kind === 'rendered' ? outcome.thread.attachmentsFailed : [];
+    const failed = outcome?.kind === 'rendered' ? outcome.thread.filesFailed : [];
 
     expect(failed).toHaveLength(1);
     expect(failed[0]?.path.endsWith(': Contrat.docx')).toBe(true);
@@ -352,7 +350,7 @@ describe('keeping what a conversation carried', () => {
     };
     const { outcome } = await run({ reader, files: { failWritesMatching: '_attachments/' } });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.attachmentsFailed).toHaveLength(1);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toHaveLength(1);
   });
 });
 
@@ -400,6 +398,33 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(files.written.has(REPORT_MD)).toBe(true);
   });
 
+  it('a linked file the drive will not hand over is named in the report as having failed', async () => {
+    const { outcome } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked } });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([{ path: `${THREAD_RELATIVE}: Rapport.docx`, reason: 'permanent: fake has no item 01ABC' }]);
+  });
+
+  it('a linked file of a kind this tool does not read is named in the report', async () => {
+    const seeded = { items: { '01ABC': { ...REPORT, name: 'Recording.mp4', path: 'Recording.mp4' } } };
+    const { outcome } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: seeded });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Rapport.docx`, reason: 'a kind of file this tool does not read' }]);
+  });
+
+  it('a linked file that could not be converted is named in the report, not lost between the two', async () => {
+    const seeded = { items: { '01ABC': REPORT }, failItems: { '01ABC': { kind: 'permanent' as const, message: 'cannot convert' } } };
+    const { outcome } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: seeded });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([{ path: `${THREAD_RELATIVE}: Rapport.docx`, reason: 'permanent: cannot convert' }]);
+  });
+
+  it('a document linked from two messages is listed once in the head, not once per message', async () => {
+    const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })] };
+    const { files } = await run({ reader: { conversations, links: { ...linked, m2: linked.m1 } }, drive: items });
+
+    expect((files.written.get(THREAD_FILE_REPLIED) ?? '').match(/- \.\/_linked\/2026-05-11\/Rapport\.docx\.md/g)).toHaveLength(1);
+  });
+
   it('a document another conversation already pulled is referenced, not fetched again', async () => {
     const already = { 'b!one:01ABC': { paths: [REPORT_MD] } };
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: items, linked: already });
@@ -423,6 +448,13 @@ describe('following the SharePoint files a conversation points at', () => {
 
     expect(files.written.has(REPORT_MD)).toBe(false);
     expect(logger.calls.some((call) => call.event === 'linked.skipped')).toBe(true);
+  });
+
+  it('a linked file too large to pull is named in the report rather than passed over in silence', async () => {
+    const seeded = { items: { '01ABC': { ...REPORT, size: 60 * 1024 * 1024 } } };
+    const { outcome } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: seeded });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Rapport.docx`, reason: 'larger than the 50 MB cap' }]);
   });
 
   it('a linked file the folders under SharePoint hold is filed under those folders too', async () => {

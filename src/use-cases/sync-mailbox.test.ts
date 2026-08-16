@@ -39,8 +39,8 @@ const rendered = (over: Partial<RenderThreadOutcome> = {}): RenderThreadOutcome 
     record: { file: 'threads/2026-05-12/thread.md', messageIds: ['m1'], lastMessage: '2026-05-12T09:31:00Z', attachments: [] },
     linked: {},
     attachments: {},
-    attachmentsSkipped: [],
-    attachmentsFailed: [],
+    filesSkipped: [],
+    filesFailed: [],
   },
   ...over,
 });
@@ -281,11 +281,11 @@ describe('what the mailbox sync reports', () => {
           record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
           linked: {},
           attachments: {},
-          attachmentsSkipped: [
+          filesSkipped: [
             { path: 'a.mp4', reason: 'a kind of file this tool does not read' },
             { path: 'b.mov', reason: 'a kind of file this tool does not read' },
           ],
-          attachmentsFailed: [{ path: 'c.docx', reason: 'locked' }],
+          filesFailed: [{ path: 'c.docx', reason: 'locked' }],
         },
       });
     const { summary } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome });
@@ -316,8 +316,8 @@ describe('what the mailbox sync reports', () => {
           record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
           linked: { 'b!one:01ABC': { paths: ['kb/Mailbox/_linked/R.docx.md'] } },
           attachments: {},
-          attachmentsSkipped: [],
-          attachmentsFailed: [],
+          filesSkipped: [],
+          filesFailed: [],
         },
       });
     const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome });
@@ -332,8 +332,8 @@ describe('what the mailbox sync reports', () => {
           record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
           linked: {},
           attachments: { ba7816bf8f01: { name: 'Contrat.docx', paths: ['kb/Mailbox/_attachments/Contrat.docx.md'] } },
-          attachmentsSkipped: [],
-          attachmentsFailed: [],
+          filesSkipped: [],
+          filesFailed: [],
         },
       });
     const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome });
@@ -352,8 +352,8 @@ describe('reporting what did not reach the knowledge base', () => {
           record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
           linked: {},
           attachments: {},
-          attachmentsSkipped: [{ path: 'Demo.mp4', reason: 'a kind of file this tool does not read' }],
-          attachmentsFailed: [{ path: 'Contrat.docx', reason: 'permanent: cannot convert' }],
+          filesSkipped: [{ path: 'Demo.mp4', reason: 'a kind of file this tool does not read' }],
+          filesFailed: [{ path: 'Contrat.docx', reason: 'permanent: cannot convert' }],
         },
       });
     const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome });
