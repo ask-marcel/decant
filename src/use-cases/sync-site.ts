@@ -8,7 +8,7 @@ import { belongsToAnotherSite, emptySiteState, forgetItem, parseSiteState, recor
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import { buildWorklist } from '../domain/worklist.ts';
 import type { ReportEntry, ReportRun } from '../domain/report.ts';
-import { appendReportRun, hasSomethingToReport, tooLargeReason, UNSUPPORTED_REASON } from '../domain/report.ts';
+import { appendReportRun, hasSomethingToReport, skipReason } from '../domain/report.ts';
 import type { WorkItem } from '../domain/worklist.ts';
 import type { ConvertFile } from './convert-file.ts';
 import { sweepDrive } from './enumerate-drive.ts';
@@ -274,8 +274,7 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
     await archiveSuperseded(deps, input, drive, driveState.items[item.id]?.outputs ?? [], outputs);
     return { update, counted: { converted: 1 } };
   }
-  const reason = outcome.reason === 'too-large' ? tooLargeReason(input.maxBytes) : UNSUPPORTED_REASON;
-  return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason }] } };
+  return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason: skipReason(outcome.reason, input.maxBytes) }] } };
 };
 
 const moveOutputs = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, item: DriveItem, from: string, outputs: ReadonlyArray<string>): Promise<WorkOutcome> => {

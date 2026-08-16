@@ -82,6 +82,20 @@ describe('reporting what did not reach the knowledge base', () => {
     expect(report).toContain('- Projets/Contrat.docx: permanent: file is locked');
   });
 
+  it('a document locked with a password is left out for good, not queued again on the next run', async () => {
+    const { files, summary } = await run({
+      reader: {
+        pages: [{ items: [item()], skipped: 0, deltaLink: 'c1' }],
+        failItems: { '01ABC': { kind: 'protected', message: 'xlsx parse failed: File is password-protected' } },
+      },
+    });
+    const report = files.written.get(REPORT_PATH) ?? '';
+
+    expect(summary).toEqual({ converted: 0, moved: 0, archived: 0, skipped: 1, failed: 0, queued: 0 });
+    expect(report).toContain('- Projets/Contrat.docx: locked with a password, so nothing could be read from it');
+    expect(stateAfter(files).drives['b!one']?.items['01ABC']).toEqual({ path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [] });
+  });
+
   it('a document the source no longer has is named as moved aside', async () => {
     const known = serializeSiteState({
       version: 1,

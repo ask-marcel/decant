@@ -324,6 +324,16 @@ describe('keeping what a conversation carried', () => {
     expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Enorme.docx`, reason: 'larger than the 50 MB cap' }]);
   });
 
+  it('an attachment locked with a password is left out rather than counted as a failure', async () => {
+    const reader = { ...withAttachment, failCalls: { attachmentMarkdown: { kind: 'protected' as const, message: 'xlsx parse failed: File is password-protected' } } };
+    const { outcome } = await run({ reader });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([
+      { path: `${THREAD_RELATIVE}: Contrat.docx`, reason: 'locked with a password, so nothing could be read from it' },
+    ]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([]);
+  });
+
   it('an attachment that could not be converted names itself and the reason', async () => {
     const { outcome } = await run({ reader: withAttachment, files: { failWritesMatching: '_attachments/' } });
 

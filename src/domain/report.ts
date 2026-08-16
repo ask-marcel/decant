@@ -14,7 +14,18 @@ export type ReportRun = {
 
 export const UNSUPPORTED_REASON = 'a kind of file this tool does not read';
 
+export const PROTECTED_REASON = 'locked with a password, so nothing could be read from it';
+
 export const tooLargeReason = (maxBytes: number): string => `larger than the ${Math.round(maxBytes / 1024 / 1024)} MB cap`;
+
+// Why a file was left out. Two of these are decided before a byte is read, from the name and the
+// size; the third only once the source refused to open what it sent.
+export type SkipReason = 'unsupported-type' | 'too-large' | 'protected';
+
+export const skipReason = (reason: SkipReason, maxBytes: number): string => {
+  if (reason === 'too-large') return tooLargeReason(maxBytes);
+  return reason === 'protected' ? PROTECTED_REASON : UNSUPPORTED_REASON;
+};
 
 export const reportHeading = (source: string): string => `# What did not reach the knowledge base: ${source}`;
 

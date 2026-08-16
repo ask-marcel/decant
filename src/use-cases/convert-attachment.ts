@@ -5,6 +5,7 @@ import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../doma
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
+import type { SkipReason } from '../domain/report.ts';
 import type { ArchiveEntry } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import type { MailAttachment, MailReader, MailReaderError } from './ports/mail-reader.ts';
@@ -32,7 +33,7 @@ export type ConvertAttachmentInput = {
 
 export type AttachmentOutcome =
   | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string> }
-  | { readonly kind: 'skipped'; readonly reason: 'unsupported-type' | 'too-large' }
+  | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
 
 type Context = {
@@ -41,7 +42,9 @@ type Context = {
   readonly name: string;
 };
 
-const failure = (error: MailReaderError | FilesError): AttachmentOutcome => ({ kind: 'failed', reason: `${error.kind}: ${error.message}` });
+// Same rule as a SharePoint file: a password nobody here has is not a reason to ask again.
+const failure = (error: MailReaderError | FilesError): AttachmentOutcome =>
+  error.kind === 'protected' ? { kind: 'skipped', reason: 'protected' } : { kind: 'failed', reason: `${error.kind}: ${error.message}` };
 
 const writeMarkdown = async (context: Context, stamp: DocumentStamp, body: string): Promise<Result<string, FilesError>> => {
   const path = `${context.input.folder}/${context.name}.md`;

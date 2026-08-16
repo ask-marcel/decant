@@ -151,9 +151,11 @@ is nothing to add and the request changes nothing.
 ### What did not make it in
 
 Anything left behind is named in `_sync-report.md` beside the source it came from, newest run
-first: files of a kind this tool does not read, files above the size cap, files that could not be
-read (which are tried again on the next run), and files moved aside because the source no longer
-has them. A run that converted everything writes nothing there, so a nightly sync does not bury
+first: files of a kind this tool does not read, files above the size cap, files locked with a
+password, files that could not be read (which are tried again on the next run), and files moved
+aside because the source no longer has them. A password is the one refusal that never becomes
+readable by trying again, so such a file is left out the way an unsupported type is, rather than
+queued afresh on every run. A run that converted everything writes nothing there, so a nightly sync does not bury
 the runs that did leave something behind.
 
 ### What a mailbox sync writes

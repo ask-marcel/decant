@@ -5,6 +5,7 @@ import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import { datedRoot } from '../domain/output-paths.ts';
+import type { SkipReason } from '../domain/report.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { Clock } from './ports/clock.ts';
@@ -34,7 +35,7 @@ export type ConvertFileInput = {
 
 export type ConvertOutcome =
   | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string> }
-  | { readonly kind: 'skipped'; readonly reason: 'unsupported-type' | 'too-large' }
+  | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
 
 type Context = {
@@ -45,7 +46,10 @@ type Context = {
   readonly stamp: DocumentStamp;
 };
 
-const failure = (error: DriveReaderError | FilesError): ConvertOutcome => ({ kind: 'failed', reason: `${error.kind}: ${error.message}` });
+// A file that needs a password is not a failed read to try again: the bytes arrived and cannot be
+// turned into text by anyone without it, so it is left out the way an unsupported type is.
+const failure = (error: DriveReaderError | FilesError): ConvertOutcome =>
+  error.kind === 'protected' ? { kind: 'skipped', reason: 'protected' } : { kind: 'failed', reason: `${error.kind}: ${error.message}` };
 
 // The day the document last changed, then the folders it had in SharePoint underneath it.
 const targetDir = (input: ConvertFileInput): string => {

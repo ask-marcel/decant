@@ -11,7 +11,7 @@ import { disambiguateSegment } from '../domain/kb-path.ts';
 import { participantsOf, renderThread, threadDay, threadFileName, threadTitle } from '../domain/thread.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
-import { tooLargeReason, UNSUPPORTED_REASON } from '../domain/report.ts';
+import { skipReason, tooLargeReason } from '../domain/report.ts';
 import type { ConvertAttachment } from './convert-attachment.ts';
 import type { ConvertFile } from './convert-file.ts';
 import type { Clock } from './ports/clock.ts';
@@ -159,7 +159,7 @@ const pullLinked = async (deps: RenderThreadDeps, input: RenderThreadInput, driv
   if (outcome.kind === 'converted') return { record: { paths: outcome.outputs } };
   deps.logger.warn(outcome.kind === 'skipped' ? 'linked.skipped' : 'linked.failed', { itemId, name, cause: outcome.reason });
   if (outcome.kind === 'failed') return { failed: { path: name, reason: outcome.reason } };
-  return { skipped: { path: name, reason: outcome.reason === 'too-large' ? tooLargeReason(input.maxBytes) : UNSUPPORTED_REASON } };
+  return { skipped: { path: name, reason: skipReason(outcome.reason, input.maxBytes) } };
 };
 
 const ATTACHMENTS_FOLDER = '_attachments';
@@ -197,7 +197,7 @@ const placeAttachment = async (
   const asName = disambiguateSegment(attachment.name, hash);
   const folder = `${deps.mailboxRoot}/${ATTACHMENTS_FOLDER}`;
   const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, asName });
-  if (outcome.kind === 'skipped') return { paths: [], skipped: { path: attachment.name, reason: UNSUPPORTED_REASON } };
+  if (outcome.kind === 'skipped') return { paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, input.maxBytes) } };
   if (outcome.kind === 'failed') return { paths: [], failed: { path: attachment.name, reason: outcome.reason } };
   store[hash] = { name: asName, paths: outcome.outputs };
   return { paths: outcome.outputs };
