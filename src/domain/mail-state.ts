@@ -10,7 +10,10 @@ export type ThreadRecord = {
   readonly attachments: ReadonlyArray<string>;
 };
 
-export type LinkedRecord = { readonly path: string };
+// The files one linked SharePoint document produced, the way an attachment records its own: a
+// conversion yields more than the markdown alone (a deck also renders a PDF, an image is kept
+// beside the text read out of it), and a record naming one of them could not say what the rest are.
+export type LinkedRecord = { readonly paths: ReadonlyArray<string> };
 
 // One entry per unique attachment content, keyed by its content address (see `content-hash.ts`):
 // the name it was stored under and the files it produced in the shared `_attachments` store. A file
@@ -78,7 +81,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     lastRun: readString(raw, 'lastRun') ?? '',
     folders: mapOf(raw['folders'], (entry) => ({ name: readString(entry, 'name') ?? '', deltaLink: readString(entry, 'deltaLink') })),
     threads: mapOf(raw['threads'], threadOf),
-    linked: mapOf(raw['linked'], (entry) => ({ path: readString(entry, 'path') ?? '' })),
+    linked: mapOf(raw['linked'], (entry) => ({ paths: stringList(entry['paths']) })),
     attachments: mapOf(raw['attachments'], (entry) => ({ name: readString(entry, 'name') ?? '', paths: stringList(entry['paths']) })),
     pending: stringList(raw['pending']),
   });

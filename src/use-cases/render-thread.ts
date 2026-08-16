@@ -4,7 +4,7 @@ import type { DocumentStamp } from '../domain/kb-document.ts';
 import { kbDocument } from '../domain/kb-document.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
-import type { AttachmentRecord, ThreadRecord } from '../domain/mail-state.ts';
+import type { AttachmentRecord, LinkedRecord, ThreadRecord } from '../domain/mail-state.ts';
 import { renderFrontMatter } from '../domain/front-matter.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
@@ -35,7 +35,7 @@ export type RenderThreadInput = {
   readonly maxBytes: number;
   readonly ocrLabel: string;
   // Files already pulled from SharePoint by an earlier thread, so one link is fetched once.
-  readonly linked: Readonly<Record<string, { readonly path: string }>>;
+  readonly linked: Readonly<Record<string, LinkedRecord>>;
   // The shared attachment store as earlier threads left it, keyed by content address, so a file
   // sent across many threads is converted once and later threads reference what is on disk.
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
@@ -43,7 +43,7 @@ export type RenderThreadInput = {
 
 export type RenderedThread = {
   readonly record: ThreadRecord;
-  readonly linked: Readonly<Record<string, { readonly path: string }>>;
+  readonly linked: Readonly<Record<string, LinkedRecord>>;
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
   readonly attachmentsSkipped: ReadonlyArray<ReportEntry>;
   readonly attachmentsFailed: ReadonlyArray<ReportEntry>;
@@ -107,8 +107,8 @@ const linkedFiles = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
   messages: ReadonlyArray<MailMessage>
-): Promise<{ readonly paths: ReadonlyArray<string>; readonly linked: Record<string, { readonly path: string }> }> => {
-  const linked: Record<string, { path: string }> = { ...input.linked };
+): Promise<{ readonly paths: ReadonlyArray<string>; readonly linked: Record<string, LinkedRecord> }> => {
+  const linked: Record<string, LinkedRecord> = { ...input.linked };
   const paths: string[] = [];
   for (const message of messages) {
     const found = await deps.reader.sharepointLinks(message.id);
@@ -118,13 +118,13 @@ const linkedFiles = async (
       const known = linked[key] ?? (await pullLinked(deps, link.driveId, link.itemId, link.name));
       if (known === undefined) continue;
       linked[key] = known;
-      if (!paths.includes(known.path)) paths.push(known.path);
+      for (const path of known.paths) if (!paths.includes(path)) paths.push(path);
     }
   }
   return { paths, linked };
 };
 
-const pullLinked = async (deps: RenderThreadDeps, driveId: string, itemId: string, name: string): Promise<{ readonly path: string } | undefined> => {
+const pullLinked = async (deps: RenderThreadDeps, driveId: string, itemId: string, name: string): Promise<LinkedRecord | undefined> => {
   const converted = await deps.drive.markdown({ driveId, itemId });
   if (!converted.ok) {
     deps.logger.warn('linked.failed', { itemId, cause: converted.error.kind });
@@ -137,7 +137,7 @@ const pullLinked = async (deps: RenderThreadDeps, driveId: string, itemId: strin
     deps.logger.warn('linked.failed', { itemId, cause: written.error.kind });
     return undefined;
   }
-  return { path };
+  return { paths: [path] };
 };
 
 const ATTACHMENTS_FOLDER = '_attachments';

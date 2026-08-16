@@ -49,7 +49,7 @@ const run = async (
     reader?: MailReaderSeed;
     drive?: DriveReaderSeed;
     files?: FilesFakeSeed;
-    linked?: Record<string, { path: string }>;
+    linked?: Record<string, { paths: string[] }>;
     attachments?: Record<string, AttachmentRecord>;
   } = {}
 ): Promise<{ outcome: RenderThreadOutcome | undefined; files: FilesFake; logger: LoggerFake; ok: boolean }> => {
@@ -362,7 +362,7 @@ describe('following the SharePoint files a conversation points at', () => {
 
     expect(files.written.has('kb/Mailbox/_linked/Rapport.docx.md')).toBe(true);
     expect(files.written.get(THREAD_FILE)).toContain('linked_files:');
-    expect(outcome?.kind === 'rendered' && outcome.thread.linked['b!one:01ABC']).toEqual({ path: 'kb/Mailbox/_linked/Rapport.docx.md' });
+    expect(outcome?.kind === 'rendered' && outcome.thread.linked['b!one:01ABC']).toEqual({ paths: ['kb/Mailbox/_linked/Rapport.docx.md'] });
   });
 
   it('a linked document is stamped with where it came from, so it can be traced back', async () => {
@@ -385,7 +385,7 @@ describe('following the SharePoint files a conversation points at', () => {
   });
 
   it('a document another conversation already pulled is referenced, not fetched again', async () => {
-    const already = { 'b!one:01ABC': { path: 'kb/Mailbox/_linked/Rapport.docx.md' } };
+    const already = { 'b!one:01ABC': { paths: ['kb/Mailbox/_linked/Rapport.docx.md'] } };
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, linked: already });
 
     expect(files.written.has('kb/Mailbox/_linked/Rapport.docx.md')).toBe(false);

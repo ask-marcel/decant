@@ -1,7 +1,7 @@
 import type { MailFolder } from '../domain/mail-folder.ts';
 import { syncableFolders } from '../domain/mail-folder.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
-import type { AttachmentRecord, MailboxState, ThreadRecord } from '../domain/mail-state.ts';
+import type { AttachmentRecord, LinkedRecord, MailboxState, ThreadRecord } from '../domain/mail-state.ts';
 import {
   emptyMailboxState,
   needsRender,
@@ -204,7 +204,7 @@ const renderOne = async (
 const recordThread = (
   state: MailboxState,
   conversationId: string,
-  thread: { readonly record: ThreadRecord; readonly linked: Readonly<Record<string, { readonly path: string }>>; readonly attachments: Readonly<Record<string, AttachmentRecord>> }
+  thread: { readonly record: ThreadRecord; readonly linked: Readonly<Record<string, LinkedRecord>>; readonly attachments: Readonly<Record<string, AttachmentRecord>> }
 ): MailboxState => {
   const withRecord = withThread(state, conversationId, thread.record);
   const withLinks = Object.entries(thread.linked).reduce((carried, [key, record]) => withLinked(carried, key, record), withRecord);

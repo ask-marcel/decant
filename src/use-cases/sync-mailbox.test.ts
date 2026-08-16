@@ -314,7 +314,7 @@ describe('what the mailbox sync reports', () => {
       rendered({
         thread: {
           record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [] },
-          linked: { 'b!one:01ABC': { path: 'kb/Mailbox/_linked/R.docx.md' } },
+          linked: { 'b!one:01ABC': { paths: ['kb/Mailbox/_linked/R.docx.md'] } },
           attachments: {},
           attachmentsSkipped: [],
           attachmentsFailed: [],
@@ -322,7 +322,7 @@ describe('what the mailbox sync reports', () => {
       });
     const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome });
 
-    expect(stateAfter(files).linked['b!one:01ABC']).toEqual({ path: 'kb/Mailbox/_linked/R.docx.md' });
+    expect(stateAfter(files).linked['b!one:01ABC']).toEqual({ paths: ['kb/Mailbox/_linked/R.docx.md'] });
   });
 
   it('the attachments one conversation stored are remembered, so the next conversation dedupes against them', async () => {

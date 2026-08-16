@@ -30,7 +30,7 @@ describe('remembering where a mailbox sync got to', () => {
 
   it('what one run writes, the next run reads back unchanged', () => {
     const linked = withLinked(withThread(withFolderCursor(emptyMailboxState(), 'AAMk1', 'Inbox', 'cursor-1'), 'conv-1', thread), 'b!one:01ABC', {
-      path: '_linked/Contrat.docx.md',
+      paths: ['_linked/Contrat.docx.md'],
     });
     const state = withAttachment(linked, 'ba7816bf8f01', { name: 'Contrat.docx', paths: ['_attachments/Contrat.docx.md'] });
 
