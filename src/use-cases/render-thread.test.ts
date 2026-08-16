@@ -15,6 +15,7 @@ import type { MailReaderSeed } from '../test-helpers/mail-reader-fake.ts';
 import { createMailReaderFake } from '../test-helpers/mail-reader-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
 import { createConvertAttachment } from './convert-attachment.ts';
+import { createConvertFile } from './convert-file.ts';
 import { createRenderThread } from './render-thread.ts';
 import type { RenderThreadOutcome } from './render-thread.ts';
 
@@ -65,6 +66,7 @@ const run = async (
     clock: createClockFake(),
     mailboxRoot: 'kb/Mailbox',
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), unpackArchive: drive.localArchive }),
+    convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake() }),
   });
   const result = await render({ conversationId: CONV, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', linked: seeds.linked ?? {}, attachments: seeds.attachments ?? {} });
   return { outcome: result.ok ? result.value : undefined, files, logger, ok: result.ok };
@@ -356,20 +358,34 @@ describe('keeping what a conversation carried', () => {
 
 describe('following the SharePoint files a conversation points at', () => {
   const linked = { m1: [{ url: 'https://tenant.sharepoint.com/x', driveId: 'b!one', itemId: '01ABC', name: 'Rapport.docx' }] };
+  // A linked file is read for its own metadata before it is converted, the same read a swept file
+  // gets, so the day it last changed decides the folder it lands in.
+  const REPORT = {
+    id: '01ABC',
+    name: 'Rapport.docx',
+    kind: 'file' as const,
+    size: 4096,
+    path: 'Rapport.docx',
+    lastModified: '2026-05-11T08:00:00Z',
+    cTag: 'c1',
+    webUrl: 'https://tenant.sharepoint.com/sites/team/Shared%20Documents/Rapport.docx',
+  };
+  const items = { items: { '01ABC': REPORT } };
+  const REPORT_MD = 'kb/Mailbox/_linked/2026-05-11/Rapport.docx.md';
 
   it('a linked document is pulled once and listed in the conversation head', async () => {
-    const { outcome, files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked } });
+    const { outcome, files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: items });
 
-    expect(files.written.has('kb/Mailbox/_linked/Rapport.docx.md')).toBe(true);
+    expect(files.written.has(REPORT_MD)).toBe(true);
     expect(files.written.get(THREAD_FILE)).toContain('linked_files:');
-    expect(outcome?.kind === 'rendered' && outcome.thread.linked['b!one:01ABC']).toEqual({ paths: ['kb/Mailbox/_linked/Rapport.docx.md'] });
+    expect(outcome?.kind === 'rendered' && outcome.thread.linked['b!one:01ABC']).toEqual({ paths: [REPORT_MD] });
   });
 
   it('a linked document is stamped with where it came from, so it can be traced back', async () => {
-    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked } });
-    const written = files.written.get('kb/Mailbox/_linked/Rapport.docx.md') ?? '';
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: items });
+    const written = files.written.get(REPORT_MD) ?? '';
 
-    expect(written).toContain('source: drive b!one');
+    expect(written).toContain('source: https://tenant.sharepoint.com/sites/team/Shared%20Documents/Rapport.docx?web=1');
     expect(written).toContain('site: Mailbox');
     expect(written).toContain('library: _linked');
     expect(written).toContain('path: Rapport.docx');
@@ -378,23 +394,47 @@ describe('following the SharePoint files a conversation points at', () => {
 
   it('a message whose links cannot be looked up leaves the other messages of the thread intact', async () => {
     const messages = [message({ id: 'm1' }), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })];
-    const { outcome, files } = await run({ reader: { conversations: { [CONV]: messages }, links: { m2: linked.m1 } } });
+    const { outcome, files } = await run({ reader: { conversations: { [CONV]: messages }, links: { m2: linked.m1 } }, drive: items });
 
     expect(outcome?.kind).toBe('rendered');
-    expect(files.written.has('kb/Mailbox/_linked/Rapport.docx.md')).toBe(true);
+    expect(files.written.has(REPORT_MD)).toBe(true);
   });
 
   it('a document another conversation already pulled is referenced, not fetched again', async () => {
-    const already = { 'b!one:01ABC': { paths: ['kb/Mailbox/_linked/Rapport.docx.md'] } };
-    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, linked: already });
+    const already = { 'b!one:01ABC': { paths: [REPORT_MD] } };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: items, linked: already });
 
-    expect(files.written.has('kb/Mailbox/_linked/Rapport.docx.md')).toBe(false);
-    expect(files.written.get(THREAD_FILE)).toContain('  - ./_linked/Rapport.docx.md');
+    expect(files.written.has(REPORT_MD)).toBe(false);
+    expect(files.written.get(THREAD_FILE)).toContain('  - ./_linked/2026-05-11/Rapport.docx.md');
+  });
+
+  it('a linked deck is kept as slides as well as text, the way a deck in a library is', async () => {
+    const deck = { m1: [{ url: 'https://tenant.sharepoint.com/d', driveId: 'b!one', itemId: '01DECK', name: 'Deck.pptx' }] };
+    const seeded = { items: { '01DECK': { ...REPORT, id: '01DECK', name: 'Deck.pptx', path: 'Deck.pptx' } } };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: deck }, drive: seeded });
+
+    expect(files.binary.has('kb/Mailbox/_linked/2026-05-11/Deck.pptx.pdf')).toBe(true);
+    expect(files.written.has('kb/Mailbox/_linked/2026-05-11/Deck.pptx.md')).toBe(true);
+  });
+
+  it('a linked file past the size cap is left where it is rather than pulled', async () => {
+    const seeded = { items: { '01ABC': { ...REPORT, size: 60 * 1024 * 1024 } } };
+    const { files, logger } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: seeded });
+
+    expect(files.written.has(REPORT_MD)).toBe(false);
+    expect(logger.calls.some((call) => call.event === 'linked.skipped')).toBe(true);
+  });
+
+  it('a linked file the folders under SharePoint hold is filed under those folders too', async () => {
+    const seeded = { items: { '01ABC': { ...REPORT, path: 'Decks/Q3/Rapport.docx' } } };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: seeded });
+
+    expect(files.written.has('kb/Mailbox/_linked/2026-05-11/Decks/Q3/Rapport.docx.md')).toBe(true);
   });
 
   it('the same document linked from two messages of a thread is listed once', async () => {
     const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })] };
-    const { outcome } = await run({ reader: { conversations, links: { ...linked, m2: linked.m1 } } });
+    const { outcome } = await run({ reader: { conversations, links: { ...linked, m2: linked.m1 } }, drive: items });
 
     expect(outcome?.kind === 'rendered' && Object.keys(outcome.thread.linked)).toEqual(['b!one:01ABC']);
   });
@@ -402,6 +442,7 @@ describe('following the SharePoint files a conversation points at', () => {
   it('a linked document that cannot be written is reported and the conversation still lands', async () => {
     const { outcome, files, logger } = await run({
       reader: { conversations: { [CONV]: [message()] }, links: linked },
+      drive: items,
       files: { failWritesMatching: '_linked/' },
     });
 

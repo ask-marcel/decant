@@ -146,7 +146,8 @@ kb/
     .sync-state.json                a cursor per folder, and what every conversation produced
     _sync-report.md                 what did not make it in, and why
     _attachments/                   every file a mail carried, stored once by content
-    _linked/                        SharePoint files the mail pointed at, each pulled once
+    _linked/2026-05-11/             SharePoint files the mail pointed at, each pulled once,
+                                    filed under the day the file itself last changed
     threads/2026-05-20/                               the day the conversation was last active
       Contrat Contoso a3f9c1.md                       the whole conversation, oldest message first
 ```
@@ -160,6 +161,12 @@ Every folder is swept except Junk, Deleted Items, Drafts and Outbox, which means
 sent is included**: Sent Items is a folder like any other, and a conversation is assembled from
 every folder its messages landed in. Quoted reply chains are stripped, since the message being
 quoted is already its own section.
+
+A SharePoint file a mail merely points at is pulled too, once, into `_linked/`. It takes the same
+route as a file found by sweeping a library, so it is filed under the day it last changed and keeps
+the folders it sat in, a linked deck arrives as a PDF as well as its text, a linked image is kept
+beside the text read out of it, and a linked file above the size cap is left where it is. Each is
+stamped with its own SharePoint address, so the link in the front matter opens the original.
 
 Attachments follow the same conversion rules as SharePoint files, a zip included: it is kept and
 also unpacked, one markdown file per document inside. Every attachment is stored once in the shared

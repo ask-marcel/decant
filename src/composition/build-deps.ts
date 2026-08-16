@@ -74,7 +74,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot });
   const listSyncedSources = createListSyncedSources({ files, logger, kbRoot: config.kbRoot });
   const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, unpackArchive: reader.localArchive });
-  const renderThread = createRenderThread({ reader: mail, drive: reader, files, convertAttachment, clock, logger, mailboxRoot: `${config.kbRoot}/Mailbox` });
+  const renderThread = createRenderThread({ reader: mail, drive: reader, files, convertAttachment, convertFile, clock, logger, mailboxRoot: `${config.kbRoot}/Mailbox` });
   const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot });
   return { logger, runSync: createRunSync({ reader, prompt, logger, syncSite, listSyncedSources, savedDrives: savedDrivesFrom(files, logger, config.kbRoot), syncMailbox }) };
 };

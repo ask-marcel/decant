@@ -1,7 +1,6 @@
 import { relative as pathBetween } from 'node:path';
 import { contentHash } from '../domain/content-hash.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
-import { kbDocument } from '../domain/kb-document.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import type { AttachmentRecord, LinkedRecord, ThreadRecord } from '../domain/mail-state.ts';
@@ -14,6 +13,7 @@ import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { tooLargeReason, UNSUPPORTED_REASON } from '../domain/report.ts';
 import type { ConvertAttachment } from './convert-attachment.ts';
+import type { ConvertFile } from './convert-file.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
@@ -25,6 +25,7 @@ export type RenderThreadDeps = {
   readonly drive: DriveReader;
   readonly files: Files;
   readonly convertAttachment: ConvertAttachment;
+  readonly convertFile: ConvertFile;
   readonly clock: Clock;
   readonly logger: Logger;
   readonly mailboxRoot: string;
@@ -115,7 +116,7 @@ const linkedFiles = async (
     if (!found.ok) continue;
     for (const link of found.value) {
       const key = `${link.driveId}:${link.itemId}`;
-      const known = linked[key] ?? (await pullLinked(deps, link.driveId, link.itemId, link.name));
+      const known = linked[key] ?? (await pullLinked(deps, input, link.driveId, link.itemId, link.name));
       if (known === undefined) continue;
       linked[key] = known;
       for (const path of known.paths) if (!paths.includes(path)) paths.push(path);
@@ -124,20 +125,28 @@ const linkedFiles = async (
   return { paths, linked };
 };
 
-const pullLinked = async (deps: RenderThreadDeps, driveId: string, itemId: string, name: string): Promise<LinkedRecord | undefined> => {
-  const converted = await deps.drive.markdown({ driveId, itemId });
-  if (!converted.ok) {
-    deps.logger.warn('linked.failed', { itemId, cause: converted.error.kind });
+// The same route a file found by walking a library takes. A linked document is read for its own
+// metadata first, because the name in the link cannot say when the file changed, how big it is, or
+// what kind of thing it is: the day decides the folder, the size decides whether it is pulled at
+// all, and the kind decides whether a deck also renders a PDF beside its text.
+const pullLinked = async (deps: RenderThreadDeps, input: RenderThreadInput, driveId: string, itemId: string, name: string): Promise<LinkedRecord | undefined> => {
+  const found = await deps.drive.item({ driveId, itemId });
+  if (!found.ok) {
+    deps.logger.warn('linked.failed', { itemId, name, cause: found.error.kind });
     return undefined;
   }
-  const path = `${deps.mailboxRoot}/${LINKED_FOLDER}/${name}.md`;
-  const stamp: DocumentStamp = { source: `drive ${driveId}`, site: 'Mailbox', library: LINKED_FOLDER, path: name, lastModified: '', syncedAt: deps.clock.nowIso() };
-  const written = await deps.files.writeText(path, kbDocument(stamp, converted.value));
-  if (!written.ok) {
-    deps.logger.warn('linked.failed', { itemId, cause: written.error.kind });
-    return undefined;
-  }
-  return { paths: [path] };
+  const outcome = await deps.convertFile({
+    item: found.value,
+    driveId,
+    libraryRoot: `${deps.mailboxRoot}/${LINKED_FOLDER}`,
+    site: 'Mailbox',
+    library: LINKED_FOLDER,
+    maxBytes: input.maxBytes,
+    ocrLabel: input.ocrLabel,
+  });
+  if (outcome.kind === 'converted') return { paths: outcome.outputs };
+  deps.logger.warn(outcome.kind === 'skipped' ? 'linked.skipped' : 'linked.failed', { itemId, name, cause: outcome.reason });
+  return undefined;
 };
 
 const ATTACHMENTS_FOLDER = '_attachments';
