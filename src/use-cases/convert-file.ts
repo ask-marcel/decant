@@ -1,5 +1,5 @@
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
-import { planFile } from '../domain/conversion-plan.ts';
+import { embedsImages, planFile } from '../domain/conversion-plan.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
@@ -10,6 +10,8 @@ import { ok } from '../domain/result.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader, DriveReaderError } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
+import type { EmbeddedImage } from './ports/drive-reader.ts';
+import type { Logger } from './ports/logger.ts';
 import type { Ocr } from './ports/ocr.ts';
 
 export type ConvertFileDeps = {
@@ -17,6 +19,7 @@ export type ConvertFileDeps = {
   readonly files: Files;
   readonly ocr: Ocr;
   readonly clock: Clock;
+  readonly logger: Logger;
 };
 
 export type ConvertFileInput = {
@@ -61,10 +64,59 @@ const stampFor = (input: ConvertFileInput, clock: Clock): DocumentStamp => ({
   syncedAt: clock.nowIso(),
 });
 
-const writeMarkdown = async (context: Context, fileName: string, stamp: DocumentStamp, body: string): Promise<Result<string, FilesError>> => {
+// The folder a document's own pictures sit in, named after the document so the two stay together
+// and sort side by side. Part paths are flattened rather than mirrored: `word/media/image1.png`
+// would otherwise rebuild the OOXML tree under every document for no reader's benefit.
+const MEDIA_SUFFIX = '.media';
+
+const mediaName = (image: EmbeddedImage): string => safeSegment(image.path.split('/').join('_'));
+
+// A picture is written first and read second, because the reader works on a file already on disk.
+// Text that comes back empty (or OCR being off entirely) leaves the entry as a bare link: the
+// picture is still there to open, and the markdown does not pretend to know what it shows.
+const placeImages = async (
+  context: Context,
+  images: ReadonlyArray<EmbeddedImage>
+): Promise<Result<{ readonly paths: ReadonlyArray<string>; readonly section: string }, FilesError>> => {
+  const folder = `${context.dir}/${context.name}${MEDIA_SUFFIX}`;
+  const paths: string[] = [];
+  const entries: string[] = [];
+  for (const image of images) {
+    const name = mediaName(image);
+    const path = `${folder}/${name}`;
+    const written = await context.deps.files.writeBytes(path, image.bytes);
+    if (!written.ok) return written;
+    paths.push(path);
+    const read = await context.deps.ocr.read(path);
+    const text = read.ok ? read.value.trim() : '';
+    const caption = text.length === 0 ? '' : `\n\n${text}`;
+    entries.push(`![${name}](./${context.name}${MEDIA_SUFFIX}/${name})${caption}`);
+  }
+  return ok({ paths, section: `\n\n## Images\n\n${entries.join('\n\n')}\n` });
+};
+
+// Every kind that produces markdown comes through here, so this is where a document's pictures are
+// taken as well. A picture read that fails costs the pictures and not the text: the document is the
+// point, and the placeholders left in its body already say something stood there.
+const withImages = async (context: Context, body: string): Promise<Result<{ readonly body: string; readonly paths: ReadonlyArray<string> }, FilesError>> => {
+  if (!embedsImages(context.name)) return ok({ body, paths: [] });
+  const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
+  const found = await context.deps.reader.images(ref);
+  if (!found.ok) {
+    context.deps.logger.warn('images.failed', { itemId: context.input.item.id, path: context.input.item.path, cause: found.error.kind });
+    return ok({ body, paths: [] });
+  }
+  if (found.value.length === 0) return ok({ body, paths: [] });
+  const placed = await placeImages(context, found.value);
+  return placed.ok ? ok({ body: `${body}${placed.value.section}`, paths: placed.value.paths }) : placed;
+};
+
+const writeMarkdown = async (context: Context, fileName: string, stamp: DocumentStamp, body: string): Promise<Result<ReadonlyArray<string>, FilesError>> => {
   const path = `${context.dir}/${fileName}`;
-  const written = await context.deps.files.writeText(path, kbDocument(stamp, body));
-  return written.ok ? ok(path) : written;
+  const withPictures = await withImages(context, body);
+  if (!withPictures.ok) return withPictures;
+  const written = await context.deps.files.writeText(path, kbDocument(stamp, withPictures.value.body));
+  return written.ok ? ok([path, ...withPictures.value.paths]) : written;
 };
 
 const convertDocument = async (context: Context): Promise<ConvertOutcome> => {
@@ -73,7 +125,7 @@ const convertDocument = async (context: Context): Promise<ConvertOutcome> => {
   if (!converted.ok) return failure(converted.error);
   const body = converted.value.trim().length === 0 ? NO_TEXT_NOTE : converted.value;
   const written = await writeMarkdown(context, `${context.name}.md`, context.stamp, body);
-  return written.ok ? { kind: 'converted', outputs: [written.value] } : failure(written.error);
+  return written.ok ? { kind: 'converted', outputs: written.value } : failure(written.error);
 };
 
 const convertSlides = async (context: Context): Promise<ConvertOutcome> => {
@@ -93,7 +145,7 @@ const withSlideText = async (context: Context, pdfPath: string): Promise<Convert
   if (!text.ok) return failure(text.error);
   const stamp = { ...context.stamp, pdf: `./${context.name}.pdf` };
   const written = await writeMarkdown(context, `${context.name}.md`, stamp, text.value.trim().length === 0 ? NO_TEXT_NOTE : text.value);
-  return written.ok ? { kind: 'converted', outputs: [pdfPath, written.value] } : failure(written.error);
+  return written.ok ? { kind: 'converted', outputs: [pdfPath, ...written.value] } : failure(written.error);
 };
 
 // A PDF with a text layer yields it straight. One without (a scan) is read by OCR from the copy on
@@ -116,7 +168,7 @@ const convertPdf = async (context: Context): Promise<ConvertOutcome> => {
   const read = await pdfText(context, rawPath, text.value);
   const stamp = { ...context.stamp, pdf: `./${context.name}`, ocr: read.ocr };
   const written = await writeMarkdown(context, `${context.name}.md`, stamp, read.body);
-  return written.ok ? { kind: 'converted', outputs: [rawPath, written.value] } : failure(written.error);
+  return written.ok ? { kind: 'converted', outputs: [rawPath, ...written.value] } : failure(written.error);
 };
 
 const convertImage = async (context: Context): Promise<ConvertOutcome> => {
@@ -129,7 +181,7 @@ const convertImage = async (context: Context): Promise<ConvertOutcome> => {
   const body = read.ok && read.value.trim().length > 0 ? read.value : NO_TEXT_NOTE;
   const stamp = { ...context.stamp, image: `./${context.name}`, ocr: read.ok ? context.input.ocrLabel : undefined };
   const written = await writeMarkdown(context, `${context.name}.md`, stamp, body);
-  return written.ok ? { kind: 'converted', outputs: [rawPath, written.value] } : failure(written.error);
+  return written.ok ? { kind: 'converted', outputs: [rawPath, ...written.value] } : failure(written.error);
 };
 
 const convertVector = async (context: Context): Promise<ConvertOutcome> => {
@@ -140,7 +192,7 @@ const convertVector = async (context: Context): Promise<ConvertOutcome> => {
   if (!wroteRaw.ok) return failure(wroteRaw.error);
   const stamp = { ...context.stamp, image: `./${context.name}` };
   const written = await writeMarkdown(context, `${context.name}.md`, stamp, VECTOR_NOTE);
-  return written.ok ? { kind: 'converted', outputs: [rawPath, written.value] } : failure(written.error);
+  return written.ok ? { kind: 'converted', outputs: [rawPath, ...written.value] } : failure(written.error);
 };
 
 const convertArchive = async (context: Context): Promise<ConvertOutcome> => {

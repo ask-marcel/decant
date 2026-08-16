@@ -5,6 +5,8 @@ import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import type { DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
 import type { FilesFake, FilesFakeSeed } from '../test-helpers/files-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
+import { createLoggerFake } from '../test-helpers/logger-fake.ts';
+import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
 import type { OcrSeed } from '../test-helpers/ocr-fake.ts';
 import { createConvertFile } from './convert-file.ts';
@@ -26,9 +28,11 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 const run = async (
   over: Partial<DriveItem>,
   seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed } = {}
-): Promise<{ outcome: ConvertOutcome; files: FilesFake }> => {
+): Promise<{ outcome: ConvertOutcome; files: FilesFake; reader: ReturnType<typeof createDriveReaderFake>; logger: LoggerFake }> => {
   const files = createFilesFake(seeds.files);
-  const convert = createConvertFile({ reader: createDriveReaderFake(seeds.reader), files, ocr: createOcrFake(seeds.ocr), clock: createClockFake() });
+  const reader = createDriveReaderFake(seeds.reader);
+  const logger = createLoggerFake();
+  const convert = createConvertFile({ reader, files, ocr: createOcrFake(seeds.ocr), clock: createClockFake(), logger });
   const outcome = await convert({
     item: item(over),
     driveId: 'b!one',
@@ -38,7 +42,7 @@ const run = async (
     maxBytes: 50 * 1024 * 1024,
     ocrLabel: 'paddleocr (en)',
   });
-  return { outcome, files };
+  return { outcome, files, reader, logger };
 };
 
 describe('converting one document out of a library', () => {
@@ -332,5 +336,76 @@ describe('converting one document out of a library', () => {
       kind: 'converted',
       outputs: ['kb/Espace Contoso/Documents/2026-05-12/Livraison/Livraison.zip', 'kb/Espace Contoso/Documents/2026-05-12/Livraison/notes.docx.md'],
     });
+  });
+});
+
+describe('keeping the pictures a document embeds', () => {
+  const MEDIA = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.media/word_media_image1.png';
+
+  it('a document holding pictures keeps them beside its markdown, so a diagram is not lost to a placeholder', async () => {
+    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }] };
+    const { outcome, files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body [image] here.' } } });
+
+    expect(files.binary.has(MEDIA)).toBe(true);
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual(['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md', MEDIA]);
+  });
+
+  it('the text read out of an embedded picture is written under the document that held it', async () => {
+    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
+    const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: 'smartMOOV\nExternal\nDB' } } });
+    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md') ?? '';
+
+    expect(written).toContain('## Images');
+    expect(written).toContain('smartMOOV');
+  });
+
+  it('a document holding no pictures gains no folder and no section', async () => {
+    const { files } = await run({}, { reader: { markdown: { '01ABC': 'Body.' } } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).not.toContain('## Images');
+  });
+
+  it('a kind that cannot hold pictures is never asked for them', async () => {
+    const { reader } = await run({ name: 'Notes.txt', path: 'Notes.txt' }, { reader: { markdown: { '01ABC': 'Plain.' } } });
+
+    expect(reader.calls.some((call) => call.startsWith('images:'))).toBe(false);
+  });
+
+  it('pictures that could not be read leave the document itself intact', async () => {
+    const { outcome, files } = await run({}, { reader: { failImages: { kind: 'permanent', message: 'no media' }, markdown: { '01ABC': 'Body.' } } });
+
+    expect(outcome.kind).toBe('converted');
+    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain('Body.');
+  });
+
+  it('a picture nothing could be read from is still linked, with no empty caption beneath it', async () => {
+    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
+    const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain(
+      '\n\n## Images\n\n![word_media_image1.png](./Contrat.docx.media/word_media_image1.png)\n'
+    );
+  });
+
+  it('a picture that cannot be written stops the document rather than leaving half of it', async () => {
+    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
+    // A docx writes no bytes of its own, so failing byte writes fails exactly the pictures.
+    const { outcome } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, files: { failWriteWith: { kind: 'write-failed', path: 'x', message: 'disk full' } } });
+
+    expect(outcome.kind).toBe('failed');
+  });
+
+  it('pictures that could not be read are logged and none are claimed as written', async () => {
+    const { outcome, logger } = await run({}, { reader: { failImages: { kind: 'permanent', message: 'no media' }, markdown: { '01ABC': 'Body.' } } });
+
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual(['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md']);
+    expect(logger.calls.some((call) => call.event === 'images.failed')).toBe(true);
+  });
+
+  it('the text read out of a picture is trimmed before it goes under the picture', async () => {
+    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
+    const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: '  \n smartMOOV \n  ' } } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain(')\n\nsmartMOOV\n');
   });
 });

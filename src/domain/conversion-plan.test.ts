@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { ConversionRoute } from './conversion-plan.ts';
-import { planFile } from './conversion-plan.ts';
+import { embedsImages, planFile } from './conversion-plan.ts';
 
 const CAP = 50 * 1024 * 1024;
 
@@ -169,4 +169,31 @@ describe('deciding what to produce for a document found in SharePoint', () => {
   it('an unsupported file is reported as unsupported even when it is also oversized', () => {
     expect(planFile({ name: 'Enorme.mp4', size: CAP + 1 }, CAP)).toEqual({ kind: 'skip', reason: 'unsupported-type' });
   });
+});
+
+// Which kinds are asked for the pictures inside them. Asking costs a round trip, so the row for a
+// kind that would only be refused matters as much as the row for one that answers.
+const EMBEDS: ReadonlyArray<readonly [string, boolean]> = [
+  ['docx', true],
+  ['docm', true],
+  ['xlsx', true],
+  ['xlsm', true],
+  ['pptx', true],
+  ['pptm', true],
+  ['pdf', true],
+  ['doc', false],
+  ['xls', false],
+  ['ppt', false],
+  ['txt', false],
+  ['csv', false],
+  ['png', false],
+  ['Makefile', false],
+];
+
+describe('which documents are asked for the pictures inside them', () => {
+  for (const [name, expected] of EMBEDS) {
+    it(`a ${name} ${expected ? 'is' : 'is not'} asked for the pictures inside it`, () => {
+      expect(embedsImages(name.includes('.') || name === 'Makefile' ? name : `Document.${name}`)).toBe(expected);
+    });
+  }
 });

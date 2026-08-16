@@ -81,6 +81,8 @@ kb/
           Roadmap.pptx.pdf          the rendered deck
           Contrat.pdf               the original
           Contrat.pdf.md            its text layer
+          Contrat.docx.md           the text, plus a section listing the pictures inside
+          Contrat.docx.media/       those pictures, kept as files
 ```
 
 Every document is filed under the day it last changed at the source, not the day it was synced, with
@@ -128,6 +130,16 @@ pdf: ./Roadmap.pptx.pdf
 | jpg, png, gif, webp, bmp, tiff, heic | the image, plus markdown holding the text read out of it |
 | svg | the file, plus a markdown note pointing at it |
 | anything else | left in SharePoint and named in `_sync-report.md` |
+
+A picture inside a document does not survive the conversion to markdown: it becomes a bare
+`[image]`, usually with no alt text, so an architecture diagram contributes one word that says
+nothing. Word, Excel, PowerPoint and PDF files are therefore also asked for the pictures they
+embed, which land in a `<name>.media/` folder beside the markdown and are listed under an
+`## Images` heading at its end. Each is read for its text the same way a photo in a library is, so
+the labels inside a diagram become searchable; with `--no-ocr` the pictures are still kept, just
+without the reading. The placeholders are unnumbered, so the section sits at the end rather than
+pretending to know where in the prose each picture stood. Legacy `doc`, `xls` and `ppt` are not
+asked, since the source refuses them, and neither is anything plain-text.
 
 A document carries more than the text it shows. Every conversion, in SharePoint and on mail
 attachments alike, also asks for the side channel the rendered body hides: comments and threaded

@@ -86,6 +86,16 @@ const outputsFor = (route: ConversionRoute, name: string): ReadonlyArray<Planned
   ];
 };
 
+// The kinds whose pictures can be taken out of them: the OOXML families and PDF. The legacy binary
+// formats (`doc`, `xls`, `ppt`) are refused by the source, so asking on their behalf spends a round
+// trip to be told no, and a plain-text kind has nothing embedded to ask about in the first place.
+const EMBEDS_IMAGES: ReadonlySet<string> = new Set(['docm', 'docx', 'xlsm', 'xlsx', 'pptm', 'pptx', 'pdf']);
+
+export const embedsImages = (name: string): boolean => {
+  const extension = extensionOf(name);
+  return extension !== undefined && EMBEDS_IMAGES.has(extension);
+};
+
 export const planFile = (file: PlannedFile, maxBytes: number): FileDecision => {
   const extension = extensionOf(file.name);
   if (extension === undefined) return { kind: 'skip', reason: 'unsupported-type' };

@@ -66,7 +66,7 @@ const run = async (
     clock: createClockFake(),
     mailboxRoot: 'kb/Mailbox',
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), unpackArchive: drive.localArchive }),
-    convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake() }),
+    convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger }),
   });
   const result = await render({ conversationId: CONV, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', linked: seeds.linked ?? {}, attachments: seeds.attachments ?? {} });
   return { outcome: result.ok ? result.value : undefined, files, logger, ok: result.ok };

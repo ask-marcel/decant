@@ -16,6 +16,9 @@ export type DriveReaderSeed = {
   readonly items?: Readonly<Record<string, DriveItem>>;
   // Pictures answered for by item id. An id with no entry embeds none, which is the common case.
   readonly images?: Readonly<Record<string, ReadonlyArray<EmbeddedImage>>>;
+  // Fails the picture read alone, leaving the document's own conversion working, so a test can show
+  // that losing the pictures does not cost the text.
+  readonly failImages?: DriveReaderError;
   // Delta pages served in order: the first call gets the first page, and so on.
   readonly pages?: ReadonlyArray<DriveDeltaPage>;
   readonly markdown?: Readonly<Record<string, string>>;
@@ -57,7 +60,8 @@ export const createDriveReaderFake = (seed: DriveReaderSeed = {}): DriveReaderFa
     rootItemId: async () => (seed.failWith ? err(seed.failWith) : ok(seed.rootItemId ?? '01ROOT')),
     images: async (ref) => {
       calls.push(`images:${ref.itemId}`);
-      return seed.failWith ? err(seed.failWith) : ok(seed.images?.[ref.itemId] ?? []);
+      const failure = seed.failImages ?? seed.failWith;
+      return failure ? err(failure) : ok(seed.images?.[ref.itemId] ?? []);
     },
     item: async (ref) => {
       calls.push(`item:${ref.itemId}`);

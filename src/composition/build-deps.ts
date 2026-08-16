@@ -70,7 +70,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const ocr = overrides.ocr ?? (config.ocr ? createRapidOcr({ shell: createBunShell(), lang: config.ocrLang }) : createNoOcr());
   const prompt = overrides.prompt ?? createStdinPrompt(() => console);
   const progress = overrides.progress ?? createStderrProgress();
-  const convertFile = createConvertFile({ reader, files, ocr, clock });
+  const convertFile = createConvertFile({ reader, files, ocr, clock, logger });
   const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot });
   const listSyncedSources = createListSyncedSources({ files, logger, kbRoot: config.kbRoot });
   const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, unpackArchive: reader.localArchive });
