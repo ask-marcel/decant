@@ -362,6 +362,17 @@ describe('reacting to the ways Graph fails', () => {
     expect(recorded).toHaveLength(1);
   });
 
+  it('a document locked with a password is reported as such, not as a server that failed', async () => {
+    const { reader, recorded } = readerFor({
+      'download-drive-item-as-markdown': [err({ type: 'api_error', status: 500, message: 'xlsx parse failed: File is password-protected' })],
+    });
+
+    const converted = await reader.markdown({ driveId: 'b!one', itemId: '01A' });
+
+    expect(converted).toEqual({ ok: false, error: { kind: 'protected', message: 'xlsx parse failed: File is password-protected' } });
+    expect(recorded).toHaveLength(1);
+  });
+
   it('a lapsed sign-in is reported as such, so the run can stop and say so', async () => {
     const { reader } = readerFor({ 'download-drive-item-as-markdown': [err({ type: 'auth_failed', message: 'not authenticated' })] });
 

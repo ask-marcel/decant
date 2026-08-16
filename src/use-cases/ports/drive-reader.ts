@@ -2,11 +2,14 @@ import type { Result } from '../../domain/result.ts';
 import type { DriveDeltaPage, DriveItem } from '../../domain/drive-item.ts';
 
 // How a call against Microsoft Graph can fail, in the terms this sync reacts to: `throttled` and
-// `transient` are worth retrying, `permanent` is not, and `auth` ends the run.
+// `transient` are worth retrying, `permanent` is not, and `auth` ends the run. `protected` is not a
+// failure of the call at all: the file arrived and cannot be read without a password nobody here
+// has, so it is left out the way an unsupported type is, rather than asked for again forever.
 export type DriveReaderError =
   | { readonly kind: 'auth'; readonly message: string }
   | { readonly kind: 'throttled'; readonly retryAfterSeconds?: number; readonly message: string }
   | { readonly kind: 'transient'; readonly message: string }
+  | { readonly kind: 'protected'; readonly message: string }
   | { readonly kind: 'permanent'; readonly status?: number; readonly message: string };
 
 export type SiteSummary = { readonly id: string; readonly name: string; readonly webUrl: string };

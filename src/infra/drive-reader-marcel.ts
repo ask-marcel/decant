@@ -29,8 +29,15 @@ export type MarcelApi = {
 
 const RETRY_DELAYS_MS = [2_000, 8_000, 30_000];
 
+// A document nobody can open without a password fails inside the library's own parsers, which
+// report it the way they report a crash: `api_error` at status 500, which would otherwise read as a
+// server having a bad minute and be retried three times, every run, forever. The message is the only
+// thing that tells the two apart, and both the spreadsheet and the PDF reader say `password` in it.
+const isProtected = (error: GraphErrorShape): boolean => /password/i.test(error.message);
+
 const translate = (error: GraphErrorShape): DriveReaderError => {
   if (error.type === 'auth_failed') return { kind: 'auth', message: error.message };
+  if (isProtected(error)) return { kind: 'protected', message: error.message };
   if (error.type === 'network_error') return { kind: 'transient', message: error.message };
   if (error.type !== 'api_error') return { kind: 'permanent', message: error.message };
   if (error.status === 429) return { kind: 'throttled', retryAfterSeconds: error.retryAfterSeconds, message: error.message };
