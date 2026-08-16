@@ -3,7 +3,7 @@ import type { DriveDeltaPage } from '../domain/drive-item.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import { formatError } from '../domain/utilities/format-error.ts';
-import type { ArchiveEntry, DriveReader, DriveReaderError, DriveSummary, ItemRef, SiteSummary } from '../use-cases/ports/drive-reader.ts';
+import type { ArchiveEntry, DriveReader, DriveReaderError, DriveSummary, EmbeddedImage, ItemRef, SiteSummary } from '../use-cases/ports/drive-reader.ts';
 
 // The slice of the ask-marcel-office-cli surface this adapter drives. Typed against what the
 // package really exposes (a command registry whose results are `unknown`), so a test can hand in
@@ -63,6 +63,17 @@ const readString = (value: unknown, key: string): string | undefined => {
 const listOf = (value: unknown): ReadonlyArray<unknown> => (isRecord(value) && Array.isArray(value['value']) ? value['value'] : []);
 
 const missing = (what: string): Result<never, DriveReaderError> => err({ kind: 'permanent', message: `Graph returned no ${what}` });
+
+// A document embedding no pictures answers `{ count: 0, media: [] }`, which is an answer and not a
+// failure, so an absent or unreadable entry is dropped rather than ending the conversion.
+const mediaOf = (value: unknown): ReadonlyArray<EmbeddedImage> => {
+  const media = isRecord(value) && Array.isArray(value['media']) ? value['media'] : [];
+  return media.flatMap((entry) => {
+    const path = readString(entry, 'path');
+    const base64 = readString(entry, 'base64');
+    return path === undefined || base64 === undefined ? [] : [{ path, bytes: new Uint8Array(Buffer.from(base64, 'base64')) }];
+  });
+};
 
 const toBytes = (value: unknown): Result<Uint8Array, DriveReaderError> => {
   const base64 = readString(value, 'base64');
@@ -172,6 +183,11 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
     markdown: async (ref) => markdownOf('download-drive-item-as-markdown', { driveId: ref.driveId, itemId: ref.itemId, includeMetadata: 'true' }),
     pdf: async (ref) => bytesOf('download-drive-item-as-pdf', ref),
     bytes: async (ref) => bytesOf('download-drive-item-content', ref),
+    images: async (ref) => {
+      const raw = await call('extract-drive-item-images', { driveId: ref.driveId, itemId: ref.itemId });
+      if (!raw.ok) return raw;
+      return ok(mediaOf(raw.value));
+    },
     localMarkdown: async (path) => markdownOf('convert-local-file-to-markdown', { path }, true),
     localArchive: async (path) => {
       const raw = await call('convert-local-file-to-markdown', { path }, true);

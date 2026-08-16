@@ -35,6 +35,7 @@ const registry = (
     'download-drive-item-content',
     'convert-local-file-to-markdown',
     'get-drive-item',
+    'extract-drive-item-images',
   ];
   return Object.fromEntries(names.map((name) => [name, command(name)]));
 };
@@ -232,6 +233,34 @@ describe('reading SharePoint through the ask-marcel library', () => {
       modifiedBy: 'Dana Okonkwo',
     });
     expect(recorded[0]).toMatchObject({ name: 'get-drive-item', params: { driveId: 'b!one', itemId: '01ITEM' } });
+  });
+
+  it('the images embedded in a document come back with the bytes and the part they came from', async () => {
+    const { reader, recorded } = readerFor({
+      'extract-drive-item-images': [
+        ok({
+          count: 2,
+          media: [
+            { path: 'word/media/image1.png', contentType: 'image/png', sizeBytes: 3, base64: 'AQID' },
+            { path: 'word/media/image2.png', contentType: 'image/png', sizeBytes: 3, base64: 'BAUG' },
+          ],
+        }),
+      ],
+    });
+
+    const found = await reader.images({ driveId: 'b!one', itemId: '01ITEM' });
+
+    expect(found.ok && found.value).toEqual([
+      { path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) },
+      { path: 'word/media/image2.png', bytes: new Uint8Array([4, 5, 6]) },
+    ]);
+    expect(recorded[0]).toMatchObject({ name: 'extract-drive-item-images', params: { driveId: 'b!one', itemId: '01ITEM' } });
+  });
+
+  it('a document that embeds no images answers with none rather than failing', async () => {
+    const { reader } = readerFor({ 'extract-drive-item-images': [ok({ count: 0, media: [] })] });
+
+    expect(await reader.images({ driveId: 'b!one', itemId: '01ITEM' })).toEqual({ ok: true, value: [] });
   });
 
   it('an item Graph answered for in a shape we do not know is refused rather than filed from nothing', async () => {
