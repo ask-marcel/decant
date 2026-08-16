@@ -198,3 +198,22 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   matter *values*; a document body goes through `withFrontMatter` untouched. Do not look for the
   cause in `convert-file.ts` or `kb-document.ts`. A fix belongs in the library, or in a
   post-extraction word-splitter this repo does not have and has not been asked for.
+
+## 2026-08-16
+
+- [gotcha] A SharePoint Embedded container (a Loop workspace, for one) answers to two site ids and
+  only one of them is safe to store. The search index reports a `.pod` manifest's parent as
+  `loop.cloud.microsoft,<guid>,<guid>`, while `get-sharepoint-site` on that very id answers with
+  `<tenant>.sharepoint.com,<same guids>`. Both address the same container and both work on
+  `list-sharepoint-site-drives`, so nothing fails loudly: the site state keys on the id it was given,
+  so a workspace discovered through the index and the same workspace named with `--site-id` became
+  two sources, and the second one swept every page again into a disambiguated folder. `listSites`
+  now resolves each manifest through the site lookup before offering it, so one workspace is one id.
+
+- [gotcha] A container's web address comes in two shapes, and matching the wrong half of it silently
+  loses one. A shared workspace sits at `/contentstorage/CSP_<guid>`, a personal one at
+  `/contentstorage/<opaque token>` with no `CSP_` at all. That path is what tells a container apart
+  from an ordinary site, since Graph hands back the workspace's plain display name and nothing else
+  to say the pages are Loop pages. Matching `/contentstorage/CSP_` labelled every shared workspace
+  and left the operator's own workspace looking like a site named `My workspace`. Match the path,
+  never the id shape that follows it.
