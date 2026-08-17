@@ -220,6 +220,17 @@ describe('reading SharePoint through the ask-marcel library', () => {
     expect(rendered.ok && new TextDecoder().decode(rendered.value)).toBe('%PDF-1.7');
   });
 
+  it('a deck the source will not render is reported as such, not as a server that failed', async () => {
+    const { reader, recorded } = readerFor({
+      'download-drive-item-as-pdf': [err({ type: 'api_error', status: 406, message: 'HTTP 406 with no error body (path: /transform/pdf)' })],
+    });
+
+    const rendered = await reader.pdf({ driveId: 'b!one', itemId: '01A' });
+
+    expect(rendered).toEqual({ ok: false, error: { kind: 'unrenderable', message: 'HTTP 406 with no error body (path: /transform/pdf)' } });
+    expect(recorded).toHaveLength(1);
+  });
+
   it('a download the library handed back as text is still written as bytes', async () => {
     const { reader } = readerFor({ 'download-drive-item-content': [ok({ contentType: 'text/plain', text: 'plain notes' })] });
 

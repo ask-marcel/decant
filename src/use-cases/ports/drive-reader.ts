@@ -10,6 +10,8 @@ export type DriveReaderError =
   | { readonly kind: 'throttled'; readonly retryAfterSeconds?: number; readonly message: string }
   | { readonly kind: 'transient'; readonly message: string }
   | { readonly kind: 'protected'; readonly message: string }
+  // The file is readable, but the source will not hand it over in the format that was asked for.
+  | { readonly kind: 'unrenderable'; readonly message: string }
   | { readonly kind: 'permanent'; readonly status?: number; readonly message: string };
 
 export type SiteSummary = { readonly id: string; readonly name: string; readonly webUrl: string };

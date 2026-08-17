@@ -48,3 +48,8 @@ export const NO_TEXT_NOTE = '_No text could be read from this file. Open the fil
 export const SCANNED_PDF_NOTE = '_This PDF carries no text layer. Open the PDF beside this note with a reader that can see the page._';
 
 export const VECTOR_NOTE = '_This drawing is XML. Open the file beside this note to read it._';
+
+// The text of a deck arrives from the source directly, the picture of its slides only from the
+// render the source refused. Saying so beside the text stops a reader hunting for a PDF that was
+// never written, and keeps the two reasons apart: this deck was read, its slides were not drawn.
+export const NO_SLIDES_NOTE = '_The slides of this deck could not be rendered, so only their text is here. Open the deck at the source to see them._';

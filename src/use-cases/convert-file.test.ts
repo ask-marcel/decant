@@ -89,6 +89,27 @@ describe('converting one document out of a library', () => {
     expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.pdf')).toBe(true);
   });
 
+  it('a deck the source will not render as a PDF still lands as its text, saying why the slides are missing', async () => {
+    const { outcome, files } = await run(
+      { name: 'Roadmap.pptx', path: 'Roadmap.pptx' },
+      { reader: { markdown: { '01ABC': '## Slide 1' }, failPdf: { kind: 'unrenderable', message: 'HTTP 406 with no error body (path: /transform/pdf)' } } }
+    );
+    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md') ?? '';
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md'] });
+    expect(written).toContain('## Slide 1');
+    expect(written).toContain('could not be rendered');
+    expect(written).not.toContain('pdf: ./Roadmap.pptx.pdf');
+    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.pdf')).toBe(false);
+  });
+
+  it('a deck in the old format that will not render is reported, since that render is where its text lives', async () => {
+    const { outcome, files } = await run({ name: 'Vieux.ppt', path: 'Vieux.ppt' }, { reader: { failPdf: { kind: 'unrenderable', message: 'HTTP 406' } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'unrenderable: HTTP 406' });
+    expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/Vieux.ppt.md')).toBe(false);
+  });
+
   it('a deck in the old format has its text read back from the PDF, since nothing else can read it', async () => {
     const { outcome, files } = await run({ name: 'Vieux.ppt', path: 'Vieux.ppt' });
     const reader = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Vieux.ppt.md') ?? '';

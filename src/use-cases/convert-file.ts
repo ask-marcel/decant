@@ -2,7 +2,7 @@ import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import { embedsImages, planFile } from '../domain/conversion-plan.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
-import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
+import { NO_SLIDES_NOTE, NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import { datedRoot } from '../domain/output-paths.ts';
 import type { SkipReason } from '../domain/report.ts';
@@ -132,9 +132,13 @@ const convertDocument = async (context: Context): Promise<ConvertOutcome> => {
   return written.ok ? { kind: 'converted', outputs: written.value } : failure(written.error);
 };
 
+// A deck the source will not render is not a deck we cannot read: the text comes from elsewhere and
+// arrives intact, so it is written on its own rather than the whole document being given up on. Only
+// the old formats truly need the render, since their text is read back out of it.
 const convertSlides = async (context: Context): Promise<ConvertOutcome> => {
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
   const rendered = await context.deps.reader.pdf(ref);
+  if (!rendered.ok && rendered.error.kind === 'unrenderable' && !isLegacyDeck(context)) return slideTextAlone(context);
   if (!rendered.ok) return failure(rendered.error);
   const pdfPath = `${context.dir}/${context.name}.pdf`;
   const wrotePdf = await context.deps.files.writeBytes(pdfPath, rendered.value);
@@ -142,10 +146,22 @@ const convertSlides = async (context: Context): Promise<ConvertOutcome> => {
   return withSlideText(context, pdfPath);
 };
 
+const slideTextAlone = async (context: Context): Promise<ConvertOutcome> => {
+  const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
+  context.deps.logger.warn('render.refused', { itemId: context.input.item.id, path: context.input.item.path });
+  const text = await context.deps.reader.markdown(ref);
+  if (!text.ok) return failure(text.error);
+  const written = await writeMarkdown(context, `${context.name}.md`, context.stamp, `${NO_SLIDES_NOTE}\n\n${text.value}`.trim());
+  return written.ok ? { kind: 'converted', outputs: [...written.value] } : failure(written.error);
+};
+
+// A `.ppt` or an `.rtf` has no reader of its own here: its text is read back out of the PDF that was
+// rendered from it, which is why a refused render costs those two the text as well.
+const isLegacyDeck = (context: Context): boolean => /\.(ppt|rtf)$/i.test(context.input.item.name);
+
 const withSlideText = async (context: Context, pdfPath: string): Promise<ConvertOutcome> => {
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
-  const isLegacy = context.input.item.name.toLowerCase().endsWith('.ppt') || context.input.item.name.toLowerCase().endsWith('.rtf');
-  const text = isLegacy ? await context.deps.reader.localMarkdown(pdfPath) : await context.deps.reader.markdown(ref);
+  const text = isLegacyDeck(context) ? await context.deps.reader.localMarkdown(pdfPath) : await context.deps.reader.markdown(ref);
   if (!text.ok) return failure(text.error);
   const stamp = { ...context.stamp, pdf: `./${context.name}.pdf` };
   const written = await writeMarkdown(context, `${context.name}.md`, stamp, text.value.trim().length === 0 ? NO_TEXT_NOTE : text.value);
