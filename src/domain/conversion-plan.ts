@@ -32,6 +32,8 @@ const ROUTE_BY_EXTENSION: Readonly<Partial<Record<string, ConversionRoute>>> = {
   odp: 'document',
   ods: 'document',
   odt: 'document',
+  // A SARIF report is JSON, which the converter already passes through as text.
+  sarif: 'document',
   txt: 'document',
   whiteboard: 'document',
   xls: 'document',

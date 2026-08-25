@@ -20,6 +20,7 @@ const SUPPORTED: ReadonlyArray<readonly [string, ConversionRoute]> = [
   ['odp', 'document'],
   ['ods', 'document'],
   ['odt', 'document'],
+  ['sarif', 'document'],
   ['txt', 'document'],
   ['xls', 'document'],
   ['xlsm', 'document'],

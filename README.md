@@ -121,7 +121,7 @@ pdf: ./Roadmap.pptx.pdf
 
 | Source | What you get |
 |---|---|
-| docx, doc, xlsx, xls, csv, odt/ods/odp, msg, txt, md, html, json, xml, yaml, log | one markdown file |
+| docx, doc, xlsx, xls, csv, odt/ods/odp, msg, txt, md, html, json, sarif, xml, yaml, log | one markdown file |
 | loop, fluid, whiteboard | one markdown file, rendered by Graph since the page holds no text of its own |
 | pptx | markdown for the text, plus a PDF of the slides (markdown alone when the source will not render it) |
 | ppt, rtf | a PDF, plus markdown read back from it |
