@@ -245,3 +245,29 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   the right pair whatever the matching returned: green tests, 28 surviving mutants, 65% on a new
   module. Two candidates in the fixture is what makes an identity match the only explanation for the
   result. Mutation testing found this; coverage was already 100%.
+
+- [gotcha] `get-mail-attachment` on an `itemAttachment` returns the item, not bytes, so anything that
+  fetches bytes first fails it with "Graph returned no bytes" and retries it every run. `@odata.type`
+  is the discriminator and Graph returns it whatever the `$select` asks for. Route on that, not on
+  the file name: an item attachment's name is a subject with no extension, so extension routing has
+  nothing to work with either.
+
+- [decision] An attachment with no bytes is content-addressed by the SHA-256 of what the library
+  renders it to. The address is then only stable within a library version, which is the price of
+  having one at all, and it is what lets a conversation that forwarded the same mail five times store
+  it once. Written down because a future reader will wonder why one address is taken from bytes and
+  another from text.
+
+- [gotcha] The mutation gate compares the AGGREGATE against the break threshold, not each file. A new
+  module can sit under 90 while the run passes. Worth checking the per-file column after adding one:
+  `icalendar.ts` first landed at 73.6% inside a passing run.
+
+- [decision] `ThreadRecord.attachments` records what the messages carried, not every file the run
+  wrote for them. Pictures taken out of a document, and a raw file written beside its markdown, are
+  in the shared store record instead, which is what dedupe reads. The rule is that the record mirrors
+  what a reader sees in the front matter; the store holds the whole production.
+
+- [gotcha] The commit-size gate is 10 files AND 300 lines, and a step that touches a domain module
+  plus its wiring will breach one of them. Splitting by file works when the new module has no caller
+  yet: commit the pure part first, the wiring second. Three of the eight steps here needed it.
+
