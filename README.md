@@ -205,10 +205,20 @@ A first mailbox run is slow: Outlook hands back changes ten messages at a time a
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
 are cheap, reading only what changed. `--since` narrows what gets *written*, not what gets swept.
 
-While it works, a counter on the terminal shows how far it has got (`Converting 128/6002 …`), so a
-long run is never silent. The line names whatever is still being read from the source, not just the
-last item that finished, so one slow file does not look like the run has stopped while `--concurrency`
-siblings finish around it. It draws only when stderr is a terminal, so piping the output to a file or
+While it works, a counter on the terminal shows how far it has got, so a long run is never silent. A
+header row carries the count, and every item still being read from the source gets a row of its own
+beneath it, naming the step it is on:
+
+```
+SW Project (Lidl instance) / 文档  4/25 (8 running)
+  Projets/PT Findings.xlsx · reading picture 3/6
+  General/04_IT_Security_overview/Overview.docx · rendering the slides
+```
+
+The block rewrites itself where it stands as items come and go, so one slow file does not look like
+the run has stopped while its `--concurrency` siblings finish around it. Set `--concurrency` higher
+than the terminal has rows and the overflow collapses into a single `…and N more` row, so the block
+never outgrows the screen. It draws only when stderr is a terminal, so piping the output to a file or
 running headless leaves no counter behind.
 
 ## Re-running
