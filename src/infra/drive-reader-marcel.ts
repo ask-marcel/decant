@@ -201,21 +201,24 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
   };
 
   return {
-    // Four listings deep and the better part of a minute, so each stage says what it is waiting on
-    // rather than leaving the terminal blank. The line clears at the end for the picker to print on.
+    // Three listings answer the same question from three directions, and none needs the others, so
+    // they are asked together and the wait is the slowest rather than the sum: the drive sweep alone
+    // is around forty seconds. Only the lookups that follow depend on what came back. `call` never
+    // rejects (it turns a throw into an error), so `Promise.all` cannot either, and reading the
+    // three results in a fixed order keeps the reported failure the same one on every run.
     listSites: async () => {
-      say('Reading the sites you belong to…');
-      const raw = await call('search-all-accessible-sites', { query: '*' });
+      say('Looking for every site you can read…');
+      const [raw, pods, drives] = await Promise.all([
+        call('search-all-accessible-sites', { query: '*' }),
+        call('search-all-files', { query: `filetype:${POD_EXTENSION}` }),
+        call('list-accessible-drives', {}),
+      ]);
       if (!raw.ok) return raw;
-      say('Looking for Loop workspaces…');
-      const pods = await call('search-all-files', { query: `filetype:${POD_EXTENSION}` });
       if (!pods.ok) return pods;
+      if (!drives.ok) return drives;
       const workspaces = await workspacesOf(listOf(pods.value));
       if (!workspaces.ok) return workspaces;
       const listed = [...listOf(raw.value).flatMap(toSite), ...workspaces.value];
-      say('Checking the libraries shared with you…');
-      const drives = await call('list-accessible-drives', {});
-      if (!drives.ok) return drives;
       const shared = await sharedSitesOf(listOf(drives.value), listed);
       if (!shared.ok) return shared;
       say('');

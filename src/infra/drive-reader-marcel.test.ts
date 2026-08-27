@@ -82,8 +82,11 @@ describe('reading SharePoint through the ask-marcel library', () => {
         { id: 'contoso,3,4', name: 'Loop - Equipe Contoso', webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_3' },
       ],
     });
-    expect(recorded[1]).toEqual({ name: 'search-all-files', params: { query: 'filetype:pod' }, local: false });
-    expect(recorded[2]).toEqual({ name: 'get-sharepoint-site', params: { siteId: 'loop.cloud.microsoft,3,4' }, local: false });
+    // Matched by name, not position: the three listings are asked for together, so where a call
+    // lands in the record is not fixed. What matters is that the pod's container id is what gets
+    // looked up, and a call that never happened still fails this, since `find` answers undefined.
+    expect(recorded.find((call) => call.name === 'search-all-files')?.params).toEqual({ query: 'filetype:pod' });
+    expect(recorded.find((call) => call.name === 'get-sharepoint-site')?.params).toEqual({ siteId: 'loop.cloud.microsoft,3,4' });
   });
 
   it('a workspace manifest that names no container is left out rather than filed under nothing', async () => {
@@ -125,7 +128,7 @@ describe('reading SharePoint through the ask-marcel library', () => {
     expect(recorded.some((call) => call.name === 'get-sharepoint-site-by-path')).toBe(false);
   });
 
-  it('each stage of finding the sites is announced, so a long listing is never a blank screen', async () => {
+  it('the listing says what it is waiting on, then what it is looking up', async () => {
     const { reader, said } = readerFor({
       'search-all-accessible-sites': [ok({ value: [{ id: 'contoso,1,2', displayName: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/Espace' }] })],
       'list-accessible-drives': [
@@ -136,9 +139,33 @@ describe('reading SharePoint through the ask-marcel library', () => {
 
     await reader.listSites();
 
-    expect(said.slice(0, 3)).toEqual(['Reading the sites you belong to…', 'Looking for Loop workspaces…', 'Checking the libraries shared with you…']);
-    expect(said.at(-2)).toContain('1 site');
+    expect(said.slice(0, 2)).toEqual(['Looking for every site you can read…', 'Looking up 1 site the index did not name…']);
     expect(said.at(-1)).toBe('');
+  });
+
+  it('the three listings are asked for at once, so the slowest sets the wait', async () => {
+    const { reader, recorded } = readerFor({
+      'search-all-accessible-sites': [ok({ value: [] })],
+      'search-all-files': [ok({ value: [{ name: 'Equipe.pod', parentReference: { siteId: 'loop.cloud.microsoft,3,4' } }] })],
+      'get-sharepoint-site': [ok({ id: 'contoso,3,4', displayName: 'Equipe', webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_3' })],
+      'list-accessible-drives': [ok({ value: [] })],
+    });
+
+    await reader.listSites();
+
+    const names = recorded.map((call) => call.name);
+    // Sequentially the drive listing waits behind the workspace lookup; started together it does not.
+    expect(names.indexOf('list-accessible-drives')).toBeLessThan(names.indexOf('get-sharepoint-site'));
+  });
+
+  it('when more than one listing fails, the failure reported is always the same one', async () => {
+    const { reader } = readerFor({
+      'search-all-accessible-sites': [err({ type: 'api_error', status: 403, message: 'sites refused' })],
+      'search-all-files': [err({ type: 'api_error', status: 403, message: 'pods refused' })],
+      'list-accessible-drives': [err({ type: 'api_error', status: 403, message: 'drives refused' })],
+    });
+
+    expect(await reader.listSites()).toEqual({ ok: false, error: { kind: 'permanent', status: 403, message: 'sites refused' } });
   });
 
   it('a site address is looked up by its host and path, the way Graph addresses sites', async () => {
