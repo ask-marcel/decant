@@ -9,7 +9,7 @@ describe('finding a site through a library someone shared', () => {
   });
 
   it('a library whose site the index already listed adds nothing', () => {
-    expect(unlistedSiteUrls([`${TEAM}/Shared%20Documents`], [TEAM])).toEqual([]);
+    expect(unlistedSiteUrls([`${TEAM}/Shared%20Documents`], [TEAM])).toHaveLength(0);
   });
 
   it('a site already listed is recognised through an encoded, differently cased address', () => {
@@ -50,7 +50,8 @@ describe('finding a site through a library someone shared', () => {
   });
 
   it('an address that is not a library is left out entirely rather than offered as nothing', () => {
-    expect(unlistedSiteUrls(['not a url'], [])).toEqual([]);
+    // `toEqual([])` alone would pass on `[undefined]` in Bun, so the length is pinned as well.
+    expect(unlistedSiteUrls(['not a url'], [])).toHaveLength(0);
   });
 
   it('an unreadable address among the ones already listed does not hide a real site', () => {
@@ -64,6 +65,6 @@ describe('finding a site through a library someone shared', () => {
 
   it('an address with no library segment is ignored rather than guessed at', () => {
     expect(siteUrlOfLibrary('https://tenant.sharepoint.com')).toBeUndefined();
-    expect(unlistedSiteUrls(['https://tenant.sharepoint.com', 'not a url'], [])).toEqual([]);
+    expect(unlistedSiteUrls(['https://tenant.sharepoint.com', 'not a url'], [])).toHaveLength(0);
   });
 });
