@@ -4,7 +4,7 @@ import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { SiteRef } from '../domain/site-state.ts';
 import { MAILBOX_ID, MAILBOX_NAME } from '../domain/mail-state.ts';
-import { renderLibraryPicker, renderSitePicker, renderSummary } from '../presenter/render-picker.ts';
+import { renderLibraryPicker, renderReportPointer, renderSitePicker, renderSummary } from '../presenter/render-picker.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
 import type { DriveReader, DriveSummary, SiteSummary } from './ports/drive-reader.ts';
 import type { Logger } from './ports/logger.ts';
@@ -13,6 +13,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { SourceRun, SyncSite } from './sync-site.ts';
 import type { SiteCache } from '../domain/site-cache.ts';
 import type { SyncMailbox } from './sync-mailbox.ts';
+import type { WriteGlobalReport } from './write-global-report.ts';
 
 export type RunSyncDeps = {
   readonly reader: DriveReader;
@@ -26,6 +27,8 @@ export type RunSyncDeps = {
   readonly cachedSites: () => Promise<SiteCache | undefined>;
   readonly rememberSites: (sites: ReadonlyArray<SiteSummary>) => Promise<void>;
   readonly syncMailbox: SyncMailbox;
+  // One file naming what the whole run left behind, written once every source is done.
+  readonly writeGlobalReport: WriteGlobalReport;
 };
 
 export type RunSyncInput = {
@@ -191,21 +194,37 @@ const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclud
   return runMany(deps, input, chosen);
 };
 
+// What a run left behind, across every source it touched: the two numbers a reader wants before
+// deciding whether to open the report at all.
+const leftBehind = (ran: ReadonlyArray<SourceRun>): { readonly skipped: number; readonly failed: number } =>
+  ran.reduce((carried, run) => ({ skipped: carried.skipped + run.summary.skipped, failed: carried.failed + run.summary.failed }), { skipped: 0, failed: 0 });
+
+const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
+  if (input.command === 'update') return updateEverything(deps, input);
+  if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
+  const named = await siteFromOptions(deps, input);
+  if (named !== undefined) return named.ok ? runMany(deps, input, [named.value]) : named;
+  const picked = await chooseSite(deps, input);
+  if (!picked.ok) return picked;
+  const { chosen, fromCache } = picked.value;
+  // Quitting asks for nothing, so it pays for nothing: the stored list stands until a run that
+  // actually works, where the listing rides alongside a sync that takes far longer than it does.
+  if (chosen === 'quit') return ok([]);
+  const refreshing = fromCache ? refreshInBackground(deps) : Promise.resolve();
+  const chosenSummaries = await syncChosen(deps, input, chosen);
+  await refreshing;
+  return chosenSummaries;
+};
+
+// Every way of choosing sources funnels through here, so the report is written once at the end of a
+// run however the run was asked for, rather than once per branch.
 export const createRunSync =
   (deps: RunSyncDeps): RunSync =>
   async (input) => {
-    if (input.command === 'update') return updateEverything(deps, input);
-    if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
-    const named = await siteFromOptions(deps, input);
-    if (named !== undefined) return named.ok ? runMany(deps, input, [named.value]) : named;
-    const picked = await chooseSite(deps, input);
-    if (!picked.ok) return picked;
-    const { chosen, fromCache } = picked.value;
-    // Quitting asks for nothing, so it pays for nothing: the stored list stands until a run that
-    // actually works, where the listing rides alongside a sync that takes far longer than it does.
-    if (chosen === 'quit') return ok([]);
-    const refreshing = fromCache ? refreshInBackground(deps) : Promise.resolve();
-    const summaries = await syncChosen(deps, input, chosen);
-    await refreshing;
+    const summaries = await chooseAndSync(deps, input);
+    if (!summaries.ok) return summaries;
+    const path = await deps.writeGlobalReport(summaries.value, input.dryRun);
+    const left = leftBehind(summaries.value);
+    if (path !== undefined && left.skipped + left.failed > 0) deps.prompt.show(renderReportPointer(left, path));
     return summaries;
   };

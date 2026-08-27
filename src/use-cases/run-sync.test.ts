@@ -10,7 +10,7 @@ import type { SyncedSource } from '../domain/sync-state.ts';
 import type { SiteCache } from '../domain/site-cache.ts';
 import { createRunSync } from './run-sync.ts';
 import type { RunSyncInput } from './run-sync.ts';
-import type { SourceRun, SyncSiteInput } from './sync-site.ts';
+import type { RunSummary, SourceRun, SyncSiteInput } from './sync-site.ts';
 import type { SyncMailboxInput } from './sync-mailbox.ts';
 
 const sites = [
@@ -35,10 +35,13 @@ const run = async (
     synced?: ReadonlyArray<SyncedSource>;
     savedDrives?: ReadonlyArray<{ id: string; name: string }>;
     cached?: SiteCache;
+    reportPath?: string;
+    summary?: RunSummary;
   } = {}
 ): Promise<{
   calls: SyncSiteInput[];
   mailboxRuns: SyncMailboxInput[];
+  reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean }>;
   prompt: PromptFake;
   logger: LoggerFake;
   ok: boolean;
@@ -52,6 +55,7 @@ const run = async (
   const calls: SyncSiteInput[] = [];
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
+  const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean }> = [];
   const prompt = createPromptFake(answers);
   const logger = createLoggerFake();
   const reader = createDriveReaderFake({ sites, drives, ...seeds.reader });
@@ -65,7 +69,7 @@ const run = async (
     logger,
     syncSite: async (input) => {
       calls.push(input);
-      return ok(SOURCE_RUN);
+      return ok(seeds.summary === undefined ? SOURCE_RUN : { ...SOURCE_RUN, summary: seeds.summary });
     },
     listSyncedSources: async () => ok(seeds.synced ?? []),
     savedDrives: async () => seeds.savedDrives ?? [{ id: 'b!one', name: 'Documents' }],
@@ -73,11 +77,16 @@ const run = async (
       mailboxRuns.push(input);
       return ok(SOURCE_RUN);
     },
+    writeGlobalReport: async (ran, dryRun) => {
+      reported.push({ ran, dryRun });
+      return seeds.reportPath ?? 'kb/_sync-report.md';
+    },
   });
   const result = await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'paddleocr (en)', concurrency: 4, dryRun: false, ...over });
   return {
     calls,
     mailboxRuns,
+    reported,
     prompt,
     logger,
     ok: result.ok,
@@ -327,6 +336,7 @@ describe('when the knowledge base itself cannot be read', () => {
     const calls: SyncSiteInput[] = [];
     const prompt = createPromptFake(['1', '1']);
     const runSync = createRunSync({
+      writeGlobalReport: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -349,6 +359,7 @@ describe('when the knowledge base itself cannot be read', () => {
 
   it('a refresh over an unreadable knowledge base stops rather than syncing nothing quietly', async () => {
     const runSync = createRunSync({
+      writeGlobalReport: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -402,6 +413,7 @@ describe('when one site in a refresh fails', () => {
         return { ok: false, error: { step: 'enumerate', cause: 'auth', message: 'token expired' } };
       },
       listSyncedSources: async () => ok(synced),
+      writeGlobalReport: async () => undefined,
       savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
@@ -540,6 +552,7 @@ describe('when a source run fails after it began', () => {
       logger: createLoggerFake(),
       syncSite: async () => ok(SOURCE_RUN),
       listSyncedSources: async () => ok([]),
+      writeGlobalReport: async () => undefined,
       savedDrives: async () => [],
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
@@ -567,6 +580,7 @@ describe('when a source run fails after it began', () => {
         return ok(SOURCE_RUN);
       },
       listSyncedSources: async () => ok(synced),
+      writeGlobalReport: async () => undefined,
       savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
@@ -577,5 +591,37 @@ describe('when a source run fails after it began', () => {
 
     expect(result.ok).toBe(false);
     expect(calls).toEqual([]);
+  });
+});
+
+describe('pointing a reader at the report a run leaves behind', () => {
+  const TWO_SITES = [
+    { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 1 },
+    { kind: 'site' as const, id: 'contoso,3,4', name: 'Direction', lastRun: '2026-07-22T09:00:00Z', fileCount: 1 },
+  ];
+
+  it('a run that left something behind ends with one line naming the report and what is in it', async () => {
+    const { prompt } = await run(['1', '1'], {}, { summary: { ...EMPTY_SUMMARY, skipped: 7, failed: 2 } });
+
+    expect(prompt.shown.at(-1)).toBe('2 could not be read, 7 left out. See kb/_sync-report.md');
+  });
+
+  it('a run that left nothing behind says nothing about a report, since there would be nothing to read', async () => {
+    const { prompt } = await run(['1', '1']);
+
+    expect(prompt.shown.some((shown) => shown.includes('_sync-report.md'))).toBe(false);
+  });
+
+  it('the report is written once for the whole run, however many sources the run covered', async () => {
+    const { reported } = await run([], { command: 'update' }, { synced: TWO_SITES });
+
+    expect(reported).toHaveLength(1);
+    expect(reported[0]?.ran).toHaveLength(2);
+  });
+
+  it('a dry run reaches the report knowing it was one, so nothing it describes is written down', async () => {
+    const { reported } = await run(['1', '1'], { dryRun: true });
+
+    expect(reported[0]?.dryRun).toBe(true);
   });
 });

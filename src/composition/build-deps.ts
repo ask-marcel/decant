@@ -24,6 +24,7 @@ import { createRunSync } from '../use-cases/run-sync.ts';
 import type { RunSync } from '../use-cases/run-sync.ts';
 import { createRenderThread } from '../use-cases/render-thread.ts';
 import { createSyncMailbox } from '../use-cases/sync-mailbox.ts';
+import { createWriteGlobalReport } from '../use-cases/write-global-report.ts';
 import { createSyncSite, resolveSite } from '../use-cases/sync-site.ts';
 import type { SiteCache } from '../domain/site-cache.ts';
 import { parseSiteCache, serializeSiteCache } from '../domain/site-cache.ts';
@@ -103,6 +104,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
   // expression as never executed, so spreading this call out reads as a third of the file going
   // uncovered. See the journal entry for the same trap in `progress-bar.ts`.
-  const runSync = createRunSync({ reader, prompt, logger, syncSite, listSyncedSources, savedDrives, syncMailbox, cachedSites, rememberSites });
+  const writeGlobalReport = createWriteGlobalReport({ files, clock, logger, listSyncedSources, kbRoot: config.kbRoot });
+  const runSync = createRunSync({ reader, prompt, logger, syncSite, listSyncedSources, savedDrives, syncMailbox, cachedSites, rememberSites, writeGlobalReport });
   return { logger, runSync };
 };
