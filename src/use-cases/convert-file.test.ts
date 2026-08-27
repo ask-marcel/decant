@@ -103,6 +103,35 @@ describe('converting one document out of a library', () => {
     expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.pdf')).toBe(false);
   });
 
+  it('a deck the source refused to render says so in the log, since nothing on disk records the refusal', async () => {
+    const { logger } = await run(
+      { name: 'Roadmap.pptx', path: 'Roadmap.pptx' },
+      { reader: { markdown: { '01ABC': '## Slide 1' }, failPdf: { kind: 'unrenderable', message: 'HTTP 406' } } }
+    );
+
+    expect(logger.calls.some((call) => call.event === 'render.refused')).toBe(true);
+  });
+
+  it('a deck whose slides were refused and whose text cannot be read either is reported, not written half', async () => {
+    const { outcome, files } = await run(
+      { name: 'Roadmap.pptx', path: 'Roadmap.pptx' },
+      { reader: { failItems: { '01ABC': { kind: 'permanent', message: 'cannot convert' } }, failPdf: { kind: 'unrenderable', message: 'HTTP 406' } } }
+    );
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'permanent: cannot convert' });
+    expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md')).toBe(false);
+  });
+
+  it('the note about missing slides sits against the text, with no blank run between them', async () => {
+    const { files } = await run(
+      { name: 'Roadmap.pptx', path: 'Roadmap.pptx' },
+      { reader: { markdown: { '01ABC': '   \n## Slide 1\n   ' }, failPdf: { kind: 'unrenderable', message: 'HTTP 406' } } }
+    );
+    const body = (files.written.get('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md') ?? '').split('---').slice(2).join('---').trim();
+
+    expect(body.endsWith('## Slide 1')).toBe(true);
+  });
+
   it('a deck in the old format that will not render is reported, since that render is where its text lives', async () => {
     const { outcome, files } = await run({ name: 'Vieux.ppt', path: 'Vieux.ppt' }, { reader: { failPdf: { kind: 'unrenderable', message: 'HTTP 406' } } });
 
