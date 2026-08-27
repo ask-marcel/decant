@@ -217,3 +217,37 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   to say the pages are Loop pages. Matching `/contentstorage/CSP_` labelled every shared workspace
   and left the operator's own workspace looking like a site named `My workspace`. Match the path,
   never the id shape that follows it.
+
+## 2026-08-27
+
+- [gotcha] A PP-OCR recognizer can only emit characters its own dictionary holds, so the wrong
+  `--ocr-lang` yields confident line noise rather than a failure. `en_PP-OCRv4` holds 95 characters,
+  ASCII only, with no CJK and not one accented letter, which is why a Chinese announcement came back
+  as `STARZE / 1. / 2.i / 3.A` while its front matter still claimed `ocr: rapidocr (en)`. Never
+  assume a model covers a script: the dictionary is inside the ONNX file and takes one line to read,
+  `ort.InferenceSession(path).get_modelmeta().custom_metadata_map["character"].splitlines()`.
+  Sizes on this machine: `en` v4 95, `latin` v3 185, `latin` v5 502, `ch` v4 6623, `ch` v5 18383.
+
+- [decision] The OCR language is settled per image, by reading it, not by guessing from its path or
+  from a run-level flag. `ch` reads first because it is the only recognizer that spans both scripts,
+  holding CJK and ASCII alike: its reading is therefore evidence in BOTH directions, where a Latin
+  model's proves nothing, since it could not have emitted an ideograph either way. No ideographs
+  above a small share of the written characters means the image is read again with `latin`.
+  Confidence scores were considered as the discriminator and rejected: the margins are asymmetric,
+  `ch` beat `en` by 12 points on a Chinese page but `en` beat `ch` by only 1.2 on an English one.
+  The policy lives in TypeScript, not in `rapidocr-run.py`, which `bun test`, coverage and mutation
+  cannot reach; the script only learned to take a model version.
+
+- [gotcha] Newer is not better per model, so measure per script instead of upgrading wholesale.
+  PP-OCRv5 `ch` scored below v4 on this tenant's Chinese and silently dropped characters mid-word
+  (headings came back short a character or two, which reads as plausible text, not as an error),
+  while PP-OCRv5 `latin` beat both `latin` v3 and `en` v4 on the same English page and fixed v3's
+  habit of reading `O` as `0` inside acronyms. Hence the pair now in use: `ch` at v4, `latin` at v5.
+
+- [mistake] A guard no mutant can kill is usually dead code, not a hole in the tests. Stryker put
+  `ocr-language.ts` at 83.33% and one survivor was `if (written.length === 0) return false` sitting
+  in front of a division that already yields `NaN` for that input, and `NaN` compares false. The
+  guard changed nothing. Reformulating the comparison to multiply instead of divide
+  (`ideographs > written.length * SHARE`) removed the guard AND made a second survivor, `>` mutated
+  to `>=`, killable by the existing empty-text case, since `0 >= 0` is true where `0 > 0` is not.
+  Two survivors and a line of code gone for one rewrite; only the third needed a new test.
