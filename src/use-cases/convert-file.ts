@@ -12,7 +12,7 @@ import { ok } from '../domain/result.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader, DriveReaderError } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
-import type { EmbeddedImage } from './ports/drive-reader.ts';
+import { placeImages } from './place-images.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Ocr } from './ports/ocr.ts';
 
@@ -69,37 +69,6 @@ const stampFor = (input: ConvertFileInput, clock: Clock): DocumentStamp => ({
   syncedAt: clock.nowIso(),
 });
 
-// The folder a document's own pictures sit in, named after the document so the two stay together
-// and sort side by side. Part paths are flattened rather than mirrored: `word/media/image1.png`
-// would otherwise rebuild the OOXML tree under every document for no reader's benefit.
-const MEDIA_SUFFIX = '.media';
-
-const mediaName = (image: EmbeddedImage): string => safeSegment(image.path.split('/').join('_'));
-
-// A picture is written first and read second, because the reader works on a file already on disk.
-// Text that comes back empty (or OCR being off entirely) leaves the entry as a bare link: the
-// picture is still there to open, and the markdown does not pretend to know what it shows.
-const placeImages = async (
-  context: Context,
-  images: ReadonlyArray<EmbeddedImage>
-): Promise<Result<{ readonly paths: ReadonlyArray<string>; readonly section: string }, FilesError>> => {
-  const folder = `${context.dir}/${context.name}${MEDIA_SUFFIX}`;
-  const paths: string[] = [];
-  const entries: string[] = [];
-  for (const image of images) {
-    const name = mediaName(image);
-    const path = `${folder}/${name}`;
-    const written = await context.deps.files.writeBytes(path, image.bytes);
-    if (!written.ok) return written;
-    paths.push(path);
-    const read = await context.deps.ocr.read(path);
-    const text = read.ok ? read.value.trim() : '';
-    const caption = text.length === 0 ? '' : `\n\n${text}`;
-    entries.push(`![${name}](./${context.name}${MEDIA_SUFFIX}/${name})${caption}`);
-  }
-  return ok({ paths, section: `\n\n## Images\n\n${entries.join('\n\n')}\n` });
-};
-
 // Every kind that produces markdown comes through here, so this is where a document's pictures are
 // taken as well. A picture read that fails costs the pictures and not the text: the document is the
 // point, and the placeholders left in its body already say something stood there.
@@ -112,7 +81,7 @@ const withImages = async (context: Context, body: string): Promise<Result<{ read
     return ok({ body, paths: [] });
   }
   if (found.value.length === 0) return ok({ body, paths: [] });
-  const placed = await placeImages(context, found.value);
+  const placed = await placeImages(context.deps, context.dir, context.name, found.value);
   return placed.ok ? ok({ body: `${body}${placed.value.section}`, paths: placed.value.paths }) : placed;
 };
 
