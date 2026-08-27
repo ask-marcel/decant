@@ -1,6 +1,7 @@
 import { parseDriveDelta, parseItem } from '../domain/drive-item.ts';
 import type { DriveDeltaPage } from '../domain/drive-item.ts';
 import type { Result } from '../domain/result.ts';
+import { unlistedSiteUrls } from '../domain/shared-site.ts';
 import { err, ok } from '../domain/result.ts';
 import { formatError } from '../domain/utilities/format-error.ts';
 import type { ArchiveEntry, DriveReader, DriveReaderError, DriveSummary, EmbeddedImage, ItemRef, SiteSummary } from '../use-cases/ports/drive-reader.ts';
@@ -153,6 +154,36 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
     return site === undefined ? missing('site') : ok(site);
   };
 
+  const siteAt = async (url: string): Promise<Result<SiteSummary, DriveReaderError>> => {
+    const parsed = parseSiteUrl(url);
+    if (!parsed.ok) return parsed;
+    const raw = await call('get-sharepoint-site-by-path', parsed.value);
+    if (!raw.ok) return raw;
+    const site = toSite(raw.value)[0];
+    return site === undefined ? missing('site') : ok(site);
+  };
+
+  // A library shared with you reaches the drive sweep even when its site never reaches the index.
+  // Each such site costs one lookup, so the ones already listed are dropped before any call is made.
+  const sharedSitesOf = async (drives: ReadonlyArray<unknown>, known: ReadonlyArray<SiteSummary>): Promise<Result<ReadonlyArray<SiteSummary>, DriveReaderError>> => {
+    const libraries = drives
+      .filter((drive) => readString(drive, 'driveType') === 'documentLibrary')
+      .flatMap((drive) => {
+        const webUrl = readString(drive, 'webUrl');
+        return webUrl === undefined ? [] : [webUrl];
+      });
+    const found: SiteSummary[] = [];
+    for (const url of unlistedSiteUrls(
+      libraries,
+      known.map((site) => site.webUrl)
+    )) {
+      const site = await siteAt(url);
+      if (!site.ok) return site;
+      found.push(site.value);
+    }
+    return ok(found);
+  };
+
   const workspacesOf = async (pods: ReadonlyArray<unknown>): Promise<Result<ReadonlyArray<SiteSummary>, DriveReaderError>> => {
     const found: SiteSummary[] = [];
     for (const id of pods.flatMap(containerId)) {
@@ -171,16 +202,14 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
       if (!pods.ok) return pods;
       const workspaces = await workspacesOf(listOf(pods.value));
       if (!workspaces.ok) return workspaces;
-      return ok([...listOf(raw.value).flatMap(toSite), ...workspaces.value]);
+      const listed = [...listOf(raw.value).flatMap(toSite), ...workspaces.value];
+      const drives = await call('list-accessible-drives', {});
+      if (!drives.ok) return drives;
+      const shared = await sharedSitesOf(listOf(drives.value), listed);
+      if (!shared.ok) return shared;
+      return ok([...listed, ...shared.value]);
     },
-    siteByUrl: async (url) => {
-      const parsed = parseSiteUrl(url);
-      if (!parsed.ok) return parsed;
-      const raw = await call('get-sharepoint-site-by-path', parsed.value);
-      if (!raw.ok) return raw;
-      const site = toSite(raw.value)[0];
-      return site === undefined ? missing('site') : ok(site);
-    },
+    siteByUrl: siteAt,
     siteById: siteOf,
     listDrives: async (siteId) => {
       const raw = await call('list-sharepoint-site-drives', { siteId });

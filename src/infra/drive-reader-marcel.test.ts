@@ -35,6 +35,7 @@ const registry = (
     'download-drive-item-as-pdf',
     'download-drive-item-content',
     'convert-local-file-to-markdown',
+    'list-accessible-drives',
     'get-drive-item',
     'extract-drive-item-images',
   ];
@@ -82,6 +83,39 @@ describe('reading SharePoint through the ask-marcel library', () => {
     const { reader } = readerFor({ 'search-all-files': [ok({ value: [{ name: 'Orphan.pod' }] })] });
 
     expect(await reader.listSites()).toEqual({ ok: true, value: [] });
+  });
+
+  it('a site reachable only through a shared library is offered beside the ones the index lists', async () => {
+    const { reader } = readerFor({
+      'search-all-accessible-sites': [ok({ value: [{ id: 'contoso,1,2', displayName: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/Espace' }] })],
+      'list-accessible-drives': [
+        ok({
+          value: [
+            { id: 'b!one', name: 'Documents', driveType: 'documentLibrary', webUrl: 'https://tenant.sharepoint.com/sites/Partage/Shared%20Documents' },
+            { id: 'b!me', name: 'OneDrive', driveType: 'personal', webUrl: 'https://tenant-my.sharepoint.com/personal/jane/Documents' },
+          ],
+        }),
+      ],
+      'get-sharepoint-site-by-path': [ok({ id: 'contoso,9,9', displayName: 'Partage', webUrl: 'https://tenant.sharepoint.com/sites/Partage' })],
+    });
+
+    const found = await reader.listSites();
+
+    expect(found.ok && found.value.map((site) => site.name)).toEqual(['Espace Contoso', 'Partage']);
+  });
+
+  it('a library of a site the index already lists is never resolved again', async () => {
+    const { reader, recorded } = readerFor({
+      'search-all-accessible-sites': [ok({ value: [{ id: 'contoso,1,2', displayName: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/Espace' }] })],
+      'list-accessible-drives': [
+        ok({ value: [{ id: 'b!one', name: 'Documents', driveType: 'documentLibrary', webUrl: 'https://tenant.sharepoint.com/sites/Espace/Shared%20Documents' }] }),
+      ],
+    });
+
+    const found = await reader.listSites();
+
+    expect(found.ok && found.value.map((site) => site.name)).toEqual(['Espace Contoso']);
+    expect(recorded.some((call) => call.name === 'get-sharepoint-site-by-path')).toBe(false);
   });
 
   it('a site address is looked up by its host and path, the way Graph addresses sites', async () => {
