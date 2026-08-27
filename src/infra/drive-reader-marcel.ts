@@ -26,6 +26,9 @@ export type MarcelApi = {
   readonly fs: unknown;
   readonly commands: Readonly<Partial<Record<string, MarcelCommand>>>;
   readonly sleep?: (ms: number) => Promise<void>;
+  // Says what a long listing is doing while it does it. Optional the way `sleep` is: a test hands in
+  // a collector, production hands in a terminal line, and everything else needs neither.
+  readonly notify?: (what: string) => void;
 };
 
 const RETRY_DELAYS_MS = [2_000, 8_000, 30_000];
@@ -128,6 +131,7 @@ export const createMarcelCall = (api: MarcelApi): MarcelCall => {
 
 export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
   const call = createMarcelCall(api);
+  const say = api.notify ?? ((): void => undefined);
 
   const delta = async (params: Record<string, string>): Promise<Result<DriveDeltaPage, DriveReaderError>> => {
     const raw = await call('get-drive-delta', params);
@@ -172,11 +176,13 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
         const webUrl = readString(drive, 'webUrl');
         return webUrl === undefined ? [] : [webUrl];
       });
-    const found: SiteSummary[] = [];
-    for (const url of unlistedSiteUrls(
+    const unlisted = unlistedSiteUrls(
       libraries,
       known.map((site) => site.webUrl)
-    )) {
+    );
+    if (unlisted.length > 0) say(`Looking up ${unlisted.length} site${unlisted.length === 1 ? '' : 's'} the index did not name…`);
+    const found: SiteSummary[] = [];
+    for (const url of unlisted) {
       const site = await siteAt(url);
       if (!site.ok) return site;
       found.push(site.value);
@@ -195,18 +201,24 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
   };
 
   return {
+    // Four listings deep and the better part of a minute, so each stage says what it is waiting on
+    // rather than leaving the terminal blank. The line clears at the end for the picker to print on.
     listSites: async () => {
+      say('Reading the sites you belong to…');
       const raw = await call('search-all-accessible-sites', { query: '*' });
       if (!raw.ok) return raw;
+      say('Looking for Loop workspaces…');
       const pods = await call('search-all-files', { query: `filetype:${POD_EXTENSION}` });
       if (!pods.ok) return pods;
       const workspaces = await workspacesOf(listOf(pods.value));
       if (!workspaces.ok) return workspaces;
       const listed = [...listOf(raw.value).flatMap(toSite), ...workspaces.value];
+      say('Checking the libraries shared with you…');
       const drives = await call('list-accessible-drives', {});
       if (!drives.ok) return drives;
       const shared = await sharedSitesOf(listOf(drives.value), listed);
       if (!shared.ok) return shared;
+      say('');
       return ok([...listed, ...shared.value]);
     },
     siteByUrl: siteAt,

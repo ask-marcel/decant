@@ -7,7 +7,7 @@ import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
 import { createWinstonLogger } from '../infra/logger.ts';
 import { createBunShell, createNoOcr, createRapidOcr } from '../infra/ocr-rapid.ts';
-import { createStderrProgress } from '../infra/progress-bar.ts';
+import { createStderrProgress, createStderrStatus } from '../infra/progress-bar.ts';
 import { createStdinPrompt } from '../infra/prompt-stdin.ts';
 import { createConvertAttachment } from '../use-cases/convert-attachment.ts';
 import { createConvertFile } from '../use-cases/convert-file.ts';
@@ -47,7 +47,8 @@ export type DepOverrides = {
 // an auth error the run reports, which is what a scheduled `update` needs.
 const realApi = (interactive: boolean): MarcelApi => {
   const marcel = buildMarcelDeps({ interactive });
-  return { graph: marcel.graph, fs: marcel.fs, commands: commands as Readonly<Partial<Record<string, MarcelCommand>>> };
+  const status = createStderrStatus();
+  return { graph: marcel.graph, fs: marcel.fs, commands: commands as Readonly<Partial<Record<string, MarcelCommand>>>, notify: status };
 };
 
 // Resolved the same way the sync itself resolves it: two sites can share a display name, and the

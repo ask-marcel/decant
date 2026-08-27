@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { createNoProgress, createProgressBar } from './progress-bar.ts';
+import { createNoProgress, createNoStatus, createProgressBar, createStatusLine } from './progress-bar.ts';
 
 const capture = (): { readonly bar: ReturnType<typeof createProgressBar>; readonly writes: string[] } => {
   const writes: string[] = [];
@@ -94,5 +94,32 @@ describe('showing how far a conversion has got', () => {
     expect(writes.at(-1)).toContain('A.docx');
     expect(writes.at(-1)).not.toContain('B.docx');
     expect(writes.at(-1)).not.toContain('C.docx');
+  });
+});
+
+describe('saying what a long listing is doing while it does it', () => {
+  it('a status line rewrites itself rather than stacking up, so one line reports the wait', () => {
+    const writes: string[] = [];
+    const say = createStatusLine((text) => writes.push(text));
+
+    say('Reading the sites you belong to…');
+    say('Checking the libraries shared with you…');
+
+    expect(writes).toEqual(['\r\x1b[KReading the sites you belong to…', '\r\x1b[KChecking the libraries shared with you…']);
+  });
+
+  it('an empty message clears the line, so the picker prints onto a clean row', () => {
+    const writes: string[] = [];
+    const say = createStatusLine((text) => writes.push(text));
+
+    say('');
+
+    expect(writes).toEqual(['\r\x1b[K']);
+  });
+});
+
+describe('a run with no terminal to draw on', () => {
+  it('says nothing at all, so a piped or scheduled listing stays clean', () => {
+    expect(createNoStatus()('Reading the sites you belong to…')).toBeUndefined();
   });
 });

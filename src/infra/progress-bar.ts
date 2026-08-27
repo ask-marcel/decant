@@ -55,3 +55,20 @@ export const createNoProgress = (): Progress => ({
 // when it is not, so a piped or headless run stays clean. The platform read lives here, in infra,
 // rather than in the composition root.
 export const createStderrProgress = (): Progress => (process.stderr.isTTY ? createProgressBar((text) => process.stderr.write(text)) : createNoProgress());
+
+// The same one-line rewrite the counter uses, for a wait that has no count to show: finding the
+// sites you can read takes three listings and a lookup each for the ones the index did not name,
+// which is the better part of a minute against a blank screen. An empty message clears the line so
+// whatever prints next starts on a clean row.
+export type StatusLine = (what: string) => void;
+
+export const createStatusLine =
+  (write: (text: string) => void): StatusLine =>
+  (what) =>
+    write(`\r\x1b[K${what}`);
+
+// Silent when there is no terminal to draw on, matching the counter: a piped or scheduled run wants
+// its output to be the command's own, not a line that rewrote itself forty times.
+export const createNoStatus = (): StatusLine => () => undefined;
+
+export const createStderrStatus = (): StatusLine => (process.stderr.isTTY ? createStatusLine((text) => process.stderr.write(text)) : createNoStatus());

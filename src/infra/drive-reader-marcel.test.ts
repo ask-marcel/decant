@@ -44,10 +44,17 @@ const registry = (
 
 const readerFor = (
   answers: Readonly<Partial<Record<string, ReadonlyArray<Result<unknown, GraphErrorShape>>>>>
-): { reader: ReturnType<typeof createDriveReaderFromApi>; recorded: Recorded[] } => {
+): { reader: ReturnType<typeof createDriveReaderFromApi>; recorded: Recorded[]; said: string[] } => {
   const recorded: Recorded[] = [];
-  const reader = createDriveReaderFromApi({ graph: {}, fs: {}, commands: registry(answers, recorded), sleep: async () => undefined });
-  return { reader, recorded };
+  const said: string[] = [];
+  const reader = createDriveReaderFromApi({
+    graph: {},
+    fs: {},
+    commands: registry(answers, recorded),
+    sleep: async () => undefined,
+    notify: (what) => said.push(what),
+  });
+  return { reader, recorded, said };
 };
 
 describe('reading SharePoint through the ask-marcel library', () => {
@@ -116,6 +123,22 @@ describe('reading SharePoint through the ask-marcel library', () => {
 
     expect(found.ok && found.value.map((site) => site.name)).toEqual(['Espace Contoso']);
     expect(recorded.some((call) => call.name === 'get-sharepoint-site-by-path')).toBe(false);
+  });
+
+  it('each stage of finding the sites is announced, so a long listing is never a blank screen', async () => {
+    const { reader, said } = readerFor({
+      'search-all-accessible-sites': [ok({ value: [{ id: 'contoso,1,2', displayName: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/Espace' }] })],
+      'list-accessible-drives': [
+        ok({ value: [{ id: 'b!one', name: 'Documents', driveType: 'documentLibrary', webUrl: 'https://tenant.sharepoint.com/sites/Partage/Shared%20Documents' }] }),
+      ],
+      'get-sharepoint-site-by-path': [ok({ id: 'contoso,9,9', displayName: 'Partage', webUrl: 'https://tenant.sharepoint.com/sites/Partage' })],
+    });
+
+    await reader.listSites();
+
+    expect(said.slice(0, 3)).toEqual(['Reading the sites you belong to…', 'Looking for Loop workspaces…', 'Checking the libraries shared with you…']);
+    expect(said.at(-2)).toContain('1 site');
+    expect(said.at(-1)).toBe('');
   });
 
   it('a site address is looked up by its host and path, the way Graph addresses sites', async () => {
