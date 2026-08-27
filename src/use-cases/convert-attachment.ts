@@ -88,7 +88,7 @@ const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promi
 const pdfText = async (context: Context, rawPath: string, extracted: string): Promise<{ readonly body: string; readonly ocr?: string }> => {
   if (extracted.trim().length > 0) return { body: extracted };
   const read = await context.deps.ocr.read(rawPath);
-  return read.ok && read.value.trim().length > 0 ? { body: read.value, ocr: context.input.ocrLabel } : { body: SCANNED_PDF_NOTE };
+  return read.ok && read.value.text.trim().length > 0 ? { body: read.value.text, ocr: read.value.label } : { body: SCANNED_PDF_NOTE };
 };
 
 const asPdf = async (context: Context): Promise<AttachmentOutcome> =>
@@ -101,8 +101,8 @@ const asPdf = async (context: Context): Promise<AttachmentOutcome> =>
 const asImage = async (context: Context): Promise<AttachmentOutcome> =>
   rawAndMarkdown(context, async (rawPath) => {
     const read = await context.deps.ocr.read(rawPath);
-    const body = read.ok && read.value.trim().length > 0 ? read.value : NO_TEXT_NOTE;
-    return { text: body, stamp: { ...context.input.stamp, image: `./${context.name}`, ocr: read.ok ? context.input.ocrLabel : undefined } };
+    const body = read.ok && read.value.text.trim().length > 0 ? read.value.text : NO_TEXT_NOTE;
+    return { text: body, stamp: { ...context.input.stamp, image: `./${context.name}`, ocr: read.ok ? read.value.label : undefined } };
   });
 
 const asVector = async (context: Context): Promise<AttachmentOutcome> =>

@@ -101,7 +101,7 @@ const placeImages = async (
     if (!written.ok) return written;
     paths.push(path);
     const read = await context.deps.ocr.read(path);
-    const text = read.ok ? read.value.trim() : '';
+    const text = read.ok ? read.value.text.trim() : '';
     const caption = text.length === 0 ? '' : `\n\n${text}`;
     entries.push(`![${name}](./${context.name}${MEDIA_SUFFIX}/${name})${caption}`);
   }
@@ -186,7 +186,7 @@ const pdfText = async (context: Context, rawPath: string, extracted: string): Pr
   if (extracted.trim().length > 0) return { body: extracted };
   saying(context, 'reading the pages');
   const read = await context.deps.ocr.read(rawPath);
-  return read.ok && read.value.trim().length > 0 ? { body: read.value, ocr: context.input.ocrLabel } : { body: SCANNED_PDF_NOTE };
+  return read.ok && read.value.text.trim().length > 0 ? { body: read.value.text, ocr: read.value.label } : { body: SCANNED_PDF_NOTE };
 };
 
 const convertPdf = async (context: Context): Promise<ConvertOutcome> => {
@@ -211,8 +211,8 @@ const convertImage = async (context: Context): Promise<ConvertOutcome> => {
   const wroteRaw = await context.deps.files.writeBytes(rawPath, raw.value);
   if (!wroteRaw.ok) return failure(wroteRaw.error);
   const read = await context.deps.ocr.read(rawPath);
-  const body = read.ok && read.value.trim().length > 0 ? read.value : NO_TEXT_NOTE;
-  const stamp = { ...context.stamp, image: `./${context.name}`, ocr: read.ok ? context.input.ocrLabel : undefined };
+  const body = read.ok && read.value.text.trim().length > 0 ? read.value.text : NO_TEXT_NOTE;
+  const stamp = { ...context.stamp, image: `./${context.name}`, ocr: read.ok ? read.value.label : undefined };
   const written = await writeMarkdown(context, `${context.name}.md`, stamp, body);
   return written.ok ? { kind: 'converted', outputs: [rawPath, ...written.value] } : failure(written.error);
 };

@@ -97,7 +97,7 @@ describe('keeping what was attached to a mail', () => {
     const written = files.written.get(`${FOLDER}/Scan.pdf.md`) ?? '';
 
     expect(written).toContain('Invoice total 1200 EUR');
-    expect(written).toContain('ocr: paddleocr (en)');
+    expect(written).toContain('ocr: rapidocr (latin)');
   });
 
   it('a PDF attachment that has a text layer keeps that text rather than a note', async () => {

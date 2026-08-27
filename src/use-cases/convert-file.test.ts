@@ -171,7 +171,7 @@ describe('converting one document out of a library', () => {
     const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
 
     expect(written).toContain('Invoice total 1200 EUR');
-    expect(written).toContain('ocr: paddleocr (en)');
+    expect(written).toContain('ocr: rapidocr (latin)');
   });
 
   it('a PDF that already has a text layer is not sent to OCR', async () => {
@@ -213,7 +213,7 @@ describe('converting one document out of a library', () => {
 
     expect(outcome.kind).toBe('converted');
     expect(written).toContain('image: ./Tableau.jpg');
-    expect(written).toContain('ocr: paddleocr (en)');
+    expect(written).toContain('ocr: rapidocr (latin)');
     expect(written).toContain('Sprint 4 backlog');
   });
 
