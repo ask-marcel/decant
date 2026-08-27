@@ -244,6 +244,39 @@ describe('keeping the block inside the rows and columns the cursor can reach', (
     expect(shown.at(0)).toContain('MOOV Leadership Team / 文档');
   });
 
+  it('a path too wide for its row loses its middle, so the filename that says which item it is survives', () => {
+    const writes: string[] = [];
+    const bar = createProgressBar(
+      (text) => writes.push(text),
+      () => 44
+    );
+
+    bar.start(11, 'MOOV Leadership Team / 文档');
+    bar.begin('HELP - Manuals & Guides/IT topics/TMFF/Ocean Export user manual V 2017 8.8.pdf');
+
+    const row = rowsShown(writes.at(-1)).at(1) ?? '';
+    expect(row.startsWith('  HELP - Manuals')).toBe(true);
+    expect(row.endsWith('2017 8.8.pdf')).toBe(true);
+    expect(row).toContain('…');
+  });
+
+  it('a step at the end of a row takes its room from the path, so the step is never the part that is cut', () => {
+    const writes: string[] = [];
+    const bar = createProgressBar(
+      (text) => writes.push(text),
+      () => 44
+    );
+
+    bar.start(11, 'MOOV Leadership Team / 文档');
+    bar.begin('HELP - Manuals & Guides/IT topics/TMFF/Ocean Export user manual V 2017 8.8.pdf');
+    bar.detail('HELP - Manuals & Guides/IT topics/TMFF/Ocean Export user manual V 2017 8.8.pdf', 'reading picture 3/6');
+
+    const row = rowsShown(writes.at(-1)).at(1) ?? '';
+    expect(row.endsWith('· reading picture 3/6')).toBe(true);
+    expect(row).toContain('…');
+    expect([...row]).toHaveLength(43);
+  });
+
   it('a row never fills the last column, so the cursor cannot defer a wrap and stack the rows', () => {
     const writes: string[] = [];
     const bar = createProgressBar(

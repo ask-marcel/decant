@@ -27,8 +27,9 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
   // screen a row at a time.
   let drawn = 0;
   // A row wider than the screen wraps, and `\x1b[K` clears only the row the cursor sits on, so the
-  // wrapped remainder stays behind and the block garbles. Cut by code point, so a character is never
-  // left half-written.
+  // wrapped remainder stays behind and the block garbles. The tail is what goes: this cuts the
+  // header, where `what` names the source and reads left to right. Cut by code point, so a character
+  // is never left half-written.
   const fit = (line: string): string => {
     const shown = [...line];
     // One column short of the row, never the whole row. Filling the last column leaves the cursor in
@@ -39,9 +40,23 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
     return `${shown.slice(0, Math.max(0, room - 1)).join('')}\u2026`;
   };
 
+  // A path loses its middle rather than its tail: the head is the directory prefix its window-siblings
+  // mostly share, while the tail carries the filename, which is the part that says which item this row
+  // is. Cut by code point, so a character is never left half-written.
+  const middle = (text: string, room: number): string => {
+    const shown = [...text];
+    if (shown.length <= room) return text;
+    const head = Math.max(0, Math.floor((room - 1) / 2));
+    const tail = shown.slice(shown.length - Math.max(0, room - 1 - head));
+    return `${shown.slice(0, head).join('')}\u2026${tail.join('')}`;
+  };
+
   const itemRow = (label: string): string => {
     const step = steps.get(label);
-    return step === undefined ? `  ${label}` : `  ${label} \u00b7 ${step}`;
+    const doing = step === undefined ? '' : ` \u00b7 ${step}`;
+    // A step is short and belongs at the end, so the path takes the room it leaves, minus the indent.
+    // `fit` is the backstop for a step long enough to fill the row on its own.
+    return fit(`  ${middle(label, width() - 3 - [...doing].length)}${doing}`);
   };
 
   // The header, then a row per item in flight, kept to the rows the cursor can climb back over: a
@@ -53,18 +68,18 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
     const inFlight = running.size > 0 ? [...running] : [label];
     // Only worth counting when more than one is in flight: one running item is not news.
     const count = running.size > 1 ? ` (${running.size} running)` : '';
-    const header = `${what} ${done}/${total}${count}`;
+    const header = fit(`${what} ${done}/${total}${count}`);
     const room = Math.max(1, height() - 1);
     if (inFlight.length <= room) return [header, ...inFlight.map(itemRow)];
     const shown = inFlight.slice(0, room - 1);
-    return [header, ...shown.map(itemRow), `  \u2026and ${inFlight.length - shown.length} more`];
+    return [header, ...shown.map(itemRow), fit(`  \u2026and ${inFlight.length - shown.length} more`)];
   };
 
   const render = (label: string): void => {
     if (total === 0) return;
     const lines = block(label);
     const climb = drawn > 1 ? `\x1b[${drawn - 1}A` : '';
-    const body = lines.map((line) => `\x1b[K${fit(line)}`).join('\n');
+    const body = lines.map((line) => `\x1b[K${line}`).join('\n');
     write(`${climb}\r${body}\x1b[J`);
     drawn = lines.length;
   };
