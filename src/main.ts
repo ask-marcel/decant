@@ -31,7 +31,7 @@ const run = async (): Promise<number> => {
     printLine(`failed at ${summaries.error.step}: ${summaries.error.message}`);
     return 1;
   }
-  return summaries.value.some((summary) => summary.failed > 0) ? 1 : 0;
+  return summaries.value.some((source) => source.summary.failed > 0) ? 1 : 0;
 };
 
 try {

@@ -3,6 +3,8 @@ import { syncableFolders } from '../domain/mail-folder.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import type { AttachmentRecord, LinkedRecord, MailboxState, ThreadRecord } from '../domain/mail-state.ts';
 import {
+  MAILBOX_ID,
+  MAILBOX_NAME,
   emptyMailboxState,
   needsRender,
   parseMailboxState,
@@ -23,7 +25,7 @@ import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread } from './render-thread.ts';
-import type { RunNotes, RunSummary } from './sync-site.ts';
+import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 
 export const MAIL_STATE_FILE = '.sync-state.json';
@@ -51,9 +53,11 @@ export type SyncMailboxInput = {
   readonly since?: string;
 };
 
-export type SyncMailbox = (input: SyncMailboxInput) => Promise<Result<RunSummary, StepError>>;
+export type SyncMailbox = (input: SyncMailboxInput) => Promise<Result<SourceRun, StepError>>;
 
 const EMPTY: RunSummary = { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 };
+
+const NO_NOTES: RunNotes = { skipped: [], failed: [], archived: [] };
 
 const mailboxRoot = (kbRoot: string): string => `${kbRoot}/Mailbox`;
 
@@ -218,14 +222,14 @@ export const createSyncMailbox =
     const loaded = await loadMailboxState(deps.files, statePath, deps.logger);
     const queued = await queueWork(deps, input, loaded, statePath);
     if (!queued.ok) return queued;
-    if (input.dryRun) return ok({ ...EMPTY, queued: queued.value.pending.length });
+    if (input.dryRun) return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary: { ...EMPTY, queued: queued.value.pending.length }, notes: NO_NOTES });
     return drainQueue(deps, input, queued.value, statePath);
   };
 
-const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<RunSummary, StepError>> => {
+const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<SourceRun, StepError>> => {
   let current = state;
   let summary = EMPTY;
-  let notes: RunNotes = { skipped: [], failed: [], archived: [] };
+  let notes: RunNotes = NO_NOTES;
   deps.progress.start(current.pending.length, 'Rendering');
   for (;;) {
     if (current.pending.length === 0) break;
@@ -261,6 +265,6 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
   const finished = { ...current, lastRun: deps.clock.nowIso() };
   const saved = await save(deps.files, statePath, finished, input.dryRun);
   if (!saved.ok) return saved;
-  await writeReport(deps, input, mailboxRoot(deps.kbRoot), 'Mailbox', summary, notes);
-  return ok(summary);
+  await writeReport(deps, input, mailboxRoot(deps.kbRoot), MAILBOX_NAME, summary, notes);
+  return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary, notes });
 };

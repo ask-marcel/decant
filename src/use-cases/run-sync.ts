@@ -10,7 +10,7 @@ import type { DriveReader, DriveSummary, SiteSummary } from './ports/drive-reade
 import type { Logger } from './ports/logger.ts';
 import type { Prompt } from './ports/prompt.ts';
 import type { StepError } from './ports/step-error.ts';
-import type { RunSummary, SyncSite } from './sync-site.ts';
+import type { SourceRun, SyncSite } from './sync-site.ts';
 import type { SiteCache } from '../domain/site-cache.ts';
 import type { SyncMailbox } from './sync-mailbox.ts';
 
@@ -43,7 +43,7 @@ export type RunSyncInput = {
   readonly refresh?: boolean;
 };
 
-export type RunSync = (input: RunSyncInput) => Promise<Result<ReadonlyArray<RunSummary>, StepError>>;
+export type RunSync = (input: RunSyncInput) => Promise<Result<ReadonlyArray<SourceRun>, StepError>>;
 
 const failed = (step: string, cause: string, message: string): Result<never, StepError> => err({ step, cause, message });
 
@@ -71,25 +71,25 @@ const librariesFor = async (deps: RunSyncDeps, site: SiteRef, wanted: ReadonlyAr
   return ask ? chooseLibraries(deps, drives.value) : ok(drives.value);
 };
 
-const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, drives: ReadonlyArray<DriveSummary>): Promise<Result<RunSummary, StepError>> => {
+const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, drives: ReadonlyArray<DriveSummary>): Promise<Result<SourceRun, StepError>> => {
   if (drives.length === 0) return failed('sync', 'no-library', `no library chosen for ${site.name}`);
   deps.logger.info('sync.started', { siteId: site.id, libraries: drives.length });
   const summary = await deps.syncSite({ site, drives, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, concurrency: input.concurrency, dryRun: input.dryRun });
-  if (summary.ok) deps.prompt.show(renderSummary(site.name, summary.value, input.dryRun));
+  if (summary.ok) deps.prompt.show(renderSummary(site.name, summary.value.summary, input.dryRun));
   return summary;
 };
 
-const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<RunSummary, StepError>> => {
+const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('mailbox.started', {});
   const summary = await deps.syncMailbox({ maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, concurrency: input.concurrency, dryRun: input.dryRun, since: input.since });
-  if (summary.ok) deps.prompt.show(renderSummary(MAILBOX_NAME, summary.value, input.dryRun));
+  if (summary.ok) deps.prompt.show(renderSummary(MAILBOX_NAME, summary.value.summary, input.dryRun));
   return summary;
 };
 
-const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<RunSummary>, StepError>> => {
+const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
   const known = await deps.listSyncedSources();
   if (!known.ok) return known;
-  const summaries: RunSummary[] = [];
+  const summaries: SourceRun[] = [];
   if (known.value.some((candidate) => candidate.kind === 'mailbox')) {
     const mailbox = await syncTheMailbox(deps, input);
     if (!mailbox.ok) return mailbox;
@@ -168,13 +168,13 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
   return resolved.ok ? ok({ chosen: resolved.value, fromCache }) : resolved;
 };
 
-const oneSummary = (summary: Result<RunSummary, StepError>): Result<ReadonlyArray<RunSummary>, StepError> => (summary.ok ? ok([summary.value]) : summary);
+const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray<SourceRun>, StepError> => (summary.ok ? ok([summary.value]) : summary);
 
 // Each site is summarised as it lands, so a run over many of them reports along the way. A site that
 // fails stops the run there rather than burying the reason under the ones after it; every site
 // finished before it keeps what it wrote, and a re-run resumes from its own checkpoint.
-const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyArray<SiteRef>): Promise<Result<ReadonlyArray<RunSummary>, StepError>> => {
-  const summaries: RunSummary[] = [];
+const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyArray<SiteRef>): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
+  const summaries: SourceRun[] = [];
   for (const site of chosen) {
     const drives = await librariesFor(deps, site, input.driveIds, chosen.length === 1);
     if (!drives.ok) return drives;
@@ -185,7 +185,7 @@ const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyA
   return ok(summaries);
 };
 
-const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclude<Chosen, 'quit'>): Promise<Result<ReadonlyArray<RunSummary>, StepError>> => {
+const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclude<Chosen, 'quit'>): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
   if (chosen === 'update-all') return updateEverything(deps, input);
   if (chosen === 'mailbox') return oneSummary(await syncTheMailbox(deps, input));
   return runMany(deps, input, chosen);
