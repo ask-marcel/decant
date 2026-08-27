@@ -29,6 +29,7 @@ const attachment = (over: Partial<MailAttachment> = {}): MailAttachment => ({
   contentType: 'application/vnd.openxmlformats',
   size: 4096,
   isInline: false,
+  contentId: '',
   ...over,
 });
 

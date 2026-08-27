@@ -92,13 +92,28 @@ describe('reading a mailbox through the ask-marcel library', () => {
       'list-mail-attachments': ok({ value: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false }, { name: 'no id' }] }),
     });
 
-    expect(await reader.attachments('m1')).toEqual({ ok: true, value: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false }] });
+    expect(await reader.attachments('m1')).toEqual({
+      ok: true,
+      value: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false, contentId: '' }],
+    });
+  });
+
+  it('the content id an inline image is addressed by comes back with it', async () => {
+    const { reader, recorded } = readerFor({
+      'list-mail-attachments': ok({
+        value: [{ id: 'att1', name: 'image931066.png', contentType: 'image/png', size: 64760, isInline: true, contentId: 'image931066.png@1B0A3865' }],
+      }),
+    });
+    const listed = await reader.attachments('m1');
+
+    expect(listed.ok && listed.value[0]?.contentId).toBe('image931066.png@1B0A3865');
+    expect(recorded[0]?.params['select']).toContain('microsoft.graph.fileAttachment/contentId');
   });
 
   it('an attachment with nothing recorded but a name still reads', async () => {
     const { reader } = readerFor({ 'list-mail-attachments': ok({ value: [{ id: 'att1', name: 'x.docx' }] }) });
 
-    expect(await reader.attachments('m1')).toEqual({ ok: true, value: [{ id: 'att1', name: 'x.docx', contentType: '', size: 0, isInline: false }] });
+    expect(await reader.attachments('m1')).toEqual({ ok: true, value: [{ id: 'att1', name: 'x.docx', contentType: '', size: 0, isInline: false, contentId: '' }] });
   });
 
   it('an attachment converts to markdown by message and attachment together', async () => {

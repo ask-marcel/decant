@@ -13,6 +13,9 @@ export type MailAttachment = {
   readonly contentType: string;
   readonly size: number;
   readonly isInline: boolean;
+  // The `cid:` an inline image is addressed by in the body it belongs to. Empty when Graph reports
+  // none, which is every attachment that is not referenced from the message itself.
+  readonly contentId: string;
 };
 
 export type LinkedFile = {

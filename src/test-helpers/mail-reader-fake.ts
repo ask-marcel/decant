@@ -4,6 +4,10 @@ import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
 
+// Only an inline image carries a content id, so a seed states one when the test is about that and
+// leaves it out otherwise.
+export type MailAttachmentSeed = Omit<MailAttachment, 'contentId'> & { readonly contentId?: string };
+
 export type MailReaderSeed = {
   readonly folders?: ReadonlyArray<MailFolder>;
   readonly children?: Readonly<Record<string, ReadonlyArray<MailFolder>>>;
@@ -11,7 +15,7 @@ export type MailReaderSeed = {
   readonly pages?: ReadonlyArray<MailDeltaPage>;
   readonly conversations?: Readonly<Record<string, ReadonlyArray<MailMessage>>>;
   readonly bodies?: Readonly<Record<string, string>>;
-  readonly attachments?: Readonly<Record<string, ReadonlyArray<MailAttachment>>>;
+  readonly attachments?: Readonly<Record<string, ReadonlyArray<MailAttachmentSeed>>>;
   // Keyed by attachment id, so one attachment can convert to nothing while its bytes still arrive.
   readonly attachmentTexts?: Readonly<Record<string, string>>;
   readonly links?: Readonly<Record<string, ReadonlyArray<LinkedFile>>>;
@@ -65,7 +69,8 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
         calls.push(`attachments:${messageId}`);
         return err(seed.failAttachmentList);
       }
-      return forMessage(messageId, 'attachments', seed.attachments?.[messageId] ?? []);
+      const listed = (seed.attachments?.[messageId] ?? []).map((entry) => ({ ...entry, contentId: entry.contentId ?? '' }));
+      return forMessage(messageId, 'attachments', listed);
     },
     attachmentMarkdown: async (messageId, attachmentId) => {
       const refused = seed.failCalls?.['attachmentMarkdown'];

@@ -28,8 +28,22 @@ const toAttachment = (value: unknown): ReadonlyArray<MailAttachment> => {
   const name = readString(value, 'name');
   if (id === undefined || name === undefined || !isRecord(value)) return [];
   const size = value['size'];
-  return [{ id, name, contentType: readString(value, 'contentType') ?? '', size: typeof size === 'number' ? size : 0, isInline: value['isInline'] === true }];
+  return [
+    {
+      id,
+      name,
+      contentType: readString(value, 'contentType') ?? '',
+      size: typeof size === 'number' ? size : 0,
+      isInline: value['isInline'] === true,
+      contentId: readString(value, 'contentId') ?? '',
+    },
+  ];
 };
+
+// The library's own default select leaves `contentId` out, so an inline image would arrive with no
+// way to tell which `cid:` in the body it answers to. The cast is what Graph requires to reach a
+// field that only file attachments carry, and it is the same string the library uses internally.
+const ATTACHMENT_FIELDS = 'id,name,contentType,size,isInline,microsoft.graph.fileAttachment/contentId';
 
 // `extract-sharepoint-links-in-mail` reports a link it could not resolve with an `error` instead of
 // a driveItem; those are dropped rather than chased.
@@ -88,7 +102,7 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
     },
     messageMarkdown: async (messageId) => textOf('convert-mail-to-markdown', { messageId }),
     attachments: async (messageId) => {
-      const raw = await call('list-mail-attachments', { messageId });
+      const raw = await call('list-mail-attachments', { messageId, select: ATTACHMENT_FIELDS });
       return raw.ok ? ok(listOf(raw.value).flatMap(toAttachment)) : raw;
     },
     attachmentMarkdown: async (messageId, attachmentId) => textOf('convert-mail-attachment-to-markdown', { messageId, attachmentId, includeMetadata: 'true' }),
