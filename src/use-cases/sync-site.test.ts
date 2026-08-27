@@ -46,7 +46,7 @@ const run = async (
     progress,
     clock,
     kbRoot: 'kb',
-    convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake() }),
+    convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
   });
   const result = await syncSite({
     site,
@@ -361,7 +361,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       progress: createProgressFake(),
       clock,
       kbRoot: 'kb',
-      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake() }),
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
     const result = await syncSite({
@@ -548,7 +548,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
       progress: createProgressFake(),
       clock,
       kbRoot: 'kb',
-      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake() }),
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
     const result = await syncSite({ site, drives: [], maxBytes: 50 * 1024 * 1024, ocrLabel: 'off', concurrency: 1, dryRun: false });
@@ -586,7 +586,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
       progress: createProgressFake(),
       clock,
       kbRoot: 'kb',
-      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake() }),
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
     const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, ocrLabel: 'off', concurrency: 1, dryRun: false });
@@ -705,7 +705,7 @@ describe('a site name that collides with another site already on disk', () => {
       progress: createProgressFake(),
       clock: createClockFake(),
       kbRoot: 'kb',
-      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock: createClockFake(), logger: createLoggerFake() }),
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock: createClockFake(), logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
     await syncSite({ site: incoming, drives, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', concurrency: 1, dryRun: false });

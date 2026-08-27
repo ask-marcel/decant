@@ -14,6 +14,7 @@ import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import type { MailReaderSeed } from '../test-helpers/mail-reader-fake.ts';
 import { createMailReaderFake } from '../test-helpers/mail-reader-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
+import { createProgressFake } from '../test-helpers/progress-fake.ts';
 import { createConvertAttachment } from './convert-attachment.ts';
 import { createConvertFile } from './convert-file.ts';
 import { createRenderThread } from './render-thread.ts';
@@ -66,7 +67,7 @@ const run = async (
     clock: createClockFake(),
     mailboxRoot: 'kb/Mailbox',
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), unpackArchive: drive.localArchive }),
-    convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger }),
+    convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger, progress: createProgressFake() }),
   });
   const result = await render({ conversationId: CONV, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', linked: seeds.linked ?? {}, attachments: seeds.attachments ?? {} });
   return { outcome: result.ok ? result.value : undefined, files, logger, ok: result.ok };
