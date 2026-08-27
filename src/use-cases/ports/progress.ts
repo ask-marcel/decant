@@ -9,6 +9,10 @@ export type Progress = {
   readonly begin: (label: string) => void;
   // One more item is done, named for the reader. The visible count moves by one.
   readonly step: (label: string) => void;
+  // What the item named by `label` is doing right now, for a file whose conversion is several waits
+  // deep. One row carries one item's detail, so this shows only while that item is the one the line
+  // names; a step from any other is held rather than drawn against a name it does not belong to.
+  readonly detail: (label: string, what: string) => void;
   // The run is over; the line is closed so whatever prints next starts clean.
   readonly done: () => void;
 };

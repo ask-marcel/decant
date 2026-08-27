@@ -97,6 +97,64 @@ describe('showing how far a conversion has got', () => {
   });
 });
 
+describe('saying how much is in flight and what each item is doing', () => {
+  it('the line says how many are in flight, so a window of eight does not read as one slow file', () => {
+    const { bar, writes } = capture();
+
+    bar.start(25, 'Espace Contoso / Documents');
+    bar.begin('A.docx');
+    bar.begin('B.docx');
+    bar.begin('C.docx');
+
+    expect(writes.at(-1)).toContain('0/25 (3 running)');
+  });
+
+  it('a lone item says nothing about how many are running, since one is not news', () => {
+    const { bar, writes } = capture();
+
+    bar.start(25, 'Espace Contoso / Documents');
+    bar.begin('A.docx');
+
+    expect(writes.at(-1)).toContain('0/25  A.docx');
+    expect(writes.at(-1)).not.toContain('running');
+  });
+
+  it('a step reported by the item the line names is shown beside it', () => {
+    const { bar, writes } = capture();
+
+    bar.start(2, 'Espace Contoso / Documents');
+    bar.begin('A.docx');
+    bar.detail('A.docx', 'reading picture 3/6');
+
+    expect(writes.at(-1)).toContain('A.docx \u00b7 reading picture 3/6');
+  });
+
+  it('a step reported by an item the line does not name is held back, never shown against another', () => {
+    const { bar, writes } = capture();
+
+    bar.start(2, 'Espace Contoso / Documents');
+    bar.begin('A.docx');
+    bar.begin('B.docx');
+    bar.detail('B.docx', 'rendering the slides');
+
+    expect(writes.at(-1)).toContain('A.docx');
+    expect(writes.at(-1)).not.toContain('rendering the slides');
+  });
+
+  it('finishing an item drops its step, so the next name never inherits the last one', () => {
+    const { bar, writes } = capture();
+
+    bar.start(2, 'Espace Contoso / Documents');
+    bar.begin('A.docx');
+    bar.detail('A.docx', 'reading the pages');
+    bar.step('A.docx');
+    bar.begin('B.docx');
+
+    expect(writes.at(-1)).toContain('B.docx');
+    expect(writes.at(-1)).not.toContain('reading the pages');
+  });
+});
+
 describe('keeping the counter to one row', () => {
   it('a line too wide for the terminal is cut rather than wrapped onto a row it cannot clear', () => {
     const writes: string[] = [];

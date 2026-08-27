@@ -15,6 +15,9 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
   let done = 0;
   let what = '';
   let running = new Set<string>();
+  // What each running item last reported. Keyed by label so the row can draw the one it names and
+  // hold the rest, rather than showing one file's step beside another file's name.
+  let steps = new Map<string, string>();
   // Names the oldest still-running item, never a joined list: several real paths joined with ", "
   // routinely outgrow one terminal row, and `\r\x1b[K` only clears the row the cursor sits on, so a
   // wrapped write leaves the previous row's tail on screen and the display garbles. The oldest entry
@@ -38,7 +41,13 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
   const render = (label: string): void => {
     if (total === 0) return;
     const [oldest] = running;
-    const line = `${what} ${done}/${total}  ${oldest ?? label}`;
+    const named = oldest ?? label;
+    const step = steps.get(named);
+    // Only worth saying when more than one is in flight: one running item is not news, and the row
+    // is the scarcest thing here.
+    const inFlight = running.size > 1 ? ` (${running.size} running)` : '';
+    const doing = step === undefined ? '' : ` \u00b7 ${step}`;
+    const line = `${what} ${done}/${total}${inFlight}  ${named}${doing}`;
     write(`\r\x1b[K${fit(line)}`);
   };
   return {
@@ -47,13 +56,20 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
       done = 0;
       what = label;
       running = new Set();
+      steps = new Map();
     },
     begin: (label) => {
       running.add(label);
+      steps.delete(label);
+      render(label);
+    },
+    detail: (label, doing) => {
+      steps.set(label, doing);
       render(label);
     },
     step: (label) => {
       running.delete(label);
+      steps.delete(label);
       done += 1;
       render(label);
     },
@@ -68,6 +84,7 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
 export const createNoProgress = (): Progress => ({
   start: () => undefined,
   begin: () => undefined,
+  detail: () => undefined,
   step: () => undefined,
   done: () => undefined,
 });
