@@ -11,6 +11,7 @@ export type Options = {
   readonly dryRun: boolean;
   readonly maxSizeMb: number;
   readonly ocr: boolean;
+  readonly refresh: boolean;
   readonly ocrLang: string;
   readonly concurrency: number;
   readonly assumeYes: boolean;
@@ -26,6 +27,7 @@ const DEFAULTS: Options = {
   dryRun: false,
   maxSizeMb: 50,
   ocr: true,
+  refresh: false,
   ocrLang: 'en',
   concurrency: 4,
   assumeYes: false,
@@ -66,6 +68,7 @@ const withSince = (options: Options, value: string): Result<Options, OptionsErro
 const withFlag = (options: Options, flag: string): Result<Options, OptionsError> => {
   if (flag === '--dry-run') return ok({ ...options, dryRun: true });
   if (flag === '--no-ocr') return ok({ ...options, ocr: false });
+  if (flag === '--refresh') return ok({ ...options, refresh: true });
   if (flag === '--mailbox') return ok({ ...options, mailbox: true });
   if (flag === '--yes' || flag === '-y') return ok({ ...options, assumeYes: true });
   return err({ kind: 'bad-option', message: `unknown option: ${flag}` });
@@ -103,6 +106,7 @@ export const USAGE = [
   '  --max-size-mb <n>   skip files larger than this (default 50)',
   '  --concurrency <n>   how many items to convert at once (default 4)',
   '  --no-ocr            do not read text out of images or scanned PDFs',
+  '  --refresh           list the sites afresh instead of showing the ones last seen',
   '  --ocr-lang <code>   language for reading images and scanned PDFs (default en)',
   '  --yes, -y           take the saved choices instead of asking',
 ].join('\n');

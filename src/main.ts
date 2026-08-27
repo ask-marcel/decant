@@ -25,6 +25,7 @@ const run = async (): Promise<number> => {
     dryRun: options.value.dryRun,
     mailbox: options.value.mailbox,
     since: options.value.since,
+    refresh: options.value.refresh,
   });
   if (!summaries.ok) {
     printLine(`failed at ${summaries.error.step}: ${summaries.error.message}`);

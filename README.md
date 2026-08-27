@@ -64,6 +64,7 @@ clear message instead of waiting for input.
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
 | `--concurrency <n>` | How many items to convert at once (default 4); `1` is strictly sequential |
 | `--no-ocr` | Do not read text out of images or scanned PDFs |
+| `--refresh` | List the sites afresh instead of drawing the picker from the ones last seen |
 | `--ocr-lang <code>` | Language used to read images and scanned PDFs (default `en`) |
 
 ## What lands in `kb/`
