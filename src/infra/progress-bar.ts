@@ -27,7 +27,10 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
   // the display garbles. Cut by code point, so a character is never left half-written.
   const fit = (line: string): string => {
     const shown = [...line];
-    const room = width();
+    // One column short of the row, never the whole row. Filling the last column leaves the cursor in
+    // a deferred-wrap state, and the `\r` that follows then returns to the start of the NEXT row, so
+    // the line stacks instead of rewriting itself and the run reads as a wall of repeats.
+    const room = width() - 1;
     if (shown.length <= room) return line;
     return `${shown.slice(0, Math.max(0, room - 1)).join('')}\u2026`;
   };

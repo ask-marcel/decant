@@ -114,6 +114,19 @@ describe('keeping the counter to one row', () => {
     expect(shown).toContain('MOOV Leadership Team / 文档');
   });
 
+  it('the line never fills the last column, so the cursor cannot defer a wrap and stack the rows', () => {
+    const writes: string[] = [];
+    const bar = createProgressBar(
+      (text) => writes.push(text),
+      () => 40
+    );
+
+    bar.start(25, 'SW Project (Lidl instance) / 文档');
+    bar.begin('General/04_IT_Security_overview/PT Findings for Lidl.xlsx');
+
+    expect([...(writes.at(-1) ?? '').replace('\r\x1b[K', '')]).toHaveLength(39);
+  });
+
   it('the source survives the cut, since it is the part a path cannot tell you', () => {
     const writes: string[] = [];
     const bar = createProgressBar(
