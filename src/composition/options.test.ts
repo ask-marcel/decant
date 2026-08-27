@@ -7,7 +7,7 @@ describe('reading what the operator asked for', () => {
   it('running the command with nothing else picks a source and writes for real', () => {
     expect(parse('')).toEqual({
       ok: true,
-      value: { command: 'sync', driveIds: [], dryRun: false, maxSizeMb: 50, ocr: true, ocrLang: 'en', concurrency: 4, assumeYes: false, mailbox: false, refresh: false },
+      value: { command: 'sync', driveIds: [], dryRun: false, maxSizeMb: 50, ocr: true, ocrLang: 'auto', concurrency: 4, assumeYes: false, mailbox: false, refresh: false },
     });
   });
 

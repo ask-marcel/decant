@@ -14,7 +14,7 @@ used as a library, which owns authentication, paging and document conversion. Se
 
 - [Bun](https://bun.sh) 1.2 or newer
 - A Microsoft 365 account already signed in: run `ask-marcel-office login` once (a browser opens)
-- Python 3 with [`rapidocr`](https://pypi.org/project/rapidocr/) installed, to read text out of images and scanned PDFs (optional; without it the files are still copied)
+- Python 3 with [`rapidocr`](https://pypi.org/project/rapidocr/) installed, to read text out of images and scanned PDFs (optional; without it the files are still copied). It fetches the models it needs on first use, one per language it reads in
 
 ## Install
 
@@ -65,7 +65,7 @@ clear message instead of waiting for input.
 | `--concurrency <n>` | How many items to convert at once (default 4); `1` is strictly sequential |
 | `--no-ocr` | Do not read text out of images or scanned PDFs |
 | `--refresh` | List the sites afresh instead of drawing the picker from the ones last seen |
-| `--ocr-lang <code>` | Language used to read images and scanned PDFs (default `en`) |
+| `--ocr-lang <code>` | Force one language for images and scanned PDFs (default `auto`, chosen per image) |
 
 ## What lands in `kb/`
 
@@ -131,6 +131,15 @@ pdf: ./Roadmap.pptx.pdf
 | jpg, png, gif, webp, bmp, tiff, heic | the image, plus markdown holding the text read out of it |
 | svg | the file, plus a markdown note pointing at it |
 | anything else | left in SharePoint and named in `_sync-report.md` |
+
+The language an image is read in is chosen per image, not per run. Nothing about a file says which
+language it holds, so the run finds out by reading it: RapidOCR's `ch` model is the only one whose
+dictionary holds CJK and Latin characters alike, so it reads first, and anything it finds no
+ideographs in is read again with `latin`, which keeps the spaces between words that every `ch` model
+runs together and covers the accented characters Dutch, French and German need. An image holding no
+text at all is read only once. Each markdown companion records the model that read it, as
+`ocr: rapidocr (ch)` or `ocr: rapidocr (latin)`. Pass `--ocr-lang` with a RapidOCR language (`ch`,
+`en`, `japan`, `korean`, `cyrillic`, ...) to force one for the whole run instead.
 
 A picture inside a document does not survive the conversion to markdown: it becomes a bare
 `[image]`, usually with no alt text, so an architecture diagram contributes one word that says

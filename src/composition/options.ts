@@ -28,7 +28,7 @@ const DEFAULTS: Options = {
   maxSizeMb: 50,
   ocr: true,
   refresh: false,
-  ocrLang: 'en',
+  ocrLang: 'auto',
   concurrency: 4,
   assumeYes: false,
   mailbox: false,
@@ -107,6 +107,6 @@ export const USAGE = [
   '  --concurrency <n>   how many items to convert at once (default 4)',
   '  --no-ocr            do not read text out of images or scanned PDFs',
   '  --refresh           list the sites afresh instead of showing the ones last seen',
-  '  --ocr-lang <code>   language for reading images and scanned PDFs (default en)',
+  '  --ocr-lang <code>   force one language for images and scanned PDFs (default auto, per image)',
   '  --yes, -y           take the saved choices instead of asking',
 ].join('\n');
