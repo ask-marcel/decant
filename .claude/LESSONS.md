@@ -217,3 +217,32 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   to say the pages are Loop pages. Matching `/contentstorage/CSP_` labelled every shared workspace
   and left the operator's own workspace looking like a site named `My workspace`. Match the path,
   never the id shape that follows it.
+
+## 2026-08-27
+
+- [gotcha] `expect([undefined]).toEqual([])` PASSES in Bun. Verified in isolation, not inferred: an
+  array holding one `undefined` satisfies an assertion that it is empty. Three assertions in
+  `shared-site.test.ts` read as "nothing came back" while a stray `undefined` would have satisfied
+  them, which is why a guard clause (`if (site === undefined) continue`) survived mutation with the
+  whole condition replaced by `false`: the mutant pushed `undefined` into the result and every test
+  still agreed. `toHaveLength(0)` beside the `toEqual` is what kills it. Anywhere a function can
+  return `undefined` into a collection, pin the count as well as the contents.
+
+- [mistake] Estimated a parallelisation win from timings taken by shelling out to the CLI, and was
+  wrong by an order of magnitude. `bunx ask-marcel-office list-accessible-drives` measured 39s and
+  `search-all-accessible-sites` 10s, so running them together looked like it would take a minute
+  down to forty seconds. In-process, through the library with a warm token and connection, the whole
+  listing was already 33s and became 30s: about 10%, not 50%. A process-spawn measurement carries
+  cold auth and module loading that the real call path does not pay. Time the code as it actually
+  runs before promising a number, or promise no number.
+
+- [gotcha] A terminal block that rewrites itself in place climbs by the height of the PREVIOUS draw,
+  never the one it is about to make, which is why `src/infra/progress-bar.ts` keeps a `drawn`
+  counter. A third `begin()` grows the block from three rows to four and the escape it writes is
+  `\x1b[2A`, climbing the three already on screen, not `\x1b[3A`. Writing the new height instead
+  lands the cursor a row above the block, and every redraw walks it further up the screen. The
+  matching trap is a climb of zero: a terminal reads `\x1b[0A` as `\x1b[1A`, so the first draw must
+  emit no climb sequence at all rather than a zero one. `\x1b[J` after the last row is what wipes the
+  rows a shrinking block no longer fills, since `\x1b[K` only clears the row the cursor sits on. The
+  `\n` between rows lands at column 0 because `onlcr` is set on a pty, and libuv keeps it set even in
+  raw mode, so no `\r` is needed per row.
