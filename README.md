@@ -133,13 +133,18 @@ pdf: ./Roadmap.pptx.pdf
 
 A picture inside a document does not survive the conversion to markdown: it becomes a bare
 `[image]`, usually with no alt text, so an architecture diagram contributes one word that says
-nothing. Word, Excel, PowerPoint and PDF files are therefore also asked for the pictures they
-embed, which land in a `<name>.media/` folder beside the markdown and are listed under an
-`## Images` heading at its end. Each is read for its text the same way a photo in a library is, so
-the labels inside a diagram become searchable; with `--no-ocr` the pictures are still kept, just
-without the reading. The placeholders are unnumbered, so the section sits at the end rather than
-pretending to know where in the prose each picture stood. Legacy `doc`, `xls` and `ppt` are not
-asked, since the source refuses them, and neither is anything plain-text.
+nothing. Word and Excel files are therefore also asked for the pictures they embed, which land in a
+`<name>.media/` folder beside the markdown and are listed under an `## Images` heading at its end.
+Each is read for its text the same way a photo in a library is, so the labels inside a diagram
+become searchable; with `--no-ocr` the pictures are still kept, just without the reading. The
+placeholders are unnumbered, so the section sits at the end rather than pretending to know where in
+the prose each picture stood.
+
+Only those two kinds are asked. A PDF is kept whole beside its markdown and a deck is rendered to
+one, so their pictures are already on disk in openable form: taking them out again would duplicate
+what is there, and it costs the most exactly where it buys the least, since one 14 MB manual answers
+with 172 images and tens of minutes of reading. Legacy `doc`, `xls` and `ppt` are refused by the
+source, and a plain-text kind has nothing embedded to ask about.
 
 A document carries more than the text it shows. Every conversion, in SharePoint and on mail
 attachments alike, also asks for the side channel the rendered body hides: comments and threaded

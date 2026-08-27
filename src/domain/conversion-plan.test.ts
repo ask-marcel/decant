@@ -179,10 +179,12 @@ const EMBEDS: ReadonlyArray<readonly [string, boolean]> = [
   ['docm', true],
   ['xlsx', true],
   ['xlsm', true],
-  ['pptx', true],
-  ['pptm', true],
-  ['pdf', true],
   ['doc', false],
+  // Kept out on purpose: each already writes a copy you can look at, so extracting the pictures
+  // duplicates what is there. A PDF keeps the original beside its markdown; a deck keeps a render.
+  ['pdf', false],
+  ['pptx', false],
+  ['pptm', false],
   ['xls', false],
   ['ppt', false],
   ['txt', false],

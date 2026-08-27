@@ -88,10 +88,14 @@ const outputsFor = (route: ConversionRoute, name: string): ReadonlyArray<Planned
   ];
 };
 
-// The kinds whose pictures can be taken out of them: the OOXML families and PDF. The legacy binary
-// formats (`doc`, `xls`, `ppt`) are refused by the source, so asking on their behalf spends a round
-// trip to be told no, and a plain-text kind has nothing embedded to ask about in the first place.
-const EMBEDS_IMAGES: ReadonlySet<string> = new Set(['docm', 'docx', 'xlsm', 'xlsx', 'pptm', 'pptx', 'pdf']);
+// The kinds whose pictures are worth taking out of them: only the ones that keep no copy you can
+// look at. A Word or Excel file is converted to text alone, so a diagram inside it survives nowhere
+// else. A PDF is written beside its markdown and a deck is rendered to one, so their pictures are
+// already on disk in openable form; pulling them out again duplicates what is there and costs the
+// most where it buys the least (one 14 MB manual answered with 172 images, tens of minutes of
+// reading). The legacy binary formats are refused by the source, so asking spends a round trip to
+// be told no, and a plain-text kind has nothing embedded to ask about at all.
+const EMBEDS_IMAGES: ReadonlySet<string> = new Set(['docm', 'docx', 'xlsm', 'xlsx']);
 
 export const embedsImages = (name: string): boolean => {
   const extension = extensionOf(name);
