@@ -53,6 +53,15 @@ describe('converting one document out of a library', () => {
     expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain('# Contrat');
   });
 
+  it('a meeting invitation in a library is read down to the meeting', async () => {
+    const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'SUMMARY:Kick-off', 'DTSTART:20260812T060000Z', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    const { files } = await run({ name: 'invite.ics' }, { reader: { markdown: { '01ABC': ics } } });
+    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/invite.ics.md') ?? '';
+
+    expect(written).toContain('## Kick-off');
+    expect(written).not.toContain('BEGIN:VEVENT');
+  });
+
   it('the markdown carries where it came from, when it changed and who changed it', async () => {
     const { files } = await run({});
     const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md') ?? '';

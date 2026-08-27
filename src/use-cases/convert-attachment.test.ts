@@ -35,6 +35,10 @@ const attachment = (over: Partial<MailAttachment> = {}): MailAttachment => ({
   kind: over.kind ?? 'file',
 });
 
+const ICS = ['BEGIN:VCALENDAR', 'METHOD:REQUEST', 'BEGIN:VEVENT', 'SUMMARY:smartMOOV x Lidl', 'DTSTART:20260812T060000Z', 'LOCATION:Teams', 'END:VEVENT', 'END:VCALENDAR'].join(
+  '\r\n'
+);
+
 const run = async (
   over: Partial<MailAttachment> = {},
   seeds: { reader?: MailReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed; drive?: DriveReaderSeed; maxBytes?: number; rendered?: string } = {}
@@ -187,6 +191,22 @@ describe('keeping what was attached to a mail', () => {
     const { outcome } = await run({ name: 'logo-signature.png', isInline: true });
 
     expect(outcome.kind).toBe('converted');
+  });
+
+  it('a meeting invitation is read down to the meeting, not kept as the file it came in', async () => {
+    const { outcome, files } = await run({ name: 'invite.ics', contentType: 'text/calendar' }, { reader: { attachmentTexts: { att1: ICS } } });
+    const written = files.written.get(`${FOLDER}/invite.ics.md`) ?? '';
+
+    expect(outcome.kind).toBe('converted');
+    expect(written).toContain('## smartMOOV x Lidl');
+    expect(written).toContain('**When:** 2026-08-12 06:00 (UTC)');
+    expect(written).toContain('**Where:** Teams');
+  });
+
+  it('an invitation holding no meeting says so rather than writing an empty record', async () => {
+    const { files } = await run({ name: 'invite.ics', contentType: 'text/calendar' }, { reader: { attachmentTexts: { att1: 'BEGIN:VCALENDAR\r\nEND:VCALENDAR' } } });
+
+    expect(files.written.get(`${FOLDER}/invite.ics.md`)).toContain(NO_TEXT_NOTE);
   });
 
   it('an email attached to an email is written from what was rendered of it, having no bytes of its own', async () => {

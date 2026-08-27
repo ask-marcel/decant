@@ -126,10 +126,17 @@ pdf: ./Roadmap.pptx.pdf
 | pptx | markdown for the text, plus a PDF of the slides (markdown alone when the source will not render it) |
 | ppt, rtf | a PDF, plus markdown read back from it |
 | pdf | the original, plus markdown holding its text layer |
+| ics | one markdown record of the meeting: what it is called, when, where, who was asked |
 | zip | a folder, one markdown file per document inside, and the archive itself |
 | jpg, png, gif, webp, bmp, tiff, heic | the image, plus markdown holding the text read out of it |
 | svg | the file, plus a markdown note pointing at it |
 | anything else | left in SharePoint and named in `_sync-report.md` |
+
+A meeting invitation is read rather than kept. What survives is the summary, the time exactly as the
+invitation states it (no timezone is converted, since there is no zone database here to do it with),
+the location, the organiser, everyone asked, the recurrence rule, and whether the invitation is a
+cancellation. What goes is the block of daylight-saving rules, the vendor properties, and the
+description, which repeats the mail the invitation rode in on.
 
 A picture inside a document does not survive the conversion to markdown: it becomes a bare
 `[image]`, usually with no alt text, so an architecture diagram contributes one word that says

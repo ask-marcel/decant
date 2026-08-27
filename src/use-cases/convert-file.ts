@@ -1,6 +1,7 @@
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import { embedsImages, planFile } from '../domain/conversion-plan.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
+import { renderCalendar } from '../domain/icalendar.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_SLIDES_NOTE, NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
@@ -135,6 +136,16 @@ const convertDocument = async (context: Context): Promise<ConvertOutcome> => {
 // A deck the source will not render is not a deck we cannot read: the text comes from elsewhere and
 // arrives intact, so it is written on its own rather than the whole document being given up on. Only
 // the old formats truly need the render, since their text is read back out of it.
+// The same reading a mail attachment gets: the library passes an `.ics` through as text, and what a
+// reader wants out of it is a handful of fields rather than the file around them.
+const convertCalendar = async (context: Context): Promise<ConvertOutcome> => {
+  const passed = await context.deps.reader.markdown({ driveId: context.input.driveId, itemId: context.input.item.id });
+  if (!passed.ok) return failure(passed.error);
+  const read = renderCalendar(passed.value);
+  const written = await writeMarkdown(context, `${context.name}.md`, context.stamp, read.length === 0 ? NO_TEXT_NOTE : read);
+  return written.ok ? { kind: 'converted', outputs: written.value } : failure(written.error);
+};
+
 const convertSlides = async (context: Context): Promise<ConvertOutcome> => {
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
   const rendered = await context.deps.reader.pdf(ref);
@@ -246,6 +257,7 @@ const writeArchiveEntries = async (
 
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<ConvertOutcome>>> = {
   document: convertDocument,
+  calendar: convertCalendar,
   slides: convertSlides,
   'legacy-slides': convertSlides,
   pdf: convertPdf,

@@ -47,6 +47,7 @@ const SUPPORTED: ReadonlyArray<readonly [string, ConversionRoute]> = [
   ['tiff', 'image'],
   ['webp', 'image'],
   ['svg', 'vector'],
+  ['ics', 'calendar'],
 ];
 
 describe('the formats this tool handles', () => {
@@ -60,6 +61,14 @@ describe('the formats this tool handles', () => {
 });
 
 describe('deciding what to produce for a document found in SharePoint', () => {
+  it('a meeting invitation becomes a single markdown record, the file itself being unreadable', () => {
+    expect(planFile({ name: 'invite.ics', size: 1000 }, CAP)).toEqual({
+      kind: 'process',
+      route: 'calendar',
+      outputs: [{ relName: 'invite.ics.md', role: 'markdown' }],
+    });
+  });
+
   it('a name ending in a space is still the kind its extension says it is', () => {
     expect(planFile({ name: 'Budget.xlsx ', size: 1000 }, CAP).kind).toBe('process');
   });

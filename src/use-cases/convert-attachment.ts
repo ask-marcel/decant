@@ -1,6 +1,7 @@
 import { planFile } from '../domain/conversion-plan.ts';
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
+import { renderCalendar } from '../domain/icalendar.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
@@ -140,6 +141,17 @@ const writeArchiveEntries = async (context: Context, folder: string, archivePath
   return { kind: 'converted', outputs, primary: archivePath };
 };
 
+// An invitation is read rather than kept. The library has no iCalendar parser and passes the file
+// through as text, which is where the reading starts: a handful of fields out of a file that is
+// otherwise daylight-saving rules, vendor properties, and a description repeating the mail itself.
+const asCalendar = async (context: Context): Promise<AttachmentOutcome> => {
+  const passed = await context.deps.reader.attachmentMarkdown(context.input.messageId, context.input.attachment.id);
+  if (!passed.ok) return failure(passed.error);
+  const read = renderCalendar(passed.value);
+  const written = await writeMarkdown(context, context.input.stamp, read.length === 0 ? NO_TEXT_NOTE : read);
+  return written.ok ? { kind: 'converted', outputs: [written.value], primary: written.value } : failure(written.error);
+};
+
 // An email attached to an email is not a file to convert: Graph answers a request for its bytes
 // with the item itself, and the library renders it from the message instead. Its name carries no
 // extension either, so the routing that reads one has nothing to go on and is not consulted.
@@ -151,6 +163,7 @@ const asEmbeddedMail = async (context: Context): Promise<AttachmentOutcome> => {
 
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<AttachmentOutcome>>> = {
   document: asMarkdown,
+  calendar: asCalendar,
   slides: asSlides,
   'legacy-slides': asSlides,
   pdf: asPdf,
