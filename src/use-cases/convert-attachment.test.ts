@@ -45,7 +45,6 @@ const run = async (
     folder: FOLDER,
     stamp,
     maxBytes: seeds.maxBytes ?? 50 * 1024 * 1024,
-    ocrLabel: 'paddleocr (en)',
   });
   return { outcome, files };
 };

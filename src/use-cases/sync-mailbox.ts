@@ -40,7 +40,6 @@ export type SyncMailboxDeps = {
 
 export type SyncMailboxInput = {
   readonly maxBytes: number;
-  readonly ocrLabel: string;
   readonly dryRun: boolean;
   // How many conversations to render at once. Attachments are stored under a name fixed by their
   // content, so a window of conversations writes without racing; the store threads through as each
@@ -184,7 +183,6 @@ const renderOne = async (
   const rendered = await deps.renderThread({
     conversationId,
     maxBytes: input.maxBytes,
-    ocrLabel: input.ocrLabel,
     linked: state.linked,
     attachments: state.attachments,
   });

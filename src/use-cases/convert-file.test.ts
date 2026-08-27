@@ -43,7 +43,6 @@ const run = async (
     site: 'Espace Contoso',
     library: 'Documents',
     maxBytes: 50 * 1024 * 1024,
-    ocrLabel: 'paddleocr (en)',
   });
   return { outcome, files, reader, logger, progress };
 };

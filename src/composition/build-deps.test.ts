@@ -40,7 +40,7 @@ describe('wiring the command together', () => {
       clock: createClockFake(),
     });
 
-    const summaries = await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'rapidocr (en)', concurrency: 1, dryRun: false });
+    const summaries = await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(summaries).toEqual({ ok: true, value: [] });
   });
@@ -63,7 +63,7 @@ describe('wiring the command together', () => {
       clock: createClockFake(),
     });
 
-    const summaries = await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+    const summaries = await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(summaries.ok && summaries.value).toHaveLength(1);
     expect(JSON.parse(files.written.get(statePath) ?? '{}').drives['b!two'].deltaLink).toBe('cursor-1');
@@ -93,7 +93,7 @@ describe('wiring the command together', () => {
       clock: createClockFake(),
     });
 
-    await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+    await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(Object.keys(JSON.parse(files.written.get(second) ?? '{}').drives)).toEqual(['b!beta']);
   });
@@ -109,7 +109,7 @@ describe('wiring the command together', () => {
       clock: createClockFake(),
     });
 
-    await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+    await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(JSON.parse(files.written.get('kb/.sites.json') ?? '{}')).toMatchObject({ version: 1, sites: [{ id: 'contoso,1,2', name: 'Espace Contoso' }] });
   });
@@ -125,7 +125,7 @@ describe('wiring the command together', () => {
     const prompt = createPromptFake(['q']);
     const deps = buildDeps(configFor({}), { files, logger: createLoggerFake(), reader, ocr: createOcrFake(), prompt, clock: createClockFake() });
 
-    await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+    await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(prompt.shown.join('\n')).toContain('Site From Last Time');
     expect(reader.calls).not.toContain('listSites');
@@ -156,6 +156,6 @@ describe('wiring the command together', () => {
       clock: createClockFake(),
     });
 
-    expect(await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false })).toEqual({ ok: true, value: [] });
+    expect(await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false })).toEqual({ ok: true, value: [] });
   });
 });

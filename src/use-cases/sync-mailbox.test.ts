@@ -85,7 +85,6 @@ const run = async (
   });
   const result = await syncMailbox({
     maxBytes: 50 * 1024 * 1024,
-    ocrLabel: 'paddleocr (en)',
     concurrency: seeds.concurrency ?? 1,
     dryRun: seeds.dryRun ?? false,
     since: seeds.since,

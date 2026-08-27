@@ -35,7 +35,6 @@ export type SyncSiteInput = {
   readonly site: SiteRef;
   readonly drives: ReadonlyArray<DriveSummary>;
   readonly maxBytes: number;
-  readonly ocrLabel: string;
   readonly dryRun: boolean;
   // How many items to convert at once. Each item's outputs are its own, so a window of them runs in
   // parallel and the manifest updates fold afterwards; a window interrupted re-runs, writing the
@@ -264,7 +263,6 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
     site: input.site.name,
     library: drive.name,
     maxBytes: input.maxBytes,
-    ocrLabel: input.ocrLabel,
   });
   if (outcome.kind === 'failed') {
     deps.logger.warn('convert.failed', { itemId: item.id, reason: outcome.reason });

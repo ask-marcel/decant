@@ -34,7 +34,6 @@ export type RenderThreadDeps = {
 export type RenderThreadInput = {
   readonly conversationId: string;
   readonly maxBytes: number;
-  readonly ocrLabel: string;
   // Files already pulled from SharePoint by an earlier thread, so one link is fetched once.
   readonly linked: Readonly<Record<string, LinkedRecord>>;
   // The shared attachment store as earlier threads left it, keyed by content address, so a file
@@ -154,7 +153,6 @@ const pullLinked = async (deps: RenderThreadDeps, input: RenderThreadInput, driv
     site: 'Mailbox',
     library: LINKED_FOLDER,
     maxBytes: input.maxBytes,
-    ocrLabel: input.ocrLabel,
   });
   if (outcome.kind === 'converted') return { record: { paths: outcome.outputs } };
   deps.logger.warn(outcome.kind === 'skipped' ? 'linked.skipped' : 'linked.failed', { itemId, name, cause: outcome.reason });
@@ -196,7 +194,7 @@ const placeAttachment = async (
   if (seen !== undefined) return { paths: seen.paths };
   const asName = disambiguateSegment(attachment.name, hash);
   const folder = `${deps.mailboxRoot}/${ATTACHMENTS_FOLDER}`;
-  const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, asName });
+  const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, asName });
   if (outcome.kind === 'skipped') return { paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, input.maxBytes) } };
   if (outcome.kind === 'failed') return { paths: [], failed: { path: attachment.name, reason: outcome.reason } };
   store[hash] = { name: asName, paths: outcome.outputs };

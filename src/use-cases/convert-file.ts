@@ -32,7 +32,6 @@ export type ConvertFileInput = {
   readonly site: string;
   readonly library: string;
   readonly maxBytes: number;
-  readonly ocrLabel: string;
 };
 
 export type ConvertOutcome =

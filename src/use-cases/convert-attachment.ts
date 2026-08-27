@@ -25,7 +25,6 @@ export type ConvertAttachmentInput = {
   readonly folder: string;
   readonly stamp: DocumentStamp;
   readonly maxBytes: number;
-  readonly ocrLabel: string;
   // What to call the file on disk. Given when two different attachments of one conversation share
   // a name, so both are kept rather than one overwriting the other.
   readonly asName?: string;

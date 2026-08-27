@@ -20,7 +20,6 @@ const run = async (): Promise<number> => {
     siteUrl: options.value.siteUrl,
     driveIds: options.value.driveIds,
     maxBytes: options.value.maxSizeMb * MB,
-    ocrLabel: options.value.ocr ? `rapidocr (${options.value.ocrLang})` : 'off',
     concurrency: options.value.concurrency,
     dryRun: options.value.dryRun,
     mailbox: options.value.mailbox,

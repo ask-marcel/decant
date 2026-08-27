@@ -70,7 +70,7 @@ const run = async (
       return ok(EMPTY_SUMMARY);
     },
   });
-  const result = await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'paddleocr (en)', concurrency: 4, dryRun: false, ...over });
+  const result = await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, concurrency: 4, dryRun: false, ...over });
   return {
     calls,
     mailboxRuns,
@@ -340,7 +340,7 @@ describe('when the knowledge base itself cannot be read', () => {
       syncMailbox: async () => ok(EMPTY_SUMMARY),
     });
 
-    await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+    await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(prompt.shown[0]).toContain('Espace Contoso  (new)');
     expect(calls).toHaveLength(1);
@@ -359,7 +359,7 @@ describe('when the knowledge base itself cannot be read', () => {
       rememberSites: async () => undefined,
     });
 
-    expect((await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false })).ok).toBe(false);
+    expect((await runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false })).ok).toBe(false);
   });
 });
 
@@ -407,7 +407,7 @@ describe('when one site in a refresh fails', () => {
       syncMailbox: async () => ok(EMPTY_SUMMARY),
     });
 
-    const result = await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+    const result = await runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(result.ok).toBe(false);
     expect(calls).toHaveLength(1);
@@ -545,7 +545,7 @@ describe('when a source run fails after it began', () => {
       syncMailbox: async () => ({ ok: false, error: { step: 'mailbox', cause: 'auth', message: 'token expired' } }),
     });
 
-    const result = await runSync({ command: 'sync', mailbox: true, driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+    const result = await runSync({ command: 'sync', mailbox: true, driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(result.ok).toBe(false);
     expect(prompt.shown.some((text) => text.startsWith('Mailbox:'))).toBe(false);
@@ -572,7 +572,7 @@ describe('when a source run fails after it began', () => {
       syncMailbox: async () => ({ ok: false, error: { step: 'mailbox', cause: 'auth', message: 'token expired' } }),
     });
 
-    const result = await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+    const result = await runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(result.ok).toBe(false);
     expect(calls).toEqual([]);

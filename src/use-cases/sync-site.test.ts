@@ -52,7 +52,6 @@ const run = async (
     site,
     drives: seeds.drives ?? drives,
     maxBytes: 50 * 1024 * 1024,
-    ocrLabel: 'paddleocr (en)',
     concurrency: seeds.concurrency ?? 1,
     dryRun: seeds.dryRun ?? false,
   });
@@ -371,7 +370,6 @@ describe('syncing a SharePoint library into the knowledge base', () => {
         { id: 'b!two', name: 'Site Assets' },
       ],
       maxBytes: 50 * 1024 * 1024,
-      ocrLabel: 'paddleocr (en)',
       concurrency: 1,
       dryRun: false,
     });
@@ -551,7 +549,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
       convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
-    const result = await syncSite({ site, drives: [], maxBytes: 50 * 1024 * 1024, ocrLabel: 'off', concurrency: 1, dryRun: false });
+    const result = await syncSite({ site, drives: [], maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
 
     expect(result.ok).toBe(false);
     expect(result.ok ? '' : result.error.step).toBe('saveState');
@@ -589,7 +587,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
       convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
-    const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, ocrLabel: 'off', concurrency: 1, dryRun: false });
+    const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
 
     expect(result.ok).toBe(false);
     expect(result.ok ? '' : result.error.step).toBe('enumerate');
@@ -708,7 +706,7 @@ describe('a site name that collides with another site already on disk', () => {
       convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock: createClockFake(), logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
-    await syncSite({ site: incoming, drives, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', concurrency: 1, dryRun: false });
+    await syncSite({ site: incoming, drives, maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
 
     expect(files.written.get('kb/Team Site/.sync-state.json')).toBe(existingText);
     expect([...files.written.keys()].some((path) => path.startsWith('kb/Team Site-') && path.endsWith('.sync-state.json'))).toBe(true);
