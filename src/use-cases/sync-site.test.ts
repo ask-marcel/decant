@@ -32,7 +32,7 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 });
 
 const run = async (
-  seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number } = {}
+  seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; drives?: typeof drives } = {}
 ): Promise<{ summary: RunSummary; files: FilesFake; logger: LoggerFake; progress: ProgressFake; ok: boolean }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
@@ -48,7 +48,14 @@ const run = async (
     kbRoot: 'kb',
     convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake() }),
   });
-  const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', concurrency: seeds.concurrency ?? 1, dryRun: seeds.dryRun ?? false });
+  const result = await syncSite({
+    site,
+    drives: seeds.drives ?? drives,
+    maxBytes: 50 * 1024 * 1024,
+    ocrLabel: 'paddleocr (en)',
+    concurrency: seeds.concurrency ?? 1,
+    dryRun: seeds.dryRun ?? false,
+  });
   return { summary: result.ok ? result.value : ({} as RunSummary), files, logger, progress, ok: result.ok };
 };
 
@@ -465,9 +472,21 @@ describe('converting several items at once', () => {
   it('the progress counter shows the total up front and ticks once per item, named by its path', async () => {
     const { progress } = await run({ reader: threeItems, concurrency: 3 });
 
-    expect(progress.started).toEqual([{ total: 3, what: 'Converting' }]);
+    expect(progress.started).toEqual([{ total: 3, what: 'Espace Contoso / Documents' }]);
     expect([...progress.steps].sort((left, right) => left.localeCompare(right))).toEqual(['A.docx', 'B.docx', 'C.docx']);
     expect(progress.dones).toHaveLength(1);
+  });
+
+  it('the counter names the site and library it is working through, so one run of many is placeable', async () => {
+    const { progress } = await run({
+      reader: threeItems,
+      drives: [
+        { id: 'b!one', name: 'Documents' },
+        { id: 'b!two', name: 'Site Assets' },
+      ],
+    });
+
+    expect(progress.started.map((entry) => entry.what)).toEqual(['Espace Contoso / Documents', 'Espace Contoso / Site Assets']);
   });
 
   it('every item in the window announces itself as begun before any of them finish', async () => {

@@ -4,7 +4,13 @@ import type { Progress } from '../use-cases/ports/progress.ts';
 // rewrites the same line rather than stacking up. The writer is injected: production hands it
 // stderr, a test hands it an array. Nothing is written when there is nothing to count, so a run that
 // converts everything from cache stays silent.
-export const createProgressBar = (write: (text: string) => void): Progress => {
+// A width no terminal is narrower than, for when nothing else says.
+const DEFAULT_COLUMNS = 80;
+
+export const createProgressBar = (write: (text: string) => void, columns?: () => number): Progress => {
+  // The row to fit inside: whatever a caller names, else the terminal's own width, else a width no
+  // terminal is narrower than. Read per write rather than once, since a terminal can be resized.
+  const width = (): number => columns?.() ?? process.stderr.columns ?? DEFAULT_COLUMNS;
   let total = 0;
   let done = 0;
   let what = '';
@@ -15,10 +21,22 @@ export const createProgressBar = (write: (text: string) => void): Progress => {
   // is also the one actually worth naming, it is the straggler holding the window back. Falls back to
   // the label just passed in when nothing is tracked as running, which is what a bare `step()` call
   // (no `begin()` first) relied on before this port grew a `begin`.
+  // The tail is cut, never the head: `what` names the source, which is the part a path cannot tell
+  // you, and one run of `all` works through twenty-odd of them. A line wider than the row wraps, and
+  // `\r\x1b[K` clears only the row the cursor sits on, so the wrapped remainder stays on screen and
+  // the display garbles. Cut by code point, so a character is never left half-written.
+  const fit = (line: string): string => {
+    const shown = [...line];
+    const room = width();
+    if (shown.length <= room) return line;
+    return `${shown.slice(0, Math.max(0, room - 1)).join('')}\u2026`;
+  };
+
   const render = (label: string): void => {
     if (total === 0) return;
     const [oldest] = running;
-    write(`\r\x1b[K${what} ${done}/${total}  ${oldest ?? label}`);
+    const line = `${what} ${done}/${total}  ${oldest ?? label}`;
+    write(`\r\x1b[K${fit(line)}`);
   };
   return {
     start: (count, label) => {

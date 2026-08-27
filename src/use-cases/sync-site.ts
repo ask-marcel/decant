@@ -190,7 +190,9 @@ const processQueue = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Dri
   let current = state;
   let summary = EMPTY;
   let notes = NO_NOTES;
-  deps.progress.start(current.drives[drive.id]?.pending.length ?? 0, 'Converting');
+  // Named for the source rather than the verb: `all` works through twenty-odd sites in one run, and
+  // a path alone never says which of them a file came from.
+  deps.progress.start(current.drives[drive.id]?.pending.length ?? 0, `${input.site.name} / ${drive.name}`);
   for (;;) {
     const driveState = current.drives[drive.id];
     if (driveState === undefined || driveState.pending.length === 0) {

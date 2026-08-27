@@ -97,6 +97,37 @@ describe('showing how far a conversion has got', () => {
   });
 });
 
+describe('keeping the counter to one row', () => {
+  it('a line too wide for the terminal is cut rather than wrapped onto a row it cannot clear', () => {
+    const writes: string[] = [];
+    const bar = createProgressBar(
+      (text) => writes.push(text),
+      () => 40
+    );
+
+    bar.start(11, 'MOOV Leadership Team / 文档');
+    bar.begin('HELP - Manuals & Guides/IT topics/TMFF/Ocean Export user manual V 2017 8.8.pdf');
+
+    // The control prefix does not occupy a column; what the terminal shows must fit the row.
+    const shown = (writes.at(-1) ?? '').replace('\r\x1b[K', '');
+    expect(shown.length).toBeLessThanOrEqual(40);
+    expect(shown).toContain('MOOV Leadership Team / 文档');
+  });
+
+  it('the source survives the cut, since it is the part a path cannot tell you', () => {
+    const writes: string[] = [];
+    const bar = createProgressBar(
+      (text) => writes.push(text),
+      () => 32
+    );
+
+    bar.start(2, 'Espace Contoso / Documents');
+    bar.begin('Projets/2026/Q3/Rapport annuel definitif.docx');
+
+    expect((writes.at(-1) ?? '').replace('\r\x1b[K', '')).toContain('Espace Contoso / Documents');
+  });
+});
+
 describe('saying what a long listing is doing while it does it', () => {
   it('a status line rewrites itself rather than stacking up, so one line reports the wait', () => {
     const writes: string[] = [];
