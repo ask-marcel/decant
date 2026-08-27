@@ -1,3 +1,6 @@
+import { inlineImageLabels, linkInlineImages, pairInlineImages } from './inline-image.ts';
+import type { InlineImage } from './inline-image.ts';
+
 // What a message body says about the files it carried. The library renders that body for a caller
 // holding its CLI, so it closes with a list naming each file, its raw Graph attachment id, and the
 // command to fetch it. By the time a thread is written those files are converted and on disk, so
@@ -40,3 +43,47 @@ const line = (entry: AttachmentLink): string => {
 };
 
 export const renderAttachmentList = (entries: ReadonlyArray<AttachmentLink>): string => (entries.length === 0 ? '' : [LIST_MARKER, ...entries.map(line)].join('\n'));
+
+// One file a message carried, as the thread knows it once the conversion has run: where its
+// markdown landed, the picture itself when the file is one worth showing, or why nothing was
+// written. Paths are already relative to the folder the thread sits in.
+export type CarriedFile = {
+  readonly name: string;
+  readonly size: number;
+  readonly contentType: string;
+  readonly contentId: string;
+  readonly isInline: boolean;
+  readonly path?: string;
+  readonly picture?: string;
+  readonly note?: string;
+};
+
+// Only a picture the body could show is a candidate for a placeholder: it has to be one, and it has
+// to be on disk. Keyed by the object handed to the pairing, so the file comes back from the pair.
+const picturesOf = (files: ReadonlyArray<CarriedFile>): Map<InlineImage, CarriedFile> =>
+  new Map(files.filter((file) => file.isInline && file.picture !== undefined).map((file) => [{ name: file.name, contentId: file.contentId }, file]));
+
+type ShownPicture = { readonly label: string; readonly path: string; readonly file: CarriedFile };
+
+const shownPictures = (text: string, files: ReadonlyArray<CarriedFile>): ReadonlyArray<ShownPicture> => {
+  const candidates = picturesOf(files);
+  return pairInlineImages(inlineImageLabels(text), [...candidates.keys()]).flatMap((pair) => {
+    const file = candidates.get(pair.image);
+    return file?.picture === undefined ? [] : [{ label: pair.label, path: file.picture, file }];
+  });
+};
+
+const asLink = (file: CarriedFile): AttachmentLink => ({ name: file.name, size: file.size, contentType: file.contentType, path: file.path, note: file.note });
+
+export type RewrittenBody = { readonly body: string; readonly pictures: ReadonlyArray<string> };
+
+// A picture put back where the message showed it is not named again below: the reader is looking at
+// it. Everything else is, including a picture no placeholder answered, so nothing carried goes
+// unmentioned however the pairing turned out.
+export const rewriteMessageBody = (body: string, files: ReadonlyArray<CarriedFile>): RewrittenBody => {
+  const text = withoutAttachmentList(body);
+  const shown = shownPictures(text, files);
+  const listed = files.filter((file) => !shown.some((picture) => picture.file === file));
+  const parts = [linkInlineImages(text, shown), renderAttachmentList(listed.map(asLink))];
+  return { body: parts.filter((part) => part.length > 0).join('\n\n'), pictures: shown.map((picture) => picture.path) };
+};
