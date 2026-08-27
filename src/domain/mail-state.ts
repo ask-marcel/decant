@@ -8,6 +8,9 @@ export type ThreadRecord = {
   readonly messageIds: ReadonlyArray<string>;
   readonly lastMessage: string;
   readonly attachments: ReadonlyArray<string>;
+  // Kept apart from the attachments because a body shows these where they stood, and a thread that
+  // carried a signature logo should not read as a thread that carried a document.
+  readonly inlineImages: ReadonlyArray<string>;
 };
 
 // The files one linked SharePoint document produced, the way an attachment records its own: a
@@ -20,7 +23,9 @@ export type LinkedRecord = { readonly paths: ReadonlyArray<string> };
 // sent across many threads is converted once; every thread after the first references what is on
 // disk. `name` is kept so a later run placing a different file of the same name disambiguates it
 // rather than overwriting this one.
-export type AttachmentRecord = { readonly name: string; readonly paths: ReadonlyArray<string> };
+// `primary` is the file to link a reader to out of everything the conversion wrote, so a second
+// thread carrying the same attachment points at the same one without converting it again.
+export type AttachmentRecord = { readonly name: string; readonly paths: ReadonlyArray<string>; readonly primary: string };
 
 export type MailboxState = {
   readonly version: 1;
@@ -65,7 +70,15 @@ const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
   messageIds: stringList(raw['messageIds']),
   lastMessage: readString(raw, 'lastMessage') ?? '',
   attachments: stringList(raw['attachments']),
+  inlineImages: stringList(raw['inlineImages']),
 });
+
+// A state written before the store remembered which file to link falls back to the first one it
+// wrote, which is the only one for a document and the file itself for everything else.
+const attachmentOf = (entry: Record<string, unknown>): AttachmentRecord => {
+  const paths = stringList(entry['paths']);
+  return { name: readString(entry, 'name') ?? '', paths, primary: readString(entry, 'primary') ?? paths[0] ?? '' };
+};
 
 const mapOf = <T>(raw: unknown, parse: (entry: Record<string, unknown>) => T): Readonly<Record<string, T>> => {
   if (!isRecord(raw)) return {};
@@ -82,7 +95,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     folders: mapOf(raw['folders'], (entry) => ({ name: readString(entry, 'name') ?? '', deltaLink: readString(entry, 'deltaLink') })),
     threads: mapOf(raw['threads'], threadOf),
     linked: mapOf(raw['linked'], (entry) => ({ paths: stringList(entry['paths']) })),
-    attachments: mapOf(raw['attachments'], (entry) => ({ name: readString(entry, 'name') ?? '', paths: stringList(entry['paths']) })),
+    attachments: mapOf(raw['attachments'], attachmentOf),
     pending: stringList(raw['pending']),
   });
 };

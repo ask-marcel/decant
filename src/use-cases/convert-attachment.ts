@@ -32,7 +32,10 @@ export type ConvertAttachmentInput = {
 };
 
 export type AttachmentOutcome =
-  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string> }
+  // `primary` is the one file to link a reader to, out of everything the conversion wrote: always
+  // the markdown, since that is what carries the text and stamps where its siblings sit, except for
+  // an archive, whose entries are many and whose own file is the thing that was sent.
+  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly primary: string }
   | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
 
@@ -56,7 +59,7 @@ const asMarkdown = async (context: Context): Promise<AttachmentOutcome> => {
   const converted = await context.deps.reader.attachmentMarkdown(context.input.messageId, context.input.attachment.id);
   if (!converted.ok) return failure(converted.error);
   const written = await writeMarkdown(context, context.input.stamp, converted.value.trim().length === 0 ? NO_TEXT_NOTE : converted.value);
-  return written.ok ? { kind: 'converted', outputs: [written.value] } : failure(written.error);
+  return written.ok ? { kind: 'converted', outputs: [written.value], primary: written.value } : failure(written.error);
 };
 
 const asSlides = async (context: Context): Promise<AttachmentOutcome> => {
@@ -69,7 +72,7 @@ const asSlides = async (context: Context): Promise<AttachmentOutcome> => {
   if (!text.ok) return failure(text.error);
   const stamp = { ...context.input.stamp, pdf: `./${context.name}.pdf` };
   const written = await writeMarkdown(context, stamp, text.value.trim().length === 0 ? NO_TEXT_NOTE : text.value);
-  return written.ok ? { kind: 'converted', outputs: [pdfPath, written.value] } : failure(written.error);
+  return written.ok ? { kind: 'converted', outputs: [pdfPath, written.value], primary: written.value } : failure(written.error);
 };
 
 const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promise<{ readonly text: string; readonly stamp: DocumentStamp }>): Promise<AttachmentOutcome> => {
@@ -80,7 +83,7 @@ const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promi
   if (!wroteRaw.ok) return failure(wroteRaw.error);
   const rendered = await body(rawPath);
   const written = await writeMarkdown(context, rendered.stamp, rendered.text);
-  return written.ok ? { kind: 'converted', outputs: [rawPath, written.value] } : failure(written.error);
+  return written.ok ? { kind: 'converted', outputs: [rawPath, written.value], primary: written.value } : failure(written.error);
 };
 
 // A PDF with a text layer yields it straight. One without (a scan) is read by OCR from the copy on
@@ -131,7 +134,7 @@ const writeArchiveEntries = async (context: Context, folder: string, archivePath
     if (!written.ok) return failure(written.error);
     outputs.push(path);
   }
-  return { kind: 'converted', outputs };
+  return { kind: 'converted', outputs, primary: archivePath };
 };
 
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<AttachmentOutcome>>> = {

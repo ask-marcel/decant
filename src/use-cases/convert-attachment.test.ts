@@ -55,7 +55,7 @@ describe('keeping what was attached to a mail', () => {
   it('a Word attachment lands as markdown beside the conversation', async () => {
     const { outcome, files } = await run();
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Contrat.docx.md`] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Contrat.docx.md`], primary: `${FOLDER}/Contrat.docx.md` });
     expect(files.written.get(`${FOLDER}/Contrat.docx.md`)).toContain('converted att1');
   });
 
@@ -74,7 +74,7 @@ describe('keeping what was attached to a mail', () => {
   it('a deck attachment lands as markdown and a PDF, pointing at each other', async () => {
     const { outcome, files } = await run({ name: 'Roadmap.pptx' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Roadmap.pptx.pdf`, `${FOLDER}/Roadmap.pptx.md`] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Roadmap.pptx.pdf`, `${FOLDER}/Roadmap.pptx.md`], primary: `${FOLDER}/Roadmap.pptx.md` });
     expect(files.written.get(`${FOLDER}/Roadmap.pptx.md`)).toContain('pdf: ./Roadmap.pptx.pdf');
     expect(files.binary.has(`${FOLDER}/Roadmap.pptx.pdf`)).toBe(true);
   });
@@ -82,7 +82,7 @@ describe('keeping what was attached to a mail', () => {
   it('a PDF attachment is kept as it came, with its text beside it', async () => {
     const { outcome, files } = await run({ name: 'Contrat.pdf' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Contrat.pdf`, `${FOLDER}/Contrat.pdf.md`] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Contrat.pdf`, `${FOLDER}/Contrat.pdf.md`], primary: `${FOLDER}/Contrat.pdf.md` });
     expect(files.written.get(`${FOLDER}/Contrat.pdf.md`)).toContain('pdf: ./Contrat.pdf');
   });
 
@@ -251,7 +251,7 @@ describe('keeping what was attached to a mail', () => {
   it('an attachment whose name the filesystem cannot hold is made safe first', async () => {
     const { outcome } = await run({ name: 'Q1/Q2: budget.docx' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Q1_Q2_ budget.docx.md`] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Q1_Q2_ budget.docx.md`], primary: `${FOLDER}/Q1_Q2_ budget.docx.md` });
   });
 
   it('a deck attachment keeps the text read from it rather than a note', async () => {
@@ -269,13 +269,17 @@ describe('keeping what was attached to a mail', () => {
   it('a drawing attachment lands with exactly the file and its note, named for the drawing', async () => {
     const { outcome, files } = await run({ name: 'Logo.svg' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Logo.svg`, `${FOLDER}/Logo.svg.md`] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Logo.svg`, `${FOLDER}/Logo.svg.md`], primary: `${FOLDER}/Logo.svg.md` });
     expect(files.written.get(`${FOLDER}/Logo.svg.md`)).toContain('image: ./Logo.svg');
   });
 
   it('an archive attachment lands with the archive file and one markdown per entry, in order', async () => {
     const { outcome } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Livraison/Livraison.zip`, `${FOLDER}/Livraison/notes.docx.md`] });
+    expect(outcome).toEqual({
+      kind: 'converted',
+      outputs: [`${FOLDER}/Livraison/Livraison.zip`, `${FOLDER}/Livraison/notes.docx.md`],
+      primary: `${FOLDER}/Livraison/Livraison.zip`,
+    });
   });
 });

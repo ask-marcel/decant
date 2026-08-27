@@ -12,7 +12,7 @@ import {
   withThread,
 } from './mail-state.ts';
 
-const thread = { file: 'threads/2026/2026-05-12 Contrat a3f9c1.md', messageIds: ['m1', 'm2'], lastMessage: '2026-05-13T10:00:00Z', attachments: ['a.pdf'] };
+const thread = { file: 'threads/2026/2026-05-12 Contrat a3f9c1.md', messageIds: ['m1', 'm2'], lastMessage: '2026-05-13T10:00:00Z', attachments: ['a.pdf'], inlineImages: [] };
 
 describe('remembering where a mailbox sync got to', () => {
   it('a mailbox never synced starts with no folders, threads or queue', () => {
@@ -32,7 +32,7 @@ describe('remembering where a mailbox sync got to', () => {
     const linked = withLinked(withThread(withFolderCursor(emptyMailboxState(), 'AAMk1', 'Inbox', 'cursor-1'), 'conv-1', thread), 'b!one:01ABC', {
       paths: ['_linked/Contrat.docx.md'],
     });
-    const state = withAttachment(linked, 'ba7816bf8f01', { name: 'Contrat.docx', paths: ['_attachments/Contrat.docx.md'] });
+    const state = withAttachment(linked, 'ba7816bf8f01', { name: 'Contrat.docx', paths: ['_attachments/Contrat.docx.md'], primary: '_attachments/Contrat.docx.md' });
 
     expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
   });
@@ -44,9 +44,10 @@ describe('remembering where a mailbox sync got to', () => {
   });
 
   it('an attachment stored once is recorded by its content address, under the name it was stored as', () => {
-    const state = withAttachment(emptyMailboxState(), 'ba7816bf8f01', { name: 'Scan.pdf', paths: ['_attachments/Scan.pdf', '_attachments/Scan.pdf.md'] });
+    const record = { name: 'Scan.pdf', paths: ['_attachments/Scan.pdf', '_attachments/Scan.pdf.md'], primary: '_attachments/Scan.pdf.md' };
+    const state = withAttachment(emptyMailboxState(), 'ba7816bf8f01', record);
 
-    expect(state.attachments['ba7816bf8f01']).toEqual({ name: 'Scan.pdf', paths: ['_attachments/Scan.pdf', '_attachments/Scan.pdf.md'] });
+    expect(state.attachments['ba7816bf8f01']).toEqual(record);
   });
 
   it('a folder swept for the first time is recorded even before it has a cursor', () => {
@@ -84,7 +85,7 @@ describe('remembering where a mailbox sync got to', () => {
   it('a conversation recorded without the file it produced still loads', () => {
     const parsed = parseMailboxState({ source: { kind: 'mailbox' }, threads: { 'conv-1': { messageIds: ['m1'] } } });
 
-    expect(parsed.ok && parsed.value.threads['conv-1']).toEqual({ file: '', messageIds: ['m1'], lastMessage: '', attachments: [] });
+    expect(parsed.ok && parsed.value.threads['conv-1']).toEqual({ file: '', messageIds: ['m1'], lastMessage: '', attachments: [], inlineImages: [] });
   });
 
   it('entries recorded half-written load with what they do have rather than failing the run', () => {
@@ -96,7 +97,7 @@ describe('remembering where a mailbox sync got to', () => {
     });
 
     expect(parsed.ok && parsed.value.folders).toEqual({});
-    expect(parsed.ok && parsed.value.threads['conv-1']).toEqual({ file: 'x.md', messageIds: ['m1'], lastMessage: '', attachments: [] });
+    expect(parsed.ok && parsed.value.threads['conv-1']).toEqual({ file: 'x.md', messageIds: ['m1'], lastMessage: '', attachments: [], inlineImages: [] });
     expect(parsed.ok && parsed.value.pending).toEqual(['conv-1']);
   });
 

@@ -241,7 +241,9 @@ describe('keeping what a conversation carried', () => {
   });
 
   it('a file another conversation already stored is referenced, not converted again', async () => {
-    const store: Record<string, AttachmentRecord> = { [contentHash(bytesOf('att1'))]: { name: 'Contrat.docx', paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`] } };
+    const store: Record<string, AttachmentRecord> = {
+      [contentHash(bytesOf('att1'))]: { name: 'Contrat.docx', paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`], primary: `${ATTACHMENTS_STORE}/Contrat.docx.md` },
+    };
     const { outcome, files } = await run({ reader: withAttachment, attachments: store });
 
     expect(files.written.has(`${ATTACHMENTS_STORE}/Contrat.docx.md`)).toBe(false);
@@ -255,11 +257,14 @@ describe('keeping what a conversation carried', () => {
     expect(outcome?.kind === 'rendered' && outcome.thread.attachments[contentHash(bytesOf('att1'))]).toEqual({
       name: storedName('Contrat.docx', 'att1'),
       paths: [`${ATTACHMENTS_STORE}/${storedName('Contrat.docx', 'att1')}.md`],
+      primary: `${ATTACHMENTS_STORE}/${storedName('Contrat.docx', 'att1')}.md`,
     });
   });
 
   it('a different file whose name is already taken in the store is told apart by its content', async () => {
-    const store: Record<string, AttachmentRecord> = { otherhash000: { name: 'Contrat.docx', paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`] } };
+    const store: Record<string, AttachmentRecord> = {
+      otherhash000: { name: 'Contrat.docx', paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`], primary: `${ATTACHMENTS_STORE}/Contrat.docx.md` },
+    };
     const { outcome } = await run({ reader: withAttachment, attachments: store });
     const stored = outcome?.kind === 'rendered' ? outcome.thread.record.attachments : [];
 
@@ -547,5 +552,64 @@ describe('when the mailbox or the disk refuses', () => {
     });
 
     expect(succeeded).toBe(false);
+  });
+});
+
+describe('what a message body says about the files it carried', () => {
+  const PASTED = { id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' };
+  const shownAt = (attachmentId: string, name: string): string => `../../_attachments/${storedName(name, attachmentId)}`;
+
+  it('a picture pasted into a message is kept and shown where it stood, though Graph said the message carried nothing', async () => {
+    const messages = [message({ hasAttachments: false })];
+    const bodies = { m1: 'Regards,\n\n\\[inline image: logo.png\\]' };
+    const { files } = await run({ reader: { conversations: { [CONV]: messages }, bodies, attachments: { m1: [PASTED] } } });
+
+    expect(files.binary.has(`${ATTACHMENTS_STORE}/${storedName('logo.png', 'sig')}`)).toBe(true);
+    expect(files.written.get(THREAD_FILE)).toContain(`![logo.png](${shownAt('sig', 'logo.png')})`);
+  });
+
+  it('a picture shown in the body is named under inline_images, never among the attachments', async () => {
+    const messages = [message({ hasAttachments: false })];
+    const bodies = { m1: '\\[inline image: logo.png\\]' };
+    const { outcome, files } = await run({ reader: { conversations: { [CONV]: messages }, bodies, attachments: { m1: [PASTED] } } });
+    const raw = `${ATTACHMENTS_STORE}/${storedName('logo.png', 'sig')}`;
+
+    expect(files.written.get(THREAD_FILE)).toContain('inline_images:\n  - ../../_attachments/');
+    expect(files.written.get(THREAD_FILE)).not.toContain('attachments:\n');
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.inlineImages).toEqual([raw, `${raw}.md`]);
+  });
+
+  it('a message Graph says carries nothing, showing no picture, is never asked what it carried', async () => {
+    const messages = [message({ hasAttachments: false })];
+    const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments: { m1: [PASTED] } } });
+
+    expect(files.binary.size).toBe(0);
+  });
+
+  it('a file a message carried is named under that message, linking where it landed', async () => {
+    const messages = [message({ hasAttachments: true })];
+    const attachments = { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false }] };
+    const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
+
+    expect(files.written.get(THREAD_FILE)).toContain(`**Attachments:**\n- [Contrat.docx](${shownAt('att1', 'Contrat.docx')}.md) (4.0 KB, application/vnd)`);
+  });
+
+  it('the list the converter closed the body with is replaced, taking its Graph id with it', async () => {
+    const messages = [message({ hasAttachments: true })];
+    const bodies = { m1: 'Please find it attached.\n\n**Attachments:**\n- Contrat.docx (4.0 KB, application/vnd, id: AAMkADc3NTlh==)' };
+    const attachments = { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false }] };
+    const { files } = await run({ reader: { conversations: { [CONV]: messages }, bodies, attachments } });
+    const written = files.written.get(THREAD_FILE) ?? '';
+
+    expect(written).not.toContain('id: AAMkADc3NTlh==');
+    expect(written.split('**Attachments:**')).toHaveLength(2);
+  });
+
+  it('a file that was left alone keeps its name in the body with the reason beside it', async () => {
+    const messages = [message({ hasAttachments: true })];
+    const attachments = { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 4096, isInline: false }] };
+    const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
+
+    expect(files.written.get(THREAD_FILE)).toContain('- Demo.mp4 (4.0 KB, video/mp4), a kind of file this tool does not read');
   });
 });
