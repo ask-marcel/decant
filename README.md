@@ -71,6 +71,7 @@ clear message instead of waiting for input.
 
 ```
 kb/
+  _sync-report.md                   what the last run left behind, every source in one file
   _archive/<Site>/<Library>/...     files whose source was deleted, renamed, or changed away
   <Site>/
     .sync-state.json                what has been synced, and where the next run resumes
@@ -163,6 +164,14 @@ aside because the source no longer has them. A password is the one refusal that 
 readable by trying again, so such a file is left out the way an unsupported type is, rather than
 queued afresh on every run. A run that converted everything writes nothing there, so a nightly sync does not bury
 the runs that did leave something behind.
+
+`kb/_sync-report.md`, one level up, holds the same thing for the run as a whole, so twenty sources
+do not mean twenty files to open. It is rewritten on every run rather than appended to, and always
+covers every source: the ones the run touched get their counts and their lists, and every other
+source already in `kb/` is named with the date it last ran, so a source that was not rechecked is
+never mistaken for one with nothing wrong. A run that left something behind ends with a line on the
+terminal saying so and naming the file. Its history is the per-source files; this one is the current
+view. A dry run writes neither.
 
 ### What a mailbox sync writes
 
