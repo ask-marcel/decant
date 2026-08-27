@@ -200,6 +200,14 @@ converted a single time and every conversation after the first references the co
 Each is stored under its own name plus a short slice of that address (`Contrat-a3f9c1b2.docx`), which
 fixes the name to the bytes so conversations rendering in parallel never collide on disk.
 
+Each message's own section names the files that message carried, linking where each landed, so a
+reader following a conversation sees what arrived with which reply rather than one list at the head
+of the file. A picture pasted into a message is shown where it stood rather than named, and is listed
+under `inline_images` in the front matter instead of among the attachments, so a signature logo does
+not read as a document somebody sent. A file that was left alone keeps its name in that list with
+the reason beside it, and a picture nothing could be matched to is named as a file rather than
+dropped, so nothing a message carried goes unmentioned.
+
 A first mailbox run is slow: Outlook hands back changes ten messages at a time and there is no way
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
 are cheap, reading only what changed. `--since` narrows what gets *written*, not what gets swept.

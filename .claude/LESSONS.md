@@ -217,3 +217,31 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   to say the pages are Loop pages. Matching `/contentstorage/CSP_` labelled every shared workspace
   and left the operator's own workspace looking like a site named `My workspace`. Match the path,
   never the id shape that follows it.
+
+## 2026-08-27
+
+- [gotcha] Graph reports `hasAttachments: false` on a message whose only attachment is inline, so a
+  signature logo or a pasted screenshot is invisible to any code that gates a listing on that flag.
+  `list-mail-attachments` on the very same message returns the picture. Confirmed live on two
+  messages of this mailbox. The body is the other half of the question: `convert-mail-to-markdown`
+  renders every unresolved `cid:` image as `[inline image: <label>]`, so a message worth listing is
+  one where the flag is true OR the body carries that marker.
+
+- [gotcha] The label in `[inline image: <label>]` is not reliably a file name. The library falls back
+  through the attachment name, the `alt` text, the content id truncated at its `@`, then the whole
+  content id, and it only has names to use when Graph said `hasAttachments`, which for an inline-only
+  message it does not. Match a placeholder on all of those, and ask
+  `list-mail-attachments --select ...,microsoft.graph.fileAttachment/contentId` to have the id at
+  all: the library's default select leaves it out.
+
+- [decision] Two string literals from `ask-marcel-office-cli` are load-bearing in `domain/`:
+  `**Attachments:**` and `[inline image: `. Both live as named constants, and every parse degrades to
+  leaving the body exactly as it came rather than mangling it, so a reworded release costs the new
+  behaviour and never the text. The dependency is pinned `^2.3.0`; a minor bump is the thing to check
+  when a thread body suddenly stops linking its attachments.
+
+- [mistake] A test whose subject has a fallback path can pass without ever exercising its subject.
+  Every inline-image identity test used one candidate picture, so the one-to-one last resort produced
+  the right pair whatever the matching returned: green tests, 28 surviving mutants, 65% on a new
+  module. Two candidates in the fixture is what makes an identity match the only explanation for the
+  result. Mutation testing found this; coverage was already 100%.
