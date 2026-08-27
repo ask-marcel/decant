@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { NO_TEXT_NOTE } from '../domain/kb-document.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import type { FilesFake, FilesFakeSeed } from '../test-helpers/files-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
@@ -31,11 +32,12 @@ const attachment = (over: Partial<MailAttachment> = {}): MailAttachment => ({
   isInline: false,
   contentId: '',
   ...over,
+  kind: over.kind ?? 'file',
 });
 
 const run = async (
   over: Partial<MailAttachment> = {},
-  seeds: { reader?: MailReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed; drive?: DriveReaderSeed; maxBytes?: number } = {}
+  seeds: { reader?: MailReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed; drive?: DriveReaderSeed; maxBytes?: number; rendered?: string } = {}
 ): Promise<{ outcome: AttachmentOutcome; files: FilesFake }> => {
   const files = createFilesFake(seeds.files);
   const drive = createDriveReaderFake(seeds.drive);
@@ -47,6 +49,7 @@ const run = async (
     stamp,
     maxBytes: seeds.maxBytes ?? 50 * 1024 * 1024,
     ocrLabel: 'paddleocr (en)',
+    rendered: seeds.rendered,
   });
   return { outcome, files };
 };
@@ -184,6 +187,24 @@ describe('keeping what was attached to a mail', () => {
     const { outcome } = await run({ name: 'logo-signature.png', isInline: true });
 
     expect(outcome.kind).toBe('converted');
+  });
+
+  it('an email attached to an email is written from what was rendered of it, having no bytes of its own', async () => {
+    const embedded = { kind: 'item' as const, name: 'Customs documents MSDU1691268', contentType: '' };
+    const { outcome, files } = await run(embedded, { rendered: '**Subject:** Customs documents\n\nAttached.' });
+
+    expect(outcome).toEqual({
+      kind: 'converted',
+      outputs: [`${FOLDER}/Customs documents MSDU1691268.md`],
+      primary: `${FOLDER}/Customs documents MSDU1691268.md`,
+    });
+    expect(files.written.get(`${FOLDER}/Customs documents MSDU1691268.md`)).toContain('**Subject:** Customs documents');
+  });
+
+  it('an embedded email the library could make nothing of still lands, saying so', async () => {
+    const { files } = await run({ kind: 'item', name: 'Empty', contentType: '' }, { rendered: '  ' });
+
+    expect(files.written.get(`${FOLDER}/Empty.md`)).toContain(NO_TEXT_NOTE);
   });
 
   it('an attachment of a type this tool does not handle is reported', async () => {

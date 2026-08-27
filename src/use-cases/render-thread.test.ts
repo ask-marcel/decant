@@ -555,6 +555,33 @@ describe('when the mailbox or the disk refuses', () => {
   });
 });
 
+describe('an email attached to an email', () => {
+  const EMBEDDED = { kind: 'item' as const, id: 'att1', name: 'Customs documents MSDU1691268', contentType: '', size: 2764134, isInline: false };
+  const RENDERED = '**Subject:** Customs documents\n\nSee attached.';
+  // Its address is the address of what it renders to, an item attachment having no bytes to take one
+  // from, so the name on disk follows the rendering rather than anything Graph would hand back.
+  const renderedName = (name: string, text: string): string => disambiguateSegment(name, contentHash(new TextEncoder().encode(text)));
+
+  it('is kept and read, though Graph hands back no bytes for it', async () => {
+    const messages = [message({ hasAttachments: true })];
+    const seed = { conversations: { [CONV]: messages }, attachments: { m1: [EMBEDDED] }, attachmentTexts: { att1: RENDERED } };
+    const { files } = await run({ reader: seed });
+    const stored = `${ATTACHMENTS_STORE}/${renderedName(EMBEDDED.name, RENDERED)}.md`;
+
+    expect(files.written.get(stored)).toContain('**Subject:** Customs documents');
+    expect(files.written.get(THREAD_FILE)).toContain(`- [Customs documents MSDU1691268](../../_attachments/${renderedName(EMBEDDED.name, RENDERED)}.md) (2.6 MB)`);
+  });
+
+  it('is stored once, however many messages of the conversation forwarded it', async () => {
+    const messages = [message({ id: 'm1', hasAttachments: true }), message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true })];
+    const attachments = { m1: [EMBEDDED], m2: [{ ...EMBEDDED, id: 'att2' }] };
+    const seed = { conversations: { [CONV]: messages }, attachments, attachmentTexts: { att1: RENDERED, att2: RENDERED } };
+    const { outcome } = await run({ reader: seed });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENTS_STORE}/${renderedName(EMBEDDED.name, RENDERED)}.md`]);
+  });
+});
+
 describe('what a message body says about the files it carried', () => {
   const PASTED = { id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' };
   const shownAt = (attachmentId: string, name: string): string => `../../_attachments/${storedName(name, attachmentId)}`;

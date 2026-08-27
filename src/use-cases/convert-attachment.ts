@@ -29,6 +29,9 @@ export type ConvertAttachmentInput = {
   // What to call the file on disk. Given when two different attachments of one conversation share
   // a name, so both are kept rather than one overwriting the other.
   readonly asName?: string;
+  // What an embedded email already rendered to. It arrives ready because the caller had to render it
+  // to know its content address, an item attachment having no bytes of its own to take one from.
+  readonly rendered?: string;
 };
 
 export type AttachmentOutcome =
@@ -137,6 +140,15 @@ const writeArchiveEntries = async (context: Context, folder: string, archivePath
   return { kind: 'converted', outputs, primary: archivePath };
 };
 
+// An email attached to an email is not a file to convert: Graph answers a request for its bytes
+// with the item itself, and the library renders it from the message instead. Its name carries no
+// extension either, so the routing that reads one has nothing to go on and is not consulted.
+const asEmbeddedMail = async (context: Context): Promise<AttachmentOutcome> => {
+  const rendered = context.input.rendered ?? '';
+  const written = await writeMarkdown(context, context.input.stamp, rendered.trim().length === 0 ? NO_TEXT_NOTE : rendered);
+  return written.ok ? { kind: 'converted', outputs: [written.value], primary: written.value } : failure(written.error);
+};
+
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<AttachmentOutcome>>> = {
   document: asMarkdown,
   slides: asSlides,
@@ -152,7 +164,9 @@ export type ConvertAttachment = (input: ConvertAttachmentInput) => Promise<Attac
 export const createConvertAttachment =
   (deps: ConvertAttachmentDeps): ConvertAttachment =>
   async (input) => {
+    const context = { deps, input, name: safeSegment(input.asName ?? input.attachment.name) };
+    if (input.attachment.kind === 'item') return asEmbeddedMail(context);
     const decision = planFile({ name: input.attachment.name, size: input.attachment.size }, input.maxBytes);
     if (decision.kind === 'skip') return { kind: 'skipped', reason: decision.reason };
-    return CONVERTERS[decision.route]({ deps, input, name: safeSegment(input.asName ?? input.attachment.name) });
+    return CONVERTERS[decision.route](context);
   };

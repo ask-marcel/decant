@@ -2,11 +2,11 @@ import type { MailFolder } from '../domain/mail-folder.ts';
 import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
-import type { LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
+import type { AttachmentKind, LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
 
 // Only an inline image carries a content id, so a seed states one when the test is about that and
 // leaves it out otherwise.
-export type MailAttachmentSeed = Omit<MailAttachment, 'contentId'> & { readonly contentId?: string };
+export type MailAttachmentSeed = Omit<MailAttachment, 'contentId' | 'kind'> & { readonly contentId?: string; readonly kind?: AttachmentKind };
 
 export type MailReaderSeed = {
   readonly folders?: ReadonlyArray<MailFolder>;
@@ -69,7 +69,7 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
         calls.push(`attachments:${messageId}`);
         return err(seed.failAttachmentList);
       }
-      const listed = (seed.attachments?.[messageId] ?? []).map((entry) => ({ ...entry, contentId: entry.contentId ?? '' }));
+      const listed = (seed.attachments?.[messageId] ?? []).map((entry) => ({ ...entry, contentId: entry.contentId ?? '', kind: entry.kind ?? ('file' as const) }));
       return forMessage(messageId, 'attachments', listed);
     },
     attachmentMarkdown: async (messageId, attachmentId) => {

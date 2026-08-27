@@ -7,7 +7,13 @@ import type { DriveReaderError } from './drive-reader.ts';
 // to a throttle or a lapsed sign-in identically whichever side it came from.
 export type MailReaderError = DriveReaderError;
 
+// What Graph calls the attachment, which decides how it is read rather than its name does. A file
+// carries bytes; an item is an email, event or contact embedded in the message and carries none, so
+// Graph answers a request for its bytes with the item itself; a reference points at a shared file.
+export type AttachmentKind = 'file' | 'item' | 'reference';
+
 export type MailAttachment = {
+  readonly kind: AttachmentKind;
   readonly id: string;
   readonly name: string;
   readonly contentType: string;

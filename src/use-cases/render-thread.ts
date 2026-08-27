@@ -189,6 +189,22 @@ type Placed = { readonly paths: ReadonlyArray<string>; readonly primary?: string
 // stored is referenced without being converted again; a new content is converted once, under a name
 // that always carries a short slice of that address so the name is fixed by the bytes alone. That is
 // what lets conversations render at the same time without ever racing to claim a name on disk.
+// Where an attachment's content address comes from. A file has bytes to take one from. An item
+// attachment has none at all, Graph answering a request for them with the item itself, so its
+// address is the address of what it renders to: stable for the same embedded mail within a library
+// version, which is what lets two threads carrying it share one copy on disk. The rendering is kept
+// and handed on, so the conversion does not ask for it a second time.
+type Addressed = { readonly hash: string; readonly rendered?: string };
+
+const addressOf = async (deps: RenderThreadDeps, messageId: string, attachment: MailAttachment): Promise<Result<Addressed, MailReaderError>> => {
+  if (attachment.kind !== 'item') {
+    const raw = await deps.reader.attachmentBytes(messageId, attachment.id);
+    return raw.ok ? ok({ hash: contentHash(raw.value) }) : raw;
+  }
+  const rendered = await deps.reader.attachmentMarkdown(messageId, attachment.id);
+  return rendered.ok ? ok({ hash: contentHash(new TextEncoder().encode(rendered.value)), rendered: rendered.value }) : rendered;
+};
+
 const placeAttachment = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
@@ -201,14 +217,15 @@ const placeAttachment = async (
   // being downloaded. A kind we do not read is caught by the converter, which is the one authority
   // on that; by then the file is already in hand, so the only skip it can report is unsupported.
   if (attachment.size > input.maxBytes) return { paths: [], skipped: { path: attachment.name, reason: tooLargeReason(input.maxBytes) } };
-  const raw = await deps.reader.attachmentBytes(messageId, attachment.id);
-  if (!raw.ok) return { paths: [], failed: { path: attachment.name, reason: `${raw.error.kind}: ${raw.error.message}` } };
-  const hash = contentHash(raw.value);
+  const address = await addressOf(deps, messageId, attachment);
+  if (!address.ok) return { paths: [], failed: { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` } };
+  const hash = address.value.hash;
   const seen = store[hash];
   if (seen !== undefined) return { paths: seen.paths, primary: seen.primary };
   const asName = disambiguateSegment(attachment.name, hash);
   const folder = `${deps.mailboxRoot}/${ATTACHMENTS_FOLDER}`;
-  const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, asName });
+  const rendered = address.value.rendered;
+  const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, asName, rendered });
   if (outcome.kind === 'skipped') return { paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, input.maxBytes) } };
   if (outcome.kind === 'failed') return { paths: [], failed: { path: attachment.name, reason: outcome.reason } };
   store[hash] = { name: asName, paths: outcome.outputs, primary: outcome.primary };
