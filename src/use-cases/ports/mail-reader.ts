@@ -1,7 +1,7 @@
 import type { MailDeltaPage, MailMessage } from '../../domain/mail-message.ts';
 import type { MailFolder } from '../../domain/mail-folder.ts';
 import type { Result } from '../../domain/result.ts';
-import type { DriveReaderError } from './drive-reader.ts';
+import type { DriveReaderError, EmbeddedImage } from './drive-reader.ts';
 
 // Mail fails the same ways SharePoint does: the same Graph client is underneath, and the run reacts
 // to a throttle or a lapsed sign-in identically whichever side it came from.
@@ -44,5 +44,8 @@ export type MailReader = {
   readonly attachmentMarkdown: (messageId: string, attachmentId: string) => Promise<Result<string, MailReaderError>>;
   readonly attachmentPdf: (messageId: string, attachmentId: string) => Promise<Result<Uint8Array, MailReaderError>>;
   readonly attachmentBytes: (messageId: string, attachmentId: string) => Promise<Result<Uint8Array, MailReaderError>>;
+  // The pictures a document attached to a mail holds. Same answer as the drive side gives for a file
+  // found by sweeping a library, since a diagram inside a Word file survives nowhere else either.
+  readonly attachmentImages: (messageId: string, attachmentId: string) => Promise<Result<ReadonlyArray<EmbeddedImage>, MailReaderError>>;
   readonly sharepointLinks: (messageId: string) => Promise<Result<ReadonlyArray<LinkedFile>, MailReaderError>>;
 };

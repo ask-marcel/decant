@@ -80,7 +80,7 @@ const missing = (what: string): Result<never, DriveReaderError> => err({ kind: '
 
 // A document embedding no pictures answers `{ count: 0, media: [] }`, which is an answer and not a
 // failure, so an absent or unreadable entry is dropped rather than ending the conversion.
-const mediaOf = (value: unknown): ReadonlyArray<EmbeddedImage> => {
+export const mediaOf = (value: unknown): ReadonlyArray<EmbeddedImage> => {
   const media = isRecord(value) && Array.isArray(value['media']) ? value['media'] : [];
   return media.flatMap((entry) => {
     const path = readString(entry, 'path');

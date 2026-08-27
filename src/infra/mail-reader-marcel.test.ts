@@ -131,6 +131,16 @@ describe('reading a mailbox through the ask-marcel library', () => {
     expect(await reader.attachments('m1')).toEqual({ ok: true, value: [{ kind: 'file', id: 'att1', name: 'x.docx', contentType: '', size: 0, isInline: false, contentId: '' }] });
   });
 
+  it('the pictures a document attached to a mail holds come back as bytes', async () => {
+    const { reader, recorded } = readerFor({
+      'extract-mail-attachment-images': ok({ count: 1, media: [{ path: 'word/media/image1.png', base64: 'AQID' }, { path: 'no bytes' }] }),
+    });
+    const found = await reader.attachmentImages('m1', 'att1');
+
+    expect(found.ok && found.value).toEqual([{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }]);
+    expect(recorded[0]?.params).toEqual({ messageId: 'm1', attachmentId: 'att1' });
+  });
+
   it('an attachment converts to markdown by message and attachment together', async () => {
     const { reader, recorded } = readerFor({ 'convert-mail-attachment-to-markdown': ok({ text: '# Contrat' }) });
 

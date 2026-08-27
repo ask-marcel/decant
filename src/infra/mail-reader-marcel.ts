@@ -4,6 +4,7 @@ import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { AttachmentKind, LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
+import { mediaOf } from './drive-reader-marcel.ts';
 import type { MarcelCall } from './drive-reader-marcel.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -118,6 +119,10 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
     attachmentMarkdown: async (messageId, attachmentId) => textOf('convert-mail-attachment-to-markdown', { messageId, attachmentId, includeMetadata: 'true' }),
     attachmentPdf: async (messageId, attachmentId) => bytesOf('convert-mail-attachment-to-pdf', { messageId, attachmentId }),
     attachmentBytes: async (messageId, attachmentId) => bytesOf('get-mail-attachment', { messageId, attachmentId }),
+    attachmentImages: async (messageId, attachmentId) => {
+      const raw = await call('extract-mail-attachment-images', { messageId, attachmentId });
+      return raw.ok ? ok(mediaOf(raw.value)) : raw;
+    },
     sharepointLinks: async (messageId) => {
       const raw = await call('extract-sharepoint-links-in-mail', { messageId });
       return raw.ok ? ok(toLinks(raw.value)) : raw;
