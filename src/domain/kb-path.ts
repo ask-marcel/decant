@@ -41,8 +41,13 @@ const extensionStart = (segment: string): number => {
   return lastDot <= 0 ? segment.length : lastDot;
 };
 
+// The suffix is what tells two documents of the same name apart, so the length limit is spent on
+// the name and never on the suffix or the extension: trimming the tail of a long name would drop
+// both and land two different files on one path, silently overwriting one with the other.
 export const disambiguateSegment = (segment: string, itemId: string): SafeSegment => {
   const cut = extensionStart(segment);
   const suffix = `-${itemId.slice(0, SUFFIX_LENGTH)}`;
-  return safeSegment(`${segment.slice(0, cut)}${suffix}${segment.slice(cut)}`);
+  const extension = segment.slice(cut);
+  const room = Math.max(0, MAX_SEGMENT_LENGTH - suffix.length - extension.length);
+  return safeSegment(`${segment.slice(0, Math.min(cut, room))}${suffix}${extension}`);
 };

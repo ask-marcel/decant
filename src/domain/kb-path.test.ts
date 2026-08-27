@@ -83,4 +83,24 @@ describe('keeping two documents with the same name apart', () => {
   it('a name that is nothing but a leading dot and a word takes the suffix at the end', () => {
     expect(text(disambiguateSegment('.json', '01ABCDEF2345'))).toBe('.json-01ABCDEF');
   });
+
+  it('a name too long to keep whole is shortened around its suffix, never out of it', () => {
+    const suffixed = text(disambiguateSegment(`${'a'.repeat(300)}.docx`, '01ABCDEF2345'));
+
+    expect(suffixed).toHaveLength(180);
+    expect(suffixed.endsWith('-01ABCDEF.docx')).toBe(true);
+  });
+
+  it('a name whose extension alone overruns the limit still opens with its suffix', () => {
+    const suffixed = text(disambiguateSegment(`Rapport.${'z'.repeat(300)}`, '01ABCDEF2345'));
+
+    expect(suffixed.startsWith('-01ABCDEF.')).toBe(true);
+  });
+
+  it('two long names alike up to the cut are still told apart by what they hold', () => {
+    const first = text(disambiguateSegment(`${'a'.repeat(300)} v1.docx`, '01ABCDEF2345'));
+    const second = text(disambiguateSegment(`${'a'.repeat(300)} v2.docx`, '9988776655FF'));
+
+    expect(first).not.toBe(second);
+  });
 });

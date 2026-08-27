@@ -219,6 +219,18 @@ describe('keeping what a conversation carried', () => {
     expect(stored[0]).not.toBe(stored[1]);
   });
 
+  it('two files of one conversation sharing a name and a byte count are both kept, being different files', async () => {
+    const messages = [message({ id: 'm1', hasAttachments: true }), message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true })];
+    const attachments = {
+      m1: [{ id: 'att1', name: 'Budget.xlsx', contentType: 'application/vnd', size: 4096, isInline: false }],
+      m2: [{ id: 'att2', name: 'Budget.xlsx', contentType: 'application/vnd', size: 4096, isInline: false }],
+    };
+    const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
+    const stored = outcome?.kind === 'rendered' ? outcome.thread.record.attachments : [];
+
+    expect(stored).toEqual([`${ATTACHMENTS_STORE}/${storedName('Budget.xlsx', 'att1')}.md`, `${ATTACHMENTS_STORE}/${storedName('Budget.xlsx', 'att2')}.md`]);
+  });
+
   it('a signature image riding on every message is converted once, not once per message', async () => {
     const messages = [message({ id: 'm1', hasAttachments: true }), message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true })];
     const signature = [{ id: 'sig', name: 'image001.png', contentType: 'image/png', size: 100, isInline: true }];

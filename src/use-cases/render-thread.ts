@@ -209,17 +209,17 @@ const attachmentsOf = async (deps: RenderThreadDeps, input: RenderThreadInput, p
   const skipped: ReportEntry[] = [];
   const failed: ReportEntry[] = [];
   // A signature logo rides on every message of a thread, so the same file is offered many times.
-  // Name and length identify a repeat before it is even fetched, so it is pulled once per thread,
-  // not once per message; the content address then dedupes it across every other thread as well.
-  const seenInThread = new Set<string>();
+  // Every offer is fetched and hashed rather than recognised beforehand by its name and length: a
+  // spreadsheet edited and resent down a thread keeps its name, and an edit that leaves the byte
+  // count untouched would pass for the version before it. The content address then dedupes the
+  // repeat, here and across every other thread, so the bytes are paid for and the conversion is not.
   for (const part of parts.filter((candidate) => candidate.message.hasAttachments)) {
     const listed = await deps.reader.attachments(part.message.id);
     if (!listed.ok) {
       failed.push({ path: `message ${part.message.id}`, reason: `could not list what it carried: ${listed.error.message}` });
       continue;
     }
-    for (const attachment of listed.value.filter((candidate) => !seenInThread.has(`${candidate.name}:${candidate.size}`))) {
-      seenInThread.add(`${attachment.name}:${attachment.size}`);
+    for (const attachment of listed.value) {
       const placed = await placeAttachment(deps, input, store, part.message.id, attachment, stamp);
       for (const path of placed.paths) if (!paths.includes(path)) paths.push(path);
       if (placed.skipped) skipped.push(placed.skipped);
