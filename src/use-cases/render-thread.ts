@@ -175,15 +175,20 @@ const ATTACHMENTS_FOLDER = '_attachments';
 // the same copy on disk, so every message that carried it names it.
 type MessageFile = { readonly attachment: MailAttachment; readonly paths: ReadonlyArray<string>; readonly primary?: string; readonly note?: string };
 
+type Media = ReadonlyArray<string>;
+
 type AttachmentTally = {
   readonly paths: ReadonlyArray<string>;
   readonly store: Readonly<Record<string, AttachmentRecord>>;
   readonly byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>;
+  // Pictures taken out of the documents themselves. Written, recorded, and left out of the head of
+  // the thread: the document's own markdown links them under `## Images`.
+  readonly media: Media;
   readonly skipped: ReadonlyArray<ReportEntry>;
   readonly failed: ReadonlyArray<ReportEntry>;
 };
 
-type Placed = { readonly paths: ReadonlyArray<string>; readonly primary?: string; readonly skipped?: ReportEntry; readonly failed?: ReportEntry };
+type Placed = { readonly paths: ReadonlyArray<string>; readonly primary?: string; readonly media?: Media; readonly skipped?: ReportEntry; readonly failed?: ReportEntry };
 
 // One attachment into the shared store. Its content address decides everything: a content already
 // stored is referenced without being converted again; a new content is converted once, under a name
@@ -221,15 +226,15 @@ const placeAttachment = async (
   if (!address.ok) return { paths: [], failed: { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` } };
   const hash = address.value.hash;
   const seen = store[hash];
-  if (seen !== undefined) return { paths: seen.paths, primary: seen.primary };
+  if (seen !== undefined) return { paths: seen.paths, primary: seen.primary, media: seen.media };
   const asName = disambiguateSegment(attachment.name, hash);
   const folder = `${deps.mailboxRoot}/${ATTACHMENTS_FOLDER}`;
   const rendered = address.value.rendered;
   const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, asName, rendered });
   if (outcome.kind === 'skipped') return { paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, input.maxBytes) } };
   if (outcome.kind === 'failed') return { paths: [], failed: { path: attachment.name, reason: outcome.reason } };
-  store[hash] = { name: asName, paths: outcome.outputs, primary: outcome.primary };
-  return { paths: outcome.outputs, primary: outcome.primary };
+  store[hash] = { name: asName, paths: outcome.outputs, primary: outcome.primary, media: outcome.media };
+  return { paths: outcome.outputs, primary: outcome.primary, media: outcome.media };
 };
 
 const attachmentsOf = async (deps: RenderThreadDeps, input: RenderThreadInput, parts: ReadonlyArray<ThreadPart>, stamp: DocumentStamp): Promise<AttachmentTally> => {
@@ -243,6 +248,7 @@ const attachmentsOf = async (deps: RenderThreadDeps, input: RenderThreadInput, p
   // count untouched would pass for the version before it. The content address then dedupes the
   // repeat, here and across every other thread, so the bytes are paid for and the conversion is not.
   const byMessage: Record<string, MessageFile[]> = {};
+  const media: string[] = [];
   // Graph reports `hasAttachments: false` for a message whose only attachment is an inline image, so
   // a signature or a pasted screenshot would never be listed at all. A body showing a picture it does
   // not carry is the other half of the question, and asking it costs nothing on a message with neither.
@@ -258,11 +264,12 @@ const attachmentsOf = async (deps: RenderThreadDeps, input: RenderThreadInput, p
       for (const path of placed.paths) if (!paths.includes(path)) paths.push(path);
       if (placed.skipped) skipped.push(placed.skipped);
       if (placed.failed) failed.push(placed.failed);
+      for (const path of placed.media ?? []) if (!media.includes(path)) media.push(path);
       carried.push({ attachment, paths: placed.paths, primary: placed.primary, note: placed.skipped?.reason ?? placed.failed?.reason });
     }
     byMessage[part.message.id] = carried;
   }
-  return { paths, store, byMessage, skipped, failed };
+  return { paths, store, byMessage, media, skipped, failed };
 };
 
 // The picture itself rather than the text read out of it: a raw image is the first file its
@@ -339,7 +346,7 @@ const writeThread = async (
   // of the thread's own folder rather than sitting beside it.
   const here = `${deps.mailboxRoot}/threads/${threadDay(last.received)}`;
   const bodies = rewriteBodies(here, parts, attachments.byMessage);
-  const shown = new Set(bodies.pictures);
+  const shown = new Set([...bodies.pictures, ...attachments.media]);
   const attachmentRefs = attachments.paths.filter((path) => !shown.has(path)).map((path) => pathBetween(here, path));
   const inlineRefs = bodies.pictures.map((path) => pathBetween(here, path));
   const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, inlineRefs, relativeTo(deps.mailboxRoot, links.paths));

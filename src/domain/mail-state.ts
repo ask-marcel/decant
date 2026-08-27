@@ -25,7 +25,9 @@ export type LinkedRecord = { readonly paths: ReadonlyArray<string> };
 // rather than overwriting this one.
 // `primary` is the file to link a reader to out of everything the conversion wrote, so a second
 // thread carrying the same attachment points at the same one without converting it again.
-export type AttachmentRecord = { readonly name: string; readonly paths: ReadonlyArray<string>; readonly primary: string };
+// `media` is the subset of `paths` holding pictures taken out of the document itself. They are files
+// this run wrote, so the record names them, but they are not what the message carried.
+export type AttachmentRecord = { readonly name: string; readonly paths: ReadonlyArray<string>; readonly primary: string; readonly media: ReadonlyArray<string> };
 
 export type MailboxState = {
   readonly version: 1;
@@ -77,7 +79,7 @@ const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
 // wrote, which is the only one for a document and the file itself for everything else.
 const attachmentOf = (entry: Record<string, unknown>): AttachmentRecord => {
   const paths = stringList(entry['paths']);
-  return { name: readString(entry, 'name') ?? '', paths, primary: readString(entry, 'primary') ?? paths[0] ?? '' };
+  return { name: readString(entry, 'name') ?? '', paths, primary: readString(entry, 'primary') ?? paths[0] ?? '', media: stringList(entry['media']) };
 };
 
 const mapOf = <T>(raw: unknown, parse: (entry: Record<string, unknown>) => T): Readonly<Record<string, T>> => {

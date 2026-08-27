@@ -32,7 +32,7 @@ describe('remembering where a mailbox sync got to', () => {
     const linked = withLinked(withThread(withFolderCursor(emptyMailboxState(), 'AAMk1', 'Inbox', 'cursor-1'), 'conv-1', thread), 'b!one:01ABC', {
       paths: ['_linked/Contrat.docx.md'],
     });
-    const state = withAttachment(linked, 'ba7816bf8f01', { name: 'Contrat.docx', paths: ['_attachments/Contrat.docx.md'], primary: '_attachments/Contrat.docx.md' });
+    const state = withAttachment(linked, 'ba7816bf8f01', { name: 'Contrat.docx', paths: ['_attachments/Contrat.docx.md'], primary: '_attachments/Contrat.docx.md', media: [] });
 
     expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
   });
@@ -44,7 +44,7 @@ describe('remembering where a mailbox sync got to', () => {
   });
 
   it('an attachment stored once is recorded by its content address, under the name it was stored as', () => {
-    const record = { name: 'Scan.pdf', paths: ['_attachments/Scan.pdf', '_attachments/Scan.pdf.md'], primary: '_attachments/Scan.pdf.md' };
+    const record = { name: 'Scan.pdf', paths: ['_attachments/Scan.pdf', '_attachments/Scan.pdf.md'], primary: '_attachments/Scan.pdf.md', media: [] };
     const state = withAttachment(emptyMailboxState(), 'ba7816bf8f01', record);
 
     expect(state.attachments['ba7816bf8f01']).toEqual(record);

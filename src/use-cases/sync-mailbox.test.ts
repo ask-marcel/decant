@@ -331,7 +331,9 @@ describe('what the mailbox sync reports', () => {
         thread: {
           record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [], inlineImages: [] },
           linked: {},
-          attachments: { ba7816bf8f01: { name: 'Contrat.docx', paths: ['kb/Mailbox/_attachments/Contrat.docx.md'], primary: 'kb/Mailbox/_attachments/Contrat.docx.md' } },
+          attachments: {
+            ba7816bf8f01: { name: 'Contrat.docx', paths: ['kb/Mailbox/_attachments/Contrat.docx.md'], primary: 'kb/Mailbox/_attachments/Contrat.docx.md', media: [] },
+          },
           filesSkipped: [],
           filesFailed: [],
         },
@@ -342,6 +344,7 @@ describe('what the mailbox sync reports', () => {
       name: 'Contrat.docx',
       paths: ['kb/Mailbox/_attachments/Contrat.docx.md'],
       primary: 'kb/Mailbox/_attachments/Contrat.docx.md',
+      media: [],
     });
   });
 });

@@ -1,4 +1,4 @@
-import { planFile } from '../domain/conversion-plan.ts';
+import { embedsImages, planFile } from '../domain/conversion-plan.ts';
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { renderCalendar } from '../domain/icalendar.ts';
@@ -10,12 +10,15 @@ import type { SkipReason } from '../domain/report.ts';
 import type { ArchiveEntry } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import type { MailAttachment, MailReader, MailReaderError } from './ports/mail-reader.ts';
+import type { Logger } from './ports/logger.ts';
 import type { Ocr } from './ports/ocr.ts';
+import { placeImages } from './place-images.ts';
 
 export type ConvertAttachmentDeps = {
   readonly reader: MailReader;
   readonly files: Files;
   readonly ocr: Ocr;
+  readonly logger: Logger;
   // Unpacking reads a file already on disk, which is all this needs of the wider drive reader.
   readonly unpackArchive: (path: string) => Promise<Result<ReadonlyArray<ArchiveEntry>, { readonly kind: string; readonly message: string }>>;
 };
@@ -39,7 +42,10 @@ export type AttachmentOutcome =
   // `primary` is the one file to link a reader to, out of everything the conversion wrote: always
   // the markdown, since that is what carries the text and stamps where its siblings sit, except for
   // an archive, whose entries are many and whose own file is the thing that was sent.
-  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly primary: string }
+  // `media` names the pictures taken out of a document, which are outputs like any other but are not
+  // files the message carried: the document's own markdown links them, so a thread naming them again
+  // would put twelve lines in its head for one Word file.
+  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly primary: string; readonly media: ReadonlyArray<string> }
   | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
 
@@ -53,17 +59,45 @@ type Context = {
 const failure = (error: MailReaderError | FilesError): AttachmentOutcome =>
   error.kind === 'protected' ? { kind: 'skipped', reason: 'protected' } : { kind: 'failed', reason: `${error.kind}: ${error.message}` };
 
-const writeMarkdown = async (context: Context, stamp: DocumentStamp, body: string): Promise<Result<string, FilesError>> => {
+// A Word or Excel file keeps no copy you can look at, so a diagram inside one survives nowhere but
+// the extraction. A picture read that fails costs the pictures and not the text: the document is the
+// point, and the `[image]` placeholders left in its body already say something stood there.
+const withImages = async (context: Context, body: string): Promise<Result<{ readonly body: string; readonly paths: ReadonlyArray<string> }, FilesError>> => {
+  if (!embedsImages(context.name)) return ok({ body, paths: [] });
+  const found = await context.deps.reader.attachmentImages(context.input.messageId, context.input.attachment.id);
+  if (!found.ok) {
+    context.deps.logger.warn('images.failed', { attachmentId: context.input.attachment.id, name: context.input.attachment.name, cause: found.error.kind });
+    return ok({ body, paths: [] });
+  }
+  if (found.value.length === 0) return ok({ body, paths: [] });
+  const placed = await placeImages(context.deps, context.input.folder, context.name, found.value);
+  return placed.ok ? ok({ body: `${body}${placed.value.section}`, paths: placed.value.paths }) : placed;
+};
+
+type WrittenMarkdown = { readonly path: string; readonly media: ReadonlyArray<string> };
+
+// What a conversion that ended in one markdown file came to: the file, whatever was written before
+// it, and the pictures taken out of the document on the way.
+const converted_ = (written: WrittenMarkdown, before: ReadonlyArray<string> = []): AttachmentOutcome => ({
+  kind: 'converted',
+  outputs: [...before, written.path, ...written.media],
+  primary: written.path,
+  media: written.media,
+});
+
+const writeMarkdown = async (context: Context, stamp: DocumentStamp, body: string): Promise<Result<WrittenMarkdown, FilesError>> => {
+  const pictures = await withImages(context, body);
+  if (!pictures.ok) return pictures;
   const path = `${context.input.folder}/${context.name}.md`;
-  const written = await context.deps.files.writeText(path, kbDocument(stamp, body));
-  return written.ok ? ok(path) : written;
+  const written = await context.deps.files.writeText(path, kbDocument(stamp, pictures.value.body));
+  return written.ok ? ok({ path, media: pictures.value.paths }) : written;
 };
 
 const asMarkdown = async (context: Context): Promise<AttachmentOutcome> => {
   const converted = await context.deps.reader.attachmentMarkdown(context.input.messageId, context.input.attachment.id);
   if (!converted.ok) return failure(converted.error);
   const written = await writeMarkdown(context, context.input.stamp, converted.value.trim().length === 0 ? NO_TEXT_NOTE : converted.value);
-  return written.ok ? { kind: 'converted', outputs: [written.value], primary: written.value } : failure(written.error);
+  return written.ok ? converted_(written.value) : failure(written.error);
 };
 
 const asSlides = async (context: Context): Promise<AttachmentOutcome> => {
@@ -76,7 +110,7 @@ const asSlides = async (context: Context): Promise<AttachmentOutcome> => {
   if (!text.ok) return failure(text.error);
   const stamp = { ...context.input.stamp, pdf: `./${context.name}.pdf` };
   const written = await writeMarkdown(context, stamp, text.value.trim().length === 0 ? NO_TEXT_NOTE : text.value);
-  return written.ok ? { kind: 'converted', outputs: [pdfPath, written.value], primary: written.value } : failure(written.error);
+  return written.ok ? converted_(written.value, [pdfPath]) : failure(written.error);
 };
 
 const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promise<{ readonly text: string; readonly stamp: DocumentStamp }>): Promise<AttachmentOutcome> => {
@@ -87,7 +121,7 @@ const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promi
   if (!wroteRaw.ok) return failure(wroteRaw.error);
   const rendered = await body(rawPath);
   const written = await writeMarkdown(context, rendered.stamp, rendered.text);
-  return written.ok ? { kind: 'converted', outputs: [rawPath, written.value], primary: written.value } : failure(written.error);
+  return written.ok ? converted_(written.value, [rawPath]) : failure(written.error);
 };
 
 // A PDF with a text layer yields it straight. One without (a scan) is read by OCR from the copy on
@@ -138,7 +172,7 @@ const writeArchiveEntries = async (context: Context, folder: string, archivePath
     if (!written.ok) return failure(written.error);
     outputs.push(path);
   }
-  return { kind: 'converted', outputs, primary: archivePath };
+  return { kind: 'converted', outputs, primary: archivePath, media: [] };
 };
 
 // An invitation is read rather than kept. The library has no iCalendar parser and passes the file
@@ -149,7 +183,7 @@ const asCalendar = async (context: Context): Promise<AttachmentOutcome> => {
   if (!passed.ok) return failure(passed.error);
   const read = renderCalendar(passed.value);
   const written = await writeMarkdown(context, context.input.stamp, read.length === 0 ? NO_TEXT_NOTE : read);
-  return written.ok ? { kind: 'converted', outputs: [written.value], primary: written.value } : failure(written.error);
+  return written.ok ? converted_(written.value) : failure(written.error);
 };
 
 // An email attached to an email is not a file to convert: Graph answers a request for its bytes
@@ -158,7 +192,7 @@ const asCalendar = async (context: Context): Promise<AttachmentOutcome> => {
 const asEmbeddedMail = async (context: Context): Promise<AttachmentOutcome> => {
   const rendered = context.input.rendered ?? '';
   const written = await writeMarkdown(context, context.input.stamp, rendered.trim().length === 0 ? NO_TEXT_NOTE : rendered);
-  return written.ok ? { kind: 'converted', outputs: [written.value], primary: written.value } : failure(written.error);
+  return written.ok ? converted_(written.value) : failure(written.error);
 };
 
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<AttachmentOutcome>>> = {

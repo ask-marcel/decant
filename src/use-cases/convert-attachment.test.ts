@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import { NO_TEXT_NOTE } from '../domain/kb-document.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import type { FilesFake, FilesFakeSeed } from '../test-helpers/files-fake.ts';
@@ -45,7 +46,13 @@ const run = async (
 ): Promise<{ outcome: AttachmentOutcome; files: FilesFake }> => {
   const files = createFilesFake(seeds.files);
   const drive = createDriveReaderFake(seeds.drive);
-  const convert = createConvertAttachment({ reader: createMailReaderFake(seeds.reader), files, ocr: createOcrFake(seeds.ocr), unpackArchive: drive.localArchive });
+  const convert = createConvertAttachment({
+    reader: createMailReaderFake(seeds.reader),
+    files,
+    ocr: createOcrFake(seeds.ocr),
+    logger: createLoggerFake(),
+    unpackArchive: drive.localArchive,
+  });
   const outcome = await convert({
     messageId: 'm1',
     attachment: attachment(over),
@@ -62,7 +69,7 @@ describe('keeping what was attached to a mail', () => {
   it('a Word attachment lands as markdown beside the conversation', async () => {
     const { outcome, files } = await run();
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Contrat.docx.md`], primary: `${FOLDER}/Contrat.docx.md` });
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Contrat.docx.md`], primary: `${FOLDER}/Contrat.docx.md`, media: [] });
     expect(files.written.get(`${FOLDER}/Contrat.docx.md`)).toContain('converted att1');
   });
 
@@ -81,7 +88,7 @@ describe('keeping what was attached to a mail', () => {
   it('a deck attachment lands as markdown and a PDF, pointing at each other', async () => {
     const { outcome, files } = await run({ name: 'Roadmap.pptx' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Roadmap.pptx.pdf`, `${FOLDER}/Roadmap.pptx.md`], primary: `${FOLDER}/Roadmap.pptx.md` });
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Roadmap.pptx.pdf`, `${FOLDER}/Roadmap.pptx.md`], primary: `${FOLDER}/Roadmap.pptx.md`, media: [] });
     expect(files.written.get(`${FOLDER}/Roadmap.pptx.md`)).toContain('pdf: ./Roadmap.pptx.pdf');
     expect(files.binary.has(`${FOLDER}/Roadmap.pptx.pdf`)).toBe(true);
   });
@@ -89,7 +96,7 @@ describe('keeping what was attached to a mail', () => {
   it('a PDF attachment is kept as it came, with its text beside it', async () => {
     const { outcome, files } = await run({ name: 'Contrat.pdf' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Contrat.pdf`, `${FOLDER}/Contrat.pdf.md`], primary: `${FOLDER}/Contrat.pdf.md` });
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Contrat.pdf`, `${FOLDER}/Contrat.pdf.md`], primary: `${FOLDER}/Contrat.pdf.md`, media: [] });
     expect(files.written.get(`${FOLDER}/Contrat.pdf.md`)).toContain('pdf: ./Contrat.pdf');
   });
 
@@ -193,6 +200,31 @@ describe('keeping what was attached to a mail', () => {
     expect(outcome.kind).toBe('converted');
   });
 
+  it('the pictures a Word attachment holds are taken out of it, since it keeps no copy you can look at', async () => {
+    const images = { att1: [{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }] };
+    const { outcome, files } = await run({}, { reader: { attachmentImages: images }, ocr: { texts: { [`${FOLDER}/Contrat.docx.media/word_media_image1.png`]: 'smartMOOV' } } });
+    const written = files.written.get(`${FOLDER}/Contrat.docx.md`) ?? '';
+
+    expect(files.binary.has(`${FOLDER}/Contrat.docx.media/word_media_image1.png`)).toBe(true);
+    expect(written).toContain('## Images');
+    expect(written).toContain('![word_media_image1.png](./Contrat.docx.media/word_media_image1.png)');
+    expect(written).toContain('smartMOOV');
+    expect(outcome.kind === 'converted' && outcome.media).toEqual([`${FOLDER}/Contrat.docx.media/word_media_image1.png`]);
+  });
+
+  it('a kind that keeps a copy you can look at is not asked for its pictures', async () => {
+    const { outcome } = await run({ name: 'Contrat.pdf' }, { reader: { attachmentImages: { att1: [{ path: 'p.png', bytes: new Uint8Array([1]) }] } } });
+
+    expect(outcome.kind === 'converted' && outcome.media).toEqual([]);
+  });
+
+  it('a picture read that fails costs the pictures and not the text', async () => {
+    const { outcome, files } = await run({}, { reader: { failCalls: { attachmentImages: { kind: 'transient', message: 'timed out' } } } });
+
+    expect(outcome.kind).toBe('converted');
+    expect(files.written.get(`${FOLDER}/Contrat.docx.md`)).toContain('converted att1');
+  });
+
   it('a meeting invitation is read down to the meeting, not kept as the file it came in', async () => {
     const { outcome, files } = await run({ name: 'invite.ics', contentType: 'text/calendar' }, { reader: { attachmentTexts: { att1: ICS } } });
     const written = files.written.get(`${FOLDER}/invite.ics.md`) ?? '';
@@ -217,6 +249,7 @@ describe('keeping what was attached to a mail', () => {
       kind: 'converted',
       outputs: [`${FOLDER}/Customs documents MSDU1691268.md`],
       primary: `${FOLDER}/Customs documents MSDU1691268.md`,
+      media: [],
     });
     expect(files.written.get(`${FOLDER}/Customs documents MSDU1691268.md`)).toContain('**Subject:** Customs documents');
   });
@@ -292,7 +325,7 @@ describe('keeping what was attached to a mail', () => {
   it('an attachment whose name the filesystem cannot hold is made safe first', async () => {
     const { outcome } = await run({ name: 'Q1/Q2: budget.docx' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Q1_Q2_ budget.docx.md`], primary: `${FOLDER}/Q1_Q2_ budget.docx.md` });
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Q1_Q2_ budget.docx.md`], primary: `${FOLDER}/Q1_Q2_ budget.docx.md`, media: [] });
   });
 
   it('a deck attachment keeps the text read from it rather than a note', async () => {
@@ -310,7 +343,7 @@ describe('keeping what was attached to a mail', () => {
   it('a drawing attachment lands with exactly the file and its note, named for the drawing', async () => {
     const { outcome, files } = await run({ name: 'Logo.svg' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Logo.svg`, `${FOLDER}/Logo.svg.md`], primary: `${FOLDER}/Logo.svg.md` });
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Logo.svg`, `${FOLDER}/Logo.svg.md`], primary: `${FOLDER}/Logo.svg.md`, media: [] });
     expect(files.written.get(`${FOLDER}/Logo.svg.md`)).toContain('image: ./Logo.svg');
   });
 
@@ -321,6 +354,7 @@ describe('keeping what was attached to a mail', () => {
       kind: 'converted',
       outputs: [`${FOLDER}/Livraison/Livraison.zip`, `${FOLDER}/Livraison/notes.docx.md`],
       primary: `${FOLDER}/Livraison/Livraison.zip`,
+      media: [],
     });
   });
 });

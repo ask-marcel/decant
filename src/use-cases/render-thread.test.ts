@@ -65,7 +65,7 @@ const run = async (
     logger,
     clock: createClockFake(),
     mailboxRoot: 'kb/Mailbox',
-    convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), unpackArchive: drive.localArchive }),
+    convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), logger, unpackArchive: drive.localArchive }),
     convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger }),
   });
   const result = await render({ conversationId: CONV, maxBytes: 50 * 1024 * 1024, ocrLabel: 'paddleocr (en)', linked: seeds.linked ?? {}, attachments: seeds.attachments ?? {} });
@@ -242,7 +242,7 @@ describe('keeping what a conversation carried', () => {
 
   it('a file another conversation already stored is referenced, not converted again', async () => {
     const store: Record<string, AttachmentRecord> = {
-      [contentHash(bytesOf('att1'))]: { name: 'Contrat.docx', paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`], primary: `${ATTACHMENTS_STORE}/Contrat.docx.md` },
+      [contentHash(bytesOf('att1'))]: { name: 'Contrat.docx', paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`], primary: `${ATTACHMENTS_STORE}/Contrat.docx.md`, media: [] },
     };
     const { outcome, files } = await run({ reader: withAttachment, attachments: store });
 
@@ -258,12 +258,13 @@ describe('keeping what a conversation carried', () => {
       name: storedName('Contrat.docx', 'att1'),
       paths: [`${ATTACHMENTS_STORE}/${storedName('Contrat.docx', 'att1')}.md`],
       primary: `${ATTACHMENTS_STORE}/${storedName('Contrat.docx', 'att1')}.md`,
+      media: [],
     });
   });
 
   it('a different file whose name is already taken in the store is told apart by its content', async () => {
     const store: Record<string, AttachmentRecord> = {
-      otherhash000: { name: 'Contrat.docx', paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`], primary: `${ATTACHMENTS_STORE}/Contrat.docx.md` },
+      otherhash000: { name: 'Contrat.docx', paths: [`${ATTACHMENTS_STORE}/Contrat.docx.md`], primary: `${ATTACHMENTS_STORE}/Contrat.docx.md`, media: [] },
     };
     const { outcome } = await run({ reader: withAttachment, attachments: store });
     const stored = outcome?.kind === 'rendered' ? outcome.thread.record.attachments : [];
@@ -552,6 +553,32 @@ describe('when the mailbox or the disk refuses', () => {
     });
 
     expect(succeeded).toBe(false);
+  });
+});
+
+describe('the pictures a document attached to a mail holds', () => {
+  it('are written beside its markdown and named nowhere in the head of the thread', async () => {
+    const messages = [message({ hasAttachments: true })];
+    const attachments = { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false }] };
+    const images = { att1: [{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }] };
+    const { outcome, files } = await run({ reader: { conversations: { [CONV]: messages }, attachments, attachmentImages: images } });
+    const stored = `${ATTACHMENTS_STORE}/${storedName('Contrat.docx', 'att1')}`;
+
+    expect(files.binary.has(`${stored}.media/word_media_image1.png`)).toBe(true);
+    expect(files.written.get(THREAD_FILE)).not.toContain('word_media_image1.png');
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${stored}.md`]);
+  });
+
+  it('are remembered against the document they came out of, so a second thread writes none of them again', async () => {
+    const messages = [message({ hasAttachments: true })];
+    const attachments = { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false }] };
+    const images = { att1: [{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }] };
+    const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments, attachmentImages: images } });
+    const stored = `${ATTACHMENTS_STORE}/${storedName('Contrat.docx', 'att1')}`;
+    const record = outcome?.kind === 'rendered' ? outcome.thread.attachments[contentHash(bytesOf('att1'))] : undefined;
+
+    expect(record?.paths).toEqual([`${stored}.md`, `${stored}.media/word_media_image1.png`]);
+    expect(record?.media).toEqual([`${stored}.media/word_media_image1.png`]);
   });
 });
 

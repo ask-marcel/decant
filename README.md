@@ -147,6 +147,12 @@ become searchable; with `--no-ocr` the pictures are still kept, just without the
 placeholders are unnumbered, so the section sits at the end rather than pretending to know where in
 the prose each picture stood.
 
+This holds on both sides of the sync: a Word file attached to a mail loses its diagrams exactly the
+way one sitting in a library does, so it is asked the same question, and the pictures land in the
+same `<name>.media/` folder beside the same markdown. They are not named in the head of the thread,
+which lists what each message carried: the document's own markdown links them, and a Word file with
+a dozen diagrams would otherwise put a dozen lines at the top of a conversation.
+
 Only those two kinds are asked. A PDF is kept whole beside its markdown and a deck is rendered to
 one, so their pictures are already on disk in openable form: taking them out again would duplicate
 what is there, and it costs the most exactly where it buys the least, since one 14 MB manual answers
