@@ -60,6 +60,14 @@ describe('the formats this tool handles', () => {
 });
 
 describe('deciding what to produce for a document found in SharePoint', () => {
+  it('a name ending in a space is still the kind its extension says it is', () => {
+    expect(planFile({ name: 'Budget.xlsx ', size: 1000 }, CAP).kind).toBe('process');
+  });
+
+  it('a name ending in a dot names no kind at all', () => {
+    expect(planFile({ name: 'Budget.xlsx.', size: 1000 }, CAP)).toEqual({ kind: 'skip', reason: 'unsupported-type' });
+  });
+
   it('a Word document becomes a single markdown file beside its name', () => {
     expect(planFile({ name: 'Contrat.docx', size: 1000 }, CAP)).toEqual({
       kind: 'process',

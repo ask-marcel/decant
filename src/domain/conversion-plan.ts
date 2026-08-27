@@ -61,9 +61,13 @@ const ROUTE_BY_EXTENSION: Readonly<Partial<Record<string, ConversionRoute>>> = {
 };
 
 // A leading dot names a hidden file, so `.docx` has no extension: it is a file called `.docx`.
+// Outlook does not clean an attachment name the way SharePoint does, so `Budget.xlsx ` arrives with
+// its space and would name a kind nothing handles. Trimmed here rather than at every call, the way
+// `safeSegment` already trims the name it writes to disk.
 const extensionOf = (name: string): string | undefined => {
   const lastDot = name.lastIndexOf('.');
-  return lastDot <= 0 ? undefined : name.slice(lastDot + 1).toLowerCase();
+  const found = lastDot <= 0 ? '' : name.slice(lastDot + 1).trim();
+  return found.length === 0 ? undefined : found.toLowerCase();
 };
 
 // Only ever called for a route that was matched by extension, so a dot is guaranteed.
