@@ -16,10 +16,17 @@ BASE="${BASE:-origin/main}"
 
 # Files that differ from BASE plus uncommitted/staged edits, intersected
 # with the mutation scope.
+#
+# The `ls-files --others` line is not redundant with the diffs above it: a file
+# that has never been added is in no diff at all, so a brand-new module would
+# score nothing and read as passing. That is the case this check exists for,
+# since new code is where surviving mutants actually live. `--exclude-standard`
+# keeps gitignored files out.
 files=$( {
   git diff --name-only --diff-filter=ACMR "$BASE"...HEAD
   git diff --name-only --diff-filter=ACMR HEAD
   git diff --cached --name-only --diff-filter=ACMR
+  git ls-files --others --exclude-standard
 } | sort -u \
   | grep -E '^src/(domain|use-cases)/' \
   | grep -E '\.ts$' \
