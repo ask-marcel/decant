@@ -18,13 +18,9 @@ const SUPPORTED: ReadonlyArray<readonly [string, ConversionRoute]> = [
   ['md', 'document'],
   ['msg', 'document'],
   ['odp', 'document'],
-  ['ods', 'document'],
   ['odt', 'document'],
   ['sarif', 'document'],
   ['txt', 'document'],
-  ['xls', 'document'],
-  ['xlsm', 'document'],
-  ['xlsx', 'document'],
   ['xml', 'document'],
   ['yaml', 'document'],
   ['yml', 'document'],
@@ -47,6 +43,12 @@ const SUPPORTED: ReadonlyArray<readonly [string, ConversionRoute]> = [
   ['tiff', 'image'],
   ['webp', 'image'],
   ['svg', 'vector'],
+  ['ics', 'calendar'],
+  ['eml', 'message'],
+  ['ods', 'spreadsheet'],
+  ['xls', 'spreadsheet'],
+  ['xlsm', 'spreadsheet'],
+  ['xlsx', 'spreadsheet'],
 ];
 
 describe('the formats this tool handles', () => {
@@ -60,6 +62,30 @@ describe('the formats this tool handles', () => {
 });
 
 describe('deciding what to produce for a document found in SharePoint', () => {
+  it('a saved email becomes a folder, the way an archive does, since it holds files of its own', () => {
+    expect(planFile({ name: 'Fwd.eml', size: 1000 }, CAP)).toEqual({
+      kind: 'process',
+      route: 'message',
+      outputs: [{ relName: 'Fwd', role: 'archive-folder' }],
+    });
+  });
+
+  it('a meeting invitation becomes a single markdown record, the file itself being unreadable', () => {
+    expect(planFile({ name: 'invite.ics', size: 1000 }, CAP)).toEqual({
+      kind: 'process',
+      route: 'calendar',
+      outputs: [{ relName: 'invite.ics.md', role: 'markdown' }],
+    });
+  });
+
+  it('a name ending in a space is still the kind its extension says it is', () => {
+    expect(planFile({ name: 'Budget.xlsx ', size: 1000 }, CAP).kind).toBe('process');
+  });
+
+  it('a name ending in a dot names no kind at all', () => {
+    expect(planFile({ name: 'Budget.xlsx.', size: 1000 }, CAP)).toEqual({ kind: 'skip', reason: 'unsupported-type' });
+  });
+
   it('a Word document becomes a single markdown file beside its name', () => {
     expect(planFile({ name: 'Contrat.docx', size: 1000 }, CAP)).toEqual({
       kind: 'process',
@@ -68,11 +94,14 @@ describe('deciding what to produce for a document found in SharePoint', () => {
     });
   });
 
-  it('a spreadsheet is treated as a document, one markdown table per sheet', () => {
+  it('a workbook is kept as it came, beside the text read out of it', () => {
     expect(planFile({ name: 'Budget.xlsx', size: 1000 }, CAP)).toEqual({
       kind: 'process',
-      route: 'document',
-      outputs: [{ relName: 'Budget.xlsx.md', role: 'markdown' }],
+      route: 'spreadsheet',
+      outputs: [
+        { relName: 'Budget.xlsx', role: 'raw' },
+        { relName: 'Budget.xlsx.md', role: 'markdown' },
+      ],
     });
   });
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { DriveItem } from '../domain/drive-item.ts';
+import { NO_TEXT_NOTE } from '../domain/kb-document.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import type { DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
@@ -53,6 +54,117 @@ describe('converting one document out of a library', () => {
 
     expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md'] });
     expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain('# Contrat');
+  });
+
+  it('a workbook in a library is kept as it came, beside the text read out of it', async () => {
+    const { outcome, files } = await run({ name: 'Budget.xlsx' }, { reader: { markdown: { '01ABC': '| Q1 | 12 |' } } });
+    const folder = 'kb/Espace Contoso/Documents/2026-05-12/Projets';
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${folder}/Budget.xlsx`, `${folder}/Budget.xlsx.md`] });
+    expect(files.binary.has(`${folder}/Budget.xlsx`)).toBe(true);
+    expect(files.written.get(`${folder}/Budget.xlsx.md`)).toContain('original: ./Budget.xlsx');
+  });
+
+  it('a saved email in a library is unpacked the way one attached to a mail is', async () => {
+    const eml = [
+      'Subject: Fwd',
+      'Content-Type: multipart/mixed; boundary="B"',
+      '',
+      '--B',
+      'Content-Type: text/plain',
+      '',
+      'the body',
+      '--B',
+      'Content-Type: application/pdf; name="x.pdf"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      'QUJD',
+      '--B--',
+    ].join('\r\n');
+    const { outcome, files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } } });
+    const folder = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Fwd';
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${folder}/Fwd.eml.md`, `${folder}/x.pdf`, `${folder}/x.pdf.md`] });
+    expect(files.written.get(`${folder}/Fwd.eml.md`)).toContain('the body');
+    expect(files.binary.get(`${folder}/x.pdf`)).toEqual(new Uint8Array([65, 66, 67]));
+  });
+
+  it('a saved email in a library the source refused to hand over is reported', async () => {
+    const { outcome } = await run({ name: 'Fwd.eml' }, { reader: { failWith: { kind: 'transient', message: 'timed out' } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'transient: timed out' });
+  });
+
+  it('a saved email in a library holding no message of its own still lands, saying so', async () => {
+    const { files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode('') } } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Fwd/Fwd.eml.md')).toContain(NO_TEXT_NOTE);
+  });
+
+  it('a saved email in a library whose message cannot be written is reported', async () => {
+    const eml = ['Subject: Fwd', 'Content-Type: text/plain', '', 'body'].join('\r\n');
+    const { outcome } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } }, files: { failWritesMatching: 'Fwd.eml.md' } });
+
+    expect(outcome.kind).toBe('failed');
+  });
+
+  it('a file inside a saved email in a library that nothing can read keeps the file', async () => {
+    const eml = [
+      'Subject: Fwd',
+      'Content-Type: multipart/mixed; boundary="B"',
+      '',
+      '--B',
+      'Content-Type: application/pdf; name="x.pdf"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      'QUJD',
+      '--B--',
+    ].join('\r\n');
+    const { outcome, files } = await run(
+      { name: 'Fwd.eml' },
+      { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) }, failItems: { '01ABC': { kind: 'permanent', message: 'no' } } } }
+    );
+
+    expect(outcome.kind).toBe('failed');
+    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Projets/Fwd/x.pdf')).toBe(false);
+  });
+
+  it('a file inside a saved email in a library that cannot be written is reported', async () => {
+    const eml = [
+      'Subject: Fwd',
+      'Content-Type: multipart/mixed; boundary="B"',
+      '',
+      '--B',
+      'Content-Type: application/pdf; name="x.pdf"',
+      'Content-Transfer-Encoding: base64',
+      '',
+      'QUJD',
+      '--B--',
+    ].join('\r\n');
+    const { outcome } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } }, files: { failWritesMatching: 'x.pdf' } });
+
+    expect(outcome.kind).toBe('failed');
+  });
+
+  it('a workbook in a library the source read as empty says so', async () => {
+    const { files } = await run({ name: 'Budget.xlsx' }, { reader: { markdown: { '01ABC': '   ' } } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Budget.xlsx.md')).toContain(NO_TEXT_NOTE);
+  });
+
+  it('a workbook in a library that cannot be written is reported rather than left as text alone', async () => {
+    const { outcome } = await run({ name: 'Budget.xlsx' }, { files: { failWritesMatching: 'Budget.xlsx' } });
+
+    expect(outcome.kind).toBe('failed');
+  });
+
+  it('a meeting invitation in a library is read down to the meeting', async () => {
+    const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'SUMMARY:Kick-off', 'DTSTART:20260812T060000Z', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
+    const { files } = await run({ name: 'invite.ics' }, { reader: { markdown: { '01ABC': ics } } });
+    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/invite.ics.md') ?? '';
+
+    expect(written).toContain('## Kick-off');
+    expect(written).not.toContain('BEGIN:VEVENT');
   });
 
   it('the markdown carries where it came from, when it changed and who changed it', async () => {

@@ -2,7 +2,12 @@ import type { MailFolder } from '../domain/mail-folder.ts';
 import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
-import type { LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
+import type { EmbeddedImage } from '../use-cases/ports/drive-reader.ts';
+import type { AttachmentKind, LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
+
+// Only an inline image carries a content id, so a seed states one when the test is about that and
+// leaves it out otherwise.
+export type MailAttachmentSeed = Omit<MailAttachment, 'contentId' | 'kind'> & { readonly contentId?: string; readonly kind?: AttachmentKind };
 
 export type MailReaderSeed = {
   readonly folders?: ReadonlyArray<MailFolder>;
@@ -11,10 +16,14 @@ export type MailReaderSeed = {
   readonly pages?: ReadonlyArray<MailDeltaPage>;
   readonly conversations?: Readonly<Record<string, ReadonlyArray<MailMessage>>>;
   readonly bodies?: Readonly<Record<string, string>>;
-  readonly attachments?: Readonly<Record<string, ReadonlyArray<MailAttachment>>>;
+  readonly attachments?: Readonly<Record<string, ReadonlyArray<MailAttachmentSeed>>>;
   // Keyed by attachment id, so one attachment can convert to nothing while its bytes still arrive.
   readonly attachmentTexts?: Readonly<Record<string, string>>;
+  // The bytes an attachment really holds, for a test about what is inside a file rather than around it.
+  readonly attachmentRaw?: Readonly<Record<string, string>>;
   readonly links?: Readonly<Record<string, ReadonlyArray<LinkedFile>>>;
+  // Keyed by attachment id, the way the texts are, so one document can hold pictures and another not.
+  readonly attachmentImages?: Readonly<Record<string, ReadonlyArray<EmbeddedImage>>>;
   readonly failWith?: MailReaderError;
   readonly failMessages?: Readonly<Record<string, MailReaderError>>;
   // Fails only the listing of what a message carried, leaving its body readable.
@@ -65,7 +74,8 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
         calls.push(`attachments:${messageId}`);
         return err(seed.failAttachmentList);
       }
-      return forMessage(messageId, 'attachments', seed.attachments?.[messageId] ?? []);
+      const listed = (seed.attachments?.[messageId] ?? []).map((entry) => ({ ...entry, contentId: entry.contentId ?? '', kind: entry.kind ?? ('file' as const) }));
+      return forMessage(messageId, 'attachments', listed);
     },
     attachmentMarkdown: async (messageId, attachmentId) => {
       const refused = seed.failCalls?.['attachmentMarkdown'];
@@ -77,7 +87,12 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
     },
     attachmentBytes: async (messageId, attachmentId) => {
       const refused = seed.failCalls?.['attachmentBytes'];
-      return refused ? err(refused) : forMessage(messageId, `attachmentBytes:${attachmentId}`, new TextEncoder().encode(`bytes ${attachmentId}`));
+      const raw = seed.attachmentRaw?.[attachmentId] ?? `bytes ${attachmentId}`;
+      return refused ? err(refused) : forMessage(messageId, `attachmentBytes:${attachmentId}`, new TextEncoder().encode(raw));
+    },
+    attachmentImages: async (messageId, attachmentId) => {
+      const refused = seed.failCalls?.['attachmentImages'];
+      return refused ? err(refused) : forMessage(messageId, `attachmentImages:${attachmentId}`, seed.attachmentImages?.[attachmentId] ?? []);
     },
     sharepointLinks: async (messageId) => forMessage(messageId, 'links', seed.links?.[messageId] ?? []),
   };

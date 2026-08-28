@@ -1,7 +1,7 @@
 import { renderFrontMatter, withFrontMatter } from './front-matter.ts';
 
 // Where a generated markdown file came from, stamped at its head so an agent reading it later can
-// cite the source, judge how fresh it is, and open the PDF or image sitting beside it.
+// cite the source, judge how fresh it is, and open the PDF, image or workbook sitting beside it.
 export type DocumentStamp = {
   readonly source: string;
   readonly site: string;
@@ -12,6 +12,9 @@ export type DocumentStamp = {
   readonly modifiedBy?: string;
   readonly pdf?: string;
   readonly image?: string;
+  // The file the text was read out of, where reading it loses what the file holds: a workbook keeps
+  // its formulas, sheets and charts nowhere else.
+  readonly original?: string;
   readonly ocr?: string;
   readonly zipEntry?: string;
 };
@@ -37,6 +40,7 @@ export const stampOf = (stamp: DocumentStamp): string =>
     ['synced_at', stamp.syncedAt],
     ['pdf', stamp.pdf],
     ['image', stamp.image],
+    ['original', stamp.original],
     ['ocr', stamp.ocr],
     ['zip_entry', stamp.zipEntry],
   ]);

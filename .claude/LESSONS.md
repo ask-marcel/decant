@@ -252,6 +252,57 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   to `>=`, killable by the existing empty-text case, since `0 >= 0` is true where `0 > 0` is not.
   Two survivors and a line of code gone for one rewrite; only the third needed a new test.
 
+- [gotcha] Graph reports `hasAttachments: false` on a message whose only attachment is inline, so a
+  signature logo or a pasted screenshot is invisible to any code that gates a listing on that flag.
+  `list-mail-attachments` on the very same message returns the picture. Confirmed live on two
+  messages of this mailbox. The body is the other half of the question: `convert-mail-to-markdown`
+  renders every unresolved `cid:` image as `[inline image: <label>]`, so a message worth listing is
+  one where the flag is true OR the body carries that marker.
+
+- [gotcha] The label in `[inline image: <label>]` is not reliably a file name. The library falls back
+  through the attachment name, the `alt` text, the content id truncated at its `@`, then the whole
+  content id, and it only has names to use when Graph said `hasAttachments`, which for an inline-only
+  message it does not. Match a placeholder on all of those, and ask
+  `list-mail-attachments --select ...,microsoft.graph.fileAttachment/contentId` to have the id at
+  all: the library's default select leaves it out.
+
+- [decision] Two string literals from `ask-marcel-office-cli` are load-bearing in `domain/`:
+  `**Attachments:**` and `[inline image: `. Both live as named constants, and every parse degrades to
+  leaving the body exactly as it came rather than mangling it, so a reworded release costs the new
+  behaviour and never the text. The dependency is pinned `^2.3.0`; a minor bump is the thing to check
+  when a thread body suddenly stops linking its attachments.
+
+- [mistake] A test whose subject has a fallback path can pass without ever exercising its subject.
+  Every inline-image identity test used one candidate picture, so the one-to-one last resort produced
+  the right pair whatever the matching returned: green tests, 28 surviving mutants, 65% on a new
+  module. Two candidates in the fixture is what makes an identity match the only explanation for the
+  result. Mutation testing found this; coverage was already 100%.
+
+- [gotcha] `get-mail-attachment` on an `itemAttachment` returns the item, not bytes, so anything that
+  fetches bytes first fails it with "Graph returned no bytes" and retries it every run. `@odata.type`
+  is the discriminator and Graph returns it whatever the `$select` asks for. Route on that, not on
+  the file name: an item attachment's name is a subject with no extension, so extension routing has
+  nothing to work with either.
+
+- [decision] An attachment with no bytes is content-addressed by the SHA-256 of what the library
+  renders it to. The address is then only stable within a library version, which is the price of
+  having one at all, and it is what lets a conversation that forwarded the same mail five times store
+  it once. Written down because a future reader will wonder why one address is taken from bytes and
+  another from text.
+
+- [gotcha] The mutation gate compares the AGGREGATE against the break threshold, not each file. A new
+  module can sit under 90 while the run passes. Worth checking the per-file column after adding one:
+  `icalendar.ts` first landed at 73.6% inside a passing run.
+
+- [decision] `ThreadRecord.attachments` records what the messages carried, not every file the run
+  wrote for them. Pictures taken out of a document, and a raw file written beside its markdown, are
+  in the shared store record instead, which is what dedupe reads. The rule is that the record mirrors
+  what a reader sees in the front matter; the store holds the whole production.
+
+- [gotcha] The commit-size gate is 10 files AND 300 lines, and a step that touches a domain module
+  plus its wiring will breach one of them. Splitting by file works when the new module has no caller
+  yet: commit the pure part first, the wiring second. Three of the eight steps here needed it.
+
 - [gotcha] `expect([undefined]).toEqual([])` PASSES in Bun. Verified in isolation, not inferred: an
   array holding one `undefined` satisfies an assertion that it is empty. Three assertions in
   `shared-site.test.ts` read as "nothing came back" while a stray `undefined` would have satisfied
@@ -280,6 +331,24 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   raw mode, so no `\r` is needed per row.
 
 ## 2026-08-28
+
+- [mistake] A parser tested with fixtures I wrote myself is tested against my idea of the format, not
+  the format. The MIME boundary was escaped into a pattern and the escaping was wrong; every fixture
+  used `BOUND` or `B`, so the tests passed for a parser that would have broken on the first real
+  Outlook message, whose boundaries carry `.` and `+`. When a value comes from somewhere else, put
+  what that somewhere else actually sends in the fixture.
+
+- [gotcha] The mutation gate scores the aggregate of the staged files, so a new module can sit well
+  under 90 inside a passing run, and a big weak file can fail a run where everything else is fine. It
+  took five rounds to get this one over the line: exact assertions instead of `toContain`, then the
+  input shapes the fixtures never used (LF endings, unquoted parameters, a space-folded header), then
+  simplifying the code so there were fewer defensive branches to kill in the first place. Read the
+  per-file column, not just the total.
+
+- [decision] `mime.ts` and `mime-text.ts` are two modules because the shape of a message and the
+  encodings its pieces travelled in are two subjects. The split fell out of the commit-size gate and
+  turned out to be the better design: each file is under a hundred lines, each has its own tests, and
+  the encodings module is the one with all the awkward native-throwing calls.
 
 - [gotcha] `mutate:changed` built its file list from `git diff` alone, which never lists an untracked
   file, so a module that had never been added was skipped and the run printed a passing score for

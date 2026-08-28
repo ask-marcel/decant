@@ -28,6 +28,12 @@ describe('stamping a converted document', () => {
     );
   });
 
+  it('a workbook records the file it was read out of, which the markdown cannot hold', () => {
+    const stamp = stampOf({ ...base, path: 'Finance/Budget.xlsx', original: './Budget.xlsx' });
+
+    expect(stamp).toContain('original: ./Budget.xlsx');
+  });
+
   it('a photo records the image beside it and how its text was read', () => {
     const stamp = stampOf({ ...base, path: 'Photos/Tableau.jpg', image: './Tableau.jpg', ocr: 'paddleocr (en)' });
 

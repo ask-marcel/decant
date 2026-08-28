@@ -3,7 +3,8 @@ import { parseMailDelta, parseMessage } from '../domain/mail-message.ts';
 import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
-import type { LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
+import type { AttachmentKind, LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
+import { mediaOf } from './drive-reader-marcel.ts';
 import type { MarcelCall } from './drive-reader-marcel.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -23,13 +24,37 @@ const toBytes = (value: unknown): Result<Uint8Array, MailReaderError> => {
   return text === undefined ? err({ kind: 'permanent', message: 'Graph returned no bytes' }) : ok(new TextEncoder().encode(text));
 };
 
+const KIND_BY_TYPE: Readonly<Partial<Record<string, AttachmentKind>>> = {
+  '#microsoft.graph.itemAttachment': 'item',
+  '#microsoft.graph.referenceAttachment': 'reference',
+};
+
+// Graph returns the discriminator whatever the select asks for, and a shape it does not name is a
+// file: that is the common case and the only one carrying bytes.
+const kindOf = (value: unknown): AttachmentKind => KIND_BY_TYPE[readString(value, '@odata.type') ?? ''] ?? 'file';
+
 const toAttachment = (value: unknown): ReadonlyArray<MailAttachment> => {
   const id = readString(value, 'id');
   const name = readString(value, 'name');
   if (id === undefined || name === undefined || !isRecord(value)) return [];
   const size = value['size'];
-  return [{ id, name, contentType: readString(value, 'contentType') ?? '', size: typeof size === 'number' ? size : 0, isInline: value['isInline'] === true }];
+  return [
+    {
+      kind: kindOf(value),
+      id,
+      name,
+      contentType: readString(value, 'contentType') ?? '',
+      size: typeof size === 'number' ? size : 0,
+      isInline: value['isInline'] === true,
+      contentId: readString(value, 'contentId') ?? '',
+    },
+  ];
 };
+
+// The library's own default select leaves `contentId` out, so an inline image would arrive with no
+// way to tell which `cid:` in the body it answers to. The cast is what Graph requires to reach a
+// field that only file attachments carry, and it is the same string the library uses internally.
+const ATTACHMENT_FIELDS = 'id,name,contentType,size,isInline,microsoft.graph.fileAttachment/contentId';
 
 // `extract-sharepoint-links-in-mail` reports a link it could not resolve with an `error` instead of
 // a driveItem; those are dropped rather than chased.
@@ -88,12 +113,16 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
     },
     messageMarkdown: async (messageId) => textOf('convert-mail-to-markdown', { messageId }),
     attachments: async (messageId) => {
-      const raw = await call('list-mail-attachments', { messageId });
+      const raw = await call('list-mail-attachments', { messageId, select: ATTACHMENT_FIELDS });
       return raw.ok ? ok(listOf(raw.value).flatMap(toAttachment)) : raw;
     },
     attachmentMarkdown: async (messageId, attachmentId) => textOf('convert-mail-attachment-to-markdown', { messageId, attachmentId, includeMetadata: 'true' }),
     attachmentPdf: async (messageId, attachmentId) => bytesOf('convert-mail-attachment-to-pdf', { messageId, attachmentId }),
     attachmentBytes: async (messageId, attachmentId) => bytesOf('get-mail-attachment', { messageId, attachmentId }),
+    attachmentImages: async (messageId, attachmentId) => {
+      const raw = await call('extract-mail-attachment-images', { messageId, attachmentId });
+      return raw.ok ? ok(mediaOf(raw.value)) : raw;
+    },
     sharepointLinks: async (messageId) => {
       const raw = await call('extract-sharepoint-links-in-mail', { messageId });
       return raw.ok ? ok(toLinks(raw.value)) : raw;

@@ -96,7 +96,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const convertFile = createConvertFile({ reader, files, ocr, clock, logger, progress });
   const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot });
   const listSyncedSources = createListSyncedSources({ files, logger, kbRoot: config.kbRoot });
-  const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, unpackArchive: reader.localArchive });
+  const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown });
   const renderThread = createRenderThread({ reader: mail, drive: reader, files, convertAttachment, convertFile, clock, logger, mailboxRoot: `${config.kbRoot}/Mailbox` });
   const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);

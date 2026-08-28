@@ -123,15 +123,35 @@ pdf: ./Roadmap.pptx.pdf
 
 | Source | What you get |
 |---|---|
-| docx, doc, xlsx, xls, csv, odt/ods/odp, msg, txt, md, html, json, sarif, xml, yaml, log | one markdown file |
+| docx, doc, csv, odt/odp, msg, txt, md, html, json, sarif, xml, yaml, log | one markdown file |
+| xlsx, xls, xlsm, ods | the workbook, plus markdown holding its cell text |
 | loop, fluid, whiteboard | one markdown file, rendered by Graph since the page holds no text of its own |
 | pptx | markdown for the text, plus a PDF of the slides (markdown alone when the source will not render it) |
 | ppt, rtf | a PDF, plus markdown read back from it |
 | pdf | the original, plus markdown holding its text layer |
+| ics | one markdown record of the meeting: what it is called, when, where, who was asked |
+| eml | a folder: the message as markdown, and every file it carried taken out of the base64 it travelled in |
 | zip | a folder, one markdown file per document inside, and the archive itself |
 | jpg, png, gif, webp, bmp, tiff, heic | the image, plus markdown holding the text read out of it |
 | svg | the file, plus a markdown note pointing at it |
 | anything else | left in SharePoint and named in `_sync-report.md` |
+
+A workbook is kept as it came as well as read. The conversion yields cell text and nothing else, so
+a formula, a second sheet, a number format and a chart survive nowhere but the file itself; the
+markdown names it under `original:`. Every other document kind is markdown alone, since for text the
+markdown is the content.
+
+A saved email is unpacked the way an archive is. The library has no parser for raw MIME and hands
+the file back whole, which means every attachment sits in the middle of the text as base64, so the
+message is read here instead: the header block, the text in whatever encoding a 7-bit transport
+forced on it, and each file it carried written as a file and converted like any other. A file of a
+kind nothing can read keeps the file and loses only the text.
+
+A meeting invitation is read rather than kept. What survives is the summary, the time exactly as the
+invitation states it (no timezone is converted, since there is no zone database here to do it with),
+the location, the organiser, everyone asked, the recurrence rule, and whether the invitation is a
+cancellation. What goes is the block of daylight-saving rules, the vendor properties, and the
+description, which repeats the mail the invitation rode in on.
 
 The language an image is read in is chosen per image, not per run. Nothing about a file says which
 language it holds, so the run finds out by reading it twice. The first reading uses the widest
@@ -160,6 +180,12 @@ Each is read for its text the same way a photo in a library is, so the labels in
 become searchable; with `--no-ocr` the pictures are still kept, just without the reading. The
 placeholders are unnumbered, so the section sits at the end rather than pretending to know where in
 the prose each picture stood.
+
+This holds on both sides of the sync: a Word file attached to a mail loses its diagrams exactly the
+way one sitting in a library does, so it is asked the same question, and the pictures land in the
+same `<name>.media/` folder beside the same markdown. They are not named in the head of the thread,
+which lists what each message carried: the document's own markdown links them, and a Word file with
+a dozen diagrams would otherwise put a dozen lines at the top of a conversation.
 
 Only those two kinds are asked. A PDF is kept whole beside its markdown and a deck is rendered to
 one, so their pictures are already on disk in openable form: taking them out again would duplicate
@@ -228,6 +254,14 @@ also unpacked, one markdown file per document inside. Every attachment is stored
 converted a single time and every conversation after the first references the copy already on disk.
 Each is stored under its own name plus a short slice of that address (`Contrat-a3f9c1b2.docx`), which
 fixes the name to the bytes so conversations rendering in parallel never collide on disk.
+
+Each message's own section names the files that message carried, linking where each landed, so a
+reader following a conversation sees what arrived with which reply rather than one list at the head
+of the file. A picture pasted into a message is shown where it stood rather than named, and is listed
+under `inline_images` in the front matter instead of among the attachments, so a signature logo does
+not read as a document somebody sent. A file that was left alone keeps its name in that list with
+the reason beside it, and a picture nothing could be matched to is named as a file rather than
+dropped, so nothing a message carried goes unmentioned.
 
 A first mailbox run is slow: Outlook hands back changes ten messages at a time and there is no way
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
