@@ -7,7 +7,7 @@ import type { DriveState, SiteRef, SiteState } from '../domain/site-state.ts';
 import { belongsToAnotherSite, emptySiteState, forgetItem, parseSiteState, recordItem, renameItem, serializeSiteState, siteIdHash, withDrive } from '../domain/site-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import { buildWorklist } from '../domain/worklist.ts';
-import type { ReportEntry, ReportRun } from '../domain/report.ts';
+import type { ReportNotes, ReportRun } from '../domain/report.ts';
 import { appendReportRun, hasSomethingToReport, skipReason } from '../domain/report.ts';
 import type { WorkItem } from '../domain/worklist.ts';
 import type { ConvertFile } from './convert-file.ts';
@@ -51,7 +51,18 @@ export type RunSummary = {
   readonly queued: number;
 };
 
-export type SyncSite = (input: SyncSiteInput) => Promise<Result<RunSummary, StepError>>;
+// What one source's run hands back. The notes used to stop at this source's own report; the global
+// report needs them a level up, where every source of a run can be written to one file.
+export type SourceRun = {
+  // Keyed by id, not by name: two sites can carry the same display name, and a report that mistook
+  // one for the other would drop the untouched one from its tail, reading as if it were clean.
+  readonly id: string;
+  readonly source: string;
+  readonly summary: RunSummary;
+  readonly notes: RunNotes;
+};
+
+export type SyncSite = (input: SyncSiteInput) => Promise<Result<SourceRun, StepError>>;
 
 const EMPTY: RunSummary = { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 };
 
@@ -125,12 +136,12 @@ export const createSyncSite =
     const saved = await save(deps.files, statePath, finished, input.dryRun);
     if (!saved.ok) return saved;
     await writeReport(deps, input, siteRoot(deps.kbRoot, resolved.segment), input.site.name, summary, notes);
-    return ok(summary);
+    return ok({ id: input.site.id, source: input.site.name, summary, notes });
   };
 
 export const REPORT_FILE_NAME = '_sync-report.md';
 
-const countsLine = (summary: RunSummary): string =>
+export const countsLine = (summary: RunSummary): string =>
   `${summary.converted} converted, ${summary.moved} moved, ${summary.archived} archived, ${summary.skipped} skipped, ${summary.failed} failed.`;
 
 // The report answers "what is not in here, and why", so a run that converted everything writes
@@ -223,7 +234,8 @@ const processQueue = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Dri
   }
 };
 
-export type RunNotes = { readonly skipped: ReadonlyArray<ReportEntry>; readonly failed: ReadonlyArray<ReportEntry>; readonly archived: ReadonlyArray<ReportEntry> };
+// The same three lists the reports draw, named in the domain so both reports share the shape.
+export type RunNotes = ReportNotes;
 
 const NO_NOTES: RunNotes = { skipped: [], failed: [], archived: [] };
 

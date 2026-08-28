@@ -251,3 +251,51 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   (`ideographs > written.length * SHARE`) removed the guard AND made a second survivor, `>` mutated
   to `>=`, killable by the existing empty-text case, since `0 >= 0` is true where `0 > 0` is not.
   Two survivors and a line of code gone for one rewrite; only the third needed a new test.
+
+- [gotcha] `expect([undefined]).toEqual([])` PASSES in Bun. Verified in isolation, not inferred: an
+  array holding one `undefined` satisfies an assertion that it is empty. Three assertions in
+  `shared-site.test.ts` read as "nothing came back" while a stray `undefined` would have satisfied
+  them, which is why a guard clause (`if (site === undefined) continue`) survived mutation with the
+  whole condition replaced by `false`: the mutant pushed `undefined` into the result and every test
+  still agreed. `toHaveLength(0)` beside the `toEqual` is what kills it. Anywhere a function can
+  return `undefined` into a collection, pin the count as well as the contents.
+
+- [mistake] Estimated a parallelisation win from timings taken by shelling out to the CLI, and was
+  wrong by an order of magnitude. `bunx ask-marcel-office list-accessible-drives` measured 39s and
+  `search-all-accessible-sites` 10s, so running them together looked like it would take a minute
+  down to forty seconds. In-process, through the library with a warm token and connection, the whole
+  listing was already 33s and became 30s: about 10%, not 50%. A process-spawn measurement carries
+  cold auth and module loading that the real call path does not pay. Time the code as it actually
+  runs before promising a number, or promise no number.
+
+- [gotcha] A terminal block that rewrites itself in place climbs by the height of the PREVIOUS draw,
+  never the one it is about to make, which is why `src/infra/progress-bar.ts` keeps a `drawn`
+  counter. A third `begin()` grows the block from three rows to four and the escape it writes is
+  `\x1b[2A`, climbing the three already on screen, not `\x1b[3A`. Writing the new height instead
+  lands the cursor a row above the block, and every redraw walks it further up the screen. The
+  matching trap is a climb of zero: a terminal reads `\x1b[0A` as `\x1b[1A`, so the first draw must
+  emit no climb sequence at all rather than a zero one. `\x1b[J` after the last row is what wipes the
+  rows a shrinking block no longer fills, since `\x1b[K` only clears the row the cursor sits on. The
+  `\n` between rows lands at column 0 because `onlcr` is set on a pty, and libuv keeps it set even in
+  raw mode, so no `\r` is needed per row.
+
+## 2026-08-28
+
+- [gotcha] `mutate:changed` built its file list from `git diff` alone, which never lists an untracked
+  file, so a module that had never been added was skipped and the run printed a passing score for
+  everything else. `global-report.ts` landed at 67.74% against a break threshold of 90 and was found
+  only by running Stryker against it by hand. The blind spot is exactly the case the script exists
+  for: its header says it runs before staging, and new code is where surviving mutants live. Fixed by
+  adding `git ls-files --others --exclude-standard` to the collection. `mutate:staged` never had the
+  hole, since `--diff-filter=A` covers staged additions, which is all a commit gate must judge. Worth
+  knowing why this mattered here rather than being caught later: mutation is not in the pre-commit
+  hook (the five fast gates only), it runs in `ci.yml`, and this repo has no remote, so CI never runs
+  and that local script is the only mutation gate that actually executes.
+
+- [gotcha] A suite built entirely from `toContain` leaves a renderer's layout untested, and mutation
+  is what says so. `global-report.ts` had eight passing tests and scored 67.74%: every survivor was a
+  blank-line separator turned into a string, `join('\n')` turned into `join('')`, or `trimEnd` turned
+  into `trimStart`. Each one changes the document a reader opens, and no fragment assertion could see
+  any of them. One `toBe` against a whole small rendering killed all ten and took the file to 100%.
+  Where the output IS a document, pin at least one complete example; keep the fragment tests for the
+  scenarios they name, but never let them be the only thing holding the shape.

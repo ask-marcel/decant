@@ -71,6 +71,7 @@ clear message instead of waiting for input.
 
 ```
 kb/
+  _sync-report.md                   what the last run left behind, every source in one file
   _archive/<Site>/<Library>/...     files whose source was deleted, renamed, or changed away
   <Site>/
     .sync-state.json                what has been synced, and where the next run resumes
@@ -178,6 +179,14 @@ readable by trying again, so such a file is left out the way an unsupported type
 queued afresh on every run. A run that converted everything writes nothing there, so a nightly sync does not bury
 the runs that did leave something behind.
 
+`kb/_sync-report.md`, one level up, holds the same thing for the run as a whole, so twenty sources
+do not mean twenty files to open. It is rewritten on every run rather than appended to, and always
+covers every source: the ones the run touched get their counts and their lists, and every other
+source already in `kb/` is named with the date it last ran, so a source that was not rechecked is
+never mistaken for one with nothing wrong. A run that left something behind ends with a line on the
+terminal saying so and naming the file. Its history is the per-source files; this one is the current
+view. A dry run writes neither.
+
 ### What a mailbox sync writes
 
 ```
@@ -219,10 +228,20 @@ A first mailbox run is slow: Outlook hands back changes ten messages at a time a
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
 are cheap, reading only what changed. `--since` narrows what gets *written*, not what gets swept.
 
-While it works, a counter on the terminal shows how far it has got (`Converting 128/6002 …`), so a
-long run is never silent. The line names whatever is still being read from the source, not just the
-last item that finished, so one slow file does not look like the run has stopped while `--concurrency`
-siblings finish around it. It draws only when stderr is a terminal, so piping the output to a file or
+While it works, a counter on the terminal shows how far it has got, so a long run is never silent. A
+header row carries the count, and every item still being read from the source gets a row of its own
+beneath it, naming the step it is on:
+
+```
+SW Project (Lidl instance) / 文档  4/25 (8 running)
+  Projets/PT Findings.xlsx · reading picture 3/6
+  General/04_IT_Security_overview/Overview.docx · rendering the slides
+```
+
+The block rewrites itself where it stands as items come and go, so one slow file does not look like
+the run has stopped while its `--concurrency` siblings finish around it. Set `--concurrency` higher
+than the terminal has rows and the overflow collapses into a single `…and N more` row, so the block
+never outgrows the screen. It draws only when stderr is a terminal, so piping the output to a file or
 running headless leaves no counter behind.
 
 ## Re-running

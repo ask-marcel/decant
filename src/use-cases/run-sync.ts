@@ -4,15 +4,16 @@ import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { SiteRef } from '../domain/site-state.ts';
 import { MAILBOX_ID, MAILBOX_NAME } from '../domain/mail-state.ts';
-import { renderLibraryPicker, renderSitePicker, renderSummary } from '../presenter/render-picker.ts';
+import { renderLibraryPicker, renderReportPointer, renderSitePicker, renderSummary } from '../presenter/render-picker.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
 import type { DriveReader, DriveSummary, SiteSummary } from './ports/drive-reader.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Prompt } from './ports/prompt.ts';
 import type { StepError } from './ports/step-error.ts';
-import type { RunSummary, SyncSite } from './sync-site.ts';
+import type { SourceRun, SyncSite } from './sync-site.ts';
 import type { SiteCache } from '../domain/site-cache.ts';
 import type { SyncMailbox } from './sync-mailbox.ts';
+import type { WriteGlobalReport } from './write-global-report.ts';
 
 export type RunSyncDeps = {
   readonly reader: DriveReader;
@@ -26,6 +27,8 @@ export type RunSyncDeps = {
   readonly cachedSites: () => Promise<SiteCache | undefined>;
   readonly rememberSites: (sites: ReadonlyArray<SiteSummary>) => Promise<void>;
   readonly syncMailbox: SyncMailbox;
+  // One file naming what the whole run left behind, written once every source is done.
+  readonly writeGlobalReport: WriteGlobalReport;
 };
 
 export type RunSyncInput = {
@@ -42,7 +45,14 @@ export type RunSyncInput = {
   readonly refresh?: boolean;
 };
 
-export type RunSync = (input: RunSyncInput) => Promise<Result<ReadonlyArray<RunSummary>, StepError>>;
+// A run that stops carries out the sources that did finish. They wrote their documents and their own
+// reports, so a global report that omitted them would claim less happened than did; `ran` is what the
+// run got through before the step named by the error. Absent on errors raised before any source ran.
+export type RunFailure = StepError & { readonly ran?: ReadonlyArray<SourceRun> };
+
+export type RunSync = (input: RunSyncInput) => Promise<Result<ReadonlyArray<SourceRun>, RunFailure>>;
+
+const stoppedAfter = (ran: ReadonlyArray<SourceRun>, error: StepError): Result<never, RunFailure> => err({ ...error, ran });
 
 const failed = (step: string, cause: string, message: string): Result<never, StepError> => err({ step, cause, message });
 
@@ -70,34 +80,34 @@ const librariesFor = async (deps: RunSyncDeps, site: SiteRef, wanted: ReadonlyAr
   return ask ? chooseLibraries(deps, drives.value) : ok(drives.value);
 };
 
-const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, drives: ReadonlyArray<DriveSummary>): Promise<Result<RunSummary, StepError>> => {
+const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, drives: ReadonlyArray<DriveSummary>): Promise<Result<SourceRun, StepError>> => {
   if (drives.length === 0) return failed('sync', 'no-library', `no library chosen for ${site.name}`);
   deps.logger.info('sync.started', { siteId: site.id, libraries: drives.length });
   const summary = await deps.syncSite({ site, drives, maxBytes: input.maxBytes, concurrency: input.concurrency, dryRun: input.dryRun });
-  if (summary.ok) deps.prompt.show(renderSummary(site.name, summary.value, input.dryRun));
+  if (summary.ok) deps.prompt.show(renderSummary(site.name, summary.value.summary, input.dryRun));
   return summary;
 };
 
-const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<RunSummary, StepError>> => {
+const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('mailbox.started', {});
   const summary = await deps.syncMailbox({ maxBytes: input.maxBytes, concurrency: input.concurrency, dryRun: input.dryRun, since: input.since });
-  if (summary.ok) deps.prompt.show(renderSummary(MAILBOX_NAME, summary.value, input.dryRun));
+  if (summary.ok) deps.prompt.show(renderSummary(MAILBOX_NAME, summary.value.summary, input.dryRun));
   return summary;
 };
 
-const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<RunSummary>, StepError>> => {
+const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   const known = await deps.listSyncedSources();
   if (!known.ok) return known;
-  const summaries: RunSummary[] = [];
+  const summaries: SourceRun[] = [];
   if (known.value.some((candidate) => candidate.kind === 'mailbox')) {
     const mailbox = await syncTheMailbox(deps, input);
-    if (!mailbox.ok) return mailbox;
+    if (!mailbox.ok) return stoppedAfter(summaries, mailbox.error);
     summaries.push(mailbox.value);
   }
   for (const source of known.value.filter((candidate) => candidate.kind === 'site')) {
     const site = { id: source.id, name: source.name, webUrl: '' };
     const summary = await syncOne(deps, input, site, await deps.savedDrives(site));
-    if (!summary.ok) return summary;
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
   return ok(summaries);
@@ -167,44 +177,63 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
   return resolved.ok ? ok({ chosen: resolved.value, fromCache }) : resolved;
 };
 
-const oneSummary = (summary: Result<RunSummary, StepError>): Result<ReadonlyArray<RunSummary>, StepError> => (summary.ok ? ok([summary.value]) : summary);
+const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray<SourceRun>, StepError> => (summary.ok ? ok([summary.value]) : summary);
 
 // Each site is summarised as it lands, so a run over many of them reports along the way. A site that
 // fails stops the run there rather than burying the reason under the ones after it; every site
 // finished before it keeps what it wrote, and a re-run resumes from its own checkpoint.
-const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyArray<SiteRef>): Promise<Result<ReadonlyArray<RunSummary>, StepError>> => {
-  const summaries: RunSummary[] = [];
+const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyArray<SiteRef>): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
+  const summaries: SourceRun[] = [];
   for (const site of chosen) {
     const drives = await librariesFor(deps, site, input.driveIds, chosen.length === 1);
-    if (!drives.ok) return drives;
+    if (!drives.ok) return stoppedAfter(summaries, drives.error);
     const summary = await syncOne(deps, input, site, drives.value);
-    if (!summary.ok) return summary;
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
   return ok(summaries);
 };
 
-const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclude<Chosen, 'quit'>): Promise<Result<ReadonlyArray<RunSummary>, StepError>> => {
+const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclude<Chosen, 'quit'>): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   if (chosen === 'update-all') return updateEverything(deps, input);
   if (chosen === 'mailbox') return oneSummary(await syncTheMailbox(deps, input));
   return runMany(deps, input, chosen);
 };
 
+// What a run left behind, across every source it touched: the two numbers a reader wants before
+// deciding whether to open the report at all.
+const leftBehind = (ran: ReadonlyArray<SourceRun>): { readonly skipped: number; readonly failed: number } =>
+  ran.reduce((carried, run) => ({ skipped: carried.skipped + run.summary.skipped, failed: carried.failed + run.summary.failed }), { skipped: 0, failed: 0 });
+
+const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
+  if (input.command === 'update') return updateEverything(deps, input);
+  if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
+  const named = await siteFromOptions(deps, input);
+  if (named !== undefined) return named.ok ? runMany(deps, input, [named.value]) : named;
+  const picked = await chooseSite(deps, input);
+  if (!picked.ok) return picked;
+  const { chosen, fromCache } = picked.value;
+  // Quitting asks for nothing, so it pays for nothing: the stored list stands until a run that
+  // actually works, where the listing rides alongside a sync that takes far longer than it does.
+  if (chosen === 'quit') return ok([]);
+  const refreshing = fromCache ? refreshInBackground(deps) : Promise.resolve();
+  const chosenSummaries = await syncChosen(deps, input, chosen);
+  await refreshing;
+  return chosenSummaries;
+};
+
+// Every way of choosing sources funnels through here, so the report is written once at the end of a
+// run however the run was asked for, rather than once per branch.
 export const createRunSync =
   (deps: RunSyncDeps): RunSync =>
   async (input) => {
-    if (input.command === 'update') return updateEverything(deps, input);
-    if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
-    const named = await siteFromOptions(deps, input);
-    if (named !== undefined) return named.ok ? runMany(deps, input, [named.value]) : named;
-    const picked = await chooseSite(deps, input);
-    if (!picked.ok) return picked;
-    const { chosen, fromCache } = picked.value;
-    // Quitting asks for nothing, so it pays for nothing: the stored list stands until a run that
-    // actually works, where the listing rides alongside a sync that takes far longer than it does.
-    if (chosen === 'quit') return ok([]);
-    const refreshing = fromCache ? refreshInBackground(deps) : Promise.resolve();
-    const summaries = await syncChosen(deps, input, chosen);
-    await refreshing;
+    const summaries = await chooseAndSync(deps, input);
+    // A stopped run still reports: the sources it got through wrote their documents, and the file
+    // says where it stopped so a short report is not read as a complete one.
+    const ran = summaries.ok ? summaries.value : (summaries.error.ran ?? []);
+    const stopped = summaries.ok ? undefined : `${summaries.error.step}: ${summaries.error.message}`;
+    const path = await deps.writeGlobalReport(ran, input.dryRun, stopped);
+    const left = leftBehind(ran);
+    if (path !== undefined && left.skipped + left.failed > 0) deps.prompt.show(renderReportPointer(left, path));
     return summaries;
   };

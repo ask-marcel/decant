@@ -55,7 +55,7 @@ const run = async (
     concurrency: seeds.concurrency ?? 1,
     dryRun: seeds.dryRun ?? false,
   });
-  return { summary: result.ok ? result.value : ({} as RunSummary), files, logger, progress, ok: result.ok };
+  return { summary: result.ok ? result.value.summary : ({} as RunSummary), files, logger, progress, ok: result.ok };
 };
 
 const stateAfter = (
@@ -374,7 +374,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       dryRun: false,
     });
 
-    expect(result.ok && result.value.converted).toBe(2);
+    expect(result.ok && result.value.summary.converted).toBe(2);
     expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/a.docx.md')).toBe(true);
     expect(files.written.has('kb/Espace Contoso/Site Assets/2026-05-12/b.docx.md')).toBe(true);
   });
