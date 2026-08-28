@@ -233,7 +233,7 @@ export const createRunSync =
     // says where it stopped so a short report is not read as a complete one.
     const ran = summaries.ok ? summaries.value : (summaries.error.ran ?? []);
     const stopped = summaries.ok ? undefined : `${summaries.error.step}: ${summaries.error.message}`;
-    const path = await deps.writeGlobalReport(ran, input.dryRun, stopped);
+    const path = await deps.writeGlobalReport({ ran, dryRun: input.dryRun, stopped });
     const left = leftBehind(ran);
     if (path !== undefined && left.skipped + left.failed > 0) deps.prompt.show(renderReportPointer(left, path));
     return summaries;

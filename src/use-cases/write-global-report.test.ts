@@ -35,7 +35,7 @@ const write = async (
     listSyncedSources: async () => ok(options.known ?? []),
     kbRoot: 'kb',
   });
-  const path = await writeGlobalReport(ran, options.dryRun ?? false, options.stopped);
+  const path = await writeGlobalReport({ ran, dryRun: options.dryRun ?? false, stopped: options.stopped });
   return { files, logger, path, written: files.written.get('kb/_sync-report.md') };
 };
 
@@ -105,7 +105,7 @@ describe('one file naming what a whole run left behind', () => {
       kbRoot: 'kb',
     });
 
-    await writeGlobalReport([contoso], false);
+    await writeGlobalReport({ ran: [contoso], dryRun: false });
 
     const written = files.written.get('kb/_sync-report.md');
     expect(written).toContain('## Espace Contoso');

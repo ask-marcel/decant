@@ -10,6 +10,16 @@ export type SourceSection = ReportNotes & { readonly source: string; readonly co
 // would read as current.
 export type StaleSource = { readonly name: string; readonly lastRun: string };
 
+// Everything one rendering needs. A record rather than a parameter list: `stopped` was the fourth
+// thing to pass, and the next reader of a four-argument call cannot tell which list is which.
+export type GlobalRun = {
+  readonly at: string;
+  readonly ran: ReadonlyArray<SourceSection>;
+  readonly stale: ReadonlyArray<StaleSource>;
+  // Absent when the run finished; what it stopped at when it did not.
+  readonly stopped?: string;
+};
+
 export const GLOBAL_REPORT_HEADING = '# What did not reach the knowledge base';
 
 const STALE_HEADING = '## Not rechecked by this run';
@@ -36,7 +46,7 @@ const staleTail = (stale: ReadonlyArray<StaleSource>): ReadonlyArray<string> =>
 
 // Rewritten whole on every run rather than appended to, so it is always the current view. The history
 // of any one source is in that source's own `_sync-report.md`, which is still appended to.
-export const renderGlobalReport = (at: string, ran: ReadonlyArray<SourceSection>, stale: ReadonlyArray<StaleSource>, stopped?: string): string => {
-  const opening = stopped === undefined ? [] : [stoppedLine(stopped), ''];
-  return [GLOBAL_REPORT_HEADING, '', `Written ${at}.`, '', ...opening, ...ran.flatMap(section), ...staleTail(stale)].join('\n').trimEnd().concat('\n');
+export const renderGlobalReport = (run: GlobalRun): string => {
+  const opening = run.stopped === undefined ? [] : [stoppedLine(run.stopped), ''];
+  return [GLOBAL_REPORT_HEADING, '', `Written ${run.at}.`, '', ...opening, ...run.ran.flatMap(section), ...staleTail(run.stale)].join('\n').trimEnd().concat('\n');
 };

@@ -77,7 +77,7 @@ const run = async (
       mailboxRuns.push(input);
       return ok(SOURCE_RUN);
     },
-    writeGlobalReport: async (ran, dryRun, stopped) => {
+    writeGlobalReport: async ({ ran, dryRun, stopped }) => {
       reported.push({ ran, dryRun, stopped });
       return seeds.reportPath ?? 'kb/_sync-report.md';
     },
@@ -641,7 +641,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
       syncMailbox: async () => ok(SOURCE_RUN),
-      writeGlobalReport: async (ran, _dryRun, stopped) => {
+      writeGlobalReport: async ({ ran, stopped }) => {
         reported.push({ ran, stopped });
         return 'kb/_sync-report.md';
       },
@@ -667,7 +667,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
       syncMailbox: async () => ok(SOURCE_RUN),
-      writeGlobalReport: async (ran) => {
+      writeGlobalReport: async ({ ran }) => {
         reported.push({ ran });
         return undefined;
       },
