@@ -246,3 +246,24 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   rows a shrinking block no longer fills, since `\x1b[K` only clears the row the cursor sits on. The
   `\n` between rows lands at column 0 because `onlcr` is set on a pty, and libuv keeps it set even in
   raw mode, so no `\r` is needed per row.
+
+## 2026-08-28
+
+- [gotcha] `mutate:changed` built its file list from `git diff` alone, which never lists an untracked
+  file, so a module that had never been added was skipped and the run printed a passing score for
+  everything else. `global-report.ts` landed at 67.74% against a break threshold of 90 and was found
+  only by running Stryker against it by hand. The blind spot is exactly the case the script exists
+  for: its header says it runs before staging, and new code is where surviving mutants live. Fixed by
+  adding `git ls-files --others --exclude-standard` to the collection. `mutate:staged` never had the
+  hole, since `--diff-filter=A` covers staged additions, which is all a commit gate must judge. Worth
+  knowing why this mattered here rather than being caught later: mutation is not in the pre-commit
+  hook (the five fast gates only), it runs in `ci.yml`, and this repo has no remote, so CI never runs
+  and that local script is the only mutation gate that actually executes.
+
+- [gotcha] A suite built entirely from `toContain` leaves a renderer's layout untested, and mutation
+  is what says so. `global-report.ts` had eight passing tests and scored 67.74%: every survivor was a
+  blank-line separator turned into a string, `join('\n')` turned into `join('')`, or `trimEnd` turned
+  into `trimStart`. Each one changes the document a reader opens, and no fragment assertion could see
+  any of them. One `toBe` against a whole small rendering killed all ten and took the file to 100%.
+  Where the output IS a document, pin at least one complete example; keep the fragment tests for the
+  scenarios they name, but never let them be the only thing holding the shape.
