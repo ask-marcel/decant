@@ -44,6 +44,7 @@ const SUPPORTED: ReadonlyArray<readonly [string, ConversionRoute]> = [
   ['webp', 'image'],
   ['svg', 'vector'],
   ['ics', 'calendar'],
+  ['eml', 'message'],
   ['ods', 'spreadsheet'],
   ['xls', 'spreadsheet'],
   ['xlsm', 'spreadsheet'],
@@ -61,6 +62,14 @@ describe('the formats this tool handles', () => {
 });
 
 describe('deciding what to produce for a document found in SharePoint', () => {
+  it('a saved email becomes a folder, the way an archive does, since it holds files of its own', () => {
+    expect(planFile({ name: 'Fwd.eml', size: 1000 }, CAP)).toEqual({
+      kind: 'process',
+      route: 'message',
+      outputs: [{ relName: 'Fwd', role: 'archive-folder' }],
+    });
+  });
+
   it('a meeting invitation becomes a single markdown record, the file itself being unreadable', () => {
     expect(planFile({ name: 'invite.ics', size: 1000 }, CAP)).toEqual({
       kind: 'process',

@@ -2,6 +2,8 @@ import { embedsImages, planFile } from '../domain/conversion-plan.ts';
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { renderCalendar } from '../domain/icalendar.ts';
+import type { MimePart } from '../domain/mime.ts';
+import { readMime } from '../domain/mime.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
@@ -21,6 +23,8 @@ export type ConvertAttachmentDeps = {
   readonly logger: Logger;
   // Unpacking reads a file already on disk, which is all this needs of the wider drive reader.
   readonly unpackArchive: (path: string) => Promise<Result<ReadonlyArray<ArchiveEntry>, { readonly kind: string; readonly message: string }>>;
+  // Reads a file already on disk, which is what a part taken out of a saved email is by then.
+  readonly convertLocal: (path: string) => Promise<Result<string, { readonly kind: string; readonly message: string }>>;
 };
 
 export type ConvertAttachmentInput = {
@@ -161,6 +165,39 @@ const asSpreadsheet = async (context: Context): Promise<AttachmentOutcome> => {
 const asVector = async (context: Context): Promise<AttachmentOutcome> =>
   rawAndMarkdown(context, async () => ({ text: VECTOR_NOTE, stamp: { ...context.input.stamp, image: `./${context.name}` } }));
 
+// Each file a saved email carried, written as it was and read where the library can read it. A kind
+// it refuses keeps the file and loses only the text, the same bargain a picture in a document gets.
+const writeParts = async (context: Context, folder: string, parts: ReadonlyArray<MimePart>): Promise<Result<ReadonlyArray<string>, FilesError>> => {
+  const written: string[] = [];
+  for (const part of parts) {
+    const name = safeSegment(part.name);
+    const wrote = await context.deps.files.writeBytes(`${folder}/${name}`, part.bytes);
+    if (!wrote.ok) return wrote;
+    written.push(`${folder}/${name}`);
+    const text = await context.deps.convertLocal(`${folder}/${name}`);
+    if (!text.ok) continue;
+    const wroteText = await context.deps.files.writeText(`${folder}/${name}.md`, kbDocument({ ...context.input.stamp, original: `./${name}` }, text.value));
+    if (!wroteText.ok) return wroteText;
+    written.push(`${folder}/${name}.md`);
+  }
+  return ok(written);
+};
+
+// A saved email is a folder like an archive is. The library has no parser for one, so the message is
+// read here and every file it carried is taken out of the base64 it travelled in, rather than left
+// sitting in the middle of the text where nothing can read it and everything has to scroll past it.
+const asMessage = async (context: Context): Promise<AttachmentOutcome> => {
+  const raw = await context.deps.reader.attachmentBytes(context.input.messageId, context.input.attachment.id);
+  if (!raw.ok) return failure(raw.error);
+  const folder = `${context.input.folder}/${safeSegment(context.name.slice(0, context.name.lastIndexOf('.')))}`;
+  const read = readMime(new TextDecoder().decode(raw.value));
+  const message = `${folder}/${context.name}.md`;
+  const wrote = await context.deps.files.writeText(message, kbDocument(context.input.stamp, read.text.trim().length === 0 ? NO_TEXT_NOTE : read.text));
+  if (!wrote.ok) return failure(wrote.error);
+  const carried = await writeParts(context, folder, read.parts);
+  return carried.ok ? { kind: 'converted', outputs: [message, ...carried.value], primary: message, media: [] } : failure(carried.error);
+};
+
 // An archive is kept as it came and also unpacked, one markdown file per document inside, so a
 // contract sent as a zip is as readable as one sent on its own.
 const asArchive = async (context: Context): Promise<AttachmentOutcome> => {
@@ -210,6 +247,7 @@ const asEmbeddedMail = async (context: Context): Promise<AttachmentOutcome> => {
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<AttachmentOutcome>>> = {
   document: asMarkdown,
   spreadsheet: asSpreadsheet,
+  message: asMessage,
   calendar: asCalendar,
   slides: asSlides,
   'legacy-slides': asSlides,

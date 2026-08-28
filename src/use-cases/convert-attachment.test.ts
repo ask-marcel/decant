@@ -40,6 +40,24 @@ const ICS = ['BEGIN:VCALENDAR', 'METHOD:REQUEST', 'BEGIN:VEVENT', 'SUMMARY:smart
   '\r\n'
 );
 
+const EML = [
+  'From: Tina Wu <tina@example.com>',
+  'Subject: Fwd: Contrat',
+  'Content-Type: multipart/mixed; boundary="B"',
+  '',
+  '--B',
+  'Content-Type: text/plain',
+  '',
+  'Voici le contrat.',
+  '--B',
+  'Content-Type: application/vnd; name="Contrat.docx"',
+  'Content-Transfer-Encoding: base64',
+  'Content-Disposition: attachment; filename="Contrat.docx"',
+  '',
+  'QUJD',
+  '--B--',
+].join('\r\n');
+
 const run = async (
   over: Partial<MailAttachment> = {},
   seeds: { reader?: MailReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed; drive?: DriveReaderSeed; maxBytes?: number; rendered?: string } = {}
@@ -52,6 +70,7 @@ const run = async (
     ocr: createOcrFake(seeds.ocr),
     logger: createLoggerFake(),
     unpackArchive: drive.localArchive,
+    convertLocal: drive.localMarkdown,
   });
   const outcome = await convert({
     messageId: 'm1',
@@ -223,6 +242,68 @@ describe('keeping what was attached to a mail', () => {
 
     expect(outcome.kind).toBe('converted');
     expect(files.written.get(`${FOLDER}/Contrat.docx.md`)).toContain('converted att1');
+  });
+
+  it('a saved email is unpacked: the message it held, and the file it carried as a file', async () => {
+    const { outcome, files } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: EML } } });
+    const written = files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '';
+
+    expect(written).toContain('**Subject:** Fwd: Contrat');
+    expect(written).toContain('Voici le contrat.');
+    expect(written).not.toContain('QUJD');
+    expect(files.binary.get(`${FOLDER}/Fwd/Contrat.docx`)).toEqual(new Uint8Array([65, 66, 67]));
+    expect(files.written.get(`${FOLDER}/Fwd/Contrat.docx.md`)).toContain(`converted ${FOLDER}/Fwd/Contrat.docx`);
+    expect(files.written.get(`${FOLDER}/Fwd/Contrat.docx.md`)).toContain('original: ./Contrat.docx');
+    expect(outcome).toEqual({
+      kind: 'converted',
+      outputs: [`${FOLDER}/Fwd/Fwd.eml.md`, `${FOLDER}/Fwd/Contrat.docx`, `${FOLDER}/Fwd/Contrat.docx.md`],
+      primary: `${FOLDER}/Fwd/Fwd.eml.md`,
+      media: [],
+    });
+  });
+
+  it('a file inside a saved email that nothing can read keeps the file and loses only the text', async () => {
+    const { outcome, files } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: EML } }, drive: { failWith: { kind: 'permanent', message: 'not convertible' } } });
+
+    expect(files.binary.has(`${FOLDER}/Fwd/Contrat.docx`)).toBe(true);
+    expect(files.written.has(`${FOLDER}/Fwd/Contrat.docx.md`)).toBe(false);
+    expect(outcome.kind).toBe('converted');
+  });
+
+  it('a saved email Graph refused to hand over is reported, not written half-done', async () => {
+    const { outcome } = await run({ name: 'Fwd.eml' }, { reader: { failCalls: { attachmentBytes: { kind: 'transient', message: 'timed out' } } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'transient: timed out' });
+  });
+
+  it('a saved email holding no message of its own still lands, saying so', async () => {
+    const { files } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: '' } } });
+
+    expect(files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`)).toContain(NO_TEXT_NOTE);
+  });
+
+  it('a saved email whose message cannot be written is reported rather than leaving its files alone on disk', async () => {
+    const { outcome } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: EML } }, files: { failWritesMatching: 'Fwd.eml.md' } });
+
+    expect(outcome.kind).toBe('failed');
+  });
+
+  it('a file inside a saved email that cannot be written is reported rather than passed over', async () => {
+    const { outcome } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: EML } }, files: { failWritesMatching: 'Contrat.docx' } });
+
+    expect(outcome.kind).toBe('failed');
+  });
+
+  it('a workbook the source read as empty says so rather than sitting beside a silent file', async () => {
+    const { files } = await run({ name: 'Budget.xlsx' }, { reader: { attachmentTexts: { att1: '   ' } } });
+
+    expect(files.written.get(`${FOLDER}/Budget.xlsx.md`)).toContain(NO_TEXT_NOTE);
+  });
+
+  it('a workbook Graph refused to hand over is reported after its text was read', async () => {
+    const { outcome } = await run({ name: 'Budget.xlsx' }, { reader: { failCalls: { attachmentBytes: { kind: 'transient', message: 'timed out' } } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'transient: timed out' });
   });
 
   it('a workbook is kept as it came, beside the text read out of it', async () => {

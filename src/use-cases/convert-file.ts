@@ -2,6 +2,8 @@ import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import { embedsImages, planFile } from '../domain/conversion-plan.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { renderCalendar } from '../domain/icalendar.ts';
+import type { MimePart } from '../domain/mime.ts';
+import { readMime } from '../domain/mime.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_SLIDES_NOTE, NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
@@ -210,6 +212,36 @@ const convertVector = async (context: Context): Promise<ConvertOutcome> => {
   return written.ok ? { kind: 'converted', outputs: [rawPath, ...written.value] } : failure(written.error);
 };
 
+// The same unpacking the mail side does for a saved email: the message read out of the raw MIME, and
+// every file it carried written as a file rather than left as base64 in the middle of the text.
+const writeParts = async (context: Context, folder: string, parts: ReadonlyArray<MimePart>): Promise<Result<ReadonlyArray<string>, FilesError>> => {
+  const written: string[] = [];
+  for (const part of parts) {
+    const name = safeSegment(part.name);
+    const wrote = await context.deps.files.writeBytes(`${folder}/${name}`, part.bytes);
+    if (!wrote.ok) return wrote;
+    written.push(`${folder}/${name}`);
+    const text = await context.deps.reader.localMarkdown(`${folder}/${name}`);
+    if (!text.ok) continue;
+    const wroteText = await context.deps.files.writeText(`${folder}/${name}.md`, kbDocument({ ...context.stamp, original: `./${name}` }, text.value));
+    if (!wroteText.ok) return wroteText;
+    written.push(`${folder}/${name}.md`);
+  }
+  return ok(written);
+};
+
+const convertMessage = async (context: Context): Promise<ConvertOutcome> => {
+  const raw = await context.deps.reader.bytes({ driveId: context.input.driveId, itemId: context.input.item.id });
+  if (!raw.ok) return failure(raw.error);
+  const folder = `${context.dir}/${safeSegment(context.name.slice(0, context.name.lastIndexOf('.')))}`;
+  const read = readMime(new TextDecoder().decode(raw.value));
+  const message = `${folder}/${context.name}.md`;
+  const wrote = await context.deps.files.writeText(message, kbDocument(context.stamp, read.text.trim().length === 0 ? NO_TEXT_NOTE : read.text));
+  if (!wrote.ok) return failure(wrote.error);
+  const carried = await writeParts(context, folder, read.parts);
+  return carried.ok ? { kind: 'converted', outputs: [message, ...carried.value] } : failure(carried.error);
+};
+
 const convertArchive = async (context: Context): Promise<ConvertOutcome> => {
   const raw = await context.deps.reader.bytes({ driveId: context.input.driveId, itemId: context.input.item.id });
   if (!raw.ok) return failure(raw.error);
@@ -242,6 +274,7 @@ const writeArchiveEntries = async (
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<ConvertOutcome>>> = {
   document: convertDocument,
   spreadsheet: convertSpreadsheet,
+  message: convertMessage,
   calendar: convertCalendar,
   slides: convertSlides,
   'legacy-slides': convertSlides,

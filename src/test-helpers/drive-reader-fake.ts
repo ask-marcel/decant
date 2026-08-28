@@ -25,6 +25,8 @@ export type DriveReaderSeed = {
   // Delta pages served in order: the first call gets the first page, and so on.
   readonly pages?: ReadonlyArray<DriveDeltaPage>;
   readonly markdown?: Readonly<Record<string, string>>;
+  // The bytes an item really holds, for a test about what is inside a file rather than around it.
+  readonly bytes?: Readonly<Record<string, Uint8Array>>;
   readonly archiveEntries?: ReadonlyArray<ArchiveEntry>;
   readonly failItems?: Readonly<Record<string, DriveReaderError>>;
   readonly failWith?: DriveReaderError;
@@ -90,7 +92,7 @@ export const createDriveReaderFake = (seed: DriveReaderSeed = {}): DriveReaderFa
     },
     bytes: async (ref) => {
       const fetched = forItem(ref, 'bytes');
-      return fetched.ok ? ok(new TextEncoder().encode(`bytes ${ref.itemId}`)) : fetched;
+      return fetched.ok ? ok(seed.bytes?.[ref.itemId] ?? new TextEncoder().encode(`bytes ${ref.itemId}`)) : fetched;
     },
     localMarkdown: async (path) => {
       calls.push(`localMarkdown:${path}`);
