@@ -98,10 +98,52 @@ describe('wiring the command together', () => {
     expect(Object.keys(JSON.parse(files.written.get(second) ?? '{}').drives)).toEqual(['b!beta']);
   });
 
+  it('the sites a run listed are kept beside the knowledge base, for the next run to draw at once', async () => {
+    const files = createFilesFake({ directories: { kb: [] } });
+    const deps = buildDeps(configFor({}), {
+      files,
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake({ sites: [{ id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' }] }),
+      ocr: createOcrFake(),
+      prompt: createPromptFake(['q']),
+      clock: createClockFake(),
+    });
+
+    await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+
+    expect(JSON.parse(files.written.get('kb/.sites.json') ?? '{}')).toMatchObject({ version: 1, sites: [{ id: 'contoso,1,2', name: 'Espace Contoso' }] });
+  });
+
+  it('a second run draws its picker from that file rather than asking Microsoft again', async () => {
+    const stored = JSON.stringify({
+      version: 1,
+      listedAt: '2026-08-27T20:14:00Z',
+      sites: [{ id: 'contoso,9,9', name: 'Site From Last Time', webUrl: 'https://tenant.sharepoint.com/sites/Last' }],
+    });
+    const files = createFilesFake({ directories: { kb: [] }, texts: { 'kb/.sites.json': stored } });
+    const reader = createDriveReaderFake({ sites: [] });
+    const prompt = createPromptFake(['q']);
+    const deps = buildDeps(configFor({}), { files, logger: createLoggerFake(), reader, ocr: createOcrFake(), prompt, clock: createClockFake() });
+
+    await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 1, dryRun: false });
+
+    expect(prompt.shown.join('\n')).toContain('Site From Last Time');
+    expect(reader.calls).not.toContain('listSites');
+  });
+
   it('the real wiring builds without reaching Microsoft, so a run only signs in when it needs to', () => {
     const deps = buildDeps(configFor({}), { files: createFilesFake(), logger: createLoggerFake(), prompt: createPromptFake(), clock: createClockFake(), ocr: createOcrFake() });
 
     expect(typeof deps.runSync).toBe('function');
+  });
+
+  it('every part it builds for itself is built without asking anything of the network or the disk', () => {
+    // Nothing injected, so each `??` falls through to the real constructor. Building one reaches
+    // nothing: the sign-in ladder runs on the first Graph call, and the readers only hold the api.
+    const deps = buildDeps(configFor({}));
+
+    expect(typeof deps.runSync).toBe('function');
+    expect(typeof deps.logger.info).toBe('function');
   });
 
   it('the update command over an empty knowledge base finishes without syncing anything', async () => {

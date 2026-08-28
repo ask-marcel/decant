@@ -9,6 +9,8 @@ import { createFilesFake } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
+import { createProgressFake } from '../test-helpers/progress-fake.ts';
+import type { ProgressFake } from '../test-helpers/progress-fake.ts';
 import type { OcrSeed } from '../test-helpers/ocr-fake.ts';
 import { createConvertFile } from './convert-file.ts';
 import type { ConvertOutcome } from './convert-file.ts';
@@ -29,11 +31,12 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 const run = async (
   over: Partial<DriveItem>,
   seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed } = {}
-): Promise<{ outcome: ConvertOutcome; files: FilesFake; reader: ReturnType<typeof createDriveReaderFake>; logger: LoggerFake }> => {
+): Promise<{ outcome: ConvertOutcome; files: FilesFake; reader: ReturnType<typeof createDriveReaderFake>; logger: LoggerFake; progress: ProgressFake }> => {
   const files = createFilesFake(seeds.files);
   const reader = createDriveReaderFake(seeds.reader);
   const logger = createLoggerFake();
-  const convert = createConvertFile({ reader, files, ocr: createOcrFake(seeds.ocr), clock: createClockFake(), logger });
+  const progress = createProgressFake();
+  const convert = createConvertFile({ reader, files, ocr: createOcrFake(seeds.ocr), clock: createClockFake(), logger, progress });
   const outcome = await convert({
     item: item(over),
     driveId: 'b!one',
@@ -43,7 +46,7 @@ const run = async (
     maxBytes: 50 * 1024 * 1024,
     ocrLabel: 'paddleocr (en)',
   });
-  return { outcome, files, reader, logger };
+  return { outcome, files, reader, logger, progress };
 };
 
 describe('converting one document out of a library', () => {
@@ -213,6 +216,35 @@ describe('converting one document out of a library', () => {
     expect(written).toContain('could not be rendered');
     expect(written).not.toContain('pdf: ./Roadmap.pptx.pdf');
     expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.pdf')).toBe(false);
+  });
+
+  it('a deck the source refused to render says so in the log, since nothing on disk records the refusal', async () => {
+    const { logger } = await run(
+      { name: 'Roadmap.pptx', path: 'Roadmap.pptx' },
+      { reader: { markdown: { '01ABC': '## Slide 1' }, failPdf: { kind: 'unrenderable', message: 'HTTP 406' } } }
+    );
+
+    expect(logger.calls.some((call) => call.event === 'render.refused')).toBe(true);
+  });
+
+  it('a deck whose slides were refused and whose text cannot be read either is reported, not written half', async () => {
+    const { outcome, files } = await run(
+      { name: 'Roadmap.pptx', path: 'Roadmap.pptx' },
+      { reader: { failItems: { '01ABC': { kind: 'permanent', message: 'cannot convert' } }, failPdf: { kind: 'unrenderable', message: 'HTTP 406' } } }
+    );
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'permanent: cannot convert' });
+    expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md')).toBe(false);
+  });
+
+  it('the note about missing slides sits against the text, with no blank run between them', async () => {
+    const { files } = await run(
+      { name: 'Roadmap.pptx', path: 'Roadmap.pptx' },
+      { reader: { markdown: { '01ABC': '   \n## Slide 1\n   ' }, failPdf: { kind: 'unrenderable', message: 'HTTP 406' } } }
+    );
+    const body = (files.written.get('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md') ?? '').split('---').slice(2).join('---').trim();
+
+    expect(body.endsWith('## Slide 1')).toBe(true);
   });
 
   it('a deck in the old format that will not render is reported, since that render is where its text lives', async () => {
@@ -469,6 +501,33 @@ describe('converting one document out of a library', () => {
       kind: 'converted',
       outputs: ['kb/Espace Contoso/Documents/2026-05-12/Livraison/Livraison.zip', 'kb/Espace Contoso/Documents/2026-05-12/Livraison/notes.docx.md'],
     });
+  });
+});
+
+describe('saying what a conversion is doing while it does it', () => {
+  it('each stage of converting one document is reported under that document name', async () => {
+    const images = {
+      '01ABC': [
+        { path: 'word/media/image1.png', bytes: new Uint8Array([1]) },
+        { path: 'word/media/image2.png', bytes: new Uint8Array([2]) },
+      ],
+    };
+    const { progress } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
+
+    expect(progress.details.map((entry) => entry.label)).toEqual(['Projets/Contrat.docx', 'Projets/Contrat.docx', 'Projets/Contrat.docx', 'Projets/Contrat.docx']);
+    expect(progress.details.map((entry) => entry.what)).toEqual(['reading the text', 'taking out the pictures', 'reading picture 1/2', 'reading picture 2/2']);
+  });
+
+  it('a deck says it is rendering the slides, which is the wait a reader is actually in', async () => {
+    const { progress } = await run({ name: 'Roadmap.pptx', path: 'Roadmap.pptx' });
+
+    expect(progress.details.map((entry) => entry.what)).toContain('rendering the slides');
+  });
+
+  it('a scan says it is reading the pages, since OCR is the longest wait of all', async () => {
+    const { progress } = await run({ name: 'Scan.pdf', path: 'Scan.pdf' }, { reader: { markdown: { '01ABC': '' } } });
+
+    expect(progress.details.map((entry) => entry.what)).toContain('reading the pages');
   });
 });
 

@@ -16,6 +16,7 @@ import type { DriveReader, DriveReaderError } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import { placeImages } from './place-images.ts';
 import type { Logger } from './ports/logger.ts';
+import type { Progress } from './ports/progress.ts';
 import type { Ocr } from './ports/ocr.ts';
 
 export type ConvertFileDeps = {
@@ -24,6 +25,7 @@ export type ConvertFileDeps = {
   readonly ocr: Ocr;
   readonly clock: Clock;
   readonly logger: Logger;
+  readonly progress: Progress;
 };
 
 export type ConvertFileInput = {
@@ -47,6 +49,12 @@ type Context = {
   readonly dir: string;
   readonly name: string;
   readonly stamp: DocumentStamp;
+};
+
+// Reported under the item's path, which is the label the counter names it by: a step drawn against
+// any other name would be worse than none, so the bar decides whether this one is the row's.
+const saying = (context: Context, what: string): void => {
+  context.deps.progress.detail(context.input.item.path, what);
 };
 
 // A file that needs a password is not a failed read to try again: the bytes arrived and cannot be
@@ -77,13 +85,14 @@ const stampFor = (input: ConvertFileInput, clock: Clock): DocumentStamp => ({
 const withImages = async (context: Context, body: string): Promise<Result<{ readonly body: string; readonly paths: ReadonlyArray<string> }, FilesError>> => {
   if (!embedsImages(context.name)) return ok({ body, paths: [] });
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
+  saying(context, 'taking out the pictures');
   const found = await context.deps.reader.images(ref);
   if (!found.ok) {
     context.deps.logger.warn('images.failed', { itemId: context.input.item.id, path: context.input.item.path, cause: found.error.kind });
     return ok({ body, paths: [] });
   }
   if (found.value.length === 0) return ok({ body, paths: [] });
-  const placed = await placeImages(context.deps, context.dir, context.name, found.value);
+  const placed = await placeImages(context.deps, context.dir, context.name, found.value, (what) => saying(context, what));
   return placed.ok ? ok({ body: `${body}${placed.value.section}`, paths: placed.value.paths }) : placed;
 };
 
@@ -97,6 +106,7 @@ const writeMarkdown = async (context: Context, fileName: string, stamp: Document
 
 const convertDocument = async (context: Context): Promise<ConvertOutcome> => {
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
+  saying(context, 'reading the text');
   const converted = await context.deps.reader.markdown(ref);
   if (!converted.ok) return failure(converted.error);
   const body = converted.value.trim().length === 0 ? NO_TEXT_NOTE : converted.value;
@@ -134,6 +144,7 @@ const convertCalendar = async (context: Context): Promise<ConvertOutcome> => {
 
 const convertSlides = async (context: Context): Promise<ConvertOutcome> => {
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
+  saying(context, 'rendering the slides');
   const rendered = await context.deps.reader.pdf(ref);
   if (!rendered.ok && rendered.error.kind === 'unrenderable' && !isLegacyDeck(context)) return slideTextAlone(context);
   if (!rendered.ok) return failure(rendered.error);
@@ -169,6 +180,7 @@ const withSlideText = async (context: Context, pdfPath: string): Promise<Convert
 // disk, and only when OCR finds nothing does the note stand in for the text.
 const pdfText = async (context: Context, rawPath: string, extracted: string): Promise<{ readonly body: string; readonly ocr?: string }> => {
   if (extracted.trim().length > 0) return { body: extracted };
+  saying(context, 'reading the pages');
   const read = await context.deps.ocr.read(rawPath);
   return read.ok && read.value.trim().length > 0 ? { body: read.value, ocr: context.input.ocrLabel } : { body: SCANNED_PDF_NOTE };
 };

@@ -13,7 +13,7 @@ import { createConvertAttachment } from '../use-cases/convert-attachment.ts';
 import { createConvertFile } from '../use-cases/convert-file.ts';
 import { createListSyncedSources } from '../use-cases/list-synced-sources.ts';
 import type { Clock } from '../use-cases/ports/clock.ts';
-import type { DriveReader, DriveSummary } from '../use-cases/ports/drive-reader.ts';
+import type { DriveReader, DriveSummary, SiteSummary } from '../use-cases/ports/drive-reader.ts';
 import type { MailReader } from '../use-cases/ports/mail-reader.ts';
 import type { Files } from '../use-cases/ports/files.ts';
 import type { Logger } from '../use-cases/ports/logger.ts';
@@ -24,7 +24,10 @@ import { createRunSync } from '../use-cases/run-sync.ts';
 import type { RunSync } from '../use-cases/run-sync.ts';
 import { createRenderThread } from '../use-cases/render-thread.ts';
 import { createSyncMailbox } from '../use-cases/sync-mailbox.ts';
+import { createWriteGlobalReport } from '../use-cases/write-global-report.ts';
 import { createSyncSite, resolveSite } from '../use-cases/sync-site.ts';
+import type { SiteCache } from '../domain/site-cache.ts';
+import { parseSiteCache, serializeSiteCache } from '../domain/site-cache.ts';
 import type { Config } from './config.ts';
 
 export type BuiltDeps = {
@@ -60,6 +63,25 @@ const savedDrivesFrom =
     return Object.entries(state.drives).map(([id, drive]) => ({ id, name: drive.name }));
   };
 
+// Kept beside the knowledge base it describes, so clearing `kb/` clears it too: a list of sites is
+// only ever a convenience, never something to carry over a deliberate reset.
+const SITE_CACHE_FILE = '.sites.json';
+
+type SiteCacheStore = {
+  readonly cached: () => Promise<SiteCache | undefined>;
+  readonly remember: (sites: ReadonlyArray<SiteSummary>) => Promise<void>;
+};
+
+const siteCacheAt = (files: Files, kbRoot: string, clock: Clock): SiteCacheStore => ({
+  cached: async (): Promise<SiteCache | undefined> => {
+    const text = await files.readText(`${kbRoot}/${SITE_CACHE_FILE}`);
+    return text.ok ? parseSiteCache(text.value) : undefined;
+  },
+  remember: async (sites: ReadonlyArray<SiteSummary>): Promise<void> => {
+    await files.writeText(`${kbRoot}/${SITE_CACHE_FILE}`, serializeSiteCache(sites, clock.nowIso()));
+  },
+});
+
 export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDeps => {
   const logger = overrides.logger ?? createWinstonLogger(config.logLevel);
   const files = overrides.files ?? createBunFiles();
@@ -71,11 +93,18 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const ocr = overrides.ocr ?? (config.ocr ? createRapidOcr({ shell: createBunShell(), lang: config.ocrLang }) : createNoOcr());
   const prompt = overrides.prompt ?? createStdinPrompt(() => console);
   const progress = overrides.progress ?? createStderrProgress();
-  const convertFile = createConvertFile({ reader, files, ocr, clock, logger });
+  const convertFile = createConvertFile({ reader, files, ocr, clock, logger, progress });
   const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot });
   const listSyncedSources = createListSyncedSources({ files, logger, kbRoot: config.kbRoot });
   const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown });
   const renderThread = createRenderThread({ reader: mail, drive: reader, files, convertAttachment, convertFile, clock, logger, mailboxRoot: `${config.kbRoot}/Mailbox` });
   const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot });
-  return { logger, runSync: createRunSync({ reader, prompt, logger, syncSite, listSyncedSources, savedDrives: savedDrivesFrom(files, logger, config.kbRoot), syncMailbox }) };
+  const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
+  const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
+  // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
+  // expression as never executed, so spreading this call out reads as a third of the file going
+  // uncovered. See the journal entry for the same trap in `progress-bar.ts`.
+  const writeGlobalReport = createWriteGlobalReport({ files, clock, logger, listSyncedSources, kbRoot: config.kbRoot });
+  const runSync = createRunSync({ reader, prompt, logger, syncSite, listSyncedSources, savedDrives, syncMailbox, cachedSites, rememberSites, writeGlobalReport });
+  return { logger, runSync };
 };

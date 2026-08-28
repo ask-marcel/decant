@@ -4,14 +4,16 @@ import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { SiteRef } from '../domain/site-state.ts';
 import { MAILBOX_ID, MAILBOX_NAME } from '../domain/mail-state.ts';
-import { renderLibraryPicker, renderSitePicker, renderSummary } from '../presenter/render-picker.ts';
+import { renderLibraryPicker, renderReportPointer, renderSitePicker, renderSummary } from '../presenter/render-picker.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
-import type { DriveReader, DriveSummary } from './ports/drive-reader.ts';
+import type { DriveReader, DriveSummary, SiteSummary } from './ports/drive-reader.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Prompt } from './ports/prompt.ts';
 import type { StepError } from './ports/step-error.ts';
-import type { RunSummary, SyncSite } from './sync-site.ts';
+import type { SourceRun, SyncSite } from './sync-site.ts';
+import type { SiteCache } from '../domain/site-cache.ts';
 import type { SyncMailbox } from './sync-mailbox.ts';
+import type { WriteGlobalReport } from './write-global-report.ts';
 
 export type RunSyncDeps = {
   readonly reader: DriveReader;
@@ -21,7 +23,12 @@ export type RunSyncDeps = {
   readonly listSyncedSources: ListSyncedSources;
   // The libraries a previous run chose for this site, so `update` repeats them without asking.
   readonly savedDrives: (site: SiteRef) => Promise<ReadonlyArray<DriveSummary>>;
+  // What the last run listed, so this one draws its picker at once instead of waiting on Graph.
+  readonly cachedSites: () => Promise<SiteCache | undefined>;
+  readonly rememberSites: (sites: ReadonlyArray<SiteSummary>) => Promise<void>;
   readonly syncMailbox: SyncMailbox;
+  // One file naming what the whole run left behind, written once every source is done.
+  readonly writeGlobalReport: WriteGlobalReport;
 };
 
 export type RunSyncInput = {
@@ -35,9 +42,11 @@ export type RunSyncInput = {
   readonly dryRun: boolean;
   readonly mailbox?: boolean;
   readonly since?: string;
+  // Ignore what was stored and list for real, for when a site is known to be new.
+  readonly refresh?: boolean;
 };
 
-export type RunSync = (input: RunSyncInput) => Promise<Result<ReadonlyArray<RunSummary>, StepError>>;
+export type RunSync = (input: RunSyncInput) => Promise<Result<ReadonlyArray<SourceRun>, StepError>>;
 
 const failed = (step: string, cause: string, message: string): Result<never, StepError> => err({ step, cause, message });
 
@@ -65,25 +74,25 @@ const librariesFor = async (deps: RunSyncDeps, site: SiteRef, wanted: ReadonlyAr
   return ask ? chooseLibraries(deps, drives.value) : ok(drives.value);
 };
 
-const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, drives: ReadonlyArray<DriveSummary>): Promise<Result<RunSummary, StepError>> => {
+const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, drives: ReadonlyArray<DriveSummary>): Promise<Result<SourceRun, StepError>> => {
   if (drives.length === 0) return failed('sync', 'no-library', `no library chosen for ${site.name}`);
   deps.logger.info('sync.started', { siteId: site.id, libraries: drives.length });
   const summary = await deps.syncSite({ site, drives, maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, concurrency: input.concurrency, dryRun: input.dryRun });
-  if (summary.ok) deps.prompt.show(renderSummary(site.name, summary.value, input.dryRun));
+  if (summary.ok) deps.prompt.show(renderSummary(site.name, summary.value.summary, input.dryRun));
   return summary;
 };
 
-const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<RunSummary, StepError>> => {
+const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('mailbox.started', {});
   const summary = await deps.syncMailbox({ maxBytes: input.maxBytes, ocrLabel: input.ocrLabel, concurrency: input.concurrency, dryRun: input.dryRun, since: input.since });
-  if (summary.ok) deps.prompt.show(renderSummary(MAILBOX_NAME, summary.value, input.dryRun));
+  if (summary.ok) deps.prompt.show(renderSummary(MAILBOX_NAME, summary.value.summary, input.dryRun));
   return summary;
 };
 
-const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<RunSummary>, StepError>> => {
+const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
   const known = await deps.listSyncedSources();
   if (!known.ok) return known;
-  const summaries: RunSummary[] = [];
+  const summaries: SourceRun[] = [];
   if (known.value.some((candidate) => candidate.kind === 'mailbox')) {
     const mailbox = await syncTheMailbox(deps, input);
     if (!mailbox.ok) return mailbox;
@@ -125,24 +134,50 @@ const resolve = async (deps: RunSyncDeps, choice: Selection, sites: ReadonlyArra
   return chosen.length === 0 ? failed('pickSite', 'bad-choice', 'choose at least one site') : ok(chosen);
 };
 
-const chooseSite = async (deps: RunSyncDeps): Promise<Result<Chosen, StepError>> => {
-  const sites = await deps.reader.listSites();
-  if (!sites.ok) return failed('listSites', sites.error.kind, sites.error.message);
-  const marks = await syncedMarks(deps);
-  deps.prompt.show(
-    renderSitePicker(annotate(sites.value, marks), annotate([{ id: MAILBOX_ID, name: MAILBOX_NAME }], marks)[0] ?? { id: MAILBOX_ID, name: MAILBOX_NAME, webUrl: '' })
-  );
-  const chosen = parseSelection(await deps.prompt.ask('Source:'), sites.value.length);
-  return chosen.ok ? resolve(deps, chosen.value, sites.value) : failed('pickSite', chosen.error.kind, chosen.error.message);
+// What the picker is drawn from, and what to do about it afterwards. A stored list is shown at once
+// and refreshed only once the run is committed to work, where thirty seconds alongside a sync that
+// takes minutes costs nothing; quitting leaves the stored list as it was rather than paying for a
+// refresh nobody asked for. Nothing stored, or `--refresh`, means listing for real before drawing.
+type Listing = { readonly sites: ReadonlyArray<SiteSummary>; readonly fromCache: boolean };
+
+const listedSites = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<Listing, StepError>> => {
+  const cached = input.refresh === true ? undefined : await deps.cachedSites();
+  if (cached !== undefined) return ok({ sites: cached.sites, fromCache: true });
+  const fresh = await deps.reader.listSites();
+  if (!fresh.ok) return failed('listSites', fresh.error.kind, fresh.error.message);
+  await deps.rememberSites(fresh.value);
+  return ok({ sites: fresh.value, fromCache: false });
 };
 
-const oneSummary = (summary: Result<RunSummary, StepError>): Result<ReadonlyArray<RunSummary>, StepError> => (summary.ok ? ok([summary.value]) : summary);
+// Listed again for next time, alongside the work rather than in front of it. A listing that fails
+// leaves the stored one alone: it is still the best answer available, and the run has already got
+// what it came for.
+const refreshInBackground = async (deps: RunSyncDeps): Promise<void> => {
+  const fresh = await deps.reader.listSites();
+  if (fresh.ok) await deps.rememberSites(fresh.value);
+};
+
+type Picked = { readonly chosen: Chosen; readonly fromCache: boolean };
+
+const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<Picked, StepError>> => {
+  const listing = await listedSites(deps, input);
+  if (!listing.ok) return listing;
+  const { sites, fromCache } = listing.value;
+  const marks = await syncedMarks(deps);
+  deps.prompt.show(renderSitePicker(annotate(sites, marks), annotate([{ id: MAILBOX_ID, name: MAILBOX_NAME }], marks)[0] ?? { id: MAILBOX_ID, name: MAILBOX_NAME, webUrl: '' }));
+  const chosen = parseSelection(await deps.prompt.ask('Source:'), sites.length);
+  if (!chosen.ok) return failed('pickSite', chosen.error.kind, chosen.error.message);
+  const resolved = await resolve(deps, chosen.value, sites);
+  return resolved.ok ? ok({ chosen: resolved.value, fromCache }) : resolved;
+};
+
+const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray<SourceRun>, StepError> => (summary.ok ? ok([summary.value]) : summary);
 
 // Each site is summarised as it lands, so a run over many of them reports along the way. A site that
 // fails stops the run there rather than burying the reason under the ones after it; every site
 // finished before it keeps what it wrote, and a re-run resumes from its own checkpoint.
-const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyArray<SiteRef>): Promise<Result<ReadonlyArray<RunSummary>, StepError>> => {
-  const summaries: RunSummary[] = [];
+const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyArray<SiteRef>): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
+  const summaries: SourceRun[] = [];
   for (const site of chosen) {
     const drives = await librariesFor(deps, site, input.driveIds, chosen.length === 1);
     if (!drives.ok) return drives;
@@ -153,17 +188,43 @@ const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyA
   return ok(summaries);
 };
 
+const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclude<Chosen, 'quit'>): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
+  if (chosen === 'update-all') return updateEverything(deps, input);
+  if (chosen === 'mailbox') return oneSummary(await syncTheMailbox(deps, input));
+  return runMany(deps, input, chosen);
+};
+
+// What a run left behind, across every source it touched: the two numbers a reader wants before
+// deciding whether to open the report at all.
+const leftBehind = (ran: ReadonlyArray<SourceRun>): { readonly skipped: number; readonly failed: number } =>
+  ran.reduce((carried, run) => ({ skipped: carried.skipped + run.summary.skipped, failed: carried.failed + run.summary.failed }), { skipped: 0, failed: 0 });
+
+const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
+  if (input.command === 'update') return updateEverything(deps, input);
+  if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
+  const named = await siteFromOptions(deps, input);
+  if (named !== undefined) return named.ok ? runMany(deps, input, [named.value]) : named;
+  const picked = await chooseSite(deps, input);
+  if (!picked.ok) return picked;
+  const { chosen, fromCache } = picked.value;
+  // Quitting asks for nothing, so it pays for nothing: the stored list stands until a run that
+  // actually works, where the listing rides alongside a sync that takes far longer than it does.
+  if (chosen === 'quit') return ok([]);
+  const refreshing = fromCache ? refreshInBackground(deps) : Promise.resolve();
+  const chosenSummaries = await syncChosen(deps, input, chosen);
+  await refreshing;
+  return chosenSummaries;
+};
+
+// Every way of choosing sources funnels through here, so the report is written once at the end of a
+// run however the run was asked for, rather than once per branch.
 export const createRunSync =
   (deps: RunSyncDeps): RunSync =>
   async (input) => {
-    if (input.command === 'update') return updateEverything(deps, input);
-    if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
-    const named = await siteFromOptions(deps, input);
-    if (named !== undefined) return named.ok ? runMany(deps, input, [named.value]) : named;
-    const chosen = await chooseSite(deps);
-    if (!chosen.ok) return chosen;
-    if (chosen.value === 'quit') return ok([]);
-    if (chosen.value === 'update-all') return updateEverything(deps, input);
-    if (chosen.value === 'mailbox') return oneSummary(await syncTheMailbox(deps, input));
-    return runMany(deps, input, chosen.value);
+    const summaries = await chooseAndSync(deps, input);
+    if (!summaries.ok) return summaries;
+    const path = await deps.writeGlobalReport(summaries.value, input.dryRun);
+    const left = leftBehind(summaries.value);
+    if (path !== undefined && left.skipped + left.failed > 0) deps.prompt.show(renderReportPointer(left, path));
+    return summaries;
   };

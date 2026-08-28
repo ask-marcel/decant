@@ -21,11 +21,22 @@ export type PlacedImages = { readonly paths: ReadonlyArray<string>; readonly sec
 // picture is still there to open, and the markdown does not pretend to know what it shows.
 // Shared by both sides of the sync: a Word file attached to a mail loses its diagrams exactly the
 // way one sitting in a library does, so it is the same folder, the same names, the same section.
-export const placeImages = async (deps: PlaceImagesDeps, directory: string, name: string, images: ReadonlyArray<EmbeddedImage>): Promise<Result<PlacedImages, FilesError>> => {
+// Reading a picture is slow enough to look like a stall, so the caller is told which one is being
+// read. A caller with nowhere to say it passes nothing.
+export type SayWhat = (what: string) => void;
+
+export const placeImages = async (
+  deps: PlaceImagesDeps,
+  directory: string,
+  name: string,
+  images: ReadonlyArray<EmbeddedImage>,
+  saying: SayWhat = () => undefined
+): Promise<Result<PlacedImages, FilesError>> => {
   const folder = `${directory}/${name}${MEDIA_SUFFIX}`;
   const paths: string[] = [];
   const entries: string[] = [];
-  for (const image of images) {
+  for (const [at, image] of images.entries()) {
+    saying(`reading picture ${at + 1}/${images.length}`);
     const written = await deps.files.writeBytes(`${folder}/${mediaName(image)}`, image.bytes);
     if (!written.ok) return written;
     paths.push(`${folder}/${mediaName(image)}`);

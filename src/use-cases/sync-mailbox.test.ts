@@ -90,7 +90,7 @@ const run = async (
     dryRun: seeds.dryRun ?? false,
     since: seeds.since,
   });
-  return { summary: result.ok ? result.value : ({} as RunSummary), files, logger, progress, asked, ok: result.ok, error: result.ok ? undefined : result.error, reader };
+  return { summary: result.ok ? result.value.summary : ({} as RunSummary), files, logger, progress, asked, ok: result.ok, error: result.ok ? undefined : result.error, reader };
 };
 
 const stateAfter = (

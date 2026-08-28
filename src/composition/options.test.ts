@@ -7,8 +7,12 @@ describe('reading what the operator asked for', () => {
   it('running the command with nothing else picks a source and writes for real', () => {
     expect(parse('')).toEqual({
       ok: true,
-      value: { command: 'sync', driveIds: [], dryRun: false, maxSizeMb: 50, ocr: true, ocrLang: 'en', concurrency: 4, assumeYes: false, mailbox: false },
+      value: { command: 'sync', driveIds: [], dryRun: false, maxSizeMb: 50, ocr: true, ocrLang: 'en', concurrency: 4, assumeYes: false, mailbox: false, refresh: false },
     });
+  });
+
+  it('a refresh can be asked for, so a site added since the last run is not waited for', () => {
+    expect(parse('--refresh')).toMatchObject({ value: { refresh: true } });
   });
 
   it('how many items convert at once can be set, and defaults to four', () => {

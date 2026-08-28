@@ -3,13 +3,18 @@ export type ReportEntry = {
   readonly reason: string;
 };
 
-export type ReportRun = {
-  readonly source: string;
-  readonly at: string;
-  readonly counts: string;
+// What one source left behind. Named here rather than beside the use-case that fills it, so both the
+// per-source report and the global one draw the same three lists from the same shape.
+export type ReportNotes = {
   readonly skipped: ReadonlyArray<ReportEntry>;
   readonly failed: ReadonlyArray<ReportEntry>;
   readonly archived: ReadonlyArray<ReportEntry>;
+};
+
+export type ReportRun = ReportNotes & {
+  readonly source: string;
+  readonly at: string;
+  readonly counts: string;
 };
 
 export const UNSUPPORTED_REASON = 'a kind of file this tool does not read';
@@ -40,16 +45,16 @@ const list = (title: string, entries: ReadonlyArray<ReportEntry>): ReadonlyArray
 // report that repeats "all good" every night buries the runs that did leave something behind.
 export const hasSomethingToReport = (run: ReportRun): boolean => run.skipped.length + run.failed.length + run.archived.length > 0;
 
-export const renderReportRun = (run: ReportRun): string =>
-  [
-    `## ${run.at}`,
-    '',
-    run.counts,
-    ...list('Left in place, nothing was written for these:', run.skipped),
-    ...list('Could not be read, and will be tried again on the next run:', run.failed),
-    ...list('No longer at the source, moved aside:', run.archived),
-    '',
-  ].join('\n');
+// The three lists, in the order a reader wants them: what was left out on purpose, what could not be
+// read and is worth another run, then what the source no longer has. Shared with the global report,
+// so the same entry reads the same way whichever file it is opened in.
+export const renderNoteLists = (notes: ReportNotes): ReadonlyArray<string> => [
+  ...list('Left in place, nothing was written for these:', notes.skipped),
+  ...list('Could not be read, and will be tried again on the next run:', notes.failed),
+  ...list('No longer at the source, moved aside:', notes.archived),
+];
+
+export const renderReportRun = (run: ReportRun): string => [`## ${run.at}`, '', run.counts, ...renderNoteLists(run), ''].join('\n');
 
 // Newest run first, so the file opens on what happened last however long it grows.
 export const appendReportRun = (existing: string | undefined, run: ReportRun): string => {
