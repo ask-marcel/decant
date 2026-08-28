@@ -145,7 +145,12 @@ why it only ever decides and never answers.
 Each markdown companion records the model that read it, as `ocr: rapidocr (ch)`, `(japan)` or
 `(latin)`. An image holding no text at all is read only once, since there is no script to get right.
 Pass `--ocr-lang` with a RapidOCR language (`ch`, `en`, `japan`, `korean`, `cyrillic`, ...) to force
-one for the whole run and skip the deciding pass.
+one for the whole run and skip the deciding pass. A language RapidOCR does not have is refused
+straight away, with the accepted ones listed, rather than failing once per image.
+
+Korean is the one script the deciding pass cannot recognise: no model that reads Korean also reads
+anything else, so the first reading returns Chinese-looking nonsense for a Korean page instead of
+returning nothing. Sync a Korean source with `--ocr-lang korean` and it reads correctly.
 
 A picture inside a document does not survive the conversion to markdown: it becomes a bare
 `[image]`, usually with no alt text, so an architecture diagram contributes one word that says

@@ -34,17 +34,25 @@ const DEFAULTS: Options = {
   mailbox: false,
 };
 
+// RapidOCR's recognizer catalogue, plus the `auto` that picks from it per image. Kept here so a
+// typo is refused at the command line: an unknown language reaches Python, throws once per image,
+// and turns a whole sync into "no text" notes while still reporting itself as a success.
+const OCR_LANGUAGES = ['auto', 'ch', 'ch_doc', 'en', 'arabic', 'chinese_cht', 'cyrillic', 'devanagari', 'japan', 'korean', 'ka', 'latin', 'ta', 'te', 'eslav', 'th', 'el'];
+
 const FLAGS_WITH_VALUE = new Set(['--site-id', '--site-url', '--drive-id', '--max-size-mb', '--ocr-lang', '--concurrency', '--since']);
 
 const withValue = (options: Options, flag: string, value: string): Result<Options, OptionsError> => {
   if (flag === '--site-id') return ok({ ...options, siteId: value });
   if (flag === '--site-url') return ok({ ...options, siteUrl: value });
   if (flag === '--drive-id') return ok({ ...options, driveIds: [...options.driveIds, value] });
-  if (flag === '--ocr-lang') return ok({ ...options, ocrLang: value });
+  if (flag === '--ocr-lang') return withOcrLang(options, value);
   if (flag === '--concurrency') return withConcurrency(options, value);
   if (flag === '--since') return withSince(options, value);
   return withSize(options, value);
 };
+
+const withOcrLang = (options: Options, value: string): Result<Options, OptionsError> =>
+  OCR_LANGUAGES.includes(value) ? ok({ ...options, ocrLang: value }) : err({ kind: 'bad-option', message: `--ocr-lang expects one of ${OCR_LANGUAGES.join(', ')}, got: ${value}` });
 
 const withSize = (options: Options, value: string): Result<Options, OptionsError> => {
   const size = Number(value);

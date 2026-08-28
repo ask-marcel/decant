@@ -56,9 +56,21 @@ describe('reading what the operator asked for', () => {
   });
 
   it('a dry run, a size cap, a language and the saved choices can be set together', () => {
-    expect(parse('update --dry-run --max-size-mb 200 --ocr-lang fr --yes')).toMatchObject({
-      value: { command: 'update', dryRun: true, maxSizeMb: 200, ocrLang: 'fr', assumeYes: true },
+    expect(parse('update --dry-run --max-size-mb 200 --ocr-lang latin --yes')).toMatchObject({
+      value: { command: 'update', dryRun: true, maxSizeMb: 200, ocrLang: 'latin', assumeYes: true },
     });
+  });
+
+  it('a language RapidOCR does not have is refused here, rather than failing once per image', () => {
+    const refused = parse('--ocr-lang fr');
+
+    expect(refused.ok).toBe(false);
+    expect(refused.ok === false && refused.error.message).toContain('fr');
+    expect(refused.ok === false && refused.error.message).toContain('latin');
+  });
+
+  it('letting the image choose is itself a language the operator can name', () => {
+    expect(parse('--ocr-lang auto')).toMatchObject({ value: { ocrLang: 'auto' } });
   });
 
   it('reading images can be turned off for a run', () => {
