@@ -22,7 +22,7 @@ export const GLOBAL_REPORT_PATH = (kbRoot: string): string => `${kbRoot}/_sync-r
 
 // Answers with the path it wrote, or nothing when it wrote nothing, so the caller can point a reader
 // at the file without having to know where the knowledge base lives.
-export type WriteGlobalReport = (ran: ReadonlyArray<SourceRun>, dryRun: boolean) => Promise<string | undefined>;
+export type WriteGlobalReport = (ran: ReadonlyArray<SourceRun>, dryRun: boolean, stopped?: string) => Promise<string | undefined>;
 
 const section = (run: SourceRun): SourceSection => ({ source: run.source, counts: countsLine(run.summary), ...run.notes });
 
@@ -40,10 +40,10 @@ const staleSources = async (deps: WriteGlobalReportDeps, ran: ReadonlyArray<Sour
 // a dry run reports work that did not happen.
 export const createWriteGlobalReport =
   (deps: WriteGlobalReportDeps): WriteGlobalReport =>
-  async (ran, dryRun) => {
+  async (ran, dryRun, stopped) => {
     if (dryRun || ran.length === 0) return undefined;
     const path = GLOBAL_REPORT_PATH(deps.kbRoot);
-    const report = renderGlobalReport(deps.clock.nowIso(), ran.map(section), await staleSources(deps, ran));
+    const report = renderGlobalReport(deps.clock.nowIso(), ran.map(section), await staleSources(deps, ran), stopped);
     const written = await deps.files.writeText(path, report);
     if (written.ok) return path;
     deps.logger.warn('global-report.failed', { cause: written.error.kind });

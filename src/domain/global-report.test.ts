@@ -109,4 +109,19 @@ Written 2026-08-27T21:00:00Z.
 Nothing was left behind.
 `);
   });
+
+  it('a run that stopped early says so, so a file listing two sources is not read as covering twenty', () => {
+    expect(renderGlobalReport('2026-08-28T20:00:00Z', [CLEAN], [], 'enumerate: token expired')).toBe(`# What did not reach the knowledge base
+
+Written 2026-08-28T20:00:00Z.
+
+The run stopped early at enumerate: token expired. The sources after it were not reached.
+
+## Espace Contoso
+
+12 converted, 0 moved, 0 archived, 0 skipped, 0 failed.
+
+Nothing was left behind.
+`);
+  });
 });
