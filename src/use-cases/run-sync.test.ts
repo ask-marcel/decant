@@ -41,7 +41,7 @@ const run = async (
 ): Promise<{
   calls: SyncSiteInput[];
   mailboxRuns: SyncMailboxInput[];
-  reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean }>;
+  reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }>;
   prompt: PromptFake;
   logger: LoggerFake;
   ok: boolean;
@@ -55,7 +55,7 @@ const run = async (
   const calls: SyncSiteInput[] = [];
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
-  const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean }> = [];
+  const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }> = [];
   const prompt = createPromptFake(answers);
   const logger = createLoggerFake();
   const reader = createDriveReaderFake({ sites, drives, ...seeds.reader });
@@ -77,8 +77,8 @@ const run = async (
       mailboxRuns.push(input);
       return ok(SOURCE_RUN);
     },
-    writeGlobalReport: async (ran, dryRun) => {
-      reported.push({ ran, dryRun });
+    writeGlobalReport: async ({ ran, dryRun, stopped }) => {
+      reported.push({ ran, dryRun, stopped });
       return seeds.reportPath ?? 'kb/_sync-report.md';
     },
   });
@@ -623,5 +623,58 @@ describe('pointing a reader at the report a run leaves behind', () => {
     const { reported } = await run(['1', '1'], { dryRun: true });
 
     expect(reported[0]?.dryRun).toBe(true);
+  });
+
+  it('a run that fails partway still reports the sources that finished before it', async () => {
+    const reported: Array<{ ran: ReadonlyArray<SourceRun>; stopped?: string }> = [];
+    let started = 0;
+    const runSync = createRunSync({
+      reader: createDriveReaderFake({ sites, drives }),
+      prompt: createPromptFake(),
+      logger: createLoggerFake(),
+      syncSite: async () => {
+        started += 1;
+        return started === 1 ? ok(SOURCE_RUN) : { ok: false, error: { step: 'enumerate', cause: 'auth', message: 'token expired' } };
+      },
+      listSyncedSources: async () => ok(TWO_SITES),
+      savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
+      cachedSites: async () => undefined,
+      rememberSites: async () => undefined,
+      syncMailbox: async () => ok(SOURCE_RUN),
+      writeGlobalReport: async ({ ran, stopped }) => {
+        reported.push({ ran, stopped });
+        return 'kb/_sync-report.md';
+      },
+    });
+
+    const result = await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 4, dryRun: false });
+
+    expect(result.ok).toBe(false);
+    // The first site finished and wrote its documents; the report must not pretend it did not.
+    expect(reported[0]?.ran).toHaveLength(1);
+    expect(reported[0]?.stopped).toBe('enumerate: token expired');
+  });
+
+  it('a run that fails on its very first source reports nothing, since nothing finished', async () => {
+    const reported: Array<{ ran: ReadonlyArray<SourceRun> }> = [];
+    const runSync = createRunSync({
+      reader: createDriveReaderFake({ sites, drives }),
+      prompt: createPromptFake(),
+      logger: createLoggerFake(),
+      syncSite: async () => ({ ok: false, error: { step: 'enumerate', cause: 'auth', message: 'token expired' } }),
+      listSyncedSources: async () => ok(TWO_SITES),
+      savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
+      cachedSites: async () => undefined,
+      rememberSites: async () => undefined,
+      syncMailbox: async () => ok(SOURCE_RUN),
+      writeGlobalReport: async ({ ran }) => {
+        reported.push({ ran });
+        return undefined;
+      },
+    });
+
+    await runSync({ command: 'update', driveIds: [], maxBytes: 1000, ocrLabel: 'off', concurrency: 4, dryRun: false });
+
+    expect(reported[0]?.ran).toEqual([]);
   });
 });

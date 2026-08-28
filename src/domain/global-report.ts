@@ -10,11 +10,27 @@ export type SourceSection = ReportNotes & { readonly source: string; readonly co
 // would read as current.
 export type StaleSource = { readonly name: string; readonly lastRun: string };
 
+// Everything one rendering needs. A record rather than a parameter list: `stopped` was the fourth
+// thing to pass, and the next reader of a four-argument call cannot tell which list is which.
+export type GlobalRun = {
+  readonly at: string;
+  readonly ran: ReadonlyArray<SourceSection>;
+  readonly stale: ReadonlyArray<StaleSource>;
+  // Absent when the run finished; what it stopped at when it did not.
+  readonly stopped?: string;
+};
+
 export const GLOBAL_REPORT_HEADING = '# What did not reach the knowledge base';
 
 const STALE_HEADING = '## Not rechecked by this run';
 
 const NOTHING_LEFT = 'Nothing was left behind.';
+
+// A run that stopped says so at the top, because the rest of the file cannot: a report naming two
+// sources looks the same whether the run covered two or died on the third. The tail below names the
+// ones it did not reach, but with their old dates, which reads as ordinary staleness rather than as
+// work this run still owes.
+const stoppedLine = (stopped: string): string => `The run stopped early at ${stopped}. The sources after it were not reached.`;
 
 // A clean source says so in a line rather than showing three empty lists: the reader is scanning for
 // what went wrong, and a heading with nothing under it makes them stop and check why.
@@ -30,5 +46,7 @@ const staleTail = (stale: ReadonlyArray<StaleSource>): ReadonlyArray<string> =>
 
 // Rewritten whole on every run rather than appended to, so it is always the current view. The history
 // of any one source is in that source's own `_sync-report.md`, which is still appended to.
-export const renderGlobalReport = (at: string, ran: ReadonlyArray<SourceSection>, stale: ReadonlyArray<StaleSource>): string =>
-  [GLOBAL_REPORT_HEADING, '', `Written ${at}.`, '', ...ran.flatMap(section), ...staleTail(stale)].join('\n').trimEnd().concat('\n');
+export const renderGlobalReport = (run: GlobalRun): string => {
+  const opening = run.stopped === undefined ? [] : [stoppedLine(run.stopped), ''];
+  return [GLOBAL_REPORT_HEADING, '', `Written ${run.at}.`, '', ...opening, ...run.ran.flatMap(section), ...staleTail(run.stale)].join('\n').trimEnd().concat('\n');
+};

@@ -46,7 +46,14 @@ export type RunSyncInput = {
   readonly refresh?: boolean;
 };
 
-export type RunSync = (input: RunSyncInput) => Promise<Result<ReadonlyArray<SourceRun>, StepError>>;
+// A run that stops carries out the sources that did finish. They wrote their documents and their own
+// reports, so a global report that omitted them would claim less happened than did; `ran` is what the
+// run got through before the step named by the error. Absent on errors raised before any source ran.
+export type RunFailure = StepError & { readonly ran?: ReadonlyArray<SourceRun> };
+
+export type RunSync = (input: RunSyncInput) => Promise<Result<ReadonlyArray<SourceRun>, RunFailure>>;
+
+const stoppedAfter = (ran: ReadonlyArray<SourceRun>, error: StepError): Result<never, RunFailure> => err({ ...error, ran });
 
 const failed = (step: string, cause: string, message: string): Result<never, StepError> => err({ step, cause, message });
 
@@ -89,19 +96,19 @@ const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<R
   return summary;
 };
 
-const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
+const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   const known = await deps.listSyncedSources();
   if (!known.ok) return known;
   const summaries: SourceRun[] = [];
   if (known.value.some((candidate) => candidate.kind === 'mailbox')) {
     const mailbox = await syncTheMailbox(deps, input);
-    if (!mailbox.ok) return mailbox;
+    if (!mailbox.ok) return stoppedAfter(summaries, mailbox.error);
     summaries.push(mailbox.value);
   }
   for (const source of known.value.filter((candidate) => candidate.kind === 'site')) {
     const site = { id: source.id, name: source.name, webUrl: '' };
     const summary = await syncOne(deps, input, site, await deps.savedDrives(site));
-    if (!summary.ok) return summary;
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
   return ok(summaries);
@@ -176,19 +183,19 @@ const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray
 // Each site is summarised as it lands, so a run over many of them reports along the way. A site that
 // fails stops the run there rather than burying the reason under the ones after it; every site
 // finished before it keeps what it wrote, and a re-run resumes from its own checkpoint.
-const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyArray<SiteRef>): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
+const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyArray<SiteRef>): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   const summaries: SourceRun[] = [];
   for (const site of chosen) {
     const drives = await librariesFor(deps, site, input.driveIds, chosen.length === 1);
-    if (!drives.ok) return drives;
+    if (!drives.ok) return stoppedAfter(summaries, drives.error);
     const summary = await syncOne(deps, input, site, drives.value);
-    if (!summary.ok) return summary;
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
   return ok(summaries);
 };
 
-const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclude<Chosen, 'quit'>): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
+const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclude<Chosen, 'quit'>): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   if (chosen === 'update-all') return updateEverything(deps, input);
   if (chosen === 'mailbox') return oneSummary(await syncTheMailbox(deps, input));
   return runMany(deps, input, chosen);
@@ -199,7 +206,7 @@ const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclud
 const leftBehind = (ran: ReadonlyArray<SourceRun>): { readonly skipped: number; readonly failed: number } =>
   ran.reduce((carried, run) => ({ skipped: carried.skipped + run.summary.skipped, failed: carried.failed + run.summary.failed }), { skipped: 0, failed: 0 });
 
-const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, StepError>> => {
+const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   if (input.command === 'update') return updateEverything(deps, input);
   if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
   const named = await siteFromOptions(deps, input);
@@ -222,9 +229,12 @@ export const createRunSync =
   (deps: RunSyncDeps): RunSync =>
   async (input) => {
     const summaries = await chooseAndSync(deps, input);
-    if (!summaries.ok) return summaries;
-    const path = await deps.writeGlobalReport(summaries.value, input.dryRun);
-    const left = leftBehind(summaries.value);
+    // A stopped run still reports: the sources it got through wrote their documents, and the file
+    // says where it stopped so a short report is not read as a complete one.
+    const ran = summaries.ok ? summaries.value : (summaries.error.ran ?? []);
+    const stopped = summaries.ok ? undefined : `${summaries.error.step}: ${summaries.error.message}`;
+    const path = await deps.writeGlobalReport({ ran, dryRun: input.dryRun, stopped });
+    const left = leftBehind(ran);
     if (path !== undefined && left.skipped + left.failed > 0) deps.prompt.show(renderReportPointer(left, path));
     return summaries;
   };

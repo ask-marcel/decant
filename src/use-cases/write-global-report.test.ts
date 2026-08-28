@@ -24,7 +24,7 @@ const synced = (over: Partial<SyncedSource>): SyncedSource => ({ kind: 'site', i
 
 const write = async (
   ran: ReadonlyArray<SourceRun>,
-  options: { dryRun?: boolean; known?: ReadonlyArray<SyncedSource>; failWrite?: boolean } = {}
+  options: { dryRun?: boolean; known?: ReadonlyArray<SyncedSource>; failWrite?: boolean; stopped?: string } = {}
 ): Promise<{ files: FilesFake; logger: LoggerFake; written: string | undefined; path: string | undefined }> => {
   const files = createFilesFake(options.failWrite === true ? { failWriteWith: { kind: 'write-failed', path: 'kb/_sync-report.md', message: 'read-only' } } : {});
   const logger = createLoggerFake();
@@ -35,7 +35,7 @@ const write = async (
     listSyncedSources: async () => ok(options.known ?? []),
     kbRoot: 'kb',
   });
-  const path = await writeGlobalReport(ran, options.dryRun ?? false);
+  const path = await writeGlobalReport({ ran, dryRun: options.dryRun ?? false, stopped: options.stopped });
   return { files, logger, path, written: files.written.get('kb/_sync-report.md') };
 };
 
@@ -68,6 +68,13 @@ describe('one file naming what a whole run left behind', () => {
     expect(written).toContain('- Espace Contoso: last ran 2026-08-01T09:00:00Z');
   });
 
+  it('a run that stopped partway still reports the sources that did finish, and says it stopped', async () => {
+    const { written } = await write([contoso], { stopped: 'enumerate: token expired' });
+
+    expect(written).toContain('## Espace Contoso');
+    expect(written).toContain('The run stopped early at enumerate: token expired.');
+  });
+
   it('a dry run writes nothing, since nothing it reports actually happened', async () => {
     const { written } = await write([contoso], { dryRun: true });
 
@@ -98,7 +105,7 @@ describe('one file naming what a whole run left behind', () => {
       kbRoot: 'kb',
     });
 
-    await writeGlobalReport([contoso], false);
+    await writeGlobalReport({ ran: [contoso], dryRun: false });
 
     const written = files.written.get('kb/_sync-report.md');
     expect(written).toContain('## Espace Contoso');
