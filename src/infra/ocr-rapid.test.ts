@@ -31,6 +31,7 @@ const REAL_OUTPUT = JSON.stringify([
 const linesOf = (...texts: ReadonlyArray<string>): string => JSON.stringify(texts.map((txt) => ({ box: [[0, 0]], txt, score: 0.98 })));
 
 const CHINESE = '公司年度会议将于下周举行，请各部门准时参加。';
+const JAPANESE = '社内お知らせ\n四半期ごとに優秀な社員を選出します。';
 const RUN_TOGETHER = 'Toegangtotgegevens';
 const SPACED = 'Toegang tot gegevens';
 
@@ -109,14 +110,31 @@ describe('reading the text out of an image', () => {
 });
 
 describe('a run that left the language to the image', () => {
-  it('reads with the Chinese model first, and keeps that reading when the image is Chinese', async () => {
+  it('the widest model looks first, so one reading can say which script the image is in', async () => {
     const capture: string[][] = [];
 
-    const read = await chooserOver([linesOf(CHINESE)], capture).read('kb/Site/Annonce.jpg');
+    await chooserOver([linesOf(CHINESE), linesOf(CHINESE)], capture).read('kb/Site/Annonce.jpg');
+
+    expect(capture[0]?.slice(3)).toEqual(['ch', 'PP-OCRv5']);
+  });
+
+  it('a Chinese page is read again by the model that reads Chinese most completely', async () => {
+    const capture: string[][] = [];
+
+    const read = await chooserOver([linesOf(CHINESE), linesOf(CHINESE)], capture).read('kb/Site/Annonce.jpg');
 
     expect(read).toEqual({ ok: true, value: { text: CHINESE, label: 'rapidocr (ch)' } });
-    expect(capture).toHaveLength(1);
-    expect(capture[0]?.slice(3)).toEqual(['ch', 'PP-OCRv4']);
+    expect(capture).toHaveLength(2);
+    expect(capture[1]?.slice(3)).toEqual(['ch', 'PP-OCRv4']);
+  });
+
+  it('a Japanese page is read again by the model that has kana in its dictionary', async () => {
+    const capture: string[][] = [];
+
+    const read = await chooserOver([linesOf(JAPANESE), linesOf(JAPANESE)], capture).read('kb/Site/Oshirase.png');
+
+    expect(read).toEqual({ ok: true, value: { text: JAPANESE, label: 'rapidocr (japan)' } });
+    expect(capture[1]?.slice(3)).toEqual(['japan', 'PP-OCRv4']);
   });
 
   it('reads a Latin image again with the Latin model, so the words keep their spaces and accents', async () => {
@@ -127,15 +145,6 @@ describe('a run that left the language to the image', () => {
     expect(read).toEqual({ ok: true, value: { text: SPACED, label: 'rapidocr (latin)' } });
     expect(capture).toHaveLength(2);
     expect(capture[1]?.slice(3)).toEqual(['latin', 'PP-OCRv5']);
-  });
-
-  it('a Chinese page carrying an English brand name is not read a second time', async () => {
-    const capture: string[][] = [];
-
-    const read = await chooserOver([linesOf('欢迎使用 Contoso 系统，请先登录。')], capture).read('kb/Site/Bienvenue.jpg');
-
-    expect(read.ok === true && read.value.label).toBe('rapidocr (ch)');
-    expect(capture).toHaveLength(1);
   });
 
   it('an image the first reading found no text in is not read a second time', async () => {

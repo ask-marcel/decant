@@ -133,13 +133,18 @@ pdf: ./Roadmap.pptx.pdf
 | anything else | left in SharePoint and named in `_sync-report.md` |
 
 The language an image is read in is chosen per image, not per run. Nothing about a file says which
-language it holds, so the run finds out by reading it: RapidOCR's `ch` model is the only one whose
-dictionary holds CJK and Latin characters alike, so it reads first, and anything it finds no
-ideographs in is read again with `latin`, which keeps the spaces between words that every `ch` model
-runs together and covers the accented characters Dutch, French and German need. An image holding no
-text at all is read only once. Each markdown companion records the model that read it, as
-`ocr: rapidocr (ch)` or `ocr: rapidocr (latin)`. Pass `--ocr-lang` with a RapidOCR language (`ch`,
-`en`, `japan`, `korean`, `cyrillic`, ...) to force one for the whole run instead.
+language it holds, so the run finds out by reading it twice. The first reading uses the widest
+dictionary RapidOCR ships, which holds ideographs, both Japanese syllabaries and accented Latin at
+once, so it can say what the image is written in. That reading is then thrown away and the image is
+read again by the model built for what it found: Chinese, Japanese, or Latin, the last covering the
+accented characters Dutch, French and German need and keeping the spaces between words that a
+Chinese model runs together. The model that recognises everything is the best at nothing, which is
+why it only ever decides and never answers.
+
+Each markdown companion records the model that read it, as `ocr: rapidocr (ch)`, `(japan)` or
+`(latin)`. An image holding no text at all is read only once, since there is no script to get right.
+Pass `--ocr-lang` with a RapidOCR language (`ch`, `en`, `japan`, `korean`, `cyrillic`, ...) to force
+one for the whole run and skip the deciding pass.
 
 A picture inside a document does not survive the conversion to markdown: it becomes a bare
 `[image]`, usually with no alt text, so an architecture diagram contributes one word that says

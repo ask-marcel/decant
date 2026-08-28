@@ -1,4 +1,5 @@
-import { holdsChineseText } from '../domain/ocr-language.ts';
+import type { ReadingScript } from '../domain/ocr-language.ts';
+import { scriptOf } from '../domain/ocr-language.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import { formatError } from '../domain/utilities/format-error.ts';
@@ -22,14 +23,20 @@ type Model = { readonly lang: string; readonly version: string };
 const SCRIPT_PATH = `${import.meta.dir}/rapidocr-run.py`;
 
 // A run that named no language settles it by reading the image rather than guessing from its path.
-// `ch` goes first because it is the only recognizer that can answer in both directions: it holds
-// CJK and ASCII alike, so ideographs missing from its reading really were absent. Which model each
-// side uses was measured rather than assumed: `ch` reads this tenant's Chinese most completely at
-// PP-OCRv4, and `latin` at PP-OCRv5 both keeps the word spacing every `ch` model runs together and
-// holds the accented characters Dutch and French need, which the ASCII-only `en` model cannot emit.
+// The probe is `ch` at PP-OCRv5 because it is the widest dictionary RapidOCR ships, holding
+// ideographs, both kana syllabaries and accented Latin at once, so one reading can say which script
+// the image is in. Its own reading is then thrown away, since the model that recognises everything
+// is the best at nothing: measured against real files, PP-OCRv5 drops characters from this tenant's
+// Chinese that PP-OCRv4 reads whole. So the probe only classifies, and the answer comes from the
+// model built for what it found. `latin` at PP-OCRv5 keeps the word spacing every `ch` model runs
+// together and holds the accented characters Dutch and French need, which `en` cannot emit at all.
 const AUTO = 'auto';
-const PROBE: Model = { lang: 'ch', version: 'PP-OCRv4' };
-const LATIN: Model = { lang: 'latin', version: 'PP-OCRv5' };
+const PROBE: Model = { lang: 'ch', version: 'PP-OCRv5' };
+const FOR_SCRIPT: Record<ReadingScript, Model> = {
+  japanese: { lang: 'japan', version: 'PP-OCRv4' },
+  chinese: { lang: 'ch', version: 'PP-OCRv4' },
+  latin: { lang: 'latin', version: 'PP-OCRv5' },
+};
 const NAMED_VERSION = 'PP-OCRv4';
 
 const lastLine = (text: string): string => text.trim().split('\n').slice(-1)[0] ?? '';
@@ -53,13 +60,14 @@ const readWith = async (options: RapidOptions, path: string, model: Model): Prom
   return ok({ text: textsFrom(run.stdout), label: `rapidocr (${model.lang})` });
 };
 
-// An image the probe found no text in is not read again: there is no language to get right, and a
+// An image the probe found no text in is not read again: there is no script to get right, and a
 // mailbox is full of signature pictures that would otherwise pay for a second pass saying nothing.
+// A probe that failed is reported rather than retried, since the second read would fail alike.
 const reading = async (options: RapidOptions, path: string): Promise<Result<OcrReading, OcrError>> => {
   if (options.lang !== AUTO) return readWith(options, path, { lang: options.lang, version: NAMED_VERSION });
   const probe = await readWith(options, path, PROBE);
-  if (!probe.ok || probe.value.text.trim().length === 0 || holdsChineseText(probe.value.text)) return probe;
-  return readWith(options, path, LATIN);
+  if (!probe.ok || probe.value.text.trim().length === 0) return probe;
+  return readWith(options, path, FOR_SCRIPT[scriptOf(probe.value.text)]);
 };
 
 export const createRapidOcr = (options: RapidOptions): Ocr => ({
