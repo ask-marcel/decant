@@ -146,6 +146,18 @@ const asImage = async (context: Context): Promise<AttachmentOutcome> =>
     return { text: body, stamp: { ...context.input.stamp, image: `./${context.name}`, ocr: read.ok ? context.input.ocrLabel : undefined } };
   });
 
+// A workbook is read for its cell text and kept as it came, because the reading is all the markdown
+// can hold: a formula, a second sheet and a chart are in the file and nowhere else. The text is
+// asked for first, so a refused conversion is reported rather than written down as an empty note.
+const asSpreadsheet = async (context: Context): Promise<AttachmentOutcome> => {
+  const text = await context.deps.reader.attachmentMarkdown(context.input.messageId, context.input.attachment.id);
+  if (!text.ok) return failure(text.error);
+  return rawAndMarkdown(context, async () => ({
+    text: text.value.trim().length === 0 ? NO_TEXT_NOTE : text.value,
+    stamp: { ...context.input.stamp, original: `./${context.name}` },
+  }));
+};
+
 const asVector = async (context: Context): Promise<AttachmentOutcome> =>
   rawAndMarkdown(context, async () => ({ text: VECTOR_NOTE, stamp: { ...context.input.stamp, image: `./${context.name}` } }));
 
@@ -197,6 +209,7 @@ const asEmbeddedMail = async (context: Context): Promise<AttachmentOutcome> => {
 
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<AttachmentOutcome>>> = {
   document: asMarkdown,
+  spreadsheet: asSpreadsheet,
   calendar: asCalendar,
   slides: asSlides,
   'legacy-slides': asSlides,

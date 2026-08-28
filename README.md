@@ -121,7 +121,8 @@ pdf: ./Roadmap.pptx.pdf
 
 | Source | What you get |
 |---|---|
-| docx, doc, xlsx, xls, csv, odt/ods/odp, msg, txt, md, html, json, sarif, xml, yaml, log | one markdown file |
+| docx, doc, csv, odt/odp, msg, txt, md, html, json, sarif, xml, yaml, log | one markdown file |
+| xlsx, xls, xlsm, ods | the workbook, plus markdown holding its cell text |
 | loop, fluid, whiteboard | one markdown file, rendered by Graph since the page holds no text of its own |
 | pptx | markdown for the text, plus a PDF of the slides (markdown alone when the source will not render it) |
 | ppt, rtf | a PDF, plus markdown read back from it |
@@ -131,6 +132,11 @@ pdf: ./Roadmap.pptx.pdf
 | jpg, png, gif, webp, bmp, tiff, heic | the image, plus markdown holding the text read out of it |
 | svg | the file, plus a markdown note pointing at it |
 | anything else | left in SharePoint and named in `_sync-report.md` |
+
+A workbook is kept as it came as well as read. The conversion yields cell text and nothing else, so
+a formula, a second sheet, a number format and a chart survive nowhere but the file itself; the
+markdown names it under `original:`. Every other document kind is markdown alone, since for text the
+markdown is the content.
 
 A meeting invitation is read rather than kept. What survives is the summary, the time exactly as the
 invitation states it (no timezone is converted, since there is no zone database here to do it with),

@@ -53,6 +53,15 @@ describe('converting one document out of a library', () => {
     expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain('# Contrat');
   });
 
+  it('a workbook in a library is kept as it came, beside the text read out of it', async () => {
+    const { outcome, files } = await run({ name: 'Budget.xlsx' }, { reader: { markdown: { '01ABC': '| Q1 | 12 |' } } });
+    const folder = 'kb/Espace Contoso/Documents/2026-05-12/Projets';
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${folder}/Budget.xlsx`, `${folder}/Budget.xlsx.md`] });
+    expect(files.binary.has(`${folder}/Budget.xlsx`)).toBe(true);
+    expect(files.written.get(`${folder}/Budget.xlsx.md`)).toContain('original: ./Budget.xlsx');
+  });
+
   it('a meeting invitation in a library is read down to the meeting', async () => {
     const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'SUMMARY:Kick-off', 'DTSTART:20260812T060000Z', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
     const { files } = await run({ name: 'invite.ics' }, { reader: { markdown: { '01ABC': ics } } });

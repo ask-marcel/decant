@@ -214,9 +214,11 @@ describe('keeping what a conversation carried', () => {
     const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
     const stored = outcome?.kind === 'rendered' ? outcome.thread.record.attachments : [];
 
-    expect(stored[0]).toBe(`${ATTACHMENTS_STORE}/${storedName('Budget.xlsx', 'att1')}.md`);
-    expect(stored[1]).toBe(`${ATTACHMENTS_STORE}/${storedName('Budget.xlsx', 'att2')}.md`);
-    expect(stored[0]).not.toBe(stored[1]);
+    const first = `${ATTACHMENTS_STORE}/${storedName('Budget.xlsx', 'att1')}`;
+    const second = `${ATTACHMENTS_STORE}/${storedName('Budget.xlsx', 'att2')}`;
+
+    expect(stored).toEqual([first, `${first}.md`, second, `${second}.md`]);
+    expect(first).not.toBe(second);
   });
 
   it('two files of one conversation sharing a name and a byte count are both kept, being different files', async () => {
@@ -228,7 +230,10 @@ describe('keeping what a conversation carried', () => {
     const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
     const stored = outcome?.kind === 'rendered' ? outcome.thread.record.attachments : [];
 
-    expect(stored).toEqual([`${ATTACHMENTS_STORE}/${storedName('Budget.xlsx', 'att1')}.md`, `${ATTACHMENTS_STORE}/${storedName('Budget.xlsx', 'att2')}.md`]);
+    const first = `${ATTACHMENTS_STORE}/${storedName('Budget.xlsx', 'att1')}`;
+    const second = `${ATTACHMENTS_STORE}/${storedName('Budget.xlsx', 'att2')}`;
+
+    expect(stored).toEqual([first, `${first}.md`, second, `${second}.md`]);
   });
 
   it('a signature image riding on every message is converted once, not once per message', async () => {

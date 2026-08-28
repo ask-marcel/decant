@@ -225,6 +225,27 @@ describe('keeping what was attached to a mail', () => {
     expect(files.written.get(`${FOLDER}/Contrat.docx.md`)).toContain('converted att1');
   });
 
+  it('a workbook is kept as it came, beside the text read out of it', async () => {
+    const { outcome, files } = await run({ name: 'Budget.xlsx' });
+    const written = files.written.get(`${FOLDER}/Budget.xlsx.md`) ?? '';
+
+    expect(outcome).toEqual({
+      kind: 'converted',
+      outputs: [`${FOLDER}/Budget.xlsx`, `${FOLDER}/Budget.xlsx.md`],
+      primary: `${FOLDER}/Budget.xlsx.md`,
+      media: [],
+    });
+    expect(files.binary.has(`${FOLDER}/Budget.xlsx`)).toBe(true);
+    expect(written).toContain('original: ./Budget.xlsx');
+    expect(written).toContain('converted att1');
+  });
+
+  it('a workbook the source refused to read is reported rather than kept with an empty note beside it', async () => {
+    const { outcome } = await run({ name: 'Budget.xlsx' }, { reader: { failCalls: { attachmentMarkdown: { kind: 'transient', message: 'timed out' } } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'transient: timed out' });
+  });
+
   it('a meeting invitation is read down to the meeting, not kept as the file it came in', async () => {
     const { outcome, files } = await run({ name: 'invite.ics', contentType: 'text/calendar' }, { reader: { attachmentTexts: { att1: ICS } } });
     const written = files.written.get(`${FOLDER}/invite.ics.md`) ?? '';

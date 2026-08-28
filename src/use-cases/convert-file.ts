@@ -105,6 +105,21 @@ const convertDocument = async (context: Context): Promise<ConvertOutcome> => {
 // A deck the source will not render is not a deck we cannot read: the text comes from elsewhere and
 // arrives intact, so it is written on its own rather than the whole document being given up on. Only
 // the old formats truly need the render, since their text is read back out of it.
+// The same as the mail side: read for the cell text, kept for everything the reading cannot hold.
+const convertSpreadsheet = async (context: Context): Promise<ConvertOutcome> => {
+  const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
+  const converted = await context.deps.reader.markdown(ref);
+  if (!converted.ok) return failure(converted.error);
+  const raw = await context.deps.reader.bytes(ref);
+  if (!raw.ok) return failure(raw.error);
+  const rawPath = `${context.dir}/${context.name}`;
+  const wroteRaw = await context.deps.files.writeBytes(rawPath, raw.value);
+  if (!wroteRaw.ok) return failure(wroteRaw.error);
+  const stamp = { ...context.stamp, original: `./${context.name}` };
+  const written = await writeMarkdown(context, `${context.name}.md`, stamp, converted.value.trim().length === 0 ? NO_TEXT_NOTE : converted.value);
+  return written.ok ? { kind: 'converted', outputs: [rawPath, ...written.value] } : failure(written.error);
+};
+
 // The same reading a mail attachment gets: the library passes an `.ics` through as text, and what a
 // reader wants out of it is a handful of fields rather than the file around them.
 const convertCalendar = async (context: Context): Promise<ConvertOutcome> => {
@@ -226,6 +241,7 @@ const writeArchiveEntries = async (
 
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<ConvertOutcome>>> = {
   document: convertDocument,
+  spreadsheet: convertSpreadsheet,
   calendar: convertCalendar,
   slides: convertSlides,
   'legacy-slides': convertSlides,

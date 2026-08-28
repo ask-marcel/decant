@@ -18,13 +18,9 @@ const SUPPORTED: ReadonlyArray<readonly [string, ConversionRoute]> = [
   ['md', 'document'],
   ['msg', 'document'],
   ['odp', 'document'],
-  ['ods', 'document'],
   ['odt', 'document'],
   ['sarif', 'document'],
   ['txt', 'document'],
-  ['xls', 'document'],
-  ['xlsm', 'document'],
-  ['xlsx', 'document'],
   ['xml', 'document'],
   ['yaml', 'document'],
   ['yml', 'document'],
@@ -48,6 +44,10 @@ const SUPPORTED: ReadonlyArray<readonly [string, ConversionRoute]> = [
   ['webp', 'image'],
   ['svg', 'vector'],
   ['ics', 'calendar'],
+  ['ods', 'spreadsheet'],
+  ['xls', 'spreadsheet'],
+  ['xlsm', 'spreadsheet'],
+  ['xlsx', 'spreadsheet'],
 ];
 
 describe('the formats this tool handles', () => {
@@ -85,11 +85,14 @@ describe('deciding what to produce for a document found in SharePoint', () => {
     });
   });
 
-  it('a spreadsheet is treated as a document, one markdown table per sheet', () => {
+  it('a workbook is kept as it came, beside the text read out of it', () => {
     expect(planFile({ name: 'Budget.xlsx', size: 1000 }, CAP)).toEqual({
       kind: 'process',
-      route: 'document',
-      outputs: [{ relName: 'Budget.xlsx.md', role: 'markdown' }],
+      route: 'spreadsheet',
+      outputs: [
+        { relName: 'Budget.xlsx', role: 'raw' },
+        { relName: 'Budget.xlsx.md', role: 'markdown' },
+      ],
     });
   });
 

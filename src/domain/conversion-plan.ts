@@ -1,6 +1,6 @@
 // What a file found in SharePoint turns into on disk. Purely a decision: the route names how the
 // bytes are obtained, the outputs name every file the sync will write for it.
-export type ConversionRoute = 'document' | 'calendar' | 'slides' | 'legacy-slides' | 'pdf' | 'archive' | 'image' | 'vector';
+export type ConversionRoute = 'document' | 'spreadsheet' | 'calendar' | 'slides' | 'legacy-slides' | 'pdf' | 'archive' | 'image' | 'vector';
 
 export type OutputRole = 'markdown' | 'pdf' | 'raw' | 'archive-folder';
 
@@ -30,18 +30,20 @@ const ROUTE_BY_EXTENSION: Readonly<Partial<Record<string, ConversionRoute>>> = {
   md: 'document',
   msg: 'document',
   odp: 'document',
-  ods: 'document',
   odt: 'document',
   // A SARIF report is JSON, which the converter already passes through as text.
   sarif: 'document',
   txt: 'document',
   whiteboard: 'document',
-  xls: 'document',
-  xlsm: 'document',
-  xlsx: 'document',
   xml: 'document',
   yaml: 'document',
   yml: 'document',
+  // A workbook is kept as it came as well as read. The conversion yields cell text and nothing else,
+  // so formulas, several sheets, formatting and charts survive nowhere but the file itself.
+  ods: 'spreadsheet',
+  xls: 'spreadsheet',
+  xlsm: 'spreadsheet',
+  xlsx: 'spreadsheet',
   // An invitation is read rather than kept: what a reader wants of it is a handful of fields, and
   // the file around them is daylight-saving rules and vendor properties.
   ics: 'calendar',
