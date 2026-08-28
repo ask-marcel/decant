@@ -271,3 +271,23 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   plus its wiring will breach one of them. Splitting by file works when the new module has no caller
   yet: commit the pure part first, the wiring second. Three of the eight steps here needed it.
 
+## 2026-08-28
+
+- [mistake] A parser tested with fixtures I wrote myself is tested against my idea of the format, not
+  the format. The MIME boundary was escaped into a pattern and the escaping was wrong; every fixture
+  used `BOUND` or `B`, so the tests passed for a parser that would have broken on the first real
+  Outlook message, whose boundaries carry `.` and `+`. When a value comes from somewhere else, put
+  what that somewhere else actually sends in the fixture.
+
+- [gotcha] The mutation gate scores the aggregate of the staged files, so a new module can sit well
+  under 90 inside a passing run, and a big weak file can fail a run where everything else is fine. It
+  took five rounds to get this one over the line: exact assertions instead of `toContain`, then the
+  input shapes the fixtures never used (LF endings, unquoted parameters, a space-folded header), then
+  simplifying the code so there were fewer defensive branches to kill in the first place. Read the
+  per-file column, not just the total.
+
+- [decision] `mime.ts` and `mime-text.ts` are two modules because the shape of a message and the
+  encodings its pieces travelled in are two subjects. The split fell out of the commit-size gate and
+  turned out to be the better design: each file is under a hundred lines, each has its own tests, and
+  the encodings module is the one with all the awkward native-throwing calls.
+
