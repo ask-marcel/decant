@@ -241,9 +241,16 @@ the document and leaves the folder alone, so a path into `kb/` keeps working. Re
 The id is a hash of the thread's root `Message-ID`, taken from the `References` header of its
 oldest message, rather than Graph's `conversationId`. `conversationId` is scoped to one mailbox,
 so a shared mailbox and a personal one see different values for the same message, and Graph
-reassigns it when an external party replies from outside Exchange, which would split a vendor
-exchange into two folders mid-thread. It is still recorded as `conversation_id` for a Graph round
-trip; nothing is keyed on it.
+reassigns it when an external party replies from outside Exchange.
+
+That last case is why it matters: Graph opens a **second conversation for the same exchange**, and
+both resolve to the same root, so both are written into one document. Every conversation a thread
+was assembled from is listed as `conversation_id` in the front matter, and nothing is keyed on it.
+
+Which thread a conversation belongs to is settled once, before anything is written, and never
+revisited. A message arriving late, older than anything already held, would otherwise answer with
+a different root and rename a folder already on disk. A conversation whose headers cannot be read
+is left unresolved and retried on the next sweep rather than filed under a guess.
 
 The day is counted in the zone given by `--timezone`, defaulting to this machine's. Every
 timestamp Graph returns is UTC, so a message received at 16:40Z is the next day in a UTC+8 tenant,
