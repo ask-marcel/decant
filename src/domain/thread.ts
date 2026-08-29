@@ -39,11 +39,7 @@ export const shortHash = (value: string): string => {
 // the bare subject. The stored name never changes afterwards, whatever later replies are titled.
 export const threadTitle = (subject: string): string => {
   let bare = subject.trim();
-  let previous = '';
-  while (bare !== previous) {
-    previous = bare;
-    bare = bare.replace(REPLY_PREFIX, '').trim();
-  }
+  while (REPLY_PREFIX.test(bare)) bare = bare.replace(REPLY_PREFIX, '');
   return bare.length === 0 ? 'No subject' : bare;
 };
 
@@ -69,11 +65,12 @@ const heading = (part: ThreadPart): string => `## ${part.message.received.slice(
 // of the file, so those lines are dropped rather than repeated ten times in one conversation.
 const MAIL_HEADER_LINE = /^\*\*(Subject|From|To|Cc|Bcc|Date|Sent):\*\*/;
 
+const isHeaderOrBlank = (line: string): boolean => MAIL_HEADER_LINE.test(line) || line.trim().length === 0;
+
 export const withoutMailHeaders = (body: string): string => {
   const lines = body.split('\n');
-  let start = 0;
-  while (start < lines.length && (MAIL_HEADER_LINE.test(lines[start] ?? '') || (lines[start] ?? '').trim().length === 0)) start += 1;
-  return lines.slice(start).join('\n');
+  const start = lines.findIndex((line) => !isHeaderOrBlank(line));
+  return start < 0 ? '' : lines.slice(start).join('\n');
 };
 
 const bodyOf = (part: ThreadPart): string => {

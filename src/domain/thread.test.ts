@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { MailMessage } from './mail-message.ts';
-import { participantsOf, renderThread, shortHash, threadDay, threadFileName, threadTitle } from './thread.ts';
+import { participantsOf, renderThread, shortHash, threadDay, threadFileName, threadTitle, withoutMailHeaders } from './thread.ts';
 
 const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   id: 'm1',
@@ -194,6 +194,47 @@ describe('writing a conversation as one document', () => {
   it('an empty conversation still produces its title', () => {
     expect(renderThread({ conversationId: 'c1', subject: 'Contrat', parts: [] })).toBe('# Contrat');
   });
+
+  it('messages handed over in any order are written oldest first', () => {
+    const at = (id: string, day: string): { message: MailMessage; body: string } => ({
+      message: message({ id, received: `2026-05-${day}T09:00:00Z`, from: undefined, to: [] }),
+      body: id,
+    });
+
+    expect(renderThread({ conversationId: 'c1', subject: 'Contrat', parts: [at('m2', '13'), at('m3', '14'), at('m1', '12')] })).toBe(
+      [
+        '# Contrat',
+        '',
+        '## 2026-05-12 09:00 — Unknown sender',
+        '',
+        'm1',
+        '',
+        '## 2026-05-13 09:00 — Unknown sender',
+        '',
+        'm2',
+        '',
+        '## 2026-05-14 09:00 — Unknown sender',
+        '',
+        'm3',
+      ].join('\n')
+    );
+  });
+});
+
+// Reached directly rather than through `renderThread`, whose body trimming hides every difference
+// this function makes to the lines it drops.
+describe('finding where a message actually starts', () => {
+  it('blank lines before the first words are dropped, so a section opens on the text', () => {
+    expect(withoutMailHeaders('\n\nPlease review the budget.')).toBe('Please review the budget.');
+  });
+
+  it('a message that opens on its text keeps every line of it', () => {
+    expect(withoutMailHeaders('Please review the budget.\nIt is attached.')).toBe('Please review the budget.\nIt is attached.');
+  });
+
+  it('a line of nothing but spaces counts as blank, since it is what a converter leaves behind', () => {
+    expect(withoutMailHeaders('   \n\t\nPlease review the budget.')).toBe('Please review the budget.');
+  });
 });
 
 describe('listing who took part in a conversation', () => {
@@ -206,8 +247,13 @@ describe('listing who took part in a conversation', () => {
     expect(participantsOf(parts)).toEqual(['Jane Doe', 'Vincent DELACOURT']);
   });
 
+  // The length is pinned beside the contents: an array holding one `undefined` satisfies `toEqual([])`
+  // in Bun, so a sender that leaked through as nothing would read as nobody having been named.
   it('a conversation with nobody named lists nobody', () => {
-    expect(participantsOf([{ message: message({ from: undefined, to: [] }), body: '' }])).toEqual([]);
+    const named = participantsOf([{ message: message({ from: undefined, to: [] }), body: '' }]);
+
+    expect(named).toEqual([]);
+    expect(named).toHaveLength(0);
   });
 
   it('the names are sorted, so the same people read the same way whatever order they wrote in', () => {
@@ -221,7 +267,9 @@ describe('listing who took part in a conversation', () => {
 
   it('a message with no sender still counts the people it was written to', () => {
     const parts = [{ message: message({ from: undefined, to: [{ name: 'Jane Doe', address: 'j@example.com' }] }), body: '' }];
+    const named = participantsOf(parts);
 
-    expect(participantsOf(parts)).toEqual(['Jane Doe']);
+    expect(named).toEqual(['Jane Doe']);
+    expect(named).toHaveLength(1);
   });
 });
