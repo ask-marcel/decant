@@ -13,6 +13,7 @@ import { err, ok } from '../domain/result.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
 import { participantsOf, renderThread, threadTitle } from '../domain/thread.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
+import { cardFileName, renderThreadCard } from '../domain/thread-card.ts';
 import { threadFolderName } from '../domain/thread-folder.ts';
 import type { ThreadId } from '../domain/thread-id.ts';
 import { FILE_SLUG_LIMIT, FOLDER_SLUG_LIMIT, slugify } from '../domain/thread-slug.ts';
@@ -370,6 +371,46 @@ const placeOf = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailMe
   return { folder, relative: `threads/${folder}/${slugify(bare, FILE_SLUG_LIMIT)}.md`, here: `${deps.mailboxRoot}/threads/${folder}` };
 };
 
+const CARDS_FOLDER = '_attachments';
+
+// One card per file the thread carried, written HERE rather than inside the conversion. The
+// conversion is short-circuited whenever a content is already in the store, which is the common
+// case for everything after the first thread that carried it, so a card written there would exist
+// only for the thread that happened to arrive first. Every other thread would then name files in
+// its head that its own folder said nothing about.
+const writeCards = async (
+  deps: RenderThreadDeps,
+  input: RenderThreadInput,
+  place: ThreadPlace,
+  parts: ReadonlyArray<ThreadPart>,
+  byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>,
+  shown: ReadonlySet<string>
+): Promise<void> => {
+  const folder = `${place.here}/${CARDS_FOLDER}`;
+  const taken: string[] = [];
+  for (const part of parts) {
+    for (const file of byMessage[part.message.id] ?? []) {
+      if (file.primary !== undefined && shown.has(file.primary)) continue;
+      const name = cardFileName(file.attachment.name, taken);
+      taken.push(name);
+      const raw = file.paths.find((path) => path !== file.primary);
+      const card = renderThreadCard({
+        threadId: input.threadId,
+        messageId: part.message.id,
+        filename: file.attachment.name,
+        sender: part.message.from?.name,
+        received: part.message.received,
+        bytes: file.attachment.size,
+        holds: file.primary === undefined ? undefined : pathBetween(folder, file.primary),
+        original: raw === undefined ? undefined : pathBetween(folder, raw),
+        note: file.note,
+      });
+      const saved = await deps.files.writeText(`${folder}/${name}`, card);
+      if (!saved.ok) deps.logger.warn('card.failed', { filename: file.attachment.name, cause: saved.error.kind });
+    }
+  }
+};
+
 const writeThread = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
@@ -391,6 +432,7 @@ const writeThread = async (
   const here = place.here;
   const bodies = rewriteBodies(here, parts, attachments.byMessage);
   const shown = new Set([...bodies.pictures, ...attachments.media]);
+  await writeCards(deps, input, place, parts, attachments.byMessage, shown);
   const attachmentRefs = attachments.paths.filter((path) => !shown.has(path)).map((path) => pathBetween(here, path));
   const inlineRefs = bodies.pictures.map((path) => pathBetween(here, path));
   // Linked files are written from the thread's own folder, exactly as attachments are: both climb out

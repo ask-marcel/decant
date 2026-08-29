@@ -144,7 +144,94 @@ describe('writing one conversation as one file', () => {
     const { ok: succeeded, files } = await run({ reader: { conversations, failCalls: { messageMarkdown: { kind: 'transient', message: 'throttled' } } } });
 
     expect(succeeded).toBe(false);
-    expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(0);
+    expect([...files.written.keys()].filter((path) => path.includes('/threads/') && !path.includes('/_attachments/'))).toHaveLength(0);
+  });
+
+  const CARDS = `kb/Mailbox/threads/${THREAD_FOLDER}/_attachments`;
+  const attached = { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 10, isInline: false }] };
+
+  it('each file a thread carried gets a card beside the thread, saying who sent it and where it is kept', async () => {
+    const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: attached } });
+    const card = files.written.get(`${CARDS}/Contrat.docx.md`) ?? '';
+
+    expect(card).toContain(`attachment_of: "${THREAD_ID}"`);
+    expect(card).toContain('filename: Contrat.docx');
+    expect(card).toContain('sender: Jane Doe');
+    expect(card).toContain(`holds: ../../../_attachments/${storedName('Contrat.docx', 'att1')}.md`);
+    // A document is read and its own copy dropped, so there is nothing else for the card to name.
+    expect(card).not.toContain('original:');
+  });
+
+  // The case that decides where cards are written. The conversion is short-circuited for a content
+  // the store already holds, so a card written inside it would exist only for whichever thread
+  // arrived first, and every other thread would name files in its head that its folder never showed.
+  it('a file another thread already stored still gets a card here, and is not converted again', async () => {
+    const stored = `${ATTACHMENTS_STORE}/${storedName('Contrat.docx', 'att1')}.md`;
+    const held = { [contentHash(bytesOf('att1'))]: { name: storedName('Contrat.docx', 'att1'), paths: [stored], primary: stored, media: [] } };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: attached }, attachments: held });
+
+    expect(files.written.has(`${CARDS}/Contrat.docx.md`)).toBe(true);
+    expect(files.writeLog.filter((path) => path.startsWith(ATTACHMENTS_STORE))).toEqual([]);
+  });
+
+  // A card is a convenience, not the content. Losing one costs an entry in a folder listing, where
+  // failing the thread would cost the conversation itself.
+  it('a card that cannot be written is said so and leaves the thread standing', async () => {
+    const {
+      files,
+      logger,
+      ok: succeeded,
+    } = await run({
+      reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: attached },
+      files: { failWritesMatching: '/_attachments/Contrat.docx.md' },
+    });
+
+    expect(succeeded).toBe(true);
+    expect(files.written.has(THREAD_FILE)).toBe(true);
+    expect(logger.calls.filter((call) => call.event === 'card.failed')).toEqual([
+      { level: 'warn', event: 'card.failed', meta: { filename: 'Contrat.docx', cause: 'write-failed' } },
+    ]);
+  });
+
+  it('a file kept whole as well as read names both copies in its card', async () => {
+    const picture = { m1: [{ id: 'att1', name: 'rack.jpg', contentType: 'image/jpeg', size: 12, isInline: false }] };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: picture } });
+    const card = files.written.get(`${CARDS}/rack.jpg.md`) ?? '';
+
+    expect(card).toContain(`holds: ../../../_attachments/${storedName('rack.jpg', 'att1')}.md`);
+    expect(card).toContain(`original: ../../../_attachments/${storedName('rack.jpg', 'att1')}`);
+  });
+
+  // A picture pasted into the body is shown where it stood and named under inline_images, so it is
+  // not something the thread "carried" in the sense a card describes.
+  it('a picture shown in the body gets no card, since the body already stands for it', async () => {
+    const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' }];
+    const { files } = await run({
+      reader: { conversations: { [CONV]: [message({ hasAttachments: false })] }, bodies: { m1: '\\[inline image: logo.png\\]' }, attachments: { m1: pasted } },
+    });
+
+    expect(files.written.has(`${CARDS}/logo.png.md`)).toBe(false);
+  });
+
+  it('a file from nobody in particular is still carded, with no sender named', async () => {
+    const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true, from: undefined })] }, attachments: attached } });
+    const card = files.written.get(`${CARDS}/Contrat.docx.md`) ?? '';
+
+    expect(card).toContain('filename: Contrat.docx');
+    expect(card).not.toContain('sender:');
+  });
+
+  it('two files of one name in a thread each get their own card', async () => {
+    const two = {
+      m1: [
+        { id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 10, isInline: false },
+        { id: 'att2', name: 'Contrat.docx', contentType: 'application/vnd', size: 11, isInline: false },
+      ],
+    };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: two } });
+
+    expect(files.written.has(`${CARDS}/Contrat.docx.md`)).toBe(true);
+    expect(files.written.has(`${CARDS}/Contrat-2.docx.md`)).toBe(true);
   });
 
   it('a thread assembled from two conversations holds every message from both, in order', async () => {
@@ -159,7 +246,7 @@ describe('writing one conversation as one file', () => {
     expect(written).toContain('Here is the contract.');
     expect(written).toContain('Replying from outside Exchange.');
     expect(written.indexOf('Here is the contract.')).toBeLessThan(written.indexOf('Replying from outside Exchange.'));
-    expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(1);
+    expect([...files.written.keys()].filter((path) => path.includes('/threads/') && !path.includes('/_attachments/'))).toHaveLength(1);
   });
 
   // Reused verbatim, never recomputed. The slug and timezone rules that produced it are code, and a
@@ -169,7 +256,7 @@ describe('writing one conversation as one file', () => {
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] } }, folder: held });
 
     expect(files.written.has(`kb/Mailbox/threads/${held}/contrat-contoso.md`)).toBe(true);
-    expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(1);
+    expect([...files.written.keys()].filter((path) => path.includes('/threads/') && !path.includes('/_attachments/'))).toHaveLength(1);
   });
 
   // The count is what proves it. The previous layout filed a thread under its LATEST message, so a
@@ -180,7 +267,7 @@ describe('writing one conversation as one file', () => {
     const { files } = await run({ reader: { conversations } });
 
     expect(files.written.has(THREAD_FILE)).toBe(true);
-    expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(1);
+    expect([...files.written.keys()].filter((path) => path.includes('/threads/') && !path.includes('/_attachments/'))).toHaveLength(1);
   });
 
   it('the file records who took part, when it started and ended, and how many messages it holds', async () => {
