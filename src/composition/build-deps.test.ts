@@ -8,23 +8,33 @@ import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { buildDeps } from './build-deps.ts';
 import { readConfig } from './config.ts';
 
-const configFor = (env: Readonly<Record<string, string | undefined>>): ReturnType<typeof readConfig> => readConfig({ env, ocrLang: 'en', interactive: true });
+const configFor = (env: Readonly<Record<string, string | undefined>>): ReturnType<typeof readConfig> =>
+  readConfig({ env, ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'UTC' });
 
 describe('reading the run configuration', () => {
   it('an empty environment writes to the default knowledge base folder and stays quiet', () => {
-    expect(configFor({})).toEqual({ logLevel: 'error', kbRoot: 'kb', ocrLang: 'en', ocr: true, interactive: true });
+    expect(configFor({})).toEqual({ logLevel: 'error', kbRoot: 'kb', ocrLang: 'en', ocr: true, interactive: true, timezone: 'UTC' });
   });
 
   it('reading images can be turned off in the configuration', () => {
-    expect(readConfig({ env: {}, ocrLang: 'en', interactive: true, ocr: false })).toMatchObject({ ocr: false });
+    expect(readConfig({ env: {}, ocrLang: 'en', interactive: true, ocr: false, timezone: '', machineTimezone: 'UTC' })).toMatchObject({ ocr: false });
   });
 
   it('the environment can move the knowledge base and raise the log level', () => {
     expect(configFor({ KB_LOG_LEVEL: 'debug', KB_ROOT: 'other-kb' })).toMatchObject({ logLevel: 'debug', kbRoot: 'other-kb' });
   });
 
+  // The zone a run was told to count in wins; with none given, the machine's own is what it gets.
+  it('a zone named for the run is what its days are counted in', () => {
+    expect(readConfig({ env: {}, ocrLang: 'en', interactive: true, timezone: 'Asia/Shanghai', machineTimezone: 'Europe/Paris' })).toMatchObject({ timezone: 'Asia/Shanghai' });
+  });
+
+  it('a run told no zone counts its days where the machine does', () => {
+    expect(readConfig({ env: {}, ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'Europe/Paris' })).toMatchObject({ timezone: 'Europe/Paris' });
+  });
+
   it('the language chosen for the run reaches the configuration', () => {
-    expect(readConfig({ env: {}, ocrLang: 'fr', interactive: false })).toMatchObject({ ocrLang: 'fr', interactive: false });
+    expect(readConfig({ env: {}, ocrLang: 'fr', interactive: false, timezone: '', machineTimezone: 'UTC' })).toMatchObject({ ocrLang: 'fr', interactive: false });
   });
 });
 

@@ -12,7 +12,14 @@ const run = async (): Promise<number> => {
     printLine(`${options.error.message}\n\n${USAGE}`);
     return 2;
   }
-  const config = readConfig({ env: process.env, ocrLang: options.value.ocrLang, ocr: options.value.ocr, interactive: options.value.command === 'sync' });
+  const config = readConfig({
+    env: process.env,
+    ocrLang: options.value.ocrLang,
+    ocr: options.value.ocr,
+    interactive: options.value.command === 'sync',
+    timezone: options.value.timezone,
+    machineTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  });
   const deps = buildDeps(config);
   const summaries = await deps.runSync({
     command: options.value.command,

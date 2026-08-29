@@ -66,6 +66,7 @@ clear message instead of waiting for input.
 | `--no-ocr` | Do not read text out of images or scanned PDFs |
 | `--refresh` | List the sites afresh instead of drawing the picker from the ones last seen |
 | `--ocr-lang <code>` | Force one language for images and scanned PDFs (default `auto`, chosen per image) |
+| `--timezone <zone>` | IANA zone the mailbox counts its days in, e.g. `Asia/Shanghai` (default: this machine's) |
 
 ## What lands in `kb/`
 

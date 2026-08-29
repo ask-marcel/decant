@@ -1,4 +1,5 @@
 import type { Result } from '../domain/result.ts';
+import { isKnownZone } from '../domain/zoned-day.ts';
 import { err, ok } from '../domain/result.ts';
 
 export type Command = 'sync' | 'update';
@@ -17,6 +18,9 @@ export type Options = {
   readonly assumeYes: boolean;
   readonly mailbox: boolean;
   readonly since?: string;
+  // Empty means the machine's own zone, resolved where the run is composed rather than here: a
+  // default read at module load would be a runtime value frozen into a constant.
+  readonly timezone: string;
 };
 
 export type OptionsError = { readonly kind: 'bad-option'; readonly message: string };
@@ -32,6 +36,7 @@ const DEFAULTS: Options = {
   concurrency: 4,
   assumeYes: false,
   mailbox: false,
+  timezone: '',
 };
 
 // RapidOCR's recognizer catalogue, plus the `auto` that picks from it per image. Kept here so a
@@ -39,7 +44,7 @@ const DEFAULTS: Options = {
 // and turns a whole sync into "no text" notes while still reporting itself as a success.
 const OCR_LANGUAGES = ['auto', 'ch', 'ch_doc', 'en', 'arabic', 'chinese_cht', 'cyrillic', 'devanagari', 'japan', 'korean', 'ka', 'latin', 'ta', 'te', 'eslav', 'th', 'el'];
 
-const FLAGS_WITH_VALUE = new Set(['--site-id', '--site-url', '--drive-id', '--max-size-mb', '--ocr-lang', '--concurrency', '--since']);
+const FLAGS_WITH_VALUE = new Set(['--site-id', '--site-url', '--drive-id', '--max-size-mb', '--ocr-lang', '--concurrency', '--since', '--timezone']);
 
 const withValue = (options: Options, flag: string, value: string): Result<Options, OptionsError> => {
   if (flag === '--site-id') return ok({ ...options, siteId: value });
@@ -48,11 +53,18 @@ const withValue = (options: Options, flag: string, value: string): Result<Option
   if (flag === '--ocr-lang') return withOcrLang(options, value);
   if (flag === '--concurrency') return withConcurrency(options, value);
   if (flag === '--since') return withSince(options, value);
+  if (flag === '--timezone') return withTimezone(options, value);
   return withSize(options, value);
 };
 
 const withOcrLang = (options: Options, value: string): Result<Options, OptionsError> =>
   OCR_LANGUAGES.includes(value) ? ok({ ...options, ocrLang: value }) : err({ kind: 'bad-option', message: `--ocr-lang expects one of ${OCR_LANGUAGES.join(', ')}, got: ${value}` });
+
+// Refused here rather than at the first message, the way an OCR language is. A tenant reports its
+// zone in Windows spelling ("China Standard Time") unless it is set to IANA, and that spelling
+// names no zone: a run that took it would file every thread under a day counted in UTC.
+const withTimezone = (options: Options, value: string): Result<Options, OptionsError> =>
+  isKnownZone(value) ? ok({ ...options, timezone: value }) : err({ kind: 'bad-option', message: `--timezone expects an IANA zone such as Asia/Shanghai, got: ${value}` });
 
 const withSize = (options: Options, value: string): Result<Options, OptionsError> => {
   const size = Number(value);
@@ -116,5 +128,6 @@ export const USAGE = [
   '  --no-ocr            do not read text out of images or scanned PDFs',
   '  --refresh           list the sites afresh instead of showing the ones last seen',
   '  --ocr-lang <code>   force one language for images and scanned PDFs (default auto, per image)',
+  "  --timezone <zone>   IANA zone the mailbox counts its days in (default this machine's)",
   '  --yes, -y           take the saved choices instead of asking',
 ].join('\n');

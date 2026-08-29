@@ -4,6 +4,7 @@ export type Config = {
   readonly ocrLang: string;
   readonly ocr: boolean;
   readonly interactive: boolean;
+  readonly timezone: string;
 };
 
 export type ConfigInput = {
@@ -11,6 +12,10 @@ export type ConfigInput = {
   readonly ocrLang: string;
   readonly ocr?: boolean;
   readonly interactive: boolean;
+  // What `--timezone` asked for, empty when it asked for nothing, and the zone this machine keeps.
+  // Both arrive as parameters so nothing here reads the clock or the environment for itself.
+  readonly timezone: string;
+  readonly machineTimezone: string;
 };
 
 // The only module that reads the environment: every other layer takes its values as parameters, so
@@ -21,4 +26,5 @@ export const readConfig = (input: ConfigInput): Config => ({
   ocrLang: input.ocrLang,
   ocr: input.ocr ?? true,
   interactive: input.interactive,
+  timezone: input.timezone === '' ? input.machineTimezone : input.timezone,
 });

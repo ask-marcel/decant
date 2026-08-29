@@ -7,7 +7,19 @@ describe('reading what the operator asked for', () => {
   it('running the command with nothing else picks a source and writes for real', () => {
     expect(parse('')).toEqual({
       ok: true,
-      value: { command: 'sync', driveIds: [], dryRun: false, maxSizeMb: 50, ocr: true, ocrLang: 'auto', concurrency: 4, assumeYes: false, mailbox: false, refresh: false },
+      value: {
+        command: 'sync',
+        driveIds: [],
+        dryRun: false,
+        maxSizeMb: 50,
+        ocr: true,
+        ocrLang: 'auto',
+        concurrency: 4,
+        assumeYes: false,
+        mailbox: false,
+        refresh: false,
+        timezone: '',
+      },
     });
   });
 
@@ -71,6 +83,20 @@ describe('reading what the operator asked for', () => {
 
   it('letting the image choose is itself a language the operator can name', () => {
     expect(parse('--ocr-lang auto')).toMatchObject({ value: { ocrLang: 'auto' } });
+  });
+
+  it('the zone a mailbox counts its days in can be named for the run', () => {
+    expect(parse('--mailbox --timezone Asia/Shanghai')).toMatchObject({ value: { timezone: 'Asia/Shanghai' } });
+  });
+
+  // The spelling a tenant reports unless it is set to IANA. Refused at the command line, because a
+  // zone that names nothing would file every thread under a day counted somewhere else, in a folder
+  // name that is written once and never rebuilt.
+  it('the Windows spelling of a zone is refused here, rather than filing a year of threads wrongly', () => {
+    const refused = parse('--timezone "China Standard Time"');
+
+    expect(refused.ok).toBe(false);
+    expect(refused.ok === false && refused.error.message).toContain('Asia/Shanghai');
   });
 
   it('reading images can be turned off for a run', () => {
