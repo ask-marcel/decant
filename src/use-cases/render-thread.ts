@@ -11,7 +11,14 @@ import { rewriteMessageBody } from '../domain/mail-body.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
-import { participantsOf, renderThread, threadDay, threadFileName, threadTitle } from '../domain/thread.ts';
+import { rootMessageId } from '../domain/root-message-id.ts';
+import { participantsOf, renderThread, threadTitle } from '../domain/thread.ts';
+import { bareSubject } from '../domain/thread-subject.ts';
+import { threadFolderName } from '../domain/thread-folder.ts';
+import { threadIdOf } from '../domain/thread-id.ts';
+import type { ThreadId } from '../domain/thread-id.ts';
+import { FILE_SLUG_LIMIT, FOLDER_SLUG_LIMIT, slugify } from '../domain/thread-slug.ts';
+import { dayIn } from '../domain/zoned-day.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { skipReason, tooLargeReason } from '../domain/report.ts';
@@ -32,6 +39,9 @@ export type RenderThreadDeps = {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly mailboxRoot: string;
+  // The zone a thread's day is counted in. Config for the run rather than per conversation, since
+  // every folder in one vault must be dated the same way or two runs would disagree.
+  readonly timezone: string;
 };
 
 export type RenderThreadInput = {
@@ -86,9 +96,16 @@ const threadHeader = (
   syncedAt: string,
   attachments: ReadonlyArray<string>,
   inlineImages: ReadonlyArray<string>,
-  linked: ReadonlyArray<string>
+  linked: ReadonlyArray<string>,
+  threadId: string,
+  root: string
 ): string =>
   renderFrontMatter([
+    // What the thread IS, and what its folder is named after. `conversation_id` stays for a Graph
+    // round trip; it is not what anything is keyed on, since Graph reassigns it when an external
+    // party replies from outside Exchange.
+    ['thread_id', threadId],
+    ['root_message_id', root],
     ['source', `conversation ${input.conversationId}`],
     ['site', 'Mailbox'],
     ['subject', threadTitle(first.subject)],
@@ -315,20 +332,42 @@ export const createRenderThread =
     const first = alive[0];
     const last = alive[alive.length - 1];
     if (first === undefined || last === undefined) return ok({ kind: 'empty' });
+    // The OLDEST message, never the newest: `list-conversation-messages` filters across every folder,
+    // so an unsent draft reply carries a newer time than any real message and no `References` at all,
+    // and reading that one would name the thread after the draft. A refusal here fails the thread
+    // rather than falling back, because the answer names a folder that is never rebuilt: filing it
+    // wrongly is permanent, where failing leaves it unrecorded and the next run tries again.
+    const headers = await deps.reader.messageHeaders(first.id);
+    if (!headers.ok) return headers;
     const parts = await bodiesOf(deps, alive);
     if (!parts.ok) return parts;
-    return writeThread(deps, input, parts.value, first, last);
+    return writeThread(deps, input, parts.value, first, last, rootMessageId(headers.value, first.id));
   };
+
+// Where a thread lives, settled once from its FIRST message and never recomputed. The day sorts,
+// the id identifies, the slug reads. A reply arriving two years later appends to the document and
+// leaves the folder alone, which is what stops the old file being stranded with nothing pointing at
+// it: the previous layout filed a thread under its LATEST message, so every reply wrote it
+// somewhere new and left the copy before it behind.
+type ThreadPlace = { readonly folder: string; readonly relative: string; readonly here: string };
+
+const placeOf = (deps: RenderThreadDeps, threadId: ThreadId, first: MailMessage): ThreadPlace => {
+  const bare = bareSubject(first.subject);
+  const folder = threadFolderName(dayIn(first.received, deps.timezone), threadId, slugify(bare, FOLDER_SLUG_LIMIT));
+  return { folder, relative: `threads/${folder}/${slugify(bare, FILE_SLUG_LIMIT)}.md`, here: `${deps.mailboxRoot}/threads/${folder}` };
+};
 
 const writeThread = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
   parts: ReadonlyArray<ThreadPart>,
   first: MailMessage,
-  last: MailMessage
+  last: MailMessage,
+  root: string
 ): Promise<Result<RenderThreadOutcome, MailReaderError>> => {
-  const fileName = threadFileName({ conversationId: input.conversationId, subject: first.subject });
-  const relative = `threads/${threadDay(last.received)}/${fileName}`;
+  const threadId = threadIdOf(root);
+  const place = placeOf(deps, threadId, first);
+  const relative = place.relative;
   const stamp = stampFor(deps, input, first, last);
   const attachments = await attachmentsOf(deps, input, parts, stamp);
   const links = await linkedFiles(
@@ -338,7 +377,7 @@ const writeThread = async (
   );
   // Attachments live in the shared store one level up from the thread, so their references climb out
   // of the thread's own folder rather than sitting beside it.
-  const here = `${deps.mailboxRoot}/threads/${threadDay(last.received)}`;
+  const here = place.here;
   const bodies = rewriteBodies(here, parts, attachments.byMessage);
   const shown = new Set([...bodies.pictures, ...attachments.media]);
   const attachmentRefs = attachments.paths.filter((path) => !shown.has(path)).map((path) => pathBetween(here, path));
@@ -346,7 +385,7 @@ const writeThread = async (
   // Linked files are written from the thread's own folder, exactly as attachments are: both climb out
   // of it to a store the whole mailbox shares, and a reader follows either one the same way.
   const linkedRefs = links.paths.map((path) => pathBetween(here, path));
-  const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, inlineRefs, linkedRefs);
+  const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, inlineRefs, linkedRefs, threadId, root);
   const written = await deps.files.writeText(
     `${deps.mailboxRoot}/${relative}`,
     `${header}\n\n${renderThread({ conversationId: input.conversationId, subject: first.subject, parts: bodies.parts })}\n`

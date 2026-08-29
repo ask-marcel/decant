@@ -229,15 +229,25 @@ kb/
     _attachments/                   every file a mail carried, stored once by content
     _linked/2026-05-11/             SharePoint files the mail pointed at, each pulled once,
                                     filed under the day the file itself last changed
-    threads/2026-05-20/                               the day the conversation was last active
-      Contrat Contoso a3f9c1.md                       the whole conversation, oldest message first
+    threads/2026-05-12-ca0df2c95a-contrat-contoso/    the day it began, its id, what it is about
+      contrat-contoso.md                             the whole conversation, oldest message first
 ```
 
-One file per conversation, not per message, named for its subject and a fingerprint of the thread so
-two conversations sharing a subject keep their own files. The folder is the day of the conversation's
-**latest** message, so a thread sorts by when it was last active rather than when it began. That means
-a reply moves the file into the new day's folder: the conversation stays one file, but its path
-changes as the thread continues, so do not link to it by path from outside `kb/`.
+One file per conversation, not per message, in a folder named once and never renamed: the day of
+its **first** message, a ten-character id, and a readable slug of its subject. A reply appends to
+the document and leaves the folder alone, so a path into `kb/` keeps working. Recency lives in
+`last_message` in the front matter, not in the path.
+
+The id is a hash of the thread's root `Message-ID`, taken from the `References` header of its
+oldest message, rather than Graph's `conversationId`. `conversationId` is scoped to one mailbox,
+so a shared mailbox and a personal one see different values for the same message, and Graph
+reassigns it when an external party replies from outside Exchange, which would split a vendor
+exchange into two folders mid-thread. It is still recorded as `conversation_id` for a Graph round
+trip; nothing is keyed on it.
+
+The day is counted in the zone given by `--timezone`, defaulting to this machine's. Every
+timestamp Graph returns is UTC, so a message received at 16:40Z is the next day in a UTC+8 tenant,
+and the folder name is written once.
 Every folder is swept except Junk, Deleted Items, Drafts and Outbox, which means **the mail you
 sent is included**: Sent Items is a folder like any other, and a conversation is assembled from
 every folder its messages landed in. Quoted reply chains are stripped, since the message being

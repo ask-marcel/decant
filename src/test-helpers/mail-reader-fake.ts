@@ -72,7 +72,10 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
       if (seed.failWith) return err(seed.failWith);
       return ok(seed.conversations?.[conversationId] ?? []);
     },
-    messageMarkdown: async (messageId) => forMessage(messageId, 'body', seed.bodies?.[messageId] ?? `body of ${messageId}`),
+    messageMarkdown: async (messageId) => {
+      const refused = seed.failCalls?.['messageMarkdown'];
+      return refused ? err(refused) : forMessage(messageId, 'body', seed.bodies?.[messageId] ?? `body of ${messageId}`);
+    },
     attachments: async (messageId) => {
       if (seed.failAttachmentList) {
         calls.push(`attachments:${messageId}`);
@@ -98,7 +101,10 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
       const refused = seed.failCalls?.['attachmentImages'];
       return refused ? err(refused) : forMessage(messageId, `attachmentImages:${attachmentId}`, seed.attachmentImages?.[attachmentId] ?? []);
     },
-    messageHeaders: async (messageId) => forMessage(messageId, 'headers', seed.headers?.[messageId] ?? []),
+    messageHeaders: async (messageId) => {
+      const refused = seed.failCalls?.['messageHeaders'];
+      return refused ? err(refused) : forMessage(messageId, 'headers', seed.headers?.[messageId] ?? []);
+    },
     sharepointLinks: async (messageId) => forMessage(messageId, 'links', seed.links?.[messageId] ?? []),
   };
 };

@@ -97,7 +97,11 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot });
   const listSyncedSources = createListSyncedSources({ files, logger, kbRoot: config.kbRoot });
   const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown });
-  const renderThread = createRenderThread({ reader: mail, drive: reader, files, convertAttachment, convertFile, clock, logger, mailboxRoot: `${config.kbRoot}/Mailbox` });
+  // Hoisted only to keep the call below on one line: Bun reports the inner lines of a multi-line
+  // expression as never executed, so splitting it reads as coverage lost. See the comment further
+  // down and the journal entry for the same trap in `progress-bar.ts`.
+  const mailboxRoot = `${config.kbRoot}/Mailbox`;
+  const renderThread = createRenderThread({ reader: mail, drive: reader, files, convertAttachment, convertFile, clock, logger, mailboxRoot, timezone: config.timezone });
   const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);

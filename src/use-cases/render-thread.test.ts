@@ -3,7 +3,6 @@ import { contentHash } from '../domain/content-hash.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
-import { shortHash } from '../domain/thread.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import type { DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
@@ -21,11 +20,13 @@ import { createRenderThread } from './render-thread.ts';
 import type { RenderThreadOutcome } from './render-thread.ts';
 
 const CONV = 'AAQkADk0...=';
-const threadAt = (day: string): string => `threads/${day}/Contrat Contoso ${shortHash(CONV)}.md`;
-const THREAD_RELATIVE = threadAt('2026-05-12');
+// Named once, from the thread's FIRST message, and never again: the day it began, the id its root
+// message hashes to, and what it is about. A reply no longer moves it, which is why one constant
+// serves where a replied-to thread used to need its own.
+const THREAD_ID = 'ca0df2c95a';
+const THREAD_FOLDER = `2026-05-12-${THREAD_ID}-contrat-contoso`;
+const THREAD_RELATIVE = `threads/${THREAD_FOLDER}/contrat-contoso.md`;
 const THREAD_FILE = `kb/Mailbox/${THREAD_RELATIVE}`;
-// A thread whose latest message is the next day is filed under that day instead.
-const THREAD_FILE_REPLIED = `kb/Mailbox/${threadAt('2026-05-13')}`;
 // Attachments live in one store shared across every thread, not in a folder beside each thread.
 const ATTACHMENTS_STORE = 'kb/Mailbox/_attachments';
 // The bytes the mail-reader fake hands back for an attachment, so a test can address its store copy.
@@ -66,6 +67,7 @@ const run = async (
     logger,
     clock: createClockFake(),
     mailboxRoot: 'kb/Mailbox',
+    timezone: 'Europe/Paris',
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), logger, unpackArchive: drive.localArchive, convertLocal: drive.localMarkdown }),
     convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger, progress: createProgressFake() }),
   });
@@ -74,12 +76,12 @@ const run = async (
 };
 
 describe('writing one conversation as one file', () => {
-  it('the whole thread lands in a single file, filed under the day of its latest message', async () => {
+  it('the whole thread lands in a single file, filed under the day it began', async () => {
     const conversations = { [CONV]: [message({ id: 'm2', received: '2026-05-13T10:00:00Z' }), message()] };
     const { outcome, files } = await run({ reader: { conversations, bodies: { m1: 'Here is the contract.', m2: 'Agreed.' } } });
 
     expect(outcome).toMatchObject({ kind: 'rendered' });
-    const written = files.written.get(THREAD_FILE_REPLIED) ?? '';
+    const written = files.written.get(THREAD_FILE) ?? '';
     expect(written).toContain('# Contrat Contoso');
     expect(written).toContain('Here is the contract.');
     expect(written).toContain('Agreed.');
@@ -88,11 +90,13 @@ describe('writing one conversation as one file', () => {
   it('the head of the file states exactly where the conversation came from', async () => {
     const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z', from: { name: 'Vincent DELACOURT', address: 'v@example.com' }, to: [] })] };
     const { files } = await run({ reader: { conversations, bodies: { m1: 'One.', m2: 'Two.' } } });
-    const head = (files.written.get(THREAD_FILE_REPLIED) ?? '').split('\n---\n')[0] ?? '';
+    const head = (files.written.get(THREAD_FILE) ?? '').split('\n---\n')[0] ?? '';
 
     expect(`${head}\n---`).toBe(
       [
         '---',
+        `thread_id: ${THREAD_ID}`,
+        'root_message_id: m1',
         `source: conversation ${CONV}`,
         'site: Mailbox',
         'subject: Contrat Contoso',
@@ -121,18 +125,40 @@ describe('writing one conversation as one file', () => {
     expect(written).toContain('last_modified: "2026-05-12T09:31:00Z"');
   });
 
-  it('a thread replied to on a later day is filed under the reply, not under the day it started', async () => {
+  // Deliberately a refusal rather than a fallback. The root names a folder that is written once and
+  // never rebuilt, so filing it under a guess is permanent, where failing leaves the conversation
+  // unrecorded and the next run reads it again.
+  it('a conversation whose root cannot be read is left for the next run, not filed under a guess', async () => {
+    const conversations = { [CONV]: [message()] };
+    const { ok: succeeded, files } = await run({ reader: { conversations, failCalls: { messageHeaders: { kind: 'transient', message: 'throttled' } } } });
+
+    expect(succeeded).toBe(false);
+    expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(0);
+  });
+
+  it('a conversation whose body cannot be read is left for the next run rather than written half empty', async () => {
+    const conversations = { [CONV]: [message()] };
+    const { ok: succeeded, files } = await run({ reader: { conversations, failCalls: { messageMarkdown: { kind: 'transient', message: 'throttled' } } } });
+
+    expect(succeeded).toBe(false);
+    expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(0);
+  });
+
+  // The count is what proves it. The previous layout filed a thread under its LATEST message, so a
+  // reply wrote a second file and left the first behind with nothing pointing at it and no code that
+  // would ever collect it. Asserting the new path exists would not have noticed the old one lingering.
+  it('a thread replied to on a later day stays in the folder it began in', async () => {
     const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })] };
     const { files } = await run({ reader: { conversations } });
 
-    expect(files.written.has(THREAD_FILE_REPLIED)).toBe(true);
-    expect(files.written.has(THREAD_FILE)).toBe(false);
+    expect(files.written.has(THREAD_FILE)).toBe(true);
+    expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(1);
   });
 
   it('the file records who took part, when it started and ended, and how many messages it holds', async () => {
     const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })] };
     const { files } = await run({ reader: { conversations } });
-    const written = files.written.get(THREAD_FILE_REPLIED) ?? '';
+    const written = files.written.get(THREAD_FILE) ?? '';
 
     expect(written).toContain('participants:');
     expect(written).toContain('  - Jane Doe');
@@ -147,7 +173,7 @@ describe('writing one conversation as one file', () => {
     const { outcome } = await run({ reader: { conversations } });
 
     expect(outcome?.kind === 'rendered' && outcome.thread.record).toMatchObject({
-      file: threadAt('2026-05-13'),
+      file: THREAD_RELATIVE,
       messageIds: ['m1', 'm2'],
       lastMessage: '2026-05-13T10:00:00Z',
     });
@@ -458,7 +484,7 @@ describe('following the SharePoint files a conversation points at', () => {
     const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })] };
     const { files } = await run({ reader: { conversations, links: { ...linked, m2: linked.m1 } }, drive: items });
 
-    expect((files.written.get(THREAD_FILE_REPLIED) ?? '').match(/- \.\.\/\.\.\/_linked\/2026-05-11\/Rapport\.docx\.md/g)).toHaveLength(1);
+    expect((files.written.get(THREAD_FILE) ?? '').match(/- \.\.\/\.\.\/_linked\/2026-05-11\/Rapport\.docx\.md/g)).toHaveLength(1);
   });
 
   it('a document another conversation already pulled is referenced, not fetched again', async () => {
