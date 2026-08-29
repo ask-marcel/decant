@@ -556,6 +556,26 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(outcome?.kind === 'rendered' && outcome.thread.linked['b!one:01ABC']).toEqual({ paths: [REPORT_MD] });
   });
 
+  it('a document a thread pointed at gets a card beside the thread, naming its address at the source', async () => {
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: items });
+    const card = files.written.get(`kb/Mailbox/threads/${THREAD_FOLDER}/_linked/Rapport.docx.md`) ?? '';
+
+    expect(card).toContain(`linked_from: "${THREAD_ID}"`);
+    expect(card).toContain('url: https://tenant.sharepoint.com/x');
+    expect(card).toContain('holds: ../../../_linked/2026-05-11/Rapport.docx.md');
+  });
+
+  // The card is the only place a thread's dependence on something the vault does not hold is
+  // written down. Dropping it when the pull fails would make the gap invisible.
+  it('a document that could not be pulled still gets a card, saying why it is not here', async () => {
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: { failWith: { kind: 'permanent', message: 'gone' } } });
+    const card = files.written.get(`kb/Mailbox/threads/${THREAD_FOLDER}/_linked/Rapport.docx.md`) ?? '';
+
+    expect(card).toContain('url: https://tenant.sharepoint.com/x');
+    expect(card).toContain('permanent: gone');
+    expect(card).not.toContain('holds:');
+  });
+
   it('a linked document is stamped with where it came from, so it can be traced back', async () => {
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: items });
     const written = files.written.get(REPORT_MD) ?? '';
@@ -600,6 +620,10 @@ describe('following the SharePoint files a conversation points at', () => {
     const { files } = await run({ reader: { conversations, links: { ...linked, m2: linked.m1 } }, drive: items });
 
     expect((files.written.get(THREAD_FILE) ?? '').match(/- \.\.\/\.\.\/_linked\/2026-05-11\/Rapport\.docx\.md/g)).toHaveLength(1);
+    // And one card, not one per mention: a deck cited in four replies is one thing depended on.
+    expect([...files.written.keys()].filter((path) => path.startsWith(`kb/Mailbox/threads/${THREAD_FOLDER}/_linked/`))).toEqual([
+      `kb/Mailbox/threads/${THREAD_FOLDER}/_linked/Rapport.docx.md`,
+    ]);
   });
 
   it('a document another conversation already pulled is referenced, not fetched again', async () => {

@@ -13,6 +13,7 @@ import { err, ok } from '../domain/result.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
 import { participantsOf, renderThread, threadTitle } from '../domain/thread.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
+import { renderLinkCard } from '../domain/link-card.ts';
 import { cardFileName, renderThreadCard } from '../domain/thread-card.ts';
 import { threadFolderName } from '../domain/thread-folder.ts';
 import type { ThreadId } from '../domain/thread-id.ts';
@@ -27,7 +28,7 @@ import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
-import type { MailAttachment, MailReader, MailReaderError } from './ports/mail-reader.ts';
+import type { LinkedFile, MailAttachment, MailReader, MailReaderError } from './ports/mail-reader.ts';
 
 export type RenderThreadDeps = {
   readonly reader: MailReader;
@@ -130,9 +131,13 @@ const threadHeader = (
 // none. Same shape as `Placed` for an attachment, so both feed the report the same way.
 type Pulled = { readonly record?: LinkedRecord; readonly skipped?: ReportEntry; readonly failed?: ReportEntry };
 
+// What one message pointed at, kept per message so a card can say when the thread referenced it.
+type MessageLink = { readonly link: LinkedFile; readonly received: string; readonly paths: ReadonlyArray<string>; readonly note?: string };
+
 type LinkedTally = {
   readonly paths: ReadonlyArray<string>;
   readonly linked: Record<string, LinkedRecord>;
+  readonly referenced: ReadonlyArray<MessageLink>;
   readonly skipped: ReadonlyArray<ReportEntry>;
   readonly failed: ReadonlyArray<ReportEntry>;
 };
@@ -144,6 +149,7 @@ const linkedFiles = async (deps: RenderThreadDeps, input: RenderThreadInput, mes
   const paths: string[] = [];
   const skipped: ReportEntry[] = [];
   const failed: ReportEntry[] = [];
+  const referenced: MessageLink[] = [];
   for (const message of messages) {
     const found = await deps.reader.sharepointLinks(message.id);
     if (!found.ok) continue;
@@ -153,12 +159,15 @@ const linkedFiles = async (deps: RenderThreadDeps, input: RenderThreadInput, mes
       const pulled = already === undefined ? await pullLinked(deps, input, link.driveId, link.itemId, link.name) : { record: already };
       if (pulled.skipped !== undefined) skipped.push(pulled.skipped);
       if (pulled.failed !== undefined) failed.push(pulled.failed);
+      // Recorded whether or not it came: a card for a document nobody could pull is the only place
+      // the thread's dependence on it is written down.
+      referenced.push({ link, received: message.received, paths: pulled.record?.paths ?? [], note: (pulled.skipped ?? pulled.failed)?.reason });
       if (pulled.record === undefined) continue;
       linked[key] = pulled.record;
       for (const path of pulled.record.paths) if (!paths.includes(path)) paths.push(path);
     }
   }
-  return { paths, linked, skipped, failed };
+  return { paths, linked, referenced, skipped, failed };
 };
 
 // The same route a file found by walking a library takes. A linked document is read for its own
@@ -411,6 +420,38 @@ const writeCards = async (
   }
 };
 
+const LINK_CARDS_FOLDER = '_linked';
+
+// One card per document the thread pointed at, beside the thread rather than in the store the
+// document itself sits in. Written here for the same reason the attachment cards are: a document
+// another thread already pulled is referenced without being fetched again, so a card written where
+// the fetching happens would exist only for the thread that got there first.
+const writeLinkCards = async (deps: RenderThreadDeps, input: RenderThreadInput, place: ThreadPlace, referenced: ReadonlyArray<MessageLink>): Promise<void> => {
+  const folder = `${place.here}/${LINK_CARDS_FOLDER}`;
+  const taken: string[] = [];
+  // One card per document, not per mention. A deck cited in four replies is one thing the thread
+  // depended on, and the card says when it was first pointed at.
+  const seen = new Set<string>();
+  for (const entry of referenced) {
+    const key = `${entry.link.driveId}:${entry.link.itemId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const name = cardFileName(entry.link.name, taken);
+    taken.push(name);
+    const holds = entry.paths.find((path) => path.endsWith('.md'));
+    const card = renderLinkCard({
+      threadId: input.threadId,
+      title: entry.link.name,
+      url: entry.link.url,
+      inMessage: entry.received,
+      holds: holds === undefined ? undefined : pathBetween(folder, holds),
+      note: entry.note,
+    });
+    const saved = await deps.files.writeText(`${folder}/${name}`, card);
+    if (!saved.ok) deps.logger.warn('card.failed', { filename: entry.link.name, cause: saved.error.kind });
+  }
+};
+
 const writeThread = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
@@ -433,6 +474,7 @@ const writeThread = async (
   const bodies = rewriteBodies(here, parts, attachments.byMessage);
   const shown = new Set([...bodies.pictures, ...attachments.media]);
   await writeCards(deps, input, place, parts, attachments.byMessage, shown);
+  await writeLinkCards(deps, input, place, links.referenced);
   const attachmentRefs = attachments.paths.filter((path) => !shown.has(path)).map((path) => pathBetween(here, path));
   const inlineRefs = bodies.pictures.map((path) => pathBetween(here, path));
   // Linked files are written from the thread's own folder, exactly as attachments are: both climb out
