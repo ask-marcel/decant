@@ -17,7 +17,7 @@ const thread = { file: 'threads/2026/2026-05-12 Contrat a3f9c1.md', messageIds: 
 describe('remembering where a mailbox sync got to', () => {
   it('a mailbox never synced starts with no folders, threads or queue', () => {
     expect(emptyMailboxState()).toEqual({
-      version: 1,
+      version: 2,
       source: { kind: 'mailbox', id: 'me', name: 'Mailbox' },
       lastRun: '',
       folders: {},
@@ -38,7 +38,7 @@ describe('remembering where a mailbox sync got to', () => {
   });
 
   it('a state file written before the shared attachment store still loads', () => {
-    const parsed = parseMailboxState({ source: { kind: 'mailbox' } });
+    const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox' } });
 
     expect(parsed.ok && parsed.value.attachments).toEqual({});
   });
@@ -64,32 +64,35 @@ describe('remembering where a mailbox sync got to', () => {
     expect(parseMailboxState('nope')).toEqual({ ok: false, error: { kind: 'malformed', message: 'state is not an object' } });
   });
 
-  it('a state file written by an older version without threads still loads', () => {
-    const parsed = parseMailboxState({ source: { kind: 'mailbox' } });
-
-    expect(parsed.ok && parsed.value).toEqual(emptyMailboxState());
+  // The threads of the version before this one were keyed by Graph's conversation id and named
+  // paths under a tree that no longer exists. Half reading one would answer "already written" for
+  // every conversation held and report a run that wrote nothing as a success.
+  it('a state file from the layout before this one is refused, so a run does not read the old tree as current', () => {
+    expect(parseMailboxState({ version: 1, source: { kind: 'mailbox' } })).toEqual({ ok: false, error: { kind: 'malformed', message: 'state is version 1, not 2' } });
+    expect(parseMailboxState({ source: { kind: 'mailbox' } }).ok).toBe(false);
   });
 
   it('a mailbox that recorded its own name and address keeps them', () => {
-    const parsed = parseMailboxState({ source: { kind: 'mailbox', id: 'vincent@example.com', name: 'Vincent inbox' } });
+    const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox', id: 'vincent@example.com', name: 'Vincent inbox' } });
 
     expect(parsed.ok && parsed.value.source).toEqual({ kind: 'mailbox', id: 'vincent@example.com', name: 'Vincent inbox' });
   });
 
   it('a run date recorded as something other than text reads as never run', () => {
-    const parsed = parseMailboxState({ source: { kind: 'mailbox' }, lastRun: 20260722 });
+    const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox' }, lastRun: 20260722 });
 
     expect(parsed.ok && parsed.value.lastRun).toBe('');
   });
 
   it('a conversation recorded without the file it produced still loads', () => {
-    const parsed = parseMailboxState({ source: { kind: 'mailbox' }, threads: { 'conv-1': { messageIds: ['m1'] } } });
+    const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox' }, threads: { 'conv-1': { messageIds: ['m1'] } } });
 
     expect(parsed.ok && parsed.value.threads['conv-1']).toEqual({ file: '', messageIds: ['m1'], lastMessage: '', attachments: [], inlineImages: [] });
   });
 
   it('entries recorded half-written load with what they do have rather than failing the run', () => {
     const parsed = parseMailboxState({
+      version: 2,
       source: { kind: 'mailbox' },
       folders: { AAMk1: 'broken' },
       threads: { 'conv-1': { file: 'x.md', messageIds: ['m1', 7] } },

@@ -29,8 +29,15 @@ export type LinkedRecord = { readonly paths: ReadonlyArray<string> };
 // this run wrote, so the record names them, but they are not what the message carried.
 export type AttachmentRecord = { readonly name: string; readonly paths: ReadonlyArray<string>; readonly primary: string; readonly media: ReadonlyArray<string> };
 
+// Bumped whenever the shape below, or the layout it describes, changes. A file written by another
+// version is refused rather than half understood: the threads of the version before this one were
+// keyed by Graph's conversation id and named paths under a tree that no longer exists, so reading
+// one would answer `needsRender` with false for every conversation already held and report a run
+// that wrote nothing as a success. Refusing costs one full sweep, which is the honest price.
+export const STATE_VERSION = 2;
+
 export type MailboxState = {
-  readonly version: 1;
+  readonly version: typeof STATE_VERSION;
   readonly source: { readonly kind: 'mailbox'; readonly id: string; readonly name: string };
   readonly lastRun: string;
   readonly folders: Readonly<Record<string, { readonly name: string; readonly deltaLink?: string }>>;
@@ -46,7 +53,7 @@ export const MAILBOX_ID = 'me';
 export const MAILBOX_NAME = 'Mailbox';
 
 export const emptyMailboxState = (): MailboxState => ({
-  version: 1,
+  version: STATE_VERSION,
   source: { kind: 'mailbox', id: MAILBOX_ID, name: MAILBOX_NAME },
   lastRun: '',
   folders: {},
@@ -90,8 +97,9 @@ const mapOf = <T>(raw: unknown, parse: (entry: Record<string, unknown>) => T): R
 export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateError> => {
   if (!isRecord(raw)) return err({ kind: 'malformed', message: 'state is not an object' });
   if (!isRecord(raw['source']) || readString(raw['source'], 'kind') !== 'mailbox') return err({ kind: 'malformed', message: 'state is not a mailbox' });
+  if (raw['version'] !== STATE_VERSION) return err({ kind: 'malformed', message: `state is version ${String(raw['version'])}, not ${STATE_VERSION}` });
   return ok({
-    version: 1,
+    version: STATE_VERSION,
     source: { kind: 'mailbox', id: readString(raw['source'], 'id') ?? MAILBOX_ID, name: readString(raw['source'], 'name') ?? MAILBOX_NAME },
     lastRun: readString(raw, 'lastRun') ?? '',
     folders: mapOf(raw['folders'], (entry) => ({ name: readString(entry, 'name') ?? '', deltaLink: readString(entry, 'deltaLink') })),
