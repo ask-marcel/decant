@@ -147,6 +147,31 @@ describe('writing one conversation as one file', () => {
     expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(0);
   });
 
+  it('a thread assembled from two conversations holds every message from both, in order', async () => {
+    const conversations = {
+      [CONV]: [message({ id: 'm1', received: '2026-05-12T09:31:00Z' })],
+      'conv-outside': [message({ id: 'm2', conversationId: 'conv-outside', received: '2026-05-13T10:00:00Z' })],
+    };
+    const bodies = { m1: 'Here is the contract.', m2: 'Replying from outside Exchange.' };
+    const { files } = await run({ reader: { conversations, bodies }, conversationIds: [CONV, 'conv-outside'] });
+    const written = files.written.get(THREAD_FILE) ?? '';
+
+    expect(written).toContain('Here is the contract.');
+    expect(written).toContain('Replying from outside Exchange.');
+    expect(written.indexOf('Here is the contract.')).toBeLessThan(written.indexOf('Replying from outside Exchange.'));
+    expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(1);
+  });
+
+  // Reused verbatim, never recomputed. The slug and timezone rules that produced it are code, and a
+  // later change to either would otherwise move a folder already written and already linked to.
+  it('a thread keeps the folder it was already filed under, whatever the naming rules would say today', async () => {
+    const held = '2024-01-02-deadbeef00-an-older-name-entirely';
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] } }, folder: held });
+
+    expect(files.written.has(`kb/Mailbox/threads/${held}/contrat-contoso.md`)).toBe(true);
+    expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(1);
+  });
+
   // The count is what proves it. The previous layout filed a thread under its LATEST message, so a
   // reply wrote a second file and left the first behind with nothing pointing at it and no code that
   // would ever collect it. Asserting the new path exists would not have noticed the old one lingering.

@@ -617,6 +617,23 @@ describe('rendering several conversations at once', () => {
     expect(Object.keys(stateAfter(files).threads)).toEqual([threadIdOf('<shared@example.com>')]);
   });
 
+  it('two conversations with different roots stay two threads', async () => {
+    const reader: MailReaderSeed = {
+      folders: [folder()],
+      pages: [
+        {
+          messages: [message({ id: 'a', conversationId: 'conv-a' }), message({ id: 'b', conversationId: 'conv-b', received: '2026-05-13T00:00:00Z' })],
+          skipped: 0,
+          deltaLink: 'c1',
+        },
+      ],
+      headers: { a: [{ name: 'References', value: '<one@example.com>' }], b: [{ name: 'References', value: '<two@example.com>' }] },
+    };
+    const { asked } = await run({ reader, concurrency: 2 });
+
+    expect([...asked].sort((left, right) => left.localeCompare(right))).toEqual(['conv-a', 'conv-b']);
+  });
+
   it('a window of conversations saves the state once, not once per conversation', async () => {
     const wide = await run({ reader: threeConversations, concurrency: 3 });
     const narrow = await run({ reader: threeConversations, concurrency: 1 });

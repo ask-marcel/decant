@@ -8,7 +8,6 @@ export type ThreadPart = {
 };
 
 export type Thread = {
-  readonly conversationId: string;
   readonly subject: string;
   readonly parts: ReadonlyArray<ThreadPart>;
 };

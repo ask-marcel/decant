@@ -66,7 +66,7 @@ describe('writing a conversation as one document', () => {
       { message: message({ id: 'm1' }), body: 'Here is the contract.' },
     ];
 
-    expect(renderThread({ conversationId: 'c1', subject: 'RE: Contrat Contoso', parts })).toBe(
+    expect(renderThread({ subject: 'RE: Contrat Contoso', parts })).toBe(
       [
         '# Contrat Contoso',
         '',
@@ -95,14 +95,14 @@ describe('writing a conversation as one document', () => {
       },
     ];
 
-    const rendered = renderThread({ conversationId: 'c1', subject: 'Contrat Contoso', parts });
+    const rendered = renderThread({ subject: 'Contrat Contoso', parts });
 
     expect(rendered).toContain('## 2026-05-12 11:00 — Vincent DELACOURT to Jane Doe');
     expect(rendered).toContain('Confirmed, signing today.');
   });
 
   it('a message written to nobody in particular names no recipients', () => {
-    const rendered = renderThread({ conversationId: 'c1', subject: 'Contrat', parts: [{ message: message({ from: undefined, to: [] }), body: 'Body.' }] });
+    const rendered = renderThread({ subject: 'Contrat', parts: [{ message: message({ from: undefined, to: [] }), body: 'Body.' }] });
 
     expect(rendered).toBe(['# Contrat', '', '## 2026-05-12 09:31 — Unknown sender', '', 'Body.'].join('\n'));
   });
@@ -112,7 +112,7 @@ describe('writing a conversation as one document', () => {
       { name: 'Jane Doe', address: 'j@example.com' },
       { name: 'David Chang', address: 'd@example.com' },
     ];
-    const rendered = renderThread({ conversationId: 'c1', subject: 'Contrat', parts: [{ message: message({ to }), body: 'Body.' }] });
+    const rendered = renderThread({ subject: 'Contrat', parts: [{ message: message({ to }), body: 'Body.' }] });
 
     expect(rendered).toContain('— Jane Doe to Jane Doe, David Chang');
   });
@@ -121,47 +121,47 @@ describe('writing a conversation as one document', () => {
     const body = ['**Subject:** FW: Kick-off', '**From:** Eva Xie <eva@example.com>', '**To:** Vincent DELACOURT', '**Date:** 2026-07-08', '', 'Please review the budget.'].join(
       '\n'
     );
-    const rendered = renderThread({ conversationId: 'c1', subject: 'Kick-off', parts: [{ message: message({ from: undefined, to: [] }), body }] });
+    const rendered = renderThread({ subject: 'Kick-off', parts: [{ message: message({ from: undefined, to: [] }), body }] });
 
     expect(rendered).toBe(['# Kick-off', '', '## 2026-05-12 09:31 — Unknown sender', '', 'Please review the budget.'].join('\n'));
   });
 
   it('a message that is nothing but its header block reads as having no body', () => {
     const body = '**Subject:** Kick-off\n**From:** Eva Xie';
-    const rendered = renderThread({ conversationId: 'c1', subject: 'Kick-off', parts: [{ message: message(), body }] });
+    const rendered = renderThread({ subject: 'Kick-off', parts: [{ message: message(), body }] });
 
     expect(rendered).toContain('_This message had no readable body._');
   });
 
   it('a first line that mentions a header field mid-sentence is kept, since only a line opening with one is a header', () => {
     const body = 'Please check the **Subject:** field before sending.\n\nThe rest follows.';
-    const rendered = renderThread({ conversationId: 'c1', subject: 'Kick-off', parts: [{ message: message(), body }] });
+    const rendered = renderThread({ subject: 'Kick-off', parts: [{ message: message(), body }] });
 
     expect(rendered).toContain('Please check the **Subject:** field before sending.');
   });
 
   it('a body that merely mentions those words keeps them, since only a leading block is a header', () => {
     const body = 'As agreed:\n\n**Subject:** is the wrong word here.';
-    const rendered = renderThread({ conversationId: 'c1', subject: 'Kick-off', parts: [{ message: message(), body }] });
+    const rendered = renderThread({ subject: 'Kick-off', parts: [{ message: message(), body }] });
 
     expect(rendered).toContain('As agreed:');
     expect(rendered).toContain('**Subject:** is the wrong word here.');
   });
 
   it('a message that converted to nothing says so rather than leaving a gap', () => {
-    const rendered = renderThread({ conversationId: 'c1', subject: 'Contrat', parts: [{ message: message(), body: '   ' }] });
+    const rendered = renderThread({ subject: 'Contrat', parts: [{ message: message(), body: '   ' }] });
 
     expect(rendered).toContain('_This message had no readable body._');
   });
 
   it('padding around a message body is trimmed away, so sections read evenly', () => {
-    const rendered = renderThread({ conversationId: 'c1', subject: 'Contrat', parts: [{ message: message({ from: undefined, to: [] }), body: '\n\n  Body.  \n\n' }] });
+    const rendered = renderThread({ subject: 'Contrat', parts: [{ message: message({ from: undefined, to: [] }), body: '\n\n  Body.  \n\n' }] });
 
     expect(rendered).toBe(['# Contrat', '', '## 2026-05-12 09:31 — Unknown sender', '', 'Body.'].join('\n'));
   });
 
   it('an empty conversation still produces its title', () => {
-    expect(renderThread({ conversationId: 'c1', subject: 'Contrat', parts: [] })).toBe('# Contrat');
+    expect(renderThread({ subject: 'Contrat', parts: [] })).toBe('# Contrat');
   });
 
   it('messages handed over in any order are written oldest first', () => {
@@ -170,7 +170,7 @@ describe('writing a conversation as one document', () => {
       body: id,
     });
 
-    expect(renderThread({ conversationId: 'c1', subject: 'Contrat', parts: [at('m2', '13'), at('m3', '14'), at('m1', '12')] })).toBe(
+    expect(renderThread({ subject: 'Contrat', parts: [at('m2', '13'), at('m3', '14'), at('m1', '12')] })).toBe(
       [
         '# Contrat',
         '',

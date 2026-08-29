@@ -397,10 +397,7 @@ const writeThread = async (
   // of it to a store the whole mailbox shares, and a reader follows either one the same way.
   const linkedRefs = links.paths.map((path) => pathBetween(here, path));
   const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, inlineRefs, linkedRefs);
-  const written = await deps.files.writeText(
-    `${deps.mailboxRoot}/${relative}`,
-    `${header}\n\n${renderThread({ conversationId: input.conversationIds[0] ?? '', subject: first.subject, parts: bodies.parts })}\n`
-  );
+  const written = await deps.files.writeText(`${deps.mailboxRoot}/${relative}`, `${header}\n\n${renderThread({ subject: first.subject, parts: bodies.parts })}\n`);
   if (!written.ok) return err({ kind: 'permanent', message: written.error.message });
   // Named with the conversation they arrived in: two threads can each carry an `image002.wmz`, and
   // a report listing the bare name twice tells the reader nothing about which is which.
