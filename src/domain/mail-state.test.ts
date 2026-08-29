@@ -12,7 +12,15 @@ import {
   withThread,
 } from './mail-state.ts';
 
-const thread = { file: 'threads/2026/2026-05-12 Contrat a3f9c1.md', messageIds: ['m1', 'm2'], lastMessage: '2026-05-13T10:00:00Z', attachments: ['a.pdf'], inlineImages: [] };
+const thread = {
+  folder: '2026-05-12-a3f9c1e0d2-contrat',
+  conversationIds: ['conv-1'],
+  file: 'threads/2026/2026-05-12 Contrat a3f9c1.md',
+  messageIds: ['m1', 'm2'],
+  lastMessage: '2026-05-13T10:00:00Z',
+  attachments: ['a.pdf'],
+  inlineImages: [],
+};
 
 describe('remembering where a mailbox sync got to', () => {
   it('a mailbox never synced starts with no folders, threads or queue', () => {
@@ -87,7 +95,15 @@ describe('remembering where a mailbox sync got to', () => {
   it('a conversation recorded without the file it produced still loads', () => {
     const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox' }, threads: { 'conv-1': { messageIds: ['m1'] } } });
 
-    expect(parsed.ok && parsed.value.threads['conv-1']).toEqual({ file: '', messageIds: ['m1'], lastMessage: '', attachments: [], inlineImages: [] });
+    expect(parsed.ok && parsed.value.threads['conv-1']).toEqual({
+      folder: '',
+      conversationIds: [],
+      file: '',
+      messageIds: ['m1'],
+      lastMessage: '',
+      attachments: [],
+      inlineImages: [],
+    });
   });
 
   it('entries recorded half-written load with what they do have rather than failing the run', () => {
@@ -95,12 +111,23 @@ describe('remembering where a mailbox sync got to', () => {
       version: 2,
       source: { kind: 'mailbox' },
       folders: { AAMk1: 'broken' },
-      threads: { 'conv-1': { file: 'x.md', messageIds: ['m1', 7] } },
+      threads: { 'conv-1': { folder: '2026-05-12-a3f9c1e0d2-contrat', conversationIds: ['conv-1'], file: 'x.md', messageIds: ['m1', 7] } },
       pending: ['conv-1', 9],
     });
 
     expect(parsed.ok && parsed.value.folders).toEqual({});
-    expect(parsed.ok && parsed.value.threads['conv-1']).toEqual({ file: 'x.md', messageIds: ['m1'], lastMessage: '', attachments: [], inlineImages: [] });
+    // The new fields are asserted as surviving, not as defaulting: a field added to the record and
+    // forgotten in `threadOf` is dropped on reload without a word, and every thread would then look
+    // as though it had never been filed anywhere.
+    expect(parsed.ok && parsed.value.threads['conv-1']).toEqual({
+      folder: '2026-05-12-a3f9c1e0d2-contrat',
+      conversationIds: ['conv-1'],
+      file: 'x.md',
+      messageIds: ['m1'],
+      lastMessage: '',
+      attachments: [],
+      inlineImages: [],
+    });
     expect(parsed.ok && parsed.value.pending).toEqual(['conv-1']);
   });
 

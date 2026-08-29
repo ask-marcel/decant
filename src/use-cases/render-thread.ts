@@ -398,6 +398,8 @@ const writeThread = async (
     kind: 'rendered',
     thread: {
       record: {
+        folder: place.folder,
+        conversationIds: [input.conversationId],
         file: relative,
         messageIds: parts.map((part) => part.message.id),
         lastMessage: last.received,

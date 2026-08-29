@@ -4,6 +4,14 @@ import { err, ok } from './result.ts';
 // What a mailbox run leaves behind: a cursor per folder, what every conversation produced, and the
 // files already fetched, so a re-run converts nothing it has seen and a stop loses one thread.
 export type ThreadRecord = {
+  // The folder the thread was filed under, kept because it is settled once and never recomputed.
+  // Recomputing would give the same answer today, but the slug and zone rules that produce it are
+  // code: recording the answer is what makes a later change to those rules harmless to threads
+  // already written.
+  readonly folder: string;
+  // Every Graph conversation that fed this thread. More than one when an external party replied
+  // from outside Exchange and Graph opened a second conversation for the same exchange.
+  readonly conversationIds: ReadonlyArray<string>;
   readonly file: string;
   readonly messageIds: ReadonlyArray<string>;
   readonly lastMessage: string;
@@ -75,6 +83,8 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
 const stringList = (raw: unknown): ReadonlyArray<string> => (Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : []);
 
 const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
+  folder: readString(raw, 'folder') ?? '',
+  conversationIds: stringList(raw['conversationIds']),
   file: readString(raw, 'file') ?? '',
   messageIds: stringList(raw['messageIds']),
   lastMessage: readString(raw, 'lastMessage') ?? '',

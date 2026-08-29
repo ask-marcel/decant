@@ -36,7 +36,15 @@ const message = (over: Partial<MailMessage> = {}): MailMessage => ({
 const rendered = (over: Partial<RenderThreadOutcome> = {}): RenderThreadOutcome => ({
   kind: 'rendered',
   thread: {
-    record: { file: 'threads/2026-05-12/thread.md', messageIds: ['m1'], lastMessage: '2026-05-12T09:31:00Z', attachments: [], inlineImages: [] },
+    record: {
+      folder: '2026-05-12-a3f9c1e0d2-thread',
+      conversationIds: ['conv-1'],
+      file: 'threads/2026-05-12/thread.md',
+      messageIds: ['m1'],
+      lastMessage: '2026-05-12T09:31:00Z',
+      attachments: [],
+      inlineImages: [],
+    },
     linked: {},
     attachments: {},
     filesSkipped: [],
@@ -226,7 +234,15 @@ describe('syncing a mailbox into the knowledge base', () => {
 
 describe('running a mailbox sync again', () => {
   const known = serializeMailboxState(
-    withThread(emptyMailboxState(), 'conv-1', { file: 'threads/2026-05-12/thread.md', messageIds: ['m1'], lastMessage: '2026-05-12T09:31:00Z', attachments: [], inlineImages: [] })
+    withThread(emptyMailboxState(), 'conv-1', {
+      folder: '2026-05-12-a3f9c1e0d2-thread',
+      conversationIds: ['conv-1'],
+      file: 'threads/2026-05-12/thread.md',
+      messageIds: ['m1'],
+      lastMessage: '2026-05-12T09:31:00Z',
+      attachments: [],
+      inlineImages: [],
+    })
   );
 
   it('a conversation the sweep resurfaced unchanged is left alone', async () => {
@@ -277,7 +293,7 @@ describe('what the mailbox sync reports', () => {
     const outcome = (): RenderThreadOutcome =>
       rendered({
         thread: {
-          record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [], inlineImages: [] },
+          record: { folder: '2026-05-12-a3f9c1e0d2-thread', conversationIds: ['conv-1'], file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [], inlineImages: [] },
           linked: {},
           attachments: {},
           filesSkipped: [
@@ -312,7 +328,7 @@ describe('what the mailbox sync reports', () => {
     const outcome = (): RenderThreadOutcome =>
       rendered({
         thread: {
-          record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [], inlineImages: [] },
+          record: { folder: '2026-05-12-a3f9c1e0d2-thread', conversationIds: ['conv-1'], file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [], inlineImages: [] },
           linked: { 'b!one:01ABC': { paths: ['kb/Mailbox/_linked/R.docx.md'] } },
           attachments: {},
           filesSkipped: [],
@@ -328,7 +344,7 @@ describe('what the mailbox sync reports', () => {
     const outcome = (): RenderThreadOutcome =>
       rendered({
         thread: {
-          record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [], inlineImages: [] },
+          record: { folder: '2026-05-12-a3f9c1e0d2-thread', conversationIds: ['conv-1'], file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [], inlineImages: [] },
           linked: {},
           attachments: {
             ba7816bf8f01: { name: 'Contrat.docx', paths: ['kb/Mailbox/_attachments/Contrat.docx.md'], primary: 'kb/Mailbox/_attachments/Contrat.docx.md', media: [] },
@@ -355,7 +371,7 @@ describe('reporting what did not reach the knowledge base', () => {
     const outcome = (): RenderThreadOutcome =>
       rendered({
         thread: {
-          record: { file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [], inlineImages: [] },
+          record: { folder: '2026-05-12-a3f9c1e0d2-thread', conversationIds: ['conv-1'], file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [], inlineImages: [] },
           linked: {},
           attachments: {},
           filesSkipped: [{ path: 'Demo.mp4', reason: 'a kind of file this tool does not read' }],
