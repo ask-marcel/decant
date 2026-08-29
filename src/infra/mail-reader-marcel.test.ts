@@ -102,6 +102,25 @@ describe('reading a mailbox through the ask-marcel library', () => {
     expect(recorded[1]?.params['url']).toBe('https://graph/next?$skip=10');
   });
 
+  // `internetMessageHeaders` is left out of every default projection and is reachable through no
+  // other command, so this select is the only way to the `References` a thread is identified by.
+  it('the headers Graph leaves out are asked for by name', async () => {
+    const { reader, recorded } = readerFor({
+      'get-mail-message': ok({ internetMessageHeaders: [{ name: 'References', value: '<root@x>' }, { name: 'Junk' }, { value: 'nameless' }] }),
+    });
+
+    const headers = await reader.messageHeaders('m1');
+
+    expect(headers.ok && headers.value).toEqual([{ name: 'References', value: '<root@x>' }]);
+    expect(recorded[0]).toEqual({ name: 'get-mail-message', params: { messageId: 'm1', select: 'internetMessageHeaders' } });
+  });
+
+  it('a message whose headers cannot be read reports the refusal rather than an empty list', async () => {
+    const { reader } = readerFor({ 'get-mail-message': err({ type: 'api_error', status: 404, message: 'gone' }) });
+
+    expect(await reader.messageHeaders('m1')).toEqual({ ok: false, error: { kind: 'permanent', message: 'gone' } });
+  });
+
   it('a message body comes back as its text', async () => {
     const { reader } = readerFor({ 'convert-mail-to-markdown': ok({ contentType: 'text/markdown', text: '**Subject:** Contrat' }) });
 

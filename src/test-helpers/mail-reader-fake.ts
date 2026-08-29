@@ -1,5 +1,6 @@
 import type { MailFolder } from '../domain/mail-folder.ts';
 import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
+import type { MessageHeader } from '../domain/root-message-id.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { EmbeddedImage } from '../use-cases/ports/drive-reader.ts';
@@ -16,6 +17,9 @@ export type MailReaderSeed = {
   readonly pages?: ReadonlyArray<MailDeltaPage>;
   readonly conversations?: Readonly<Record<string, ReadonlyArray<MailMessage>>>;
   readonly bodies?: Readonly<Record<string, string>>;
+  // The RFC headers one message carries. A message with none named here carries none, which is what
+  // a thread's own root message looks like.
+  readonly headers?: Readonly<Record<string, ReadonlyArray<MessageHeader>>>;
   readonly attachments?: Readonly<Record<string, ReadonlyArray<MailAttachmentSeed>>>;
   // Keyed by attachment id, so one attachment can convert to nothing while its bytes still arrive.
   readonly attachmentTexts?: Readonly<Record<string, string>>;
@@ -94,6 +98,7 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
       const refused = seed.failCalls?.['attachmentImages'];
       return refused ? err(refused) : forMessage(messageId, `attachmentImages:${attachmentId}`, seed.attachmentImages?.[attachmentId] ?? []);
     },
+    messageHeaders: async (messageId) => forMessage(messageId, 'headers', seed.headers?.[messageId] ?? []),
     sharepointLinks: async (messageId) => forMessage(messageId, 'links', seed.links?.[messageId] ?? []),
   };
 };

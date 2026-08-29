@@ -1,4 +1,5 @@
 import type { MailDeltaPage, MailMessage } from '../../domain/mail-message.ts';
+import type { MessageHeader } from '../../domain/root-message-id.ts';
 import type { MailFolder } from '../../domain/mail-folder.ts';
 import type { Result } from '../../domain/result.ts';
 import type { DriveReaderError, EmbeddedImage } from './drive-reader.ts';
@@ -39,6 +40,9 @@ export type MailReader = {
   readonly folderDelta: (folderId: string) => Promise<Result<MailDeltaPage, MailReaderError>>;
   readonly deltaFrom: (cursor: string) => Promise<Result<MailDeltaPage, MailReaderError>>;
   readonly conversation: (conversationId: string) => Promise<Result<ReadonlyArray<MailMessage>, MailReaderError>>;
+  // The RFC headers Graph leaves out of every default projection, which is where `References` lives
+  // and so where a thread's root is. Asked for one message per conversation, not one per message.
+  readonly messageHeaders: (messageId: string) => Promise<Result<ReadonlyArray<MessageHeader>, MailReaderError>>;
   readonly messageMarkdown: (messageId: string) => Promise<Result<string, MailReaderError>>;
   readonly attachments: (messageId: string) => Promise<Result<ReadonlyArray<MailAttachment>, MailReaderError>>;
   readonly attachmentMarkdown: (messageId: string, attachmentId: string) => Promise<Result<string, MailReaderError>>;

@@ -1,6 +1,7 @@
 import { parseMailFolders } from '../domain/mail-folder.ts';
 import { parseMailDelta } from '../domain/mail-message.ts';
 import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
+import type { MessageHeader } from '../domain/root-message-id.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { AttachmentKind, LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
@@ -22,6 +23,17 @@ const toBytes = (value: unknown): Result<Uint8Array, MailReaderError> => {
   if (base64 !== undefined) return ok(new Uint8Array(Buffer.from(base64, 'base64')));
   const text = readString(value, 'text');
   return text === undefined ? err({ kind: 'permanent', message: 'Graph returned no bytes' }) : ok(new TextEncoder().encode(text));
+};
+
+// Graph returns the RFC headers as a list of name/value pairs rather than a map, since a name can
+// repeat. A pair missing either half is dropped: a header with no value says nothing.
+const headersOf = (value: unknown): ReadonlyArray<MessageHeader> => {
+  if (!isRecord(value) || !Array.isArray(value['internetMessageHeaders'])) return [];
+  return value['internetMessageHeaders'].flatMap((entry) => {
+    const name = readString(entry, 'name');
+    const headerValue = readString(entry, 'value');
+    return name === undefined || headerValue === undefined ? [] : [{ name, value: headerValue }];
+  });
 };
 
 const KIND_BY_TYPE: Readonly<Partial<Record<string, AttachmentKind>>> = {
@@ -126,6 +138,13 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
     // with a cursor, and the loop above follows it.
     conversation: async (conversationId) =>
       messagesFrom('list-conversation-messages', { conversationId, top: '100', select: 'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients' }),
+    // The default projection leaves `internetMessageHeaders` out, and it is reachable through no
+    // other command: `list-conversation-messages` does not document returning it. One call per
+    // conversation, on its oldest message, is what this costs.
+    messageHeaders: async (messageId) => {
+      const raw = await call('get-mail-message', { messageId, select: 'internetMessageHeaders' });
+      return raw.ok ? ok(headersOf(raw.value)) : raw;
+    },
     messageMarkdown: async (messageId) => textOf('convert-mail-to-markdown', { messageId }),
     attachments: async (messageId) => {
       const raw = await call('list-mail-attachments', { messageId, select: ATTACHMENT_FIELDS });
