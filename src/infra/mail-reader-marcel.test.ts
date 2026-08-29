@@ -81,6 +81,27 @@ describe('reading a mailbox through the ask-marcel library', () => {
     expect(recorded[0]?.params).toMatchObject({ conversationId: 'conv-1' });
   });
 
+  // Graph pages `/me/messages` rather than answering a whole thread at once, so a conversation past
+  // the page size arrives in pieces. Its own answers differ per call, which the shared harness cannot
+  // express: that one returns the same payload however many times a command is asked.
+  it('a conversation longer than one page comes back whole', async () => {
+    const pages: Array<Record<string, unknown>> = [
+      { value: [{ id: 'm1', conversationId: 'conv-1' }], '@odata.nextLink': 'https://graph/next?%24skip=10' },
+      { value: [{ id: 'm2', conversationId: 'conv-1' }] },
+    ];
+    const recorded: Recorded[] = [];
+    const reader = createMailReaderFromCall(async (name, params) => {
+      recorded.push({ name, params });
+      return ok(pages.shift() ?? { value: [] });
+    });
+
+    const messages = await reader.conversation('conv-1');
+
+    expect(messages.ok && messages.value.map((message) => message.id)).toEqual(['m1', 'm2']);
+    expect(recorded.map((call) => call.name)).toEqual(['list-conversation-messages', 'next-page']);
+    expect(recorded[1]?.params['url']).toBe('https://graph/next?$skip=10');
+  });
+
   it('a message body comes back as its text', async () => {
     const { reader } = readerFor({ 'convert-mail-to-markdown': ok({ contentType: 'text/markdown', text: '**Subject:** Contrat' }) });
 

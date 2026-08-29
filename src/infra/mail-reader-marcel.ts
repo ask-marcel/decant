@@ -1,5 +1,5 @@
 import { parseMailFolders } from '../domain/mail-folder.ts';
-import { parseMailDelta, parseMessage } from '../domain/mail-message.ts';
+import { parseMailDelta } from '../domain/mail-message.ts';
 import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
@@ -76,6 +76,25 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
     return page.ok ? ok(page.value) : err({ kind: 'permanent', message: page.error.message });
   };
 
+  // Graph answers a message collection a page at a time, so everything a thread holds is only in hand
+  // once its cursor runs out. The `seen` set is the same guard the folder sweep keeps: a cursor that
+  // points at itself would otherwise loop forever.
+  const messagesFrom = async (name: string, params: Record<string, string>): Promise<Result<ReadonlyArray<MailMessage>, MailReaderError>> => {
+    const first = await delta(name, params);
+    if (!first.ok) return first;
+    const messages: MailMessage[] = [...first.value.messages];
+    const seen = new Set<string>();
+    let page = first.value;
+    while (page.nextLink !== undefined && !seen.has(page.nextLink)) {
+      seen.add(page.nextLink);
+      const next = await delta('next-page', { url: page.nextLink });
+      if (!next.ok) return next;
+      messages.push(...next.value.messages);
+      page = next.value;
+    }
+    return ok(messages);
+  };
+
   const textOf = async (name: string, params: Record<string, string>): Promise<Result<string, MailReaderError>> => {
     const raw = await call(name, params);
     return raw.ok ? ok(readString(raw.value, 'text') ?? '') : raw;
@@ -102,15 +121,11 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
     folderDelta: async (folderId) =>
       delta('list-mail-folder-messages-delta', { mailFolderId: folderId, top: '100', select: 'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients' }),
     deltaFrom: async (cursor) => delta('next-page', { url: cursor }),
-    conversation: async (conversationId) => {
-      const raw = await call('list-conversation-messages', { conversationId, select: 'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients' });
-      if (!raw.ok) return raw;
-      return ok(
-        listOf(raw.value)
-          .map(parseMessage)
-          .filter((message): message is MailMessage => message !== undefined)
-      );
-    },
+    // A page hint of 100 rather than the ten Graph gives by default, which is safe here in a way it is
+    // not on a delta: this is an ordinary collection, so a page smaller than asked for still answers
+    // with a cursor, and the loop above follows it.
+    conversation: async (conversationId) =>
+      messagesFrom('list-conversation-messages', { conversationId, top: '100', select: 'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients' }),
     messageMarkdown: async (messageId) => textOf('convert-mail-to-markdown', { messageId }),
     attachments: async (messageId) => {
       const raw = await call('list-mail-attachments', { messageId, select: ATTACHMENT_FIELDS });
