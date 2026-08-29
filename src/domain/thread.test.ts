@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { MailMessage } from './mail-message.ts';
-import { participantsOf, renderThread, shortHash, threadDay, threadFileName, threadTitle, withoutMailHeaders } from './thread.ts';
+import { participantsOf, renderThread, threadTitle, withoutMailHeaders } from './thread.ts';
 
 const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   id: 'm1',
@@ -14,16 +14,9 @@ const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   ...over,
 });
 
-describe('naming the file a conversation lives in', () => {
-  it('the name is its subject and a fingerprint of the thread, since the day is the folder it sits in', () => {
-    expect(threadFileName({ conversationId: 'AAQkADk0...=', subject: 'Contrat Contoso' })).toBe(`Contrat Contoso ${shortHash('AAQkADk0...=')}.md`);
-  });
-
-  it('a reply keeps the thread under its original subject, so the file never renames', () => {
-    const started = { conversationId: 'c1', subject: 'Contrat Contoso' };
-    const replied = { conversationId: 'c1', subject: 'RE: RE: Contrat Contoso' };
-
-    expect(threadFileName(replied)).toBe(threadFileName(started));
+describe('reading the subject a thread is known by', () => {
+  it('a reply keeps the thread under the subject it started with', () => {
+    expect(threadTitle('RE: RE: Contrat Contoso')).toBe(threadTitle('Contrat Contoso'));
   });
 
   it('forwards and French replies are stripped the same way', () => {
@@ -33,6 +26,13 @@ describe('naming the file a conversation lives in', () => {
     expect(threadTitle('RE[2]: Contrat')).toBe('Contrat');
     expect(threadTitle('RE [2] : Contrat')).toBe('Contrat');
     expect(threadTitle('RE:Contrat')).toBe('Contrat');
+  });
+
+  // The heading and the folder name strip the same markers, so a thread cannot read one way in the
+  // document and another in the path it sits at.
+  it('a marker only the folder name used to know is stripped from the heading too', () => {
+    expect(threadTitle('回复: Kick-off')).toBe('Kick-off');
+    expect(threadTitle('[EXTERNAL] Kick-off')).toBe('Kick-off');
   });
 
   it('a subject padded with spaces is trimmed, before and after its reply markers are stripped', () => {
@@ -45,40 +45,9 @@ describe('naming the file a conversation lives in', () => {
     expect(threadTitle('REF: Contrat')).toBe('REF: Contrat');
   });
 
-  it('every conversation fingerprints to the same width, however short its hash', () => {
-    expect(shortHash('conv-138')).toBe('0ec399');
-    expect(shortHash('conv-138')).toHaveLength(6);
-  });
-
-  it('a thread with no subject at all still gets a readable name', () => {
-    expect(threadFileName({ conversationId: 'c1', subject: '   ' })).toContain('No subject');
+  it('a thread with no subject at all still reads as having one', () => {
     expect(threadTitle('RE:')).toBe('No subject');
-  });
-
-  it('a subject the filesystem cannot hold is made safe', () => {
-    expect(threadFileName({ conversationId: 'c1', subject: 'Q1/Q2: budget' })).toContain('Q1_Q2_ budget');
-  });
-
-  it('a very long subject is shortened so the path stays writable', () => {
-    const name = threadFileName({ conversationId: 'c1', subject: 'a'.repeat(300) });
-
-    expect(name.length).toBeLessThan(110);
-  });
-
-  it('two different threads sharing a day and a subject still get their own file', () => {
-    const first = threadFileName({ conversationId: 'c1', subject: 'Contrat' });
-    const second = threadFileName({ conversationId: 'c2', subject: 'Contrat' });
-
-    expect(first).not.toBe(second);
-  });
-
-  it('the same conversation always fingerprints the same way, run after run', () => {
-    expect(shortHash('AAQkADk0...=')).toBe(shortHash('AAQkADk0...='));
-    expect(shortHash('AAQkADk0...=')).toHaveLength(6);
-  });
-
-  it('threads are filed by the day of their latest message, so a thread sorts by when it was last active', () => {
-    expect(threadDay('2026-05-12T09:31:00Z')).toBe('2026-05-12');
+    expect(threadTitle('   ')).toBe('No subject');
   });
 });
 

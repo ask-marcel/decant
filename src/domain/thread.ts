@@ -1,5 +1,5 @@
-import { safeSegment } from './kb-path.ts';
 import type { Correspondent, MailMessage } from './mail-message.ts';
+import { bareSubject } from './thread-subject.ts';
 import { inReceivedOrder } from './mail-message.ts';
 
 export type ThreadPart = {
@@ -13,46 +13,14 @@ export type Thread = {
   readonly parts: ReadonlyArray<ThreadPart>;
 };
 
-const HASH_LENGTH = 6;
-const FNV_OFFSET = 2166136261;
-const FNV_PRIME = 16777619;
-const SUBJECT_LIMIT = 80;
-// One prefix at a time, stripped in a loop: a single pattern repeated by `+` over optional spaces
-// backtracks exponentially on a long subject, which is a denial of service waiting to happen.
-// Whatever sits between the marker and its colon (a space, a `[2]`, both) is matched by one class:
-// two adjacent optional groups would make the pattern ambiguous and slow to fail.
-const REPLY_PREFIX = /^(re|fw|fwd|tr|rép|rep)[\s[\]\d]*:\s*/i;
-
-// A short, stable fingerprint of the conversation id: two threads that share a date and a subject
-// still get their own file, and a thread keeps its name for as long as it exists. Not a security
-// value, so a plain non-cryptographic hash is the right tool.
-export const shortHash = (value: string): string => {
-  let hash = FNV_OFFSET;
-  for (const character of value) {
-    hash ^= character.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, FNV_PRIME);
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0').slice(0, HASH_LENGTH);
-};
-
-// `RE:` and `FW:` say how a message travelled, not what it is about, so the thread is filed under
-// the bare subject. The stored name never changes afterwards, whatever later replies are titled.
+// The subject a thread is known by, with the markers saying how its mail travelled taken off. The
+// stripping itself lives in `thread-subject.ts` and is shared with the folder name: a heading and a
+// path that disagreed about what counts as a marker would leave a Chinese thread reading
+// `# 回复: Kick-off` inside a folder called `kick-off`.
 export const threadTitle = (subject: string): string => {
-  let bare = subject.trim();
-  while (REPLY_PREFIX.test(bare)) bare = bare.replace(REPLY_PREFIX, '');
+  const bare = bareSubject(subject);
   return bare.length === 0 ? 'No subject' : bare;
 };
-
-// The day is the folder the conversation sits in, so the name itself is the subject and a
-// fingerprint: enough to tell two threads sharing a subject apart, and stable as the thread grows.
-export const threadFileName = (thread: { readonly conversationId: string; readonly subject: string }): string => {
-  const title = safeSegment(threadTitle(thread.subject)).slice(0, SUBJECT_LIMIT);
-  return `${title} ${shortHash(thread.conversationId)}.md`;
-};
-
-// A conversation is filed under the day it was last active rather than the day it started, so a
-// thread sorts by its latest message. A reply therefore moves the file to the new day's folder.
-export const threadDay = (lastReceived: string): string => lastReceived.slice(0, 10);
 
 const nameOf = (who: Correspondent | undefined): string => who?.name ?? 'Unknown sender';
 
