@@ -5,7 +5,9 @@ import {
   needsRender,
   parseMailboxState,
   serializeMailboxState,
+  threadOfConversation,
   withAttachment,
+  withConversation,
   withFolderCursor,
   withLinked,
   withPending,
@@ -30,6 +32,7 @@ describe('remembering where a mailbox sync got to', () => {
       lastRun: '',
       folders: {},
       threads: {},
+      conversations: {},
       linked: {},
       attachments: {},
       pending: [],
@@ -133,6 +136,19 @@ describe('remembering where a mailbox sync got to', () => {
 
   it('the queue can be replaced as conversations are finished', () => {
     expect(withPending(emptyMailboxState(), ['conv-1', 'conv-2']).pending).toEqual(['conv-1', 'conv-2']);
+  });
+
+  // Frozen on purpose: a message arriving late, older than anything held, would otherwise answer
+  // with a different root and rename a folder that is already on disk and already linked to.
+  it('a conversation is recorded against the thread it belongs to and the message that decided it', () => {
+    const state = withConversation(emptyMailboxState(), 'conv-1', { threadId: 'd9f4e0a3c1', root: '<root@example.com>' });
+
+    expect(threadOfConversation(state, 'conv-1')).toEqual({ threadId: 'd9f4e0a3c1', root: '<root@example.com>' });
+    expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
+  });
+
+  it('a conversation nobody has resolved yet belongs to no thread', () => {
+    expect(threadOfConversation(emptyMailboxState(), 'conv-1')).toBeUndefined();
   });
 
   it('the picker counts one file per conversation', () => {

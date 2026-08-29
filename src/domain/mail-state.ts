@@ -44,12 +44,20 @@ export type AttachmentRecord = { readonly name: string; readonly paths: Readonly
 // that wrote nothing as a success. Refusing costs one full sweep, which is the honest price.
 export const STATE_VERSION = 2;
 
+// Which thread a Graph conversation belongs to, and the root message that decided it. Written once
+// and never revisited: re-resolving every run would let a message arriving late, older than
+// anything held, answer with a different root and rename a folder that is already on disk and
+// already linked to. The cost of freezing is a merge found late rather than never, which is the
+// cheaper mistake: a missed merge is a second folder, a changed one is a moved tree.
+export type ConversationRecord = { readonly threadId: string; readonly root: string };
+
 export type MailboxState = {
   readonly version: typeof STATE_VERSION;
   readonly source: { readonly kind: 'mailbox'; readonly id: string; readonly name: string };
   readonly lastRun: string;
   readonly folders: Readonly<Record<string, { readonly name: string; readonly deltaLink?: string }>>;
   readonly threads: Readonly<Record<string, ThreadRecord>>;
+  readonly conversations: Readonly<Record<string, ConversationRecord>>;
   readonly linked: Readonly<Record<string, LinkedRecord>>;
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
   readonly pending: ReadonlyArray<string>;
@@ -66,6 +74,7 @@ export const emptyMailboxState = (): MailboxState => ({
   lastRun: '',
   folders: {},
   threads: {},
+  conversations: {},
   linked: {},
   attachments: {},
   pending: [],
@@ -114,6 +123,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     lastRun: readString(raw, 'lastRun') ?? '',
     folders: mapOf(raw['folders'], (entry) => ({ name: readString(entry, 'name') ?? '', deltaLink: readString(entry, 'deltaLink') })),
     threads: mapOf(raw['threads'], threadOf),
+    conversations: mapOf(raw['conversations'], (entry) => ({ threadId: readString(entry, 'threadId') ?? '', root: readString(entry, 'root') ?? '' })),
     linked: mapOf(raw['linked'], (entry) => ({ paths: stringList(entry['paths']) })),
     attachments: mapOf(raw['attachments'], attachmentOf),
     pending: stringList(raw['pending']),
@@ -129,6 +139,13 @@ export const withThread = (state: MailboxState, conversationId: string, record: 
   ...state,
   threads: { ...state.threads, [conversationId]: record },
 });
+
+export const withConversation = (state: MailboxState, conversationId: string, record: ConversationRecord): MailboxState => ({
+  ...state,
+  conversations: { ...state.conversations, [conversationId]: record },
+});
+
+export const threadOfConversation = (state: MailboxState, conversationId: string): ConversationRecord | undefined => state.conversations[conversationId];
 
 export const withLinked = (state: MailboxState, key: string, record: LinkedRecord): MailboxState => ({ ...state, linked: { ...state.linked, [key]: record } });
 
