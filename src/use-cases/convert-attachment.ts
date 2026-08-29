@@ -6,6 +6,7 @@ import type { MimePart } from '../domain/mime.ts';
 import { readMime } from '../domain/mime.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
+import { renderZipManifest } from '../domain/zip-manifest.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { SkipReason } from '../domain/report.ts';
@@ -220,7 +221,15 @@ const writeArchiveEntries = async (context: Context, folder: string, archivePath
     if (!written.ok) return failure(written.error);
     outputs.push(path);
   }
-  return { kind: 'converted', outputs, primary: archivePath, media: [] };
+  // The manifest, and what a reader is sent to. An archive's `primary` used to be the archive
+  // itself, so a thread linked its reader at a binary; this is the document that says what is
+  // inside without unzipping, and for a folder of photographs it is the contact sheet: every
+  // member on one line with the text read out of it, rather than the same text scattered across
+  // forty files that have to be opened one at a time.
+  const manifestPath = `${context.input.folder}/${context.name}.md`;
+  const manifest = await context.deps.files.writeText(manifestPath, renderZipManifest(context.name, entries));
+  if (!manifest.ok) return failure(manifest.error);
+  return { kind: 'converted', outputs: [...outputs, manifestPath], primary: manifestPath, media: [] };
 };
 
 // An invitation is read rather than kept. The library has no iCalendar parser and passes the file

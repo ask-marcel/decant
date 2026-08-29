@@ -448,14 +448,26 @@ describe('keeping what was attached to a mail', () => {
     expect(files.written.get(`${FOLDER}/Logo.svg.md`)).toContain('image: ./Logo.svg');
   });
 
-  it('an archive attachment lands with the archive file and one markdown per entry, in order', async () => {
-    const { outcome } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
+  // A reader is sent to the manifest, not to the archive: the zip is kept and still listed, but
+  // linking a reader at a binary they have to unzip is not a knowledge base.
+  it('an archive attachment lands with the archive file, one markdown per entry, and a manifest to read', async () => {
+    const { outcome, files } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
     expect(outcome).toEqual({
       kind: 'converted',
-      outputs: [`${FOLDER}/Livraison/Livraison.zip`, `${FOLDER}/Livraison/notes.docx.md`],
-      primary: `${FOLDER}/Livraison/Livraison.zip`,
+      outputs: [`${FOLDER}/Livraison/Livraison.zip`, `${FOLDER}/Livraison/notes.docx.md`, `${FOLDER}/Livraison.zip.md`],
+      primary: `${FOLDER}/Livraison.zip.md`,
       media: [],
     });
+    expect(files.written.get(`${FOLDER}/Livraison.zip.md`)).toContain('- notes.docx — # Notes');
+  });
+
+  it('a manifest that cannot be written fails the archive rather than leaving it unreadable', async () => {
+    const { outcome } = await run(
+      { name: 'Livraison.zip' },
+      { drive: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] }, files: { failWritesMatching: 'Livraison.zip.md' } }
+    );
+
+    expect(outcome).toMatchObject({ kind: 'failed' });
   });
 });
