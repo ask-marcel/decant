@@ -409,7 +409,9 @@ describe('following the SharePoint files a conversation points at', () => {
     const { outcome, files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: items });
 
     expect(files.written.has(REPORT_MD)).toBe(true);
-    expect(files.written.get(THREAD_FILE)).toContain('linked_files:');
+    // Pinned whole rather than by its key: a reader follows this path from the folder the thread sits
+    // in, so a value that resolves from the mailbox root instead would read as present and be broken.
+    expect(files.written.get(THREAD_FILE)).toContain('linked_files:\n  - ../../_linked/2026-05-11/Rapport.docx.md');
     expect(outcome?.kind === 'rendered' && outcome.thread.linked['b!one:01ABC']).toEqual({ paths: [REPORT_MD] });
   });
 
@@ -456,7 +458,7 @@ describe('following the SharePoint files a conversation points at', () => {
     const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })] };
     const { files } = await run({ reader: { conversations, links: { ...linked, m2: linked.m1 } }, drive: items });
 
-    expect((files.written.get(THREAD_FILE_REPLIED) ?? '').match(/- \.\/_linked\/2026-05-11\/Rapport\.docx\.md/g)).toHaveLength(1);
+    expect((files.written.get(THREAD_FILE_REPLIED) ?? '').match(/- \.\.\/\.\.\/_linked\/2026-05-11\/Rapport\.docx\.md/g)).toHaveLength(1);
   });
 
   it('a document another conversation already pulled is referenced, not fetched again', async () => {
@@ -464,7 +466,7 @@ describe('following the SharePoint files a conversation points at', () => {
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked }, drive: items, linked: already });
 
     expect(files.written.has(REPORT_MD)).toBe(false);
-    expect(files.written.get(THREAD_FILE)).toContain('  - ./_linked/2026-05-11/Rapport.docx.md');
+    expect(files.written.get(THREAD_FILE)).toContain('  - ../../_linked/2026-05-11/Rapport.docx.md');
   });
 
   it('a linked deck is kept as slides as well as text, the way a deck in a library is', async () => {

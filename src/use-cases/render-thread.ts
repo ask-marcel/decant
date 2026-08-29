@@ -78,10 +78,6 @@ const stampFor = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailM
   syncedAt: deps.clock.nowIso(),
 });
 
-// Paths are written the way a reader opens them: from the folder the conversation sits in.
-const relativeTo = (directory: string, paths: ReadonlyArray<string>): ReadonlyArray<string> =>
-  paths.map((path) => (path.startsWith(`${directory}/`) ? `./${path.slice(directory.length + 1)}` : path));
-
 const threadHeader = (
   input: RenderThreadInput,
   parts: ReadonlyArray<ThreadPart>,
@@ -347,7 +343,10 @@ const writeThread = async (
   const shown = new Set([...bodies.pictures, ...attachments.media]);
   const attachmentRefs = attachments.paths.filter((path) => !shown.has(path)).map((path) => pathBetween(here, path));
   const inlineRefs = bodies.pictures.map((path) => pathBetween(here, path));
-  const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, inlineRefs, relativeTo(deps.mailboxRoot, links.paths));
+  // Linked files are written from the thread's own folder, exactly as attachments are: both climb out
+  // of it to a store the whole mailbox shares, and a reader follows either one the same way.
+  const linkedRefs = links.paths.map((path) => pathBetween(here, path));
+  const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, inlineRefs, linkedRefs);
   const written = await deps.files.writeText(
     `${deps.mailboxRoot}/${relative}`,
     `${header}\n\n${renderThread({ conversationId: input.conversationId, subject: first.subject, parts: bodies.parts })}\n`
