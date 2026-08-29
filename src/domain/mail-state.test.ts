@@ -157,10 +157,18 @@ describe('remembering where a mailbox sync got to', () => {
 });
 
 describe('deciding whether a conversation has to be written again', () => {
-  const state = withThread(emptyMailboxState(), 'conv-1', thread);
+  // A thread is keyed by its own id, and the conversation that fed it points at it. Both halves are
+  // needed: a conversation with no thread yet has nothing written to compare against.
+  const state = withThread(withConversation(emptyMailboxState(), 'conv-1', { threadId: 'd9f4e0a3c1', root: '<root@example.com>' }), 'd9f4e0a3c1', thread);
 
   it('a conversation never seen before is written', () => {
     expect(needsRender(state, 'conv-new', ['m9'])).toBe(true);
+  });
+
+  it('a conversation pointing at a thread nothing has written yet is written', () => {
+    const unwritten = withConversation(emptyMailboxState(), 'conv-2', { threadId: 'ffffffffff', root: '<other@example.com>' });
+
+    expect(needsRender(unwritten, 'conv-2', ['m1'])).toBe(true);
   });
 
   it('a conversation that gained a reply is written again', () => {

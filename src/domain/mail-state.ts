@@ -153,10 +153,23 @@ export const withAttachment = (state: MailboxState, hash: string, record: Attach
 
 export const withPending = (state: MailboxState, pending: ReadonlyArray<string>): MailboxState => ({ ...state, pending });
 
+// Every conversation resolved into one thread. Derived rather than stored beside the thread, so
+// there is one place a conversation's thread is written and no second copy to fall out of step.
+export const conversationsInThread = (state: MailboxState, threadId: string): ReadonlyArray<{ readonly id: string; readonly root: string }> =>
+  Object.entries(state.conversations)
+    .filter(([, record]) => record.threadId === threadId)
+    .map(([id, record]) => ({ id, root: record.root }))
+    .sort((left, right) => left.id.localeCompare(right.id));
+
 // A conversation needs writing again when it holds a message the last run never saw. A message
 // merely being reread, or its read flag flipping, changes nothing that lands on disk.
+//
+// A conversation nobody has resolved yet always needs writing, and for a second reason as well as
+// the first: without a thread there is no document to have written it into.
 export const needsRender = (state: MailboxState, conversationId: string, messageIds: ReadonlyArray<string>): boolean => {
-  const known = state.threads[conversationId];
+  const belongs = state.conversations[conversationId];
+  if (belongs === undefined) return true;
+  const known = state.threads[belongs.threadId];
   if (known === undefined) return true;
   const seen = new Set(known.messageIds);
   return messageIds.some((id) => !seen.has(id));

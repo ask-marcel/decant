@@ -12,6 +12,7 @@ import {
   needsRender,
   parseMailboxState,
   serializeMailboxState,
+  conversationsInThread,
   threadOfConversation,
   withAttachment,
   withConversation,
@@ -208,12 +209,22 @@ const finishQueue = async (
   const dirty = conversations.filter((conversation) => needsRender(state, conversation.id, conversation.messageIds));
   deps.logger.info('mail.enumerated', { messages: messages.length, conversations: conversations.length, queued: dirty.length });
   const resolved = await resolveThreads(deps, state, dirty);
-  const queued = withPending(
-    resolved,
-    dirty.map((conversation) => conversation.id)
-  );
+  const queued = withPending(resolved, threadsToRender(resolved, dirty));
   const saved = await save(deps.files, statePath, queued, input.dryRun);
   return saved.ok ? ok(queued) : saved;
+};
+
+// The queue holds THREADS, not conversations, and the grouping happens here rather than inside the
+// window. Two conversations of one merged thread arriving in the same window would each decide the
+// thread was new, each mint a folder for it, and each write a document holding only its own half:
+// the second would overwrite the first, and `needsRender` would answer false for both from then on.
+// A conversation left unresolved has no thread to be rendered into and waits for the next sweep.
+const threadsToRender = (state: MailboxState, dirty: ReadonlyArray<Conversation>): ReadonlyArray<string> => {
+  const threadIds = dirty.flatMap((conversation) => {
+    const belongs = threadOfConversation(state, conversation.id);
+    return belongs === undefined ? [] : [belongs.threadId];
+  });
+  return [...new Set(threadIds)];
 };
 
 // The render (with its IO) happens now; what it adds to the mailbox state comes back as a function
@@ -222,22 +233,33 @@ const renderOne = async (
   deps: SyncMailboxDeps,
   input: SyncMailboxInput,
   state: MailboxState,
-  conversationId: string
+  threadId: string
 ): Promise<{ readonly apply: (state: MailboxState) => MailboxState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> }> => {
+  const held = conversationsInThread(state, threadId);
+  const first = held[0];
+  // A queue naming a thread no conversation points at has nothing to render. It is reachable: the
+  // queue outlives a run, so a state file carrying a queue but not the map behind it lands here.
+  // Skipping leaves it for the next sweep, where the conversation is resolved again.
+  if (first === undefined) return { apply: (carried) => carried, counted: { skipped: 1 }, notes: {} };
   const rendered = await deps.renderThread({
-    conversationId,
+    threadId,
+    conversationIds: held.map((conversation) => conversation.id),
+    root: first.root,
+    // Empty until a thread has been filed somewhere, and reused verbatim from then on, so a change
+    // to the naming rules never moves a folder that is already written and already linked to.
+    folder: state.threads[threadId]?.folder ?? '',
     maxBytes: input.maxBytes,
     linked: state.linked,
     attachments: state.attachments,
   });
   if (!rendered.ok) {
     deps.logger.warn('thread.failed', { cause: rendered.error.kind });
-    return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: `conversation ${conversationId}`, reason: rendered.error.message }] } };
+    return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: `thread ${threadId}`, reason: rendered.error.message }] } };
   }
   if (rendered.value.kind === 'empty') return { apply: (carried) => carried, counted: { skipped: 1 }, notes: {} };
   const thread = rendered.value.thread;
   return {
-    apply: (carried) => recordThread(carried, conversationId, thread),
+    apply: (carried) => recordThread(carried, threadId, thread),
     counted: { converted: 1, skipped: thread.filesSkipped.length, failed: thread.filesFailed.length },
     notes: { skipped: thread.filesSkipped, failed: thread.filesFailed },
   };
@@ -245,10 +267,10 @@ const renderOne = async (
 
 const recordThread = (
   state: MailboxState,
-  conversationId: string,
+  threadId: string,
   thread: { readonly record: ThreadRecord; readonly linked: Readonly<Record<string, LinkedRecord>>; readonly attachments: Readonly<Record<string, AttachmentRecord>> }
 ): MailboxState => {
-  const withRecord = withThread(state, conversationId, thread.record);
+  const withRecord = withThread(state, threadId, thread.record);
   const withLinks = Object.entries(thread.linked).reduce((carried, [key, record]) => withLinked(carried, key, record), withRecord);
   return Object.entries(thread.attachments).reduce((carried, [hash, record]) => withAttachment(carried, hash, record), withLinks);
 };
@@ -273,10 +295,10 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
     if (current.pending.length === 0) break;
     const window = current.pending.slice(0, input.concurrency);
     const results = await Promise.all(
-      window.map((conversationId) => {
-        deps.progress.begin(conversationId);
-        return renderOne(deps, input, current, conversationId).then((outcome) => {
-          deps.progress.step(conversationId);
+      window.map((threadId) => {
+        deps.progress.begin(threadId);
+        return renderOne(deps, input, current, threadId).then((outcome) => {
+          deps.progress.step(threadId);
           return outcome;
         });
       })

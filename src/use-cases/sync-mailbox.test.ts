@@ -87,8 +87,8 @@ const run = async (
     clock: createClockFake(),
     kbRoot: 'kb',
     renderThread: async (input) => {
-      asked.push(input.conversationId);
-      if (seeds.failThread === input.conversationId) return err({ kind: 'permanent' as const, message: 'thread refused' });
+      asked.push(input.conversationIds.join(','));
+      if (seeds.failThread === input.conversationIds.join(',')) return err({ kind: 'permanent' as const, message: 'thread refused' });
       return ok(seeds.outcome === undefined ? rendered() : seeds.outcome(input));
     },
   });
@@ -153,11 +153,14 @@ describe('syncing a mailbox into the knowledge base', () => {
   // Left unresolved rather than guessed at. The root names a folder written once and never rebuilt,
   // so a guess is permanent where an absence is retried on the next sweep.
   it('a conversation whose root cannot be read is left unresolved and said so', async () => {
-    const { files, logger } = await run({
+    const { files, logger, summary } = await run({
       reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }], failCalls: { messageHeaders: { kind: 'transient', message: 'throttled' } } },
     });
 
     expect(stateAfter(files).conversations).toEqual({});
+    // Never queued: a thread cannot be rendered before it is known which one it is.
+    expect(stateAfter(files).pending).toEqual([]);
+    expect(summary).toMatchObject({ converted: 0, skipped: 0, failed: 0 });
     expect(logger.calls.filter((call) => call.event === 'thread.unresolved')).toEqual([
       { level: 'warn', event: 'thread.unresolved', meta: { conversationId: 'conv-1', cause: 'transient' } },
     ]);
@@ -257,12 +260,65 @@ describe('syncing a mailbox into the knowledge base', () => {
     expect(stateAfter(files).pending).toEqual([]);
   });
 
-  it('a run resumes at the conversation it was stopped on, without sweeping again', async () => {
-    const halfDone = serializeMailboxState({ ...emptyMailboxState(), pending: ['conv-9'] });
+  // The queue holds threads, so a resumed run reads back which conversations each one covers rather
+  // than working it out again: the sweep that would have told it is exactly what is being skipped.
+  it('a run resumes at the thread it was stopped on, without sweeping again', async () => {
+    const held = withConversation(emptyMailboxState(), 'conv-9', { threadId: 'thread-9', root: '<r@example.com>' });
+    const halfDone = serializeMailboxState({ ...held, pending: ['thread-9'] });
     const { asked, logger } = await run({ files: { texts: { [STATE_PATH]: halfDone } }, reader: { folders: [folder()] } });
 
     expect(asked).toEqual(['conv-9']);
     expect(logger.calls.some((call) => call.event === 'mail.resuming')).toBe(true);
+  });
+
+  // The queue outlives a run, so a state file can carry a queue without the map behind it. Skipping
+  // leaves the thread for the next sweep, which resolves its conversation again.
+  it('a queue naming a thread no conversation points at is skipped rather than written empty', async () => {
+    const halfDone = serializeMailboxState({ ...emptyMailboxState(), pending: ['thread-orphan'] });
+    const { asked, summary, files } = await run({ files: { texts: { [STATE_PATH]: halfDone } }, reader: { folders: [folder()] } });
+
+    expect(asked).toEqual([]);
+    expect(summary).toMatchObject({ converted: 0, skipped: 1 });
+    expect(stateAfter(files).threads).toEqual({});
+  });
+
+  // Reused from the record, never recomputed: the naming rules are code, and a change to them must
+  // not move a folder that is already written and already linked to.
+  it('a thread already filed somewhere is rendered back into the folder it was filed under', async () => {
+    const held = withConversation(emptyMailboxState(), 'conv-1', { threadId: 'thread-1', root: '<r@example.com>' });
+    const filed = withThread(held, 'thread-1', {
+      folder: '2024-01-02-thread-1-an-older-name',
+      conversationIds: ['conv-1'],
+      file: 'threads/2024-01-02-thread-1-an-older-name/x.md',
+      messageIds: ['m0'],
+      lastMessage: '2026-05-11T00:00:00Z',
+      attachments: [],
+      inlineImages: [],
+    });
+    const folders: string[] = [];
+    await run({
+      files: { texts: { [STATE_PATH]: serializeMailboxState(filed) } },
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] },
+      outcome: (input: RenderThreadInput): RenderThreadOutcome => {
+        folders.push(input.folder);
+        return rendered();
+      },
+    });
+
+    expect(folders).toEqual(['2024-01-02-thread-1-an-older-name']);
+  });
+
+  it('a thread filed nowhere yet is handed no folder, so the naming rules decide', async () => {
+    const folders: string[] = [];
+    await run({
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] },
+      outcome: (input: RenderThreadInput): RenderThreadOutcome => {
+        folders.push(input.folder);
+        return rendered();
+      },
+    });
+
+    expect(folders).toEqual(['']);
   });
 
   it('a window whose state cannot be saved ends the run naming the save step', async () => {
@@ -279,7 +335,7 @@ describe('syncing a mailbox into the knowledge base', () => {
 
 describe('running a mailbox sync again', () => {
   const known = serializeMailboxState(
-    withThread(emptyMailboxState(), 'conv-1', {
+    withThread(withConversation(emptyMailboxState(), 'conv-1', { threadId: 'd9f4e0a3c1', root: '<root@example.com>' }), 'd9f4e0a3c1', {
       folder: '2026-05-12-a3f9c1e0d2-thread',
       conversationIds: ['conv-1'],
       file: 'threads/2026-05-12/thread.md',
@@ -432,9 +488,10 @@ describe('reporting what did not reach the knowledge base', () => {
   });
 
   it('a conversation that could not be written is named in the report', async () => {
-    const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, failThread: 'conv-1' });
+    const { files, logger } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, failThread: 'conv-1' });
 
-    expect(files.written.get(REPORT_PATH)).toContain('- conversation conv-1: thread refused');
+    expect(files.written.get(REPORT_PATH)).toContain(`- thread ${threadIdOf('m1')}: thread refused`);
+    expect(logger.calls.filter((call) => call.event === 'thread.failed')).toEqual([{ level: 'warn', event: 'thread.failed', meta: { cause: 'permanent' } }]);
   });
 
   it('a run where every conversation converted cleanly writes no report', async () => {
@@ -532,7 +589,32 @@ describe('rendering several conversations at once', () => {
   it('every conversation in the window announces itself as begun before any of them finish', async () => {
     const { progress } = await run({ reader: threeConversations, concurrency: 3 });
 
-    expect([...progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(['conv-a', 'conv-b', 'conv-c']);
+    expect([...progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(
+      [threadIdOf('a'), threadIdOf('b'), threadIdOf('c')].sort((left, right) => left.localeCompare(right))
+    );
+  });
+
+  // The case the whole identity scheme exists for. Graph opens a second conversation for one
+  // exchange when an external party replies from outside Exchange; both resolve to the same root,
+  // so they are one thread and are rendered once, together. Rendering them apart would have each
+  // write the shared document holding only its own half, and the loser would be gone for good.
+  it('two conversations sharing a root are rendered as one thread, once', async () => {
+    const root = [{ name: 'References', value: '<shared@example.com>' }];
+    const reader: MailReaderSeed = {
+      folders: [folder()],
+      pages: [
+        {
+          messages: [message({ id: 'a', conversationId: 'conv-a' }), message({ id: 'b', conversationId: 'conv-b', received: '2026-05-13T00:00:00Z' })],
+          skipped: 0,
+          deltaLink: 'c1',
+        },
+      ],
+      headers: { a: root, b: root },
+    };
+    const { asked, files } = await run({ reader, concurrency: 2 });
+
+    expect(asked).toEqual(['conv-a,conv-b']);
+    expect(Object.keys(stateAfter(files).threads)).toEqual([threadIdOf('<shared@example.com>')]);
   });
 
   it('a window of conversations saves the state once, not once per conversation', async () => {
@@ -555,14 +637,14 @@ describe('rendering several conversations at once', () => {
     const { summary, files } = await run({ reader: twoConversations, failThread: 'conv-a', concurrency: 2 });
 
     expect(summary).toMatchObject({ converted: 1, failed: 1 });
-    expect(Object.keys(stateAfter(files).threads)).toEqual(['conv-b']);
+    expect(Object.keys(stateAfter(files).threads)).toEqual([threadIdOf('b')]);
   });
 
   it('an empty conversation in a window leaves the ones rendered beside it recorded', async () => {
-    const outcome = (input: RenderThreadInput): RenderThreadOutcome => (input.conversationId === 'conv-a' ? { kind: 'empty' } : rendered());
+    const outcome = (input: RenderThreadInput): RenderThreadOutcome => (input.conversationIds.includes('conv-a') ? { kind: 'empty' } : rendered());
     const { summary, files } = await run({ reader: twoConversations, outcome, concurrency: 2 });
 
     expect(summary).toMatchObject({ converted: 1, skipped: 1 });
-    expect(Object.keys(stateAfter(files).threads)).toEqual(['conv-b']);
+    expect(Object.keys(stateAfter(files).threads)).toEqual([threadIdOf('b')]);
   });
 });

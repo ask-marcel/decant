@@ -11,11 +11,9 @@ import { rewriteMessageBody } from '../domain/mail-body.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
-import { rootMessageId } from '../domain/root-message-id.ts';
 import { participantsOf, renderThread, threadTitle } from '../domain/thread.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
 import { threadFolderName } from '../domain/thread-folder.ts';
-import { threadIdOf } from '../domain/thread-id.ts';
 import type { ThreadId } from '../domain/thread-id.ts';
 import { FILE_SLUG_LIMIT, FOLDER_SLUG_LIMIT, slugify } from '../domain/thread-slug.ts';
 import { dayIn } from '../domain/zoned-day.ts';
@@ -45,7 +43,16 @@ export type RenderThreadDeps = {
 };
 
 export type RenderThreadInput = {
-  readonly conversationId: string;
+  readonly threadId: string;
+  // Every Graph conversation this thread was assembled from. More than one when Graph opened a
+  // second conversation for the same exchange, which it does when an external party replies from
+  // outside Exchange. They are rendered as one document, because they are one exchange.
+  readonly conversationIds: ReadonlyArray<string>;
+  readonly root: string;
+  // The folder this thread was already filed under, empty when it has never been filed. Reused
+  // verbatim rather than recomputed, so a change to the naming rules cannot move a folder that is
+  // already written and already linked to.
+  readonly folder: string;
   readonly maxBytes: number;
   // Files already pulled from SharePoint by an earlier thread, so one link is fetched once.
   readonly linked: Readonly<Record<string, LinkedRecord>>;
@@ -79,7 +86,7 @@ const bodiesOf = async (deps: RenderThreadDeps, messages: ReadonlyArray<MailMess
 };
 
 const stampFor = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailMessage, last: MailMessage): DocumentStamp => ({
-  source: `conversation ${input.conversationId}`,
+  source: `conversation ${input.conversationIds[0] ?? ''}`,
   site: 'Mailbox',
   library: 'Mailbox',
   path: threadTitle(first.subject),
@@ -96,17 +103,16 @@ const threadHeader = (
   syncedAt: string,
   attachments: ReadonlyArray<string>,
   inlineImages: ReadonlyArray<string>,
-  linked: ReadonlyArray<string>,
-  threadId: string,
-  root: string
+  linked: ReadonlyArray<string>
 ): string =>
   renderFrontMatter([
     // What the thread IS, and what its folder is named after. `conversation_id` stays for a Graph
     // round trip; it is not what anything is keyed on, since Graph reassigns it when an external
     // party replies from outside Exchange.
-    ['thread_id', threadId],
-    ['root_message_id', root],
-    ['source', `conversation ${input.conversationId}`],
+    ['thread_id', input.threadId],
+    ['root_message_id', input.root],
+    ['conversation_id', input.conversationIds],
+    ['source', `conversation ${input.conversationIds[0] ?? ''}`],
     ['site', 'Mailbox'],
     ['subject', threadTitle(first.subject)],
     ['participants', participantsOf(parts)],
@@ -326,23 +332,29 @@ const rewriteBodies = (here: string, parts: ReadonlyArray<ThreadPart>, byMessage
 export const createRenderThread =
   (deps: RenderThreadDeps): RenderThread =>
   async (input) => {
-    const messages = await deps.reader.conversation(input.conversationId);
-    if (!messages.ok) return messages;
-    const alive = inReceivedOrder(messages.value.filter((message) => !message.isDeleted));
+    const held = await messagesOf(deps, input.conversationIds);
+    if (!held.ok) return held;
+    const alive = inReceivedOrder(held.value.filter((message) => !message.isDeleted));
     const first = alive[0];
     const last = alive[alive.length - 1];
     if (first === undefined || last === undefined) return ok({ kind: 'empty' });
-    // The OLDEST message, never the newest: `list-conversation-messages` filters across every folder,
-    // so an unsent draft reply carries a newer time than any real message and no `References` at all,
-    // and reading that one would name the thread after the draft. A refusal here fails the thread
-    // rather than falling back, because the answer names a folder that is never rebuilt: filing it
-    // wrongly is permanent, where failing leaves it unrecorded and the next run tries again.
-    const headers = await deps.reader.messageHeaders(first.id);
-    if (!headers.ok) return headers;
     const parts = await bodiesOf(deps, alive);
     if (!parts.ok) return parts;
-    return writeThread(deps, input, parts.value, first, last, rootMessageId(headers.value, first.id));
+    return writeThread(deps, input, parts.value, first, last);
   };
+
+// Every conversation the thread was assembled from, read in turn and written as one document. Graph
+// opens a second conversation for one exchange when an external party replies from outside Exchange;
+// rendering those apart would have each overwrite the other, since they share a file.
+const messagesOf = async (deps: RenderThreadDeps, conversationIds: ReadonlyArray<string>): Promise<Result<ReadonlyArray<MailMessage>, MailReaderError>> => {
+  const held: MailMessage[] = [];
+  for (const conversationId of conversationIds) {
+    const found = await deps.reader.conversation(conversationId);
+    if (!found.ok) return found;
+    held.push(...found.value);
+  }
+  return ok(held);
+};
 
 // Where a thread lives, settled once from its FIRST message and never recomputed. The day sorts,
 // the id identifies, the slug reads. A reply arriving two years later appends to the document and
@@ -351,9 +363,10 @@ export const createRenderThread =
 // somewhere new and left the copy before it behind.
 type ThreadPlace = { readonly folder: string; readonly relative: string; readonly here: string };
 
-const placeOf = (deps: RenderThreadDeps, threadId: ThreadId, first: MailMessage): ThreadPlace => {
+const placeOf = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailMessage): ThreadPlace => {
   const bare = bareSubject(first.subject);
-  const folder = threadFolderName(dayIn(first.received, deps.timezone), threadId, slugify(bare, FOLDER_SLUG_LIMIT));
+  const named = threadFolderName(dayIn(first.received, deps.timezone), input.threadId as ThreadId, slugify(bare, FOLDER_SLUG_LIMIT));
+  const folder = input.folder.length === 0 ? String(named) : input.folder;
   return { folder, relative: `threads/${folder}/${slugify(bare, FILE_SLUG_LIMIT)}.md`, here: `${deps.mailboxRoot}/threads/${folder}` };
 };
 
@@ -362,11 +375,9 @@ const writeThread = async (
   input: RenderThreadInput,
   parts: ReadonlyArray<ThreadPart>,
   first: MailMessage,
-  last: MailMessage,
-  root: string
+  last: MailMessage
 ): Promise<Result<RenderThreadOutcome, MailReaderError>> => {
-  const threadId = threadIdOf(root);
-  const place = placeOf(deps, threadId, first);
+  const place = placeOf(deps, input, first);
   const relative = place.relative;
   const stamp = stampFor(deps, input, first, last);
   const attachments = await attachmentsOf(deps, input, parts, stamp);
@@ -385,10 +396,10 @@ const writeThread = async (
   // Linked files are written from the thread's own folder, exactly as attachments are: both climb out
   // of it to a store the whole mailbox shares, and a reader follows either one the same way.
   const linkedRefs = links.paths.map((path) => pathBetween(here, path));
-  const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, inlineRefs, linkedRefs, threadId, root);
+  const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, inlineRefs, linkedRefs);
   const written = await deps.files.writeText(
     `${deps.mailboxRoot}/${relative}`,
-    `${header}\n\n${renderThread({ conversationId: input.conversationId, subject: first.subject, parts: bodies.parts })}\n`
+    `${header}\n\n${renderThread({ conversationId: input.conversationIds[0] ?? '', subject: first.subject, parts: bodies.parts })}\n`
   );
   if (!written.ok) return err({ kind: 'permanent', message: written.error.message });
   // Named with the conversation they arrived in: two threads can each carry an `image002.wmz`, and
@@ -399,7 +410,7 @@ const writeThread = async (
     thread: {
       record: {
         folder: place.folder,
-        conversationIds: [input.conversationId],
+        conversationIds: input.conversationIds,
         file: relative,
         messageIds: parts.map((part) => part.message.id),
         lastMessage: last.received,

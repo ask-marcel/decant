@@ -3,6 +3,7 @@ import { contentHash } from '../domain/content-hash.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
+import { threadIdOf } from '../domain/thread-id.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import type { DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
@@ -23,7 +24,8 @@ const CONV = 'AAQkADk0...=';
 // Named once, from the thread's FIRST message, and never again: the day it began, the id its root
 // message hashes to, and what it is about. A reply no longer moves it, which is why one constant
 // serves where a replied-to thread used to need its own.
-const THREAD_ID = 'ca0df2c95a';
+const ROOT = '<AM0PR04MB6f21@example.com>';
+const THREAD_ID = threadIdOf(ROOT);
 const THREAD_FOLDER = `2026-05-12-${THREAD_ID}-contrat-contoso`;
 const THREAD_RELATIVE = `threads/${THREAD_FOLDER}/contrat-contoso.md`;
 const THREAD_FILE = `kb/Mailbox/${THREAD_RELATIVE}`;
@@ -52,6 +54,8 @@ const run = async (
     reader?: MailReaderSeed;
     drive?: DriveReaderSeed;
     files?: FilesFakeSeed;
+    conversationIds?: string[];
+    folder?: string;
     linked?: Record<string, { paths: string[] }>;
     attachments?: Record<string, AttachmentRecord>;
   } = {}
@@ -71,7 +75,15 @@ const run = async (
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), logger, unpackArchive: drive.localArchive, convertLocal: drive.localMarkdown }),
     convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger, progress: createProgressFake() }),
   });
-  const result = await render({ conversationId: CONV, maxBytes: 50 * 1024 * 1024, linked: seeds.linked ?? {}, attachments: seeds.attachments ?? {} });
+  const result = await render({
+    threadId: THREAD_ID,
+    conversationIds: seeds.conversationIds ?? [CONV],
+    root: ROOT,
+    folder: seeds.folder ?? '',
+    maxBytes: 50 * 1024 * 1024,
+    linked: seeds.linked ?? {},
+    attachments: seeds.attachments ?? {},
+  });
   return { outcome: result.ok ? result.value : undefined, files, logger, ok: result.ok };
 };
 
@@ -95,8 +107,10 @@ describe('writing one conversation as one file', () => {
     expect(`${head}\n---`).toBe(
       [
         '---',
-        `thread_id: ${THREAD_ID}`,
-        'root_message_id: m1',
+        `thread_id: "${THREAD_ID}"`,
+        `root_message_id: "${ROOT}"`,
+        'conversation_id:',
+        `  - ${CONV}`,
         `source: conversation ${CONV}`,
         'site: Mailbox',
         'subject: Contrat Contoso',
@@ -123,17 +137,6 @@ describe('writing one conversation as one file', () => {
     expect(written).toContain('library: Mailbox');
     expect(written).toContain('modified_by: Jane Doe');
     expect(written).toContain('last_modified: "2026-05-12T09:31:00Z"');
-  });
-
-  // Deliberately a refusal rather than a fallback. The root names a folder that is written once and
-  // never rebuilt, so filing it under a guess is permanent, where failing leaves the conversation
-  // unrecorded and the next run reads it again.
-  it('a conversation whose root cannot be read is left for the next run, not filed under a guess', async () => {
-    const conversations = { [CONV]: [message()] };
-    const { ok: succeeded, files } = await run({ reader: { conversations, failCalls: { messageHeaders: { kind: 'transient', message: 'throttled' } } } });
-
-    expect(succeeded).toBe(false);
-    expect([...files.written.keys()].filter((path) => path.includes('/threads/'))).toHaveLength(0);
   });
 
   it('a conversation whose body cannot be read is left for the next run rather than written half empty', async () => {
