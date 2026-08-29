@@ -1,6 +1,9 @@
 import type { MailFolder } from '../domain/mail-folder.ts';
 import { syncableFolders } from '../domain/mail-folder.ts';
+import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
+import { rootMessageId } from '../domain/root-message-id.ts';
+import { threadIdOf } from '../domain/thread-id.ts';
 import type { AttachmentRecord, LinkedRecord, MailboxState, ThreadRecord } from '../domain/mail-state.ts';
 import {
   MAILBOX_ID,
@@ -9,7 +12,9 @@ import {
   needsRender,
   parseMailboxState,
   serializeMailboxState,
+  threadOfConversation,
   withAttachment,
+  withConversation,
   withFolderCursor,
   withLinked,
   withPending,
@@ -121,20 +126,54 @@ const sweepFolder = async (deps: SyncMailboxDeps, state: MailboxState, folder: M
   return ok({ state: withFolderCursor(state, folder.id, folder.name, page.deltaLink), messages });
 };
 
-const conversationsOf = (
-  messages: ReadonlyArray<MailMessage>,
-  since: string | undefined
-): ReadonlyArray<{ readonly id: string; readonly messageIds: ReadonlyArray<string>; readonly last: string }> => {
-  const grouped = new Map<string, { messageIds: string[]; last: string }>();
+type Conversation = { readonly id: string; readonly messageIds: ReadonlyArray<string>; readonly last: string; readonly oldest: string };
+
+// Ordered rather than compared in place. `inReceivedOrder` already settles a tie by message id, so
+// the same sweep always names the same oldest message, and it is the ordering the thread's own
+// document is written in, so the two cannot disagree about which message came first.
+const conversationOf = (id: string, first: MailMessage, rest: ReadonlyArray<MailMessage>): Conversation => {
+  const ordered = inReceivedOrder([first, ...rest]);
+  return {
+    id,
+    messageIds: ordered.map((message) => message.id),
+    last: (ordered[ordered.length - 1] ?? first).received,
+    oldest: (ordered[0] ?? first).id,
+  };
+};
+
+const conversationsOf = (messages: ReadonlyArray<MailMessage>, since: string | undefined): ReadonlyArray<Conversation> => {
+  // The first message of each conversation is held apart from the rest so the group is non-empty by
+  // construction. Carrying a plain array instead would need a guard against emptiness that nothing
+  // can reach, and an unreachable guard is dead code wearing a safety belt.
+  const grouped = new Map<string, { readonly first: MailMessage; readonly rest: MailMessage[] }>();
   for (const message of messages) {
     if (message.conversationId.length === 0) continue;
     if (since !== undefined && message.received < since) continue;
-    const entry = grouped.get(message.conversationId) ?? { messageIds: [], last: '' };
-    entry.messageIds.push(message.id);
-    entry.last = entry.last > message.received ? entry.last : message.received;
-    grouped.set(message.conversationId, entry);
+    const held = grouped.get(message.conversationId);
+    if (held === undefined) grouped.set(message.conversationId, { first: message, rest: [] });
+    else held.rest.push(message);
   }
-  return [...grouped.entries()].map(([id, entry]) => ({ id, messageIds: entry.messageIds, last: entry.last })).sort((left, right) => left.last.localeCompare(right.last));
+  return [...grouped.entries()].map(([id, held]) => conversationOf(id, held.first, held.rest)).sort((left, right) => left.last.localeCompare(right.last));
+};
+
+// One header read per conversation the run has never resolved, and never again for that one. The
+// oldest message SWEPT is read rather than the thread's true oldest, and that is enough: every
+// reply carries the same root, so any held message answers alike. It must not be the newest, since
+// `list-conversation-messages` spans every folder and an unsent draft carries a newer time than any
+// real message and no `References` at all.
+const resolveThreads = async (deps: SyncMailboxDeps, state: MailboxState, conversations: ReadonlyArray<Conversation>): Promise<MailboxState> => {
+  let current = state;
+  for (const conversation of conversations) {
+    if (threadOfConversation(current, conversation.id) !== undefined) continue;
+    const headers = await deps.reader.messageHeaders(conversation.oldest);
+    if (!headers.ok) {
+      deps.logger.warn('thread.unresolved', { conversationId: conversation.id, cause: headers.error.kind });
+      continue;
+    }
+    const root = rootMessageId(headers.value, conversation.oldest);
+    current = withConversation(current, conversation.id, { threadId: threadIdOf(root), root });
+  }
+  return current;
 };
 
 // The cursors are saved once every folder has been swept, never one at a time: a cursor means "you
@@ -168,8 +207,9 @@ const finishQueue = async (
   const conversations = conversationsOf(messages, input.since);
   const dirty = conversations.filter((conversation) => needsRender(state, conversation.id, conversation.messageIds));
   deps.logger.info('mail.enumerated', { messages: messages.length, conversations: conversations.length, queued: dirty.length });
+  const resolved = await resolveThreads(deps, state, dirty);
   const queued = withPending(
-    state,
+    resolved,
     dirty.map((conversation) => conversation.id)
   );
   const saved = await save(deps.files, statePath, queued, input.dryRun);

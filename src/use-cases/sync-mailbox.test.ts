@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test';
 import type { MailFolder } from '../domain/mail-folder.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
-import { serializeMailboxState, emptyMailboxState, withThread } from '../domain/mail-state.ts';
+import { serializeMailboxState, emptyMailboxState, withConversation, withThread } from '../domain/mail-state.ts';
+import { threadIdOf } from '../domain/thread-id.ts';
 import { err, ok } from '../domain/result.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
@@ -105,6 +106,7 @@ const stateAfter = (
 ): {
   folders: Record<string, { name: string; deltaLink?: string }>;
   threads: Record<string, unknown>;
+  conversations: Record<string, { threadId: string; root: string }>;
   pending: string[];
   linked: Record<string, unknown>;
   attachments: Record<string, unknown>;
@@ -116,6 +118,49 @@ describe('syncing a mailbox into the knowledge base', () => {
 
     expect(summary.converted).toBe(1);
     expect(asked).toEqual(['conv-1']);
+  });
+
+  // The identity is settled before anything renders, and settled once. A conversation resolved by
+  // an earlier run is never asked again: re-reading it would let a message that arrived late, older
+  // than anything held, answer with a different root and rename a folder already on disk.
+  it('a conversation new to the run is asked once which thread it belongs to', async () => {
+    const headers = { m1: [{ name: 'References', value: '<root@example.com>' }] };
+    const { files, reader } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }], headers } });
+
+    expect(reader.calls.filter((call) => call.startsWith('headers:'))).toEqual(['headers:m1']);
+    expect(stateAfter(files).conversations['conv-1']).toEqual({ threadId: threadIdOf('<root@example.com>'), root: '<root@example.com>' });
+  });
+
+  // The oldest message of the sweep, not whichever arrived last in it. Reading the newest would
+  // reach an unsent draft, which carries a newer time than any real message and no References at all.
+  it('the oldest message of a conversation is the one asked, whatever order the sweep returned them in', async () => {
+    const swept = [message({ id: 'm2', received: '2026-05-13T10:00:00Z' }), message({ id: 'm1', received: '2026-05-12T09:31:00Z' })];
+    const { reader } = await run({ reader: { folders: [folder()], pages: [{ messages: swept, skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(reader.calls.filter((call) => call.startsWith('headers:'))).toEqual(['headers:m1']);
+  });
+
+  it('a conversation already resolved is never asked again', async () => {
+    const held = serializeMailboxState(withConversation(emptyMailboxState(), 'conv-1', { threadId: 'd9f4e0a3c1', root: '<root@example.com>' }));
+    const { reader } = await run({
+      files: { texts: { [STATE_PATH]: held } },
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] },
+    });
+
+    expect(reader.calls.filter((call) => call.startsWith('headers:'))).toEqual([]);
+  });
+
+  // Left unresolved rather than guessed at. The root names a folder written once and never rebuilt,
+  // so a guess is permanent where an absence is retried on the next sweep.
+  it('a conversation whose root cannot be read is left unresolved and said so', async () => {
+    const { files, logger } = await run({
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }], failCalls: { messageHeaders: { kind: 'transient', message: 'throttled' } } },
+    });
+
+    expect(stateAfter(files).conversations).toEqual({});
+    expect(logger.calls.filter((call) => call.event === 'thread.unresolved')).toEqual([
+      { level: 'warn', event: 'thread.unresolved', meta: { conversationId: 'conv-1', cause: 'transient' } },
+    ]);
   });
 
   it('the cursor of every folder is stored, so the next run reads only what changed', async () => {
