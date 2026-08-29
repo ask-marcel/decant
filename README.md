@@ -132,7 +132,7 @@ pdf: ./Roadmap.pptx.pdf
 | pdf | the original, plus markdown holding its text layer |
 | ics | one markdown record of the meeting: what it is called, when, where, who was asked |
 | eml | a folder: the message as markdown, and every file it carried taken out of the base64 it travelled in |
-| zip | a folder, one markdown file per document inside, and the archive itself |
+| zip | a manifest listing every member with the text read out of it, one markdown file per document inside, and the archive itself |
 | jpg, png, gif, webp, bmp, tiff, heic | the image, plus markdown holding the text read out of it |
 | svg | the file, plus a markdown note pointing at it |
 | anything else | left in SharePoint and named in `_sync-report.md` |
@@ -165,6 +165,13 @@ why it only ever decides and never answers.
 
 Each markdown companion records the model that read it, as `ocr: rapidocr (ch)`, `(japan)` or
 `(latin)`. An image holding no text at all is read only once, since there is no script to get right.
+What each image read to is kept under `kb/_meta/ocr`, addressed by the image's own bytes, so it is
+read once and never again: a picture renamed, moved, or arriving a second time as somebody else's
+attachment answers from the same entry, and a re-sync costs no interpreter starts at all. The
+language is part of the address, so forcing one never reads back what a previous run decided for
+itself. Only successful readings are kept, since a failure says something about the machine rather
+than about the image.
+
 Pass `--ocr-lang` with a RapidOCR language (`ch`, `en`, `japan`, `korean`, `cyrillic`, ...) to force
 one for the whole run and skip the deciding pass. A language RapidOCR does not have is refused
 straight away, with the accepted ones listed, rather than failing once per image.
@@ -231,7 +238,23 @@ kb/
                                     filed under the day the file itself last changed
     threads/2026-05-12-ca0df2c95a-contrat-contoso/    the day it began, its id, what it is about
       contrat-contoso.md                             the whole conversation, oldest message first
+      _attachments/Contrat.docx.md                   a card per file it carried, pointing at the store
+      _linked/Rapport.docx.md                        a card per document it pointed at
+    _meta/threads.jsonl                              one line per thread, for querying
+    _meta/attachments.jsonl                          one line per stored file, by content address
+    _meta/links.jsonl                                one line per document pointed at
 ```
+
+A thread folder reads as an inventory of what arrived with it, without holding any of it twice.
+The bytes and the text stay in the shared stores, addressed by content; each card beside the
+thread carries what belongs to the arrival rather than to the file, who sent it, when, and under
+which message, and points at the rest. A card is still written for a file that could not be
+fetched or a document that could not be pulled, since that card is the only record the thread
+depended on something the knowledge base does not hold.
+
+The three `_meta` files are rebuilt at the end of every run from everything the mailbox holds,
+not from what that run happened to write. Front matter inside markdown is only text, so these are
+what make "everything from Li Wei since June", or "every thread citing this deck", a query.
 
 One file per conversation, not per message, in a folder named once and never renamed: the day of
 its **first** message, a ten-character id, and a readable slug of its subject. A reply appends to
