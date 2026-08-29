@@ -1,3 +1,4 @@
+import { contentHash } from '../domain/content-hash.ts';
 import type { ReadingScript } from '../domain/ocr-language.ts';
 import { scriptOf } from '../domain/ocr-language.ts';
 import type { Result } from '../domain/result.ts';
@@ -12,10 +13,23 @@ export type ShellRun = { readonly exitCode: number; readonly stdout: string; rea
 
 export type Shell = (command: ReadonlyArray<string>) => Promise<ShellRun>;
 
+// Where readings are kept between runs. Injected rather than reached for directly, so what is
+// tested here is WHEN a reading is kept, not how the files are laid out.
+//
+// `digest` addresses the image by its bytes, which is what makes the cache survive a file being
+// renamed, moved, or arriving again as somebody else's attachment. It answers `undefined` for an
+// image it could not read, and the run then goes ahead uncached rather than failing over a cache.
+export type OcrCache = {
+  readonly digest: (path: string) => Promise<string | undefined>;
+  readonly load: (key: string) => Promise<OcrReading | undefined>;
+  readonly save: (key: string, reading: OcrReading) => Promise<void>;
+};
+
 export type RapidOptions = {
   readonly shell: Shell;
   readonly lang: string;
   readonly binary?: string;
+  readonly cache?: OcrCache;
 };
 
 type Model = { readonly lang: string; readonly version: string };
@@ -70,10 +84,29 @@ const reading = async (options: RapidOptions, path: string): Promise<Result<OcrR
   return readWith(options, path, FOR_SCRIPT[scriptOf(probe.value.text)]);
 };
 
+// The language is part of the key. An explicit `--ocr-lang japan` run must not read back what an
+// `auto` run decided, or a deliberate correction would answer with the mistake it was correcting.
+//
+// Only a success is kept. A failure says something about the machine, not about the image: python
+// missing, a model not downloaded, OCR turned off. Keeping one would answer every later run with
+// it, and the image would never be read at all.
+const cached = async (options: RapidOptions, path: string): Promise<Result<OcrReading, OcrError>> => {
+  const cache = options.cache;
+  if (cache === undefined) return reading(options, path);
+  const digest = await cache.digest(path);
+  if (digest === undefined) return reading(options, path);
+  const key = `${digest}-${options.lang}`;
+  const kept = await cache.load(key);
+  if (kept !== undefined) return ok(kept);
+  const read = await reading(options, path);
+  if (read.ok) await cache.save(key, read.value);
+  return read;
+};
+
 export const createRapidOcr = (options: RapidOptions): Ocr => ({
   read: async (path): Promise<Result<OcrReading, OcrError>> => {
     try {
-      return await reading(options, path);
+      return await cached(options, path);
     } catch (error) {
       return err({ kind: 'unavailable', message: formatError(error) });
     }
@@ -83,6 +116,31 @@ export const createRapidOcr = (options: RapidOptions): Ocr => ({
 // Chosen when the run turned OCR off (`--no-ocr`): every read reports "unavailable", so an image or
 // a scanned PDF falls back to its note and no `ocr:` line ever claims text was read.
 export const createNoOcr = (): Ocr => ({ read: async () => err({ kind: 'unavailable', message: 'ocr disabled' }) });
+
+const SHARD = 2;
+
+// Sharded two characters at a time, so a mailbox with tens of thousands of pictures never puts them
+// all in one directory, where listing it becomes the slow part of every later run.
+const cachePath = (root: string, key: string): string => `${root}/${key.slice(0, SHARD)}/${key.slice(SHARD, SHARD + SHARD)}/${key}.txt`;
+
+// The label is kept beside the text, on the first line. It is what the front matter reports as the
+// model that read the image, so a cache holding text alone would make a cached image claim no model
+// or, worse, one it was never read by.
+export const createFileOcrCache = (root: string): OcrCache => ({
+  digest: async (path) => {
+    const file = Bun.file(path);
+    return (await file.exists()) ? contentHash(await file.bytes()) : undefined;
+  },
+  load: async (key) => {
+    const file = Bun.file(cachePath(root, key));
+    if (!(await file.exists())) return undefined;
+    const [label, ...rest] = (await file.text()).split('\n');
+    return label === undefined ? undefined : { label, text: rest.join('\n') };
+  },
+  save: async (key, reading) => {
+    await Bun.write(cachePath(root, key), `${reading.label}\n${reading.text}`);
+  },
+});
 
 export const createBunShell = (): Shell => async (command) => {
   const [binary, ...args] = command;

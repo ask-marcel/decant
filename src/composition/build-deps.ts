@@ -6,7 +6,7 @@ import { createDriveReaderFromApi, createMarcelCall } from '../infra/drive-reade
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
 import { createWinstonLogger } from '../infra/logger.ts';
-import { createBunShell, createNoOcr, createRapidOcr } from '../infra/ocr-rapid.ts';
+import { createBunShell, createFileOcrCache, createNoOcr, createRapidOcr } from '../infra/ocr-rapid.ts';
 import { createStderrProgress, createStderrStatus } from '../infra/progress-bar.ts';
 import { createStdinPrompt } from '../infra/prompt-stdin.ts';
 import { createConvertAttachment } from '../use-cases/convert-attachment.ts';
@@ -90,7 +90,11 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const api = realApi(config.interactive);
   const reader = overrides.reader ?? createDriveReaderFromApi(api);
   const mail = overrides.mail ?? createMailReaderFromCall(createMarcelCall(api));
-  const ocr = overrides.ocr ?? (config.ocr ? createRapidOcr({ shell: createBunShell(), lang: config.ocrLang }) : createNoOcr());
+  // Shared across every source, not filed under the mailbox: the same picture reaches the knowledge
+  // base as a mail attachment and as a file in a library, and reading it twice is the thing this
+  // exists to stop.
+  const ocrCache = createFileOcrCache(`${config.kbRoot}/_meta/ocr`);
+  const ocr = overrides.ocr ?? (config.ocr ? createRapidOcr({ shell: createBunShell(), lang: config.ocrLang, cache: ocrCache }) : createNoOcr());
   const prompt = overrides.prompt ?? createStdinPrompt(() => console);
   const progress = overrides.progress ?? createStderrProgress();
   const convertFile = createConvertFile({ reader, files, ocr, clock, logger, progress });

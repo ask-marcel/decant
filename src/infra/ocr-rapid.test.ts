@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import { createNoOcr, createRapidOcr } from './ocr-rapid.ts';
-import type { ShellRun } from './ocr-rapid.ts';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createFileOcrCache, createNoOcr, createRapidOcr } from './ocr-rapid.ts';
+import type { OcrCache, ShellRun } from './ocr-rapid.ts';
+import type { OcrReading } from '../use-cases/ports/ocr.ts';
 
 // Trimmed from a real `en_PP-OCRv4` run against a live image this session: to_json() gives one
 // clean line of [{box, txt, score}], nothing else — RapidOCR's own logging goes to stderr.
@@ -189,5 +193,118 @@ describe('a run with reading turned off', () => {
     const read = await createNoOcr().read('kb/Site/Documents/Scan.pdf');
 
     expect(read).toEqual({ ok: false, error: { kind: 'unavailable', message: 'ocr disabled' } });
+  });
+});
+
+// A cache kept in memory rather than on disk: what is being tested is when the adapter reads and
+// writes one, not how the files are laid out.
+const cacheFake = (): { readonly cache: OcrCache; readonly held: Map<string, OcrReading>; readonly asked: string[] } => {
+  const held = new Map<string, OcrReading>();
+  const asked: string[] = [];
+  return {
+    held,
+    asked,
+    cache: {
+      digest: async (path) => `hash-of-${path}`,
+      load: async (key) => {
+        asked.push(key);
+        return held.get(key);
+      },
+      save: async (key, reading) => {
+        held.set(key, reading);
+      },
+    },
+  };
+};
+
+describe('keeping what OCR read, so an image is only read once', () => {
+  it('an image read before answers from what was kept, without spawning anything', async () => {
+    const { cache, held } = cacheFake();
+    held.set('hash-of-a.jpg-en', { text: 'kept', label: 'rapidocr (en)' });
+    const capture: string[][] = [];
+    const ocr = createRapidOcr({ lang: 'en', cache, shell: async (command) => (capture.push([...command]), { exitCode: 0, stdout: REAL_OUTPUT, stderr: '' }) });
+
+    expect(await ocr.read('a.jpg')).toEqual({ ok: true, value: { text: 'kept', label: 'rapidocr (en)' } });
+    expect(capture).toEqual([]);
+  });
+
+  it('an image read for the first time is kept, so the next run does not read it again', async () => {
+    const { cache, held } = cacheFake();
+    const ocr = createRapidOcr({ lang: 'en', cache, shell: async () => ({ exitCode: 0, stdout: REAL_OUTPUT, stderr: '' }) });
+
+    await ocr.read('a.jpg');
+
+    expect(held.get('hash-of-a.jpg-en')?.text).toContain('WEHAVELIFTOFF!');
+  });
+
+  // The language is part of the key. An explicit `--ocr-lang japan` run must not read back what an
+  // `auto` run decided, or a deliberate correction would answer with the mistake it was correcting.
+  it('a reading kept under one language is not answered to a run asking for another', async () => {
+    const { cache, held } = cacheFake();
+    held.set('hash-of-a.jpg-en', { text: 'english', label: 'rapidocr (en)' });
+    const ocr = createRapidOcr({ lang: 'japan', cache, shell: async () => ({ exitCode: 0, stdout: REAL_OUTPUT, stderr: '' }) });
+
+    expect((await ocr.read('a.jpg')).ok && (await ocr.read('a.jpg'))).not.toMatchObject({ value: { text: 'english' } });
+  });
+
+  // A failure is a state of the machine, not of the image: python missing, a model not downloaded,
+  // `--no-ocr`. Keeping one would answer every later run with it, and the image would never be read.
+  it('a read that failed is not kept, so the next run tries the image again', async () => {
+    const { cache, held } = cacheFake();
+    const ocr = createRapidOcr({ lang: 'en', cache, shell: async () => ({ exitCode: 1, stdout: '', stderr: 'no model' }) });
+
+    expect((await ocr.read('a.jpg')).ok).toBe(false);
+    expect(held.size).toBe(0);
+  });
+
+  it('an image whose bytes cannot be read is still OCRd, just not kept', async () => {
+    const noDigest: OcrCache = { digest: async () => undefined, load: async () => undefined, save: async () => undefined };
+    const ocr = createRapidOcr({ lang: 'en', cache: noDigest, shell: async () => ({ exitCode: 0, stdout: REAL_OUTPUT, stderr: '' }) });
+
+    expect((await ocr.read('a.jpg')).ok).toBe(true);
+  });
+
+  it('a run with no cache at all reads the image, as it always did', async () => {
+    expect((await readerFor({ stdout: REAL_OUTPUT }).read('a.jpg')).ok).toBe(true);
+  });
+});
+
+describe('keeping readings on disk between runs', () => {
+  const scratch = (): string => mkdtempSync(join(tmpdir(), 'ocr-cache-'));
+
+  it('a reading written is read back whole, with the model that produced it', async () => {
+    const root = scratch();
+    const cache = createFileOcrCache(root);
+
+    await cache.save('abcdef01-en', { text: 'first line\nsecond line', label: 'rapidocr (en)' });
+
+    expect(await cache.load('abcdef01-en')).toEqual({ text: 'first line\nsecond line', label: 'rapidocr (en)' });
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('an image nothing has read yet has nothing kept for it', async () => {
+    const root = scratch();
+
+    expect(await createFileOcrCache(root).load('nothing-here-en')).toBeUndefined();
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  // Addressed by its bytes, so a picture renamed, moved, or arriving again as somebody else's
+  // attachment answers from the same entry.
+  it('two files holding the same bytes address to the same entry, whatever they are called', async () => {
+    const root = scratch();
+    const cache = createFileOcrCache(root);
+    writeFileSync(join(root, 'one.jpg'), 'same bytes');
+    writeFileSync(join(root, 'two.jpg'), 'same bytes');
+
+    expect(await cache.digest(join(root, 'one.jpg'))).toBe(await cache.digest(join(root, 'two.jpg')));
+    rmSync(root, { recursive: true, force: true });
+  });
+
+  it('a file that is not there has no address, so the run reads it uncached rather than failing', async () => {
+    const root = scratch();
+
+    expect(await createFileOcrCache(root).digest(join(root, 'missing.jpg'))).toBeUndefined();
+    rmSync(root, { recursive: true, force: true });
   });
 });
