@@ -634,6 +634,55 @@ describe('rendering several conversations at once', () => {
     expect([...asked].sort((left, right) => left.localeCompare(right))).toEqual(['conv-a', 'conv-b']);
   });
 
+  // Built from the state the run folded, not from what it happened to render. An ordinary run
+  // touches a handful of conversations out of thousands, and an index built from those would claim
+  // the mailbox holds a handful of threads, dropping every other line on every incremental run.
+  it('the index names every thread the mailbox holds, not only the ones this run wrote', async () => {
+    const already = withThread(withConversation(emptyMailboxState(), 'conv-old', { threadId: 'thread-old', root: '<old@example.com>' }), 'thread-old', {
+      folder: '2024-01-02-thread-old-earlier',
+      conversationIds: ['conv-old'],
+      file: 'threads/2024-01-02-thread-old-earlier/earlier.md',
+      messageIds: ['m0'],
+      lastMessage: '2024-01-02T00:00:00Z',
+      attachments: [],
+      inlineImages: [],
+    });
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: serializeMailboxState(already) } },
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] },
+    });
+    const index = files.written.get('kb/Mailbox/_meta/threads.jsonl') ?? '';
+
+    expect(index.split('\n').filter((line) => line.length > 0)).toHaveLength(2);
+    expect(index).toContain('"thread_id":"thread-old"');
+  });
+
+  it('a run that wrote nothing still leaves an index behind, saying the mailbox holds nothing', async () => {
+    const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(files.written.get('kb/Mailbox/_meta/threads.jsonl')).toBe('');
+    expect(files.written.has('kb/Mailbox/_meta/attachments.jsonl')).toBe(true);
+    expect(files.written.has('kb/Mailbox/_meta/links.jsonl')).toBe(true);
+  });
+
+  it('an index that cannot be written is said so and leaves the run standing', async () => {
+    const { ok: succeeded, logger } = await run({
+      files: { failWritesMatching: '_meta/links.jsonl' },
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] },
+    });
+
+    expect(succeeded).toBe(true);
+    expect(logger.calls.filter((call) => call.event === 'index.failed')).toEqual([
+      { level: 'warn', event: 'index.failed', meta: { path: 'kb/Mailbox/_meta/links.jsonl', cause: 'write-failed' } },
+    ]);
+  });
+
+  it('a dry run leaves no index behind, having written nothing to index', async () => {
+    const { files } = await run({ dryRun: true, reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect([...files.written.keys()].filter((path) => path.includes('_meta/'))).toEqual([]);
+  });
+
   it('a window of conversations saves the state once, not once per conversation', async () => {
     const wide = await run({ reader: threeConversations, concurrency: 3 });
     const narrow = await run({ reader: threeConversations, concurrency: 1 });

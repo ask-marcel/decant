@@ -2,6 +2,7 @@ import type { MailFolder } from '../domain/mail-folder.ts';
 import { syncableFolders } from '../domain/mail-folder.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
+import { attachmentRows, linkRows, renderJsonl, threadRows } from '../domain/mail-meta.ts';
 import { rootMessageId } from '../domain/root-message-id.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import type { AttachmentRecord, LinkedRecord, MailboxState, ThreadRecord } from '../domain/mail-state.ts';
@@ -65,6 +66,26 @@ const EMPTY: RunSummary = { converted: 0, moved: 0, archived: 0, skipped: 0, fai
 const NO_NOTES: RunNotes = { skipped: [], failed: [], archived: [] };
 
 const mailboxRoot = (kbRoot: string): string => `${kbRoot}/Mailbox`;
+
+// Written from the state the run folded, not from what it happened to render. An ordinary run
+// touches three conversations out of thousands, so an index built from those would say the mailbox
+// holds three threads and drop every other line on every incremental run.
+//
+// A failed write is logged rather than fatal, for the same reason the report's is: the documents
+// themselves already landed, and an index can be rebuilt from them.
+const writeIndexes = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState): Promise<void> => {
+  if (input.dryRun) return;
+  const root = `${mailboxRoot(deps.kbRoot)}/_meta`;
+  const files = [
+    { path: `${root}/threads.jsonl`, body: renderJsonl(threadRows(state)) },
+    { path: `${root}/attachments.jsonl`, body: renderJsonl(attachmentRows(state)) },
+    { path: `${root}/links.jsonl`, body: renderJsonl(linkRows(state)) },
+  ];
+  for (const file of files) {
+    const written = await deps.files.writeText(file.path, file.body);
+    if (!written.ok) deps.logger.warn('index.failed', { path: file.path, cause: written.error.kind });
+  }
+};
 
 const statePathOf = (kbRoot: string): string => `${mailboxRoot(kbRoot)}/${MAIL_STATE_FILE}`;
 
@@ -325,6 +346,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
   const finished = { ...current, lastRun: deps.clock.nowIso() };
   const saved = await save(deps.files, statePath, finished, input.dryRun);
   if (!saved.ok) return saved;
+  await writeIndexes(deps, input, finished);
   await writeReport(deps, input, mailboxRoot(deps.kbRoot), MAILBOX_NAME, summary, notes);
   return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary, notes });
 };
