@@ -427,3 +427,35 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   message's headers (~4 KB) where the conversation call returns every message's (~120 KB on a
   30-message thread). A capability being available is not the same as it being the cheaper option;
   check which call is actually being made at that point in the run before folding anything into it.
+
+- [decision] Shared mailboxes are not reachable through this CLI and the sync will not chase them.
+  The `/users/{id}/...` commands exist but need the delegated `Mail.Read.Shared` scope, which
+  neither token the CLI can obtain carries, across two tenants: the ceiling is Microsoft's app
+  registration, not something a tenant admin can grant. Outlook on the Web is not a way round it
+  either, since the token holding the shared-mail scope is bound to an Exchange audience the CLI
+  cannot call. Treat those commands as present but inert; they answer `ErrorAccessDenied`.
+
+- [decision] Group mailboxes are the reachable alternative and are still blocked, on post bodies.
+  `list-group-conversations` works today on `Group.Read.All`, verified against MOOV Leadership Team,
+  and returns topic, senders, `hasAttachments` and a PREVIEW truncated mid-word. This sync is bodies
+  from end to end: a thread document IS one rendered body per message, and cards, indexes and the
+  store all hang off messages already rendered. Listing without bodies would give subject lines with
+  nothing under them. Revisit when a command returns post bodies, not before.
+
+- [gotcha] `list-groups` returns every group in the TENANT, not the ones the signed-in user belongs
+  to, so the obvious first call hands back groups that then answer `ErrorAccessDenied` on any read.
+  That reads like a permissions bug and is not one. `list-joined-teams` gives the groups the user is
+  actually in: three here, against a tenant list still paging after ten.
+
+- [gotcha] The tenant's zone and the machine's diverge the moment an account changes, and the folder
+  date is frozen at creation. The first account was a China tenant read from a Shanghai machine, so
+  the machine default was accidentally right; the second is a Paris tenant (`Romance Standard Time`)
+  read from the same machine, where the default would have filed every thread under a Shanghai day.
+  `my-quick-context` reports the tenant zone in Windows spelling, which `--timezone` refuses, so the
+  mapping is a human step: Romance Standard Time is `Europe/Paris`.
+
+- [gotcha] Concurrency 4 is proven clean against real mail: 169 threads, 169 documents, no thread id
+  in two folders. The race the sequential folder resolution guards against did not occur, and the
+  test needed threads being CREATED, since a re-run over threads already written writes nothing and
+  exercises no parallel folder creation at all. Run it into a scratch `KB_ROOT` with the OCR cache
+  symlinked in, which keeps it off the real vault and off a cold cache.
