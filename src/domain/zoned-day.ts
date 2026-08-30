@@ -8,10 +8,17 @@
 // and a parser can both take it by position, whether or not the message carried a usable time.
 export const UNDATED_DAY = '0000-00-00';
 
+// The same for a heading, which carries the hour as well. Fixed width for the same reason.
+export const UNDATED_TIME = '0000-00-00 00:00';
+
 // `en-CA` is the locale that formats as YYYY-MM-DD, which is the shape the folder name wants.
 const AS_DAY = 'en-CA';
 
 const PARTS = { year: 'numeric', month: '2-digit', day: '2-digit' } as const;
+
+// `hourCycle: 'h23'` because `en-CA` otherwise writes midnight as 24:00, which reads as a day that
+// does not exist and sorts after every other hour of it.
+const WITH_TIME = { ...PARTS, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } as const;
 
 // Built once. `Intl.supportedValuesOf` allocates a fresh array of some four hundred names on every
 // call, and this is asked per message.
@@ -30,4 +37,14 @@ export const dayIn = (instantIso: string, zone: string): string => {
   const at = Date.parse(instantIso);
   if (Number.isNaN(at)) return UNDATED_DAY;
   return new Intl.DateTimeFormat(AS_DAY, { ...PARTS, timeZone: isKnownZone(zone) ? zone : 'UTC' }).format(at);
+};
+
+// The time a message reads as having arrived, told where the mailbox lives. A heading sliced off the
+// raw UTC string disagrees with the folder the thread sits in, which IS counted in the zone, and
+// with the clock the reader has their mail open on. `en-CA` renders as `YYYY-MM-DD, HH:mm`; the
+// comma goes so the heading reads as one stamp.
+export const timeIn = (instantIso: string, zone: string): string => {
+  const at = Date.parse(instantIso);
+  if (Number.isNaN(at)) return UNDATED_TIME;
+  return new Intl.DateTimeFormat(AS_DAY, { ...WITH_TIME, timeZone: isKnownZone(zone) ? zone : 'UTC' }).format(at).replace(', ', ' ');
 };

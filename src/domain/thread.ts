@@ -1,5 +1,6 @@
 import type { Correspondent, MailMessage } from './mail-message.ts';
 import { bareSubject } from './thread-subject.ts';
+import { timeIn } from './zoned-day.ts';
 import { inReceivedOrder } from './mail-message.ts';
 
 export type ThreadPart = {
@@ -25,7 +26,12 @@ const nameOf = (who: Correspondent | undefined): string => who?.name ?? 'Unknown
 
 const recipients = (message: MailMessage): string => (message.to.length === 0 ? '' : ` to ${message.to.map((who) => who.name).join(', ')}`);
 
-const heading = (part: ThreadPart): string => `## ${part.message.received.slice(0, 16).replace('T', ' ')} — ${nameOf(part.message.from)}${recipients(part.message)}`;
+// Told where the mailbox lives, not sliced off the raw UTC string. The folder the thread sits in is
+// already counted in that zone, so a UTC heading disagreed with its own path by the offset, and
+// with the clock the reader has their mail open on. Bare, with no zone marker, because it is the
+// human-facing stamp and matches what Outlook shows; the front matter keeps UTC with its `Z` for
+// anything reading the file rather than the reader.
+const heading = (part: ThreadPart, timezone: string): string => `## ${timeIn(part.message.received, timezone)} — ${nameOf(part.message.from)}${recipients(part.message)}`;
 
 // The converter opens every message with a `**Subject:** / **From:** / **To:** / **Date:**` block.
 // The section heading above already says who wrote to whom and when, and the subject is the title
@@ -67,14 +73,14 @@ const bodyOf = (part: ThreadPart): string => {
   return trimmed.length === 0 ? '_This message had no readable body._' : trimmed;
 };
 
-const section = (part: ThreadPart): string => `${heading(part)}\n\n${bodyOf(part)}`;
+const section = (part: ThreadPart, timezone: string): string => `${heading(part, timezone)}\n\n${bodyOf(part)}`;
 
 // One file holds the whole conversation, oldest message first, each under its own heading. Quoted
 // reply chains are already stripped upstream, so nothing here repeats what an earlier section said.
-export const renderThread = (thread: Thread): string => {
+export const renderThread = (thread: Thread, timezone: string): string => {
   const order = new Map(inReceivedOrder(thread.parts.map((part) => part.message)).map((message, index) => [message.id, index]));
   const ordered = [...thread.parts].sort((left, right) => (order.get(left.message.id) ?? 0) - (order.get(right.message.id) ?? 0));
-  return [`# ${threadTitle(thread.subject)}`, ...ordered.map(section)].join('\n\n');
+  return [`# ${threadTitle(thread.subject)}`, ...ordered.map((part) => section(part, timezone))].join('\n\n');
 };
 
 export const participantsOf = (parts: ReadonlyArray<ThreadPart>): ReadonlyArray<string> => {

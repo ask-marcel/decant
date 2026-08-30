@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { UNDATED_DAY, dayIn, isKnownZone } from './zoned-day.ts';
+import { UNDATED_DAY, UNDATED_TIME, dayIn, isKnownZone, timeIn } from './zoned-day.ts';
 
 describe('counting the day a message arrived on', () => {
   it('a message that arrived late in Shanghai is filed under the day it was there, not the day it was in UTC', () => {
@@ -18,6 +18,28 @@ describe('counting the day a message arrived on', () => {
 
   it('a zone that slipped past the check is counted in UTC rather than stopping the run', () => {
     expect(dayIn('2026-06-10T16:40:00Z', 'Nowhere/Land')).toBe('2026-06-10');
+  });
+});
+
+// The heading a reader sees above a message, which must agree with the clock they read their mail
+// on. The folder date was already counted where the mailbox lives; a heading sliced off the raw UTC
+// string disagreed with it by the offset, and with Outlook by the same.
+describe('telling the time a message arrived', () => {
+  it('a message reads at the time it arrived where the mailbox lives', () => {
+    expect(timeIn('2026-08-12T10:54:48Z', 'Europe/Paris')).toBe('2026-08-12 12:54');
+    expect(timeIn('2026-08-12T10:54:48Z', 'Asia/Shanghai')).toBe('2026-08-12 18:54');
+  });
+
+  it('a message that arrived late reads under the day it was there, hour and all', () => {
+    expect(timeIn('2026-06-10T16:40:00Z', 'Asia/Shanghai')).toBe('2026-06-11 00:40');
+  });
+
+  it('a timestamp that is not a time at all still reads as something rather than stopping the run', () => {
+    expect(timeIn('', 'Europe/Paris')).toBe(UNDATED_TIME);
+  });
+
+  it('a zone that slipped past the check is told in UTC rather than stopping the run', () => {
+    expect(timeIn('2026-08-12T10:54:48Z', 'Nowhere/Land')).toBe('2026-08-12 10:54');
   });
 });
 
