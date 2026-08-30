@@ -69,7 +69,7 @@ describe('reporting what did not reach the knowledge base', () => {
   it('a document of a type this tool does not read is named in the report', async () => {
     const { files } = await run({ reader: { pages: [{ items: [item({ name: 'Demo.mp4', path: 'Films/Demo.mp4' })], skipped: 0, deltaLink: 'c1' }] } });
 
-    expect(files.written.get(REPORT_PATH)).toContain('- Films/Demo.mp4: a kind of file this tool does not read');
+    expect(files.written.get(REPORT_PATH)).toContain('- Films/Demo.mp4: a .mp4 file, which this tool does not read');
   });
 
   it('a document above the size cap is named with the cap it exceeded', async () => {

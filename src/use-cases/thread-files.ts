@@ -149,7 +149,7 @@ const placeAttachment = async (
   const storedAs = inline ? disambiguateSegment(attachment.name, hash) : asName;
   const rendered = address.value.rendered;
   const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: place.maxBytes, asName: storedAs, rendered, textOnly: inline });
-  if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, place.maxBytes) } };
+  if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, place.maxBytes, attachment.name) } };
   if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: attachment.name, reason: outcome.reason } };
   const record = { name: storedAs, paths: outcome.outputs, primary: outcome.primary, media: outcome.media, text: outcome.text };
   if (inline) shared[hash] = record;

@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { UNSUPPORTED_REASON } from './report.ts';
+import { unsupportedReason } from './report.ts';
 import type { CarriedFile } from './mail-body.ts';
 import { renderAttachmentList, rewriteMessageBody, withoutAttachmentList } from './mail-body.ts';
 
 // The words the vault uses to say a block was read off a picture rather than typed by a person.
 // Pinned here because saying it in words is the point: a `>` block alone reads as quoted mail.
-const NOTE = '_Text read out of the picture by OCR, so it can be wrong. Open the image above to check._';
+const NOTE = '_Text below was read out of the picture by OCR, so it can be wrong. Open the image above to check._';
 
 // A message body as the library hands it back: its own closing list of what the message carried,
 // naming a raw Graph id and telling the reader to fetch bytes that are already on disk by then.
@@ -49,9 +49,9 @@ describe('naming what a message carried, so a reader opens it where it lies', ()
   });
 
   it('a file nothing was written for keeps its name and says why', () => {
-    const rendered = renderAttachmentList([{ name: 'Demo.mp4', size: 12_900_000, contentType: 'video/mp4', note: UNSUPPORTED_REASON }]);
+    const rendered = renderAttachmentList([{ name: 'Demo.mp4', size: 12_900_000, contentType: 'video/mp4', note: unsupportedReason('Demo.mp4') }]);
 
-    expect(rendered).toBe('**Attachments:**\n- Demo.mp4 (12.3 MB, video/mp4), a kind of file this tool does not read');
+    expect(rendered).toBe('**Attachments:**\n- Demo.mp4 (12.3 MB, video/mp4), a .mp4 file, which this tool does not read');
   });
 
   it('a small file is measured in bytes rather than a rounded nothing', () => {

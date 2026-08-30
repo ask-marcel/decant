@@ -72,7 +72,7 @@ const ROUTE_BY_EXTENSION: Readonly<Partial<Record<string, ConversionRoute>>> = {
 // Outlook does not clean an attachment name the way SharePoint does, so `Budget.xlsx ` arrives with
 // its space and would name a kind nothing handles. Trimmed here rather than at every call, the way
 // `safeSegment` already trims the name it writes to disk.
-const extensionOf = (name: string): string | undefined => {
+export const extensionOf = (name: string): string | undefined => {
   const lastDot = name.lastIndexOf('.');
   const found = lastDot <= 0 ? '' : name.slice(lastDot + 1).trim();
   return found.length === 0 ? undefined : found.toLowerCase();

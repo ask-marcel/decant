@@ -82,6 +82,6 @@ describe('what a message body says about the files it carried', () => {
     const attachments = { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 4096, isInline: false }] };
     const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
 
-    expect(files.written.get(THREAD_FILE)).toContain('- [Demo.mp4](_attachments/Demo.mp4.md) (4.0 KB, video/mp4), a kind of file this tool does not read');
+    expect(files.written.get(THREAD_FILE)).toContain('- [Demo.mp4](_attachments/Demo.mp4.md) (4.0 KB, video/mp4), a .mp4 file, which this tool does not read');
   });
 });

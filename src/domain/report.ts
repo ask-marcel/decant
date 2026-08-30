@@ -1,3 +1,5 @@
+import { extensionOf } from './conversion-plan.ts';
+
 export type ReportEntry = {
   readonly path: string;
   readonly reason: string;
@@ -17,7 +19,16 @@ export type ReportRun = ReportNotes & {
   readonly counts: string;
 };
 
-export const UNSUPPORTED_REASON = 'a kind of file this tool does not read';
+// Two different things were both reported as "a kind of file this tool does not read", and neither
+// told a reader what to do about it. A sharing notification carries icons named by a machine id with
+// no extension at all, so nothing could work out what they were; a recording is a kind we know and
+// do not convert. The first is not worth chasing, the second might be, and the line has to say which.
+export const unnamedTypeReason = (name: string): string => `no extension on "${name}", so nothing could tell what kind of file it is`;
+
+export const unsupportedReason = (name: string): string => {
+  const extension = extensionOf(name);
+  return extension === undefined ? unnamedTypeReason(name) : `a .${extension} file, which this tool does not read`;
+};
 
 export const PROTECTED_REASON = 'locked with a password, so nothing could be read from it';
 
@@ -27,9 +38,9 @@ export const tooLargeReason = (maxBytes: number): string => `larger than the ${M
 // size; the third only once the source refused to open what it sent.
 export type SkipReason = 'unsupported-type' | 'too-large' | 'protected';
 
-export const skipReason = (reason: SkipReason, maxBytes: number): string => {
+export const skipReason = (reason: SkipReason, maxBytes: number, name: string): string => {
   if (reason === 'too-large') return tooLargeReason(maxBytes);
-  return reason === 'protected' ? PROTECTED_REASON : UNSUPPORTED_REASON;
+  return reason === 'protected' ? PROTECTED_REASON : unsupportedReason(name);
 };
 
 export const reportHeading = (source: string): string => `# What did not reach the knowledge base: ${source}`;

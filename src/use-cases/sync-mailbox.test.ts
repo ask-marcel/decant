@@ -398,8 +398,8 @@ describe('what the mailbox sync reports', () => {
           linked: {},
           attachments: {},
           filesSkipped: [
-            { path: 'a.mp4', reason: 'a kind of file this tool does not read' },
-            { path: 'b.mov', reason: 'a kind of file this tool does not read' },
+            { path: 'a.mp4', reason: 'a .mp4 file, which this tool does not read' },
+            { path: 'b.mov', reason: 'a .mov file, which this tool does not read' },
           ],
           filesFailed: [{ path: 'c.docx', reason: 'locked' }],
         },
@@ -475,7 +475,7 @@ describe('reporting what did not reach the knowledge base', () => {
           record: { folder: '2026-05-12-a3f9c1e0d2-thread', conversationIds: ['conv-1'], file: 'f.md', messageIds: ['m1'], lastMessage: 'x', attachments: [], inlineImages: [] },
           linked: {},
           attachments: {},
-          filesSkipped: [{ path: 'Demo.mp4', reason: 'a kind of file this tool does not read' }],
+          filesSkipped: [{ path: 'Demo.mp4', reason: 'a .mp4 file, which this tool does not read' }],
           filesFailed: [{ path: 'Contrat.docx', reason: 'permanent: cannot convert' }],
         },
       });
@@ -483,7 +483,7 @@ describe('reporting what did not reach the knowledge base', () => {
     const report = files.written.get(REPORT_PATH) ?? '';
 
     expect(report).toContain('# What did not reach the knowledge base: Mailbox');
-    expect(report).toContain('- Demo.mp4: a kind of file this tool does not read');
+    expect(report).toContain('- Demo.mp4: a .mp4 file, which this tool does not read');
     expect(report).toContain('- Contrat.docx: permanent: cannot convert');
   });
 

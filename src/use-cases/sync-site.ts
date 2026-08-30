@@ -286,7 +286,7 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
     await archiveSuperseded(deps, input, drive, driveState.items[item.id]?.outputs ?? [], outputs);
     return { update, counted: { converted: 1 } };
   }
-  return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason: skipReason(outcome.reason, input.maxBytes) }] } };
+  return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason: skipReason(outcome.reason, input.maxBytes, item.name) }] } };
 };
 
 const moveOutputs = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, item: DriveItem, from: string, outputs: ReadonlyArray<string>): Promise<WorkOutcome> => {

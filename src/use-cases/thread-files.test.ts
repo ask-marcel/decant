@@ -224,7 +224,7 @@ describe('keeping what a conversation carried', () => {
     const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 10, isInline: false }] } };
     const { outcome } = await run({ reader });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Demo.mp4`, reason: 'a kind of file this tool does not read' }]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Demo.mp4`, reason: 'a .mp4 file, which this tool does not read' }]);
   });
 
   it('an attachment above the size cap says so, with the cap it exceeded', async () => {
