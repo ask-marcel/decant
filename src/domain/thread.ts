@@ -40,8 +40,30 @@ export const withoutMailHeaders = (body: string): string => {
   return start < 0 ? '' : lines.slice(start).join('\n');
 };
 
+// What `convert-mail-to-markdown` leaves standing where it dropped a quoted chain. It is a note to
+// whoever ran the converter, not part of the message, and it repeats once per reply down a long
+// thread. The third literal from the library that domain code leans on, after `**Attachments:**`
+// and `[inline image: `; a reword upstream costs this cleanup and never the body itself.
+//
+// A whole line at a time, and only a line that IS the note. Taking the note alone would leave the
+// `>` behind when the converter has quoted its own note inside a forward, which reads as a message
+// somebody sent empty; and matching the phrase anywhere would eat a sentence about quoted chains.
+const QUOTED_MARKER_LINE = /^[>\s]*_?\\?\[Quoted reply chain removed\b.*$/;
+
+// Taking a line out leaves the blank lines that surrounded it next to each other, so a paragraph
+// break becomes a gap. Runs are closed back up to one blank line.
+const WIDENED_GAP = /\n{3,}/g;
+
+export const withoutQuotedMarker = (body: string): string =>
+  body
+    .split('\n')
+    .filter((line) => !QUOTED_MARKER_LINE.test(line))
+    .join('\n')
+    .replace(WIDENED_GAP, '\n\n')
+    .trim();
+
 const bodyOf = (part: ThreadPart): string => {
-  const trimmed = withoutMailHeaders(part.body).trim();
+  const trimmed = withoutQuotedMarker(withoutMailHeaders(part.body)).trim();
   return trimmed.length === 0 ? '_This message had no readable body._' : trimmed;
 };
 

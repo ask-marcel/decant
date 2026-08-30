@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { MailMessage } from './mail-message.ts';
-import { participantsOf, renderThread, threadTitle, withoutMailHeaders } from './thread.ts';
+import { participantsOf, renderThread, threadTitle, withoutMailHeaders, withoutQuotedMarker } from './thread.ts';
 
 const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   id: 'm1',
@@ -48,6 +48,35 @@ describe('reading the subject a thread is known by', () => {
   it('a thread with no subject at all still reads as having one', () => {
     expect(threadTitle('RE:')).toBe('No subject');
     expect(threadTitle('   ')).toBe('No subject');
+  });
+});
+
+// The third string literal from `ask-marcel-office-cli` that domain code depends on, after
+// `**Attachments:**` and `[inline image: `. A reword upstream costs this cleanup and never the body.
+describe('dropping what the converter leaves behind', () => {
+  const MARKER = '_\\[Quoted reply chain removed — pass --keep-quoted true to include it\\]_';
+
+  it('the note left where a quoted chain was is dropped', () => {
+    expect(withoutQuotedMarker(`Thanks.\n\n${MARKER}`)).toBe('Thanks.');
+  });
+
+  // Inside a forward the converter quotes its own note, and taking the note alone would leave an
+  // empty blockquote behind, which reads as a message someone sent with nothing in it.
+  it('the same note inside a forwarded block goes with its quote marker, leaving no empty quote', () => {
+    expect(withoutQuotedMarker(`Fwd:\n\n> ${MARKER}`)).toBe('Fwd:');
+  });
+
+  it('a note repeated down a long chain is dropped every time it appears', () => {
+    expect(withoutQuotedMarker(`One.\n\n${MARKER}\n\nTwo.\n\n${MARKER}`)).toBe('One.\n\nTwo.');
+  });
+
+  // Only a line that IS the note, never a line that talks about one.
+  it('a message discussing a quoted reply chain keeps its words', () => {
+    expect(withoutQuotedMarker('I removed the quoted reply chain by hand.')).toBe('I removed the quoted reply chain by hand.');
+  });
+
+  it('a body carrying nothing else reads as having no body at all', () => {
+    expect(renderThread({ subject: 'X', parts: [{ message: message(), body: MARKER }] })).toContain('_This message had no readable body._');
   });
 });
 
