@@ -522,3 +522,22 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   across four changes, each time pulled back by tests written against the survivors. Read the
   per-file row and treat that file's number as the gate; the aggregate only says the others are
   carrying it.
+
+- [lesson] A file too big to score is a file too big to trust. `render-thread.ts` reached 692 lines
+  doing five jobs, and the mutation number said so before anything else did: it crossed under 90 on
+  three of four changes in one session, each time pulled back by tests written against whatever had
+  survived. Splitting it into the jobs it was doing put every piece over 90 on its own, and the
+  survivors that had been hiding in the aggregate became attributable to one module each. The split
+  itself found three pieces of dead code: a path reported for a document that no longer exists, a
+  constant declared twice under two names, and a failure path the fake could not even produce.
+
+- [gotcha] Extracting a module is where narrow dependencies pay. Each piece took a `Pick<>` of the
+  ports it actually calls rather than the whole `RenderThreadDeps` bag, which is free at every call
+  site under structural typing and states, in the type, that following a link never reads a message
+  and that writing a card never fetches anything. The alternative, one shared context module every
+  piece imports whole, keeps the coupling and merely moves it.
+
+- [gotcha] `scripts/check-commit-size.sh` allows `--no-verify` for a mass-move, and a file split is
+  one: moving 690 lines counts as some 750 changed however the commits are cut, so splitting the
+  commit does not help. Run lint, typecheck, the suite, coverage and mutation by hand first, and say
+  in the body that you did.
