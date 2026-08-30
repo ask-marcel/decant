@@ -1,4 +1,5 @@
-import { inlineImageLabels, linkInlineImages, pairInlineImages } from './inline-image.ts';
+import { inlineImageLabels, linkInlineImages, pairInlineImages, showPicture } from './inline-image.ts';
+import { linkDestination } from './markdown-link.ts';
 import type { InlineImage } from './inline-image.ts';
 
 // What a message body says about the files it carried. The library renders that body for a caller
@@ -37,7 +38,7 @@ const formatBytes = (size: number): string => {
 const detail = (entry: AttachmentLink): string => [formatBytes(entry.size), entry.contentType].filter((part) => part.length > 0).join(', ');
 
 const line = (entry: AttachmentLink): string => {
-  const named = entry.path === undefined ? entry.name : `[${entry.name}](${entry.path})`;
+  const named = entry.path === undefined ? entry.name : `[${entry.name}](${linkDestination(entry.path)})`;
   const note = entry.note === undefined ? '' : `, ${entry.note}`;
   return `- ${named} (${detail(entry)})${note}`;
 };
@@ -83,10 +84,24 @@ export type RewrittenBody = { readonly body: string; readonly pictures: Readonly
 // A picture put back where the message showed it is not named again below: the reader is looking at
 // it. Everything else is, including a picture no placeholder answered, so nothing carried goes
 // unmentioned however the pairing turned out.
+// An inline picture no placeholder in the text claimed. It is still part of the message rather than
+// a file the message sent: a signature logo, or a screenshot whose placeholder the conversion lost
+// along with half the body. Listing it under **Attachments:** tells a reader to go and open a logo;
+// showing it after the text puts it where it very likely stood.
+type Unplaced = { readonly file: CarriedFile; readonly picture: string };
+
+const unplacedPictures = (files: ReadonlyArray<CarriedFile>): ReadonlyArray<Unplaced> =>
+  files.flatMap((file) => (file.isInline && file.picture !== undefined ? [{ file, picture: file.picture }] : []));
+
 export const rewriteMessageBody = (body: string, files: ReadonlyArray<CarriedFile>): RewrittenBody => {
   const text = withoutAttachmentList(body);
   const shown = shownPictures(text, files);
-  const listed = files.filter((file) => !shown.some((picture) => picture.file === file));
-  const parts = [linkInlineImages(text, shown), renderAttachmentList(listed.map(asLink))];
-  return { body: parts.filter((part) => part.length > 0).join('\n\n'), pictures: shown.map((picture) => picture.path) };
+  const rest = files.filter((file) => !shown.some((picture) => picture.file === file));
+  const unplaced = unplacedPictures(rest);
+  const listed = rest.filter((file) => !unplaced.some((pair) => pair.file === file));
+  const parts = [linkInlineImages(text, shown), ...unplaced.map((pair) => showPicture(pair.file.name, pair.picture, pair.file.text)), renderAttachmentList(listed.map(asLink))];
+  return {
+    body: parts.filter((part) => part.length > 0).join('\n\n'),
+    pictures: [...shown.map((picture) => picture.path), ...unplaced.map((pair) => pair.picture)],
+  };
 };

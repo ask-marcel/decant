@@ -3,6 +3,10 @@ import { UNSUPPORTED_REASON } from './report.ts';
 import type { CarriedFile } from './mail-body.ts';
 import { renderAttachmentList, rewriteMessageBody, withoutAttachmentList } from './mail-body.ts';
 
+// The words the vault uses to say a block was read off a picture rather than typed by a person.
+// Pinned here because saying it in words is the point: a `>` block alone reads as quoted mail.
+const NOTE = '_Text read out of the picture by OCR, so it can be wrong. Open the image above to check._';
+
 // A message body as the library hands it back: its own closing list of what the message carried,
 // naming a raw Graph id and telling the reader to fetch bytes that are already on disk by then.
 const CONVERTED = [
@@ -104,7 +108,7 @@ describe('what a message body says once the files it carried are on disk', () =>
     const withText: CarriedFile = { ...LOGO, text: 'Michael Pronk\nStratego Development' };
     const { body } = rewriteMessageBody('Regards,\n\n\\[inline image: image931066.png\\]', [withText]);
 
-    expect(body).toBe('Regards,\n\n![image931066.png](../../_attachments/image931066-a1b2c3d4.png)\n\n> Michael Pronk\n> Stratego Development');
+    expect(body).toBe(`Regards,\n\n![image931066.png](../../_attachments/image931066-a1b2c3d4.png)\n\n${NOTE}\n\n> Michael Pronk\n> Stratego Development`);
   });
 
   it('a picture the message showed is shown again, from where it landed', () => {
@@ -134,11 +138,15 @@ describe('what a message body says once the files it carried are on disk', () =>
     expect(rewritten.body).not.toContain('id: AAMkADc3');
   });
 
-  it('a picture no placeholder answered is named as a file rather than lost', () => {
+  // Shown after the text rather than listed as a file to open. A picture the message carried inline
+  // is part of the message however the pairing turned out, and the conversion drops placeholders
+  // often enough that "no placeholder" says nothing about whether the picture belonged in the body.
+  it('a picture no placeholder answered is shown after the text, not listed as a file', () => {
     const rewritten = rewriteMessageBody('No picture stood here.', [LOGO]);
 
-    expect(rewritten.body).toContain('- [image931066.png](../../_attachments/image931066-a1b2c3d4.png.md)');
-    expect(rewritten.pictures).toEqual([]);
+    expect(rewritten.body).toBe('No picture stood here.\n\n![image931066.png](../../_attachments/image931066-a1b2c3d4.png)');
+    expect(rewritten.body).not.toContain('**Attachments:**');
+    expect(rewritten.pictures).toEqual(['../../_attachments/image931066-a1b2c3d4.png']);
   });
 
   it('a picture that was too large to keep is named with the reason, not shown', () => {
