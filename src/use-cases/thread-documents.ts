@@ -1,5 +1,6 @@
 import { join as pathUnder, relative as pathBetween } from 'node:path';
 import { withoutFrontMatter } from '../domain/front-matter.ts';
+import { unwrapSafelinks } from '../domain/safelink.ts';
 import type { CarriedFile } from '../domain/mail-body.ts';
 import { rewriteMessageBody } from '../domain/mail-body.ts';
 import { renderThreadCard } from '../domain/thread-card.ts';
@@ -54,9 +55,9 @@ const carriedBy = (here: string, cards: string, files: ReadonlyArray<MessageFile
       contentType: file.attachment.contentType,
       contentId: file.attachment.contentId,
       isInline: file.attachment.isInline,
-      // A picture stands for itself. It gets no card, so a body that has to name one, because no
-      // placeholder in the text answered for it, links the picture rather than a file nothing wrote.
-      path: file.picture === undefined ? pathBetween(here, `${cards}/${cardNameOf(file)}`) : pathBetween(here, file.picture),
+      // Only a file that reaches the attachment list uses this, and a picture never does: it is
+      // shown in the body, whether or not a placeholder claimed it, so it is never listed.
+      path: pathBetween(here, `${cards}/${cardNameOf(file)}`),
       picture: pictureOf(here, file),
       text: file.text,
       note: file.note,
@@ -72,10 +73,12 @@ export type ThreadBodies = { readonly parts: ReadonlyArray<ThreadPart>; readonly
 // One path, not two. It used to report the text read out of the picture as well, back when that was
 // a document beside it; the words are in the thread now, so the picture is the whole of what a
 // shown file produced.
-const shownPaths = (here: string, carried: ReadonlyArray<Carried>, pictures: ReadonlyArray<string>): ReadonlyArray<string> =>
+const shownPaths = (here: string, carried: ReadonlyArray<Carried>): ReadonlyArray<string> =>
   carried.flatMap((pair) => {
+    // Every picture is shown now, where one shown had to be told from one merely carried, so having
+    // a picture at all is the whole of the question.
     const picture = pair.carried.picture;
-    return picture === undefined || !pictures.includes(picture) ? [] : [pathUnder(here, picture)];
+    return picture === undefined ? [] : [pathUnder(here, picture)];
   });
 
 export const rewriteBodies = (here: string, cards: string, parts: ReadonlyArray<ThreadPart>, byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>): ThreadBodies => {
@@ -86,7 +89,7 @@ export const rewriteBodies = (here: string, cards: string, parts: ReadonlyArray<
       part.body,
       carried.map((pair) => pair.carried)
     );
-    for (const path of shownPaths(here, carried, body.pictures)) if (!pictures.includes(path)) pictures.push(path);
+    for (const path of shownPaths(here, carried)) if (!pictures.includes(path)) pictures.push(path);
     return { message: part.message, body: body.body };
   });
   return { parts: rewritten, pictures };
@@ -136,7 +139,7 @@ export const writeCards = async (
         sender: part.message.from?.name,
         received: part.message.received,
         bytes: file.attachment.size,
-        body: stored?.ok === true ? withoutFrontMatter(stored.value) : undefined,
+        body: stored?.ok === true ? unwrapSafelinks(withoutFrontMatter(stored.value)) : undefined,
         original: raw === undefined ? undefined : pathBetween(folder, raw),
         note: file.note,
       });
