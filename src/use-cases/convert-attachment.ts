@@ -37,6 +37,10 @@ export type ConvertAttachmentInput = {
   // What to call the file on disk. Given when two different attachments of one conversation share
   // a name, so both are kept rather than one overwriting the other.
   readonly asName?: string;
+  // Hand the reading back rather than writing a document to hold it. A picture shown inside a thread
+  // carries its own words in the thread, so a second file repeating them is one file too many, and
+  // there is no delete to take it away again afterwards.
+  readonly textOnly?: boolean;
   // What an embedded email already rendered to. It arrives ready because the caller had to render it
   // to know its content address, an item attachment having no bytes of its own to take one from.
   readonly rendered?: string;
@@ -49,7 +53,7 @@ export type AttachmentOutcome =
   // `media` names the pictures taken out of a document, which are outputs like any other but are not
   // files the message carried: the document's own markdown links them, so a thread naming them again
   // would put twelve lines in its head for one Word file.
-  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly primary: string; readonly media: ReadonlyArray<string> }
+  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly primary: string; readonly media: ReadonlyArray<string>; readonly text?: string }
   | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
 
@@ -124,6 +128,15 @@ const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promi
   const wroteRaw = await context.deps.files.writeBytes(rawPath, raw.value);
   if (!wroteRaw.ok) return failure(wroteRaw.error);
   const rendered = await body(rawPath);
+  // The file itself is the only output, and it is its own primary: there is no document for a
+  // caller to be pointed at, only the picture and the text handed back with it.
+  // The note stands in for text in a document, where a file holding nothing needs to say so. Under
+  // a picture in a thread it is worse than silence: it tells a reader to open a file beside a note
+  // that no longer exists, once per picture, down a thread of signatures nobody could read.
+  if (context.input.textOnly === true) {
+    const read = rendered.text === NO_TEXT_NOTE ? undefined : rendered.text;
+    return { kind: 'converted', outputs: [rawPath], primary: rawPath, media: [], text: read };
+  }
   const written = await writeMarkdown(context, rendered.stamp, rendered.text);
   return written.ok ? converted_(written.value, [rawPath]) : failure(written.error);
 };
