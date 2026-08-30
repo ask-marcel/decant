@@ -554,3 +554,17 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   and the suite still passed, because no test ever made `x` fail. Two seeds, a workbook and an
   invitation the source refuses, put it over 90. Coverage says the line ran; only mutation says the
   line mattered.
+
+- [gotcha] Never read a bare `bunx stryker run`. `stryker.conf.json` sets `incremental: true`, and
+  the repo's own `mutate:changed` and `mutate:staged` delete `reports/stryker-incremental.json`
+  first for exactly that reason. Running stryker directly does not, so it reports cached verdicts
+  for mutants your new tests were written to kill: this file read five survivors that were already
+  dead, and the real count was one. Use the scripts, or remove the incremental file yourself.
+
+- [lesson] A stamp nothing reads is a stamp nothing can get wrong. `render-thread.ts` sat at 90.27
+  and four of its eleven survivors were the `site`, `library` and `source` of the DocumentStamp: a
+  card is written over every top-level document the converter produced, so the stamp was replaced
+  before any test could see it. The exception is a saved email, which unpacks into a FOLDER whose
+  documents sit below the card's path and keep the stamp. Asserting one of those killed all four.
+  The pattern generalises: when a field appears untestable, find the one path where it survives to
+  disk, and if there is none, the field is dead rather than untested.
