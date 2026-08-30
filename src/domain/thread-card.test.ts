@@ -32,7 +32,7 @@ describe('standing for a file a thread carried', () => {
         '',
         '# Contrat.docx',
         '',
-        'Carried by Jane Doe on 2026-05-12.',
+        'Carried by Jane Doe on 2026-05-12. The file is [Contrat.docx](../../../_attachments/Contrat-a1b2c3d4.docx).',
         '',
         '## 1. Scope',
         '',

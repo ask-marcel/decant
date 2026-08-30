@@ -1,3 +1,4 @@
+import { linkDestination } from './markdown-link.ts';
 import { renderFrontMatter } from './front-matter.ts';
 import { safeSegment } from './kb-path.ts';
 import type { SafeSegment } from './kb-path.ts';
@@ -31,11 +32,16 @@ const carriedLine = (card: ThreadCard): string => {
   return `${who} on ${card.received.slice(0, DAY_LENGTH)}.`;
 };
 
+// The file itself, linked from the card standing for it. The front matter already names it, but a
+// reader following a card wants to open the thing, not read a path and retype it, and a document
+// whose text is a reading of a spreadsheet or a scan is exactly where that matters most.
+const fileLine = (card: ThreadCard): string => (card.original === undefined ? '' : ` The file is [${card.filename}](${linkDestination(card.original)}).`);
+
 // A card with nothing behind it still earns its place: it is the record that the file arrived at
 // all, and the reason the knowledge base does not hold it.
 const bodyOf = (card: ThreadCard): string => {
-  if (card.body === undefined) return `${carriedLine(card)} ${card.note ?? 'Nothing was read out of it.'}`;
-  return `${carriedLine(card)}\n\n${card.body}`;
+  if (card.body === undefined) return `${carriedLine(card)}${fileLine(card)} ${card.note ?? 'Nothing was read out of it.'}`;
+  return `${carriedLine(card)}${fileLine(card)}\n\n${card.body}`;
 };
 
 export const renderThreadCard = (card: ThreadCard): string =>
