@@ -1,5 +1,6 @@
 import type { Correspondent, MailMessage } from './mail-message.ts';
 import { bareSubject } from './thread-subject.ts';
+import { unwrapSafelinks } from './safelink.ts';
 import { timeIn } from './zoned-day.ts';
 import { inReceivedOrder } from './mail-message.ts';
 
@@ -69,7 +70,9 @@ export const withoutQuotedMarker = (body: string): string =>
     .trim();
 
 const bodyOf = (part: ThreadPart): string => {
-  const trimmed = withoutQuotedMarker(withoutMailHeaders(part.body)).trim();
+  // Safelinks come off here rather than in the body rewriting, so every section of every thread
+  // gets it whatever route the body took to arrive.
+  const trimmed = unwrapSafelinks(withoutQuotedMarker(withoutMailHeaders(part.body))).trim();
   return trimmed.length === 0 ? '_This message had no readable body._' : trimmed;
 };
 

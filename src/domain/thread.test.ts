@@ -235,6 +235,18 @@ describe('finding where a message actually starts', () => {
   });
 });
 
+describe('what a section does with the links a message carried', () => {
+  // A third of one seven-day vault was Outlook's link wrapper: 98 links, 49,637 bytes of tracking
+  // blob around 8,903 bytes of destination, and not one of them readable.
+  it('a link Outlook wrapped is written as the address the sender sent', () => {
+    const wrapped = 'https://apc01.safelinks.protection.outlook.com/?url=https%3A%2F%2Faka.ms%2FAAb9ysg&data=05%7C02&reserved=0';
+    const rendered = renderThread({ subject: 'Contrat Contoso', parts: [{ message: message(), body: `See ${wrapped}` }] }, 'Europe/Paris');
+
+    expect(rendered).toContain('See https://aka.ms/AAb9ysg');
+    expect(rendered).not.toContain('safelinks');
+  });
+});
+
 describe('listing who took part in a conversation', () => {
   // The headings name people the way a reader says them, so this list is the one place a thread
   // records how to write to any of them. One person under two addresses stays two entries: they are
