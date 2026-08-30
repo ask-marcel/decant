@@ -601,3 +601,13 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   what was wrapped around the old.
   Attributed upstream first and it was ours. Before writing a bug report, check whether the input
   was fine until our own output changed shape.
+
+- [lesson] A message a person reads has to say which and why, not just that. "a kind of file this
+  tool does not read" appeared fourteen times in one seven-day report and covered two situations
+  wanting different answers: a kind we know and decline to convert, worth revisiting, and a name
+  with no extension at all, where nothing could have been done. Naming the extension, or saying
+  there is none, turned a wall of identical lines into something a reader can act on. The same
+  applies to the front matter: `original:` named the file beside a card and a reader still had to
+  retype the path, so the card links it.
+  Describe the file at the SOURCE, not the words a message linked it under: a message can point at
+  a recording calling it `Rapport.docx`, and the reason would then name a kind that was never there.
