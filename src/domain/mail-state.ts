@@ -35,7 +35,17 @@ export type LinkedRecord = { readonly paths: ReadonlyArray<string> };
 // thread carrying the same attachment points at the same one without converting it again.
 // `media` is the subset of `paths` holding pictures taken out of the document itself. They are files
 // this run wrote, so the record names them, but they are not what the message carried.
-export type AttachmentRecord = { readonly name: string; readonly paths: ReadonlyArray<string>; readonly primary: string; readonly media: ReadonlyArray<string> };
+// `text` is set only for a picture shown inside a message body, which is stored once for the whole
+// mailbox and read into every thread that shows it. It is remembered here because no document holds
+// it any more: the words live in the threads, and a second thread meeting the same picture would
+// otherwise have nothing to put under it.
+export type AttachmentRecord = {
+  readonly name: string;
+  readonly paths: ReadonlyArray<string>;
+  readonly primary: string;
+  readonly media: ReadonlyArray<string>;
+  readonly text?: string;
+};
 
 // Bumped whenever the shape below, or the layout it describes, changes. A file written by another
 // version is refused rather than half understood: the threads of the version before this one were
@@ -105,7 +115,13 @@ const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
 // wrote, which is the only one for a document and the file itself for everything else.
 const attachmentOf = (entry: Record<string, unknown>): AttachmentRecord => {
   const paths = stringList(entry['paths']);
-  return { name: readString(entry, 'name') ?? '', paths, primary: readString(entry, 'primary') ?? paths[0] ?? '', media: stringList(entry['media']) };
+  return {
+    name: readString(entry, 'name') ?? '',
+    paths,
+    primary: readString(entry, 'primary') ?? paths[0] ?? '',
+    media: stringList(entry['media']),
+    text: readString(entry, 'text'),
+  };
 };
 
 const mapOf = <T>(raw: unknown, parse: (entry: Record<string, unknown>) => T): Readonly<Record<string, T>> => {

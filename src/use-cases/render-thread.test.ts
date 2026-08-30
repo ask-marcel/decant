@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { contentHash } from '../domain/content-hash.ts';
+import { disambiguateSegment } from '../domain/kb-path.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import { tooLargeReason } from '../domain/report.ts';
@@ -14,6 +15,7 @@ import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import type { MailReaderSeed } from '../test-helpers/mail-reader-fake.ts';
 import { createMailReaderFake } from '../test-helpers/mail-reader-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
+import type { OcrSeed } from '../test-helpers/ocr-fake.ts';
 import { createProgressFake } from '../test-helpers/progress-fake.ts';
 import { createConvertAttachment } from './convert-attachment.ts';
 import { createConvertFile } from './convert-file.ts';
@@ -32,6 +34,7 @@ const THREAD_FILE = `kb/Mailbox/${THREAD_RELATIVE}`;
 // Everything a thread received lives beside it: the file and the card that stands for it, in the
 // thread's own folder. There is no store shared across threads any more.
 const ATTACHMENTS_STORE = `kb/Mailbox/threads/${THREAD_FOLDER}/_attachments`;
+const INLINE_STORE = 'kb/Mailbox/_inline';
 // A body that carries a SharePoint address, since that is what makes the run ask a message what it
 // points at. Real mail carries the address in its text; a message with none is never asked.
 const LINK_BODIES = { m1: 'See https://tenant.sharepoint.com/sites/team/Rapport.docx', m2: 'See https://tenant.sharepoint.com/sites/team/Rapport.docx' };
@@ -62,6 +65,7 @@ const run = async (
     folder?: string;
     linked?: Record<string, { paths: string[] }>;
     attachments?: Record<string, AttachmentRecord>;
+    ocr?: OcrSeed;
   } = {}
 ): Promise<{ outcome: RenderThreadOutcome | undefined; files: FilesFake; logger: LoggerFake; reader: ReturnType<typeof createMailReaderFake>; ok: boolean }> => {
   const files = createFilesFake(seeds.files);
@@ -76,7 +80,7 @@ const run = async (
     clock: createClockFake(),
     mailboxRoot: 'kb/Mailbox',
     timezone: 'Europe/Paris',
-    convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), logger, unpackArchive: drive.localArchive, convertLocal: drive.localMarkdown }),
+    convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(seeds.ocr), logger, unpackArchive: drive.localArchive, convertLocal: drive.localMarkdown }),
     convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger, progress: createProgressFake() }),
   });
   const result = await render({
@@ -213,20 +217,96 @@ describe('writing one conversation as one file', () => {
     expect(card).toContain(`original: ${storedName('rack.jpg')}`);
   });
 
-  // A picture pasted into the body is shown where it stood and named under inline_images, so it is
-  // not something the thread "carried" in the sense a card describes.
   // A picture shown in the body is not something the thread "carried" in the sense a card describes,
-  // so no card is written over the converter's own extract. The two share a path, so what tells them
-  // apart is whose front matter the file ends up with.
-  it('a picture shown in the body keeps the converter s own document, not a card over it', async () => {
+  // and no document is written for it at all: what was read off it is in the thread, under the
+  // picture, where a reader is already looking. A card and a document would both say it again.
+  it('a picture shown in the body is written as itself, with no document of any kind beside it', async () => {
     const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' }];
     const { files } = await run({
       reader: { conversations: { [CONV]: [message({ hasAttachments: false })] }, bodies: { m1: '\\[inline image: logo.png\\]' }, attachments: { m1: pasted } },
     });
-    const written = files.written.get(`${CARDS}/logo.png.md`) ?? '';
+    const written = [...files.written.keys()].filter((path) => path.endsWith('.md'));
 
-    expect(written).toContain('source: conversation');
-    expect(written).not.toContain('attachment_of:');
+    expect(written).toEqual([THREAD_FILE]);
+  });
+
+  // The whole point of reading a picture at all: a signature block holds the sender's company and
+  // phone number, and a thread that shows the picture but hides its words makes a reader open a
+  // second document for them. Quoted, so it reads as text lifted off a picture.
+  it('what was read out of a picture is shown in the thread, under the picture', async () => {
+    const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' }];
+    const texts = { 'kb/Mailbox/_inline/logo-3d8c205c.png': 'Michael Pronk\nStratego Development\n+31618225472' };
+    const { files } = await run({
+      reader: { conversations: { [CONV]: [message({ hasAttachments: false })] }, bodies: { m1: '\\[inline image: logo.png\\]' }, attachments: { m1: pasted } },
+      ocr: { texts },
+    });
+
+    expect(files.written.get(THREAD_FILE)).toContain('![logo.png](../../_inline/logo-3d8c205c.png)\n\n> Michael Pronk\n> Stratego Development\n> +31618225472');
+  });
+
+  const SIGNATURE = `${INLINE_STORE}/logo-3d8c205c.png`;
+  const storedPicture = (text?: string): Record<string, AttachmentRecord> => ({
+    [contentHash(bytesOf('sig'))]: { name: 'logo-3d8c205c.png', paths: [SIGNATURE], primary: SIGNATURE, media: [], text },
+  });
+  const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' }];
+  const showing = { conversations: { [CONV]: [message({ hasAttachments: false })] }, bodies: { m1: '\\[inline image: logo.png\\]' }, attachments: { m1: pasted } };
+
+  // The reason the store is shared at all: one signature logo rides on every message its sender
+  // ever wrote, so a mailbox of two hundred threads would otherwise hold two hundred copies of it.
+  // The words come back with it, since no document holds them any more.
+  it('a picture an earlier thread already stored is not fetched again, and still shows its words', async () => {
+    const { files } = await run({ reader: showing, attachments: storedPicture('Michael Pronk') });
+
+    expect(files.binary.size).toBe(0);
+    expect(files.written.get(THREAD_FILE)).toContain('![logo.png](../../_inline/logo-3d8c205c.png)\n\n> Michael Pronk');
+  });
+
+  // Self-healing rather than silently wordless: a run from before pictures carried their reading
+  // left records with no text, and honouring one would show the picture in this thread with nothing
+  // under it, a loss no later run would ever repair. Converting again costs one fetch.
+  it('a picture stored before the words were kept is read again rather than shown wordless', async () => {
+    const { files } = await run({ reader: showing, attachments: storedPicture(undefined), ocr: { texts: { [SIGNATURE]: 'Michael Pronk' } } });
+
+    expect(files.binary.has(SIGNATURE)).toBe(true);
+    expect(files.written.get(THREAD_FILE)).toContain('> Michael Pronk');
+  });
+
+  // No placeholder in the text answered for it, so nothing shows it. It is still a picture, so it
+  // gets no card, and the list that has to name it links the picture rather than a file nothing
+  // wrote. A link to a card that was never written is worse than no link at all.
+  it('a picture the body never showed is listed as itself, with no card standing in for it', async () => {
+    // Graph reports the attachment, and the body shows no placeholder for it: the message is asked
+    // what it carried, and what comes back is a picture nothing in the text points at.
+    const { files } = await run({ reader: { ...showing, conversations: { [CONV]: [message({ hasAttachments: true })] }, bodies: { m1: 'Regards,' } } });
+
+    expect(files.written.has(`${ATTACHMENTS_STORE}/logo.png.md`)).toBe(false);
+    expect(files.written.get(THREAD_FILE)).toContain('- [logo.png](../../_inline/logo-3d8c205c.png) (100 B, image/png)');
+  });
+
+  // `isInline` alone does not make a picture. A PDF the body points at by `cid:` is a document: it
+  // belongs to the thread that received it, is carded like any other, and its text is far too long
+  // to quote under an image that would not be shown anyway.
+  it('a document the body points at inline is still a document, kept with the thread', async () => {
+    const inlineDoc = [{ id: 'att1', name: 'Contrat.pdf', contentType: 'application/pdf', size: 100, isInline: true, contentId: 'c@01DC1234' }];
+    const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: { m1: inlineDoc } } });
+
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Contrat.pdf.md`) ?? '').toContain('attachment_of:');
+    expect([...files.binary.keys()].some((path) => path.startsWith(INLINE_STORE))).toBe(false);
+  });
+
+  // Nothing read is shown as nothing. The note a document uses to say it holds no text would be
+  // quoted under the picture, once per signature down a long thread, telling a reader to open a
+  // file beside a note that is not there any more.
+  it('a picture nothing could be read out of is shown alone, with no note quoted under it', async () => {
+    const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' }];
+    const { files } = await run({
+      reader: { conversations: { [CONV]: [message({ hasAttachments: false })] }, bodies: { m1: '\\[inline image: logo.png\\]' }, attachments: { m1: pasted } },
+    });
+    const written = files.written.get(THREAD_FILE) ?? '';
+
+    expect(written).toContain('![logo.png](../../_inline/logo-3d8c205c.png)');
+    // A quoted line, not the character: the head carries a message id in angle brackets.
+    expect(written).not.toContain('\n> ');
   });
 
   it('a file from nobody in particular is still carded, with no sender named', async () => {
@@ -399,9 +479,10 @@ describe('keeping what a conversation carried', () => {
     const messages = [message({ id: 'm1', hasAttachments: true }), message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true })];
     const signature = [{ id: 'sig', name: 'image001.png', contentType: 'image/png', size: 100, isInline: true }];
     const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments: { m1: signature, m2: signature } } });
-    const raw = `${ATTACHMENTS_STORE}/${storedName('image001.png')}`;
-
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([raw, `${raw}.md`]);
+    // Under `attachments` rather than `inline_images` because no placeholder in the body answered
+    // for it, so nothing shows it. It still lives in the mailbox's picture store, where the next
+    // thread its sender writes into will find it already there.
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${INLINE_STORE}/${disambiguateSegment('image001.png', contentHash(bytesOf('sig')))}`]);
   });
 
   // Written here even though another thread holds the same bytes. That is the trade this layout
@@ -868,28 +949,33 @@ describe('an email attached to an email', () => {
 
 describe('what a message body says about the files it carried', () => {
   const PASTED = { id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' };
-  const shownAt = (name: string): string => `_attachments/${storedName(name)}`;
+  // A picture shown inside a body is stored once for the whole mailbox, not once per thread: one
+  // signature logo rides on every message its sender ever wrote. A folder every thread writes into
+  // needs names that cannot collide across all of them, which is what the content address gives.
+  const inlineAt = (name: string, id: string): string => `${INLINE_STORE}/${disambiguateSegment(name, contentHash(bytesOf(id)))}`;
+  const shownAt = (name: string, id: string): string => `../../_inline/${disambiguateSegment(name, contentHash(bytesOf(id)))}`;
 
   it('a picture pasted into a message is kept and shown where it stood, though Graph said the message carried nothing', async () => {
     const messages = [message({ hasAttachments: false })];
     const bodies = { m1: 'Regards,\n\n\\[inline image: logo.png\\]' };
     const { files } = await run({ reader: { conversations: { [CONV]: messages }, bodies, attachments: { m1: [PASTED] } } });
 
-    expect(files.binary.has(`${ATTACHMENTS_STORE}/${storedName('logo.png')}`)).toBe(true);
-    expect(files.written.get(THREAD_FILE)).toContain(`![logo.png](${shownAt('logo.png')})`);
+    expect(files.binary.has(inlineAt('logo.png', 'sig'))).toBe(true);
+    expect(files.written.get(THREAD_FILE)).toContain(`![logo.png](${shownAt('logo.png', 'sig')})`);
   });
 
   it('a picture shown in the body is named under inline_images, never among the attachments', async () => {
     const messages = [message({ hasAttachments: false })];
     const bodies = { m1: '\\[inline image: logo.png\\]' };
     const { outcome, files } = await run({ reader: { conversations: { [CONV]: messages }, bodies, attachments: { m1: [PASTED] } } });
-    const raw = `${ATTACHMENTS_STORE}/${storedName('logo.png')}`;
+    const raw = inlineAt('logo.png', 'sig');
 
-    // Pinned as the whole list, not by its key: a fragment cannot tell two entries from three, and
-    // a file that is NOT shown leaking into this list is exactly the mistake worth catching.
-    expect(files.written.get(THREAD_FILE)).toContain(`inline_images:\n  - _attachments/${storedName('logo.png')}\n  - _attachments/${storedName('logo.png')}.md\n`);
+    // Pinned as the whole list, not by its key: a fragment cannot tell one entry from two, and a
+    // file that is NOT shown leaking into this list is exactly the mistake worth catching. One
+    // entry now, the picture: nothing else is written for it, its words being in the thread.
+    expect(files.written.get(THREAD_FILE)).toContain(`inline_images:\n  - ${shownAt('logo.png', 'sig')}\n`);
     expect(files.written.get(THREAD_FILE)).not.toContain('attachments:\n');
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.inlineImages).toEqual([raw, `${raw}.md`]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.inlineImages).toEqual([raw]);
   });
 
   // A message carrying both kinds at once: the picture is shown and listed under inline_images, the
@@ -900,11 +986,11 @@ describe('what a message body says about the files it carried', () => {
     const bodies = { m1: '\\[inline image: logo.png\\]' };
     const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, bodies, attachments: { m1: carried } } });
     const written = files.written.get(THREAD_FILE) ?? '';
-    const raw = `_attachments/${storedName('logo.png')}`;
+    const raw = shownAt('logo.png', 'sig');
 
-    // What FOLLOWS the list is pinned too. Without it, a file leaking in after the picture's two
-    // entries still satisfies a `toContain`, which is the whole mistake this test exists to catch.
-    expect(written).toContain(`attachments:\n  - _attachments/Contrat.docx.md\ninline_images:\n  - ${raw}\n  - ${raw}.md\n---`);
+    // What FOLLOWS the list is pinned too. Without it, a file leaking in after the picture's entry
+    // still satisfies a `toContain`, which is the whole mistake this test exists to catch.
+    expect(written).toContain(`attachments:\n  - _attachments/Contrat.docx.md\ninline_images:\n  - ${raw}\n---`);
   });
 
   it('a message Graph says carries nothing, showing no picture, is never asked what it carried', async () => {

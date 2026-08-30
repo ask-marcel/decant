@@ -12,6 +12,7 @@ import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import { participantsOf, renderThread, threadTitle } from '../domain/thread.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
+import { disambiguateSegment } from '../domain/kb-path.ts';
 import { renderLinkCard } from '../domain/link-card.ts';
 import { isOpaqueName } from '../domain/opaque-name.ts';
 import { cardFileName, renderThreadCard, uniqueName } from '../domain/thread-card.ts';
@@ -222,6 +223,11 @@ type MessageFile = {
   readonly asName: string;
   readonly paths: ReadonlyArray<string>;
   readonly primary?: string;
+  // Set only for a picture the message showed inside itself: the file to display, and the words
+  // read off it. Both travel with the message rather than with the thread, because a body is the
+  // one place either is named.
+  readonly picture?: string;
+  readonly text?: string;
   readonly note?: string;
 };
 
@@ -242,6 +248,8 @@ type Placed = {
   readonly asName: string;
   readonly paths: ReadonlyArray<string>;
   readonly primary?: string;
+  readonly picture?: string;
+  readonly text?: string;
   readonly media?: Media;
   readonly skipped?: ReportEntry;
   readonly failed?: ReportEntry;
@@ -267,11 +275,24 @@ const addressOf = async (deps: RenderThreadDeps, messageId: string, attachment: 
   return rendered.ok ? ok({ hash: contentHash(new TextEncoder().encode(rendered.value)), rendered: rendered.value }) : rendered;
 };
 
+// A picture the message showed inside itself, as against a file it attached. Both arrive as
+// attachments and Graph tells them apart by `isInline`, which it sets for anything the body points
+// at by `cid:`. Only an image is treated this way: a `cid:`-referenced PDF is still a document.
+const isInlinePicture = (attachment: MailAttachment): boolean => attachment.isInline && attachment.contentType.startsWith('image/');
+
+const INLINE_FOLDER = '_inline';
+
+// A record written before pictures carried their reading has nothing to put in a body, so it is
+// treated as though the picture had never been stored: converting it again is cheap and self-
+// healing, where showing it wordlessly would be a silent loss no run ever repaired.
+const withText = (record: AttachmentRecord | undefined): AttachmentRecord | undefined => (record?.text === undefined ? undefined : record);
+
 const placeAttachment = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
   place: ThreadPlace,
   store: Record<string, AttachmentRecord>,
+  shared: Record<string, AttachmentRecord>,
   taken: string[],
   messageId: string,
   attachment: MailAttachment,
@@ -283,6 +304,7 @@ const placeAttachment = async (
   // Named before anything is fetched, so a file that never arrives still has somewhere to be
   // recorded. A card for a file too large to pull, or of a kind nothing reads, is the only place
   // its arrival and the reason are written down, and the body needs a name to link at.
+  const inline = isInlinePicture(attachment);
   const asName = uniqueName(attachment.name, taken);
   taken.push(asName);
   if (attachment.size > input.maxBytes) return { asName, paths: [], skipped: { path: attachment.name, reason: tooLargeReason(input.maxBytes) } };
@@ -292,18 +314,26 @@ const placeAttachment = async (
   // Within this thread only. A signature riding on ten messages of one conversation is converted
   // once; the same file arriving in another thread is written there too, because a thread folder
   // that has to reach into another thread to be read is not self-contained.
-  const seen = store[hash];
-  if (seen !== undefined) return { asName: seen.name, paths: seen.paths, primary: seen.primary, media: seen.media };
-  // No content address in the name any more. It was there because one store held every thread's
-  // files and needed names that could not collide across all of them; inside one thread only a
-  // same-name-different-content pair needs separating, and a number says that more plainly.
-  const folder = `${place.here}/${ATTACHMENTS_FOLDER}`;
+  // A picture is shared by the whole mailbox, an attachment by its thread alone. A signature logo
+  // rides on every message its sender ever wrote, so storing one per thread would write the same
+  // hundred kilobytes into every folder; a spreadsheet belongs to the conversation it was sent in.
+  // A record from an older run holding no text is treated as unseen, since the picture would
+  // otherwise be shown in this thread with nothing under it.
+  const seen = inline ? withText(shared[hash]) : store[hash];
+  if (seen !== undefined) return { asName: seen.name, paths: seen.paths, primary: seen.primary, picture: inline ? seen.primary : undefined, text: seen.text, media: seen.media };
+  const folder = inline ? `${deps.mailboxRoot}/${INLINE_FOLDER}` : `${place.here}/${ATTACHMENTS_FOLDER}`;
+  // A shared folder needs names that cannot collide across every thread that writes into it, which
+  // is what the content address gives. Inside one thread only a same-name-different-content pair
+  // needs separating, and a number says that more plainly than ten hex.
+  const storedAs = inline ? disambiguateSegment(attachment.name, hash) : asName;
   const rendered = address.value.rendered;
-  const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, asName, rendered });
+  const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, asName: storedAs, rendered, textOnly: inline });
   if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, input.maxBytes) } };
   if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: attachment.name, reason: outcome.reason } };
-  store[hash] = { name: asName, paths: outcome.outputs, primary: outcome.primary, media: outcome.media };
-  return { asName, paths: outcome.outputs, primary: outcome.primary, media: outcome.media };
+  const record = { name: storedAs, paths: outcome.outputs, primary: outcome.primary, media: outcome.media, text: outcome.text };
+  if (inline) shared[hash] = record;
+  else store[hash] = record;
+  return { asName: storedAs, paths: outcome.outputs, primary: outcome.primary, picture: inline ? outcome.primary : undefined, text: outcome.text, media: outcome.media };
 };
 
 const attachmentsOf = async (
@@ -314,6 +344,9 @@ const attachmentsOf = async (
   stamp: DocumentStamp
 ): Promise<AttachmentTally> => {
   const store: Record<string, AttachmentRecord> = {};
+  // Pictures shown inside message bodies, which the whole mailbox shares, seeded with what earlier
+  // threads stored so a signature logo is written once rather than once per conversation.
+  const shared: Record<string, AttachmentRecord> = { ...input.attachments };
   const taken: string[] = [];
   const paths: string[] = [];
   const skipped: ReportEntry[] = [];
@@ -336,7 +369,7 @@ const attachmentsOf = async (
     }
     const carried: MessageFile[] = [];
     for (const attachment of listed.value) {
-      const placed = await placeAttachment(deps, input, place, store, taken, part.message.id, attachment, stamp);
+      const placed = await placeAttachment(deps, input, place, store, shared, taken, part.message.id, attachment, stamp);
       for (const path of placed.paths) if (!paths.includes(path)) paths.push(path);
       if (placed.skipped) skipped.push(placed.skipped);
       if (placed.failed) failed.push(placed.failed);
@@ -346,19 +379,26 @@ const attachmentsOf = async (
       // real attachments of the same vault. It keeps its place in `taken`, so the numbering of what
       // follows does not shift with a decision about what to show.
       if (placed.skipped !== undefined && isOpaqueName(attachment.name)) continue;
-      carried.push({ attachment, asName: placed.asName, paths: placed.paths, primary: placed.primary, note: placed.skipped?.reason ?? placed.failed?.reason });
+      carried.push({
+        attachment,
+        asName: placed.asName,
+        paths: placed.paths,
+        primary: placed.primary,
+        picture: placed.picture,
+        text: placed.text,
+        note: placed.skipped?.reason ?? placed.failed?.reason,
+      });
     }
     byMessage[part.message.id] = carried;
   }
-  return { paths, store, byMessage, media, skipped, failed };
+  // Both stores fold into the one the run remembers: the shared pictures so a later thread finds
+  // them, this thread's files so the mailbox index names everything on disk.
+  return { paths, store: { ...shared, ...store }, byMessage, media, skipped, failed };
 };
 
-// The picture itself rather than the text read out of it: a raw image is the first file its
-// conversion wrote, and only an image kind has one worth showing in a body.
-const pictureOf = (here: string, file: MessageFile): string | undefined => {
-  const raw = file.paths[0];
-  return raw === undefined || raw === file.primary || !file.attachment.contentType.startsWith('image/') ? undefined : pathBetween(here, raw);
-};
+// Decided where the file was placed, not worked out again from its outputs: a picture shown in a
+// body is converted differently from everything else, and the placement is what knows that.
+const pictureOf = (here: string, file: MessageFile): string | undefined => (file.picture === undefined ? undefined : pathBetween(here, file.picture));
 
 // Paths are written the way a reader follows them: from the folder the conversation sits in.
 // Named in one pure pass before anything is rewritten, so the link a body carries and the file on
@@ -384,8 +424,11 @@ const carriedBy = (here: string, cards: string, files: ReadonlyArray<MessageFile
       contentType: file.attachment.contentType,
       contentId: file.attachment.contentId,
       isInline: file.attachment.isInline,
-      path: pathBetween(here, `${cards}/${cardNameOf(file)}`),
+      // A picture stands for itself. It gets no card, so a body that has to name one, because no
+      // placeholder in the text answered for it, links the picture rather than a file nothing wrote.
+      path: file.picture === undefined ? pathBetween(here, `${cards}/${cardNameOf(file)}`) : pathBetween(here, file.picture),
       picture: pictureOf(here, file),
+      text: file.text,
       note: file.note,
     },
   }));
@@ -478,6 +521,7 @@ const writeCards = async (
   const carded = new Set<string>();
   for (const part of parts) {
     for (const file of byMessage[part.message.id] ?? []) {
+      if (file.picture !== undefined) continue;
       if (file.primary !== undefined && shown.has(file.primary)) continue;
       // One card per FILE, not per arrival: a signature riding on ten messages of one thread is one
       // file on disk and reads as one entry in the folder beside it.
