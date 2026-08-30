@@ -30,6 +30,9 @@ const LINKED_FOLDER = '_linked';
 
 type Pulled = {
   readonly record?: LinkedRecord;
+  // Said on the card without being counted as something that went wrong. A share that points at a
+  // folder is the ordinary case, not a document the converter could not read.
+  readonly note?: string;
   // Read off the document at the source, so the card can say which version of it the thread meant.
   readonly lastModified?: string;
   readonly modifiedBy?: string;
@@ -107,7 +110,7 @@ export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number
         paths: pulled.record?.paths ?? [],
         lastModified: pulled.lastModified,
         modifiedBy: pulled.modifiedBy,
-        note: (pulled.skipped ?? pulled.failed)?.reason,
+        note: (pulled.skipped ?? pulled.failed)?.reason ?? pulled.note,
       });
       if (pulled.record === undefined) continue;
       linked[key] = pulled.record;
@@ -128,6 +131,12 @@ const pullLinked = async (deps: LinkDeps, here: string, maxBytes: number, link: 
     deps.logger.warn('linked.failed', { itemId, name, cause: found.error.kind });
     return { failed: { path: name, reason: `${found.error.kind}: ${found.error.message}` } };
   }
+  const { lastModified, modifiedBy } = found.value;
+  // What somebody shares is as often a folder as a file, and a folder is not a document that failed:
+  // there is nothing to pull and nothing went wrong. It was reaching the converter, which refused it
+  // for having no extension, so a thread saying plainly that a folder was shared reported a file it
+  // could not read. The card still stands, being the record that the thread depended on it.
+  if (found.value.kind === 'folder') return { note: 'It is a folder at the source, so there was nothing to pull.', lastModified, modifiedBy };
   const outcome = await deps.convertFile({
     item: found.value,
     driveId,
@@ -137,7 +146,6 @@ const pullLinked = async (deps: LinkDeps, here: string, maxBytes: number, link: 
     into: `${here}/${LINKED_FOLDER}`,
     asName,
   });
-  const { lastModified, modifiedBy } = found.value;
   if (outcome.kind === 'converted') return { record: { paths: outcome.outputs }, lastModified, modifiedBy };
   deps.logger.warn(outcome.kind === 'skipped' ? 'linked.skipped' : 'linked.failed', { itemId, name, cause: outcome.reason });
   if (outcome.kind === 'failed') return { failed: { path: name, reason: outcome.reason } };

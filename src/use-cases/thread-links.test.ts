@@ -87,6 +87,20 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(files.written.has(REPORT_MD)).toBe(true);
   });
 
+  // What somebody shares is as often a folder as a file. It was reaching the converter, which
+  // refused it for having no extension, so a thread whose whole subject is "Frank Tao shared the
+  // folder VMT with you" reported a file it could not read.
+  it('a shared folder is recorded as a folder, not reported as a document that failed', async () => {
+    const shared = { m1: [{ url: 'https://tenant.sharepoint.com/vmt', driveId: 'b!one', itemId: '01VMT', name: 'VMT' }] };
+    const seeded = { items: { '01VMT': { ...REPORT, id: '01VMT', name: 'VMT', path: 'VMT', kind: 'folder' as const } } };
+    const { outcome, files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: shared }, drive: seeded });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([]);
+    // The card stands all the same: it is the record that the thread depended on what was shared.
+    expect(files.written.get(`${LINKED_HERE}/VMT.md`) ?? '').toContain('It is a folder at the source, so there was nothing to pull.');
+  });
+
   it('a linked file the drive will not hand over is named in the report as having failed', async () => {
     const { outcome, logger } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked } });
 
