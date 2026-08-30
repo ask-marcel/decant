@@ -590,3 +590,14 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   It is not a theoretical risk: this vault has `TRATEGO` for a logo saying STRATEGO and `AOOWE` for
   one saying MOOV. Every picture with readable text now carries one line saying the words were read
   by a machine and pointing at the image above it.
+
+- [gotcha] Substituting a multi-line block for an inline placeholder breaks whatever span held it.
+  `convert-mail-to-markdown` carries the surrounding HTML's emphasis onto its placeholder, so a
+  picture in a bold signature arrives as `**\[inline image: logo.png\]**`. That was harmless while
+  the replacement was one line; once the OCR reading went under the picture it was three blocks, and
+  the opening marker stranded itself on the image line while the closer landed after the quote.
+  Seven of them in one seven-day vault, all one sender's signature. Worth checking the next time a
+  replacement grows from a line to a block: the question is not whether the new text is right, but
+  what was wrapped around the old.
+  Attributed upstream first and it was ours. Before writing a bug report, check whether the input
+  was fine until our own output changed shape.
