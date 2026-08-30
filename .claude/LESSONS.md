@@ -410,3 +410,12 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   reader at a binary they had to unpack while the text was already on disk beside it, one file per
   member. The archive is still kept and still listed among the outputs; it is no longer the thing
   anything links to.
+
+- [decision] The mailbox vault deliberately holds August 2026 onward, not the full history. The
+  first live run swept every folder but wrote only what `--since 2026-08-05` allowed, and the delta
+  cursors then advanced past everything older, so that history is behind the cursors and a plain
+  re-run will not bring it back. Recovering it means clearing the `folders` cursors in
+  `.sync-state.json` and re-sweeping, which is thousands of round trips and hours of rendering; the
+  user weighed that and chose the gap. Long-running threads that got a reply after 5 August ARE
+  present and carry their older messages, which is why folder dates reach back to March: the dates
+  understate what is missing. Do not "fix" this by re-sweeping without asking.
