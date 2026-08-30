@@ -14,9 +14,12 @@ export type ThreadCard = {
   readonly sender?: string;
   readonly received: string;
   readonly bytes?: number;
-  // Where the text read out of the file sits, and where the file itself was kept. Either can be
-  // absent: a file too large to fetch has neither, and a kind nothing reads has only the original.
-  readonly holds?: string;
+  // The text read out of the file, carried here rather than pointed at, so a thread folder reads on
+  // its own without following a path three levels up. Absent when nothing could be read: a file past
+  // the size cap, or a kind nothing reads, which then has only its original.
+  readonly body?: string;
+  // The file itself, which stays in the store however many threads carried it. The bytes are the
+  // expensive thing to duplicate; the text is a fraction of them, which is why only the text moves.
   readonly original?: string;
   readonly note?: string;
 };
@@ -31,8 +34,8 @@ const carriedLine = (card: ThreadCard): string => {
 // A card with nothing behind it still earns its place: it is the record that the file arrived at
 // all, and the reason the knowledge base does not hold it.
 const bodyOf = (card: ThreadCard): string => {
-  if (card.holds === undefined) return `${carriedLine(card)} ${card.note ?? 'Nothing was read out of it.'}`;
-  return `${carriedLine(card)} The text read out of it is in [the shared store](${card.holds}),\nwhere it is held once however many threads carried it.`;
+  if (card.body === undefined) return `${carriedLine(card)} ${card.note ?? 'Nothing was read out of it.'}`;
+  return `${carriedLine(card)}\n\n${card.body}`;
 };
 
 export const renderThreadCard = (card: ThreadCard): string =>
@@ -44,7 +47,6 @@ export const renderThreadCard = (card: ThreadCard): string =>
       ['sender', card.sender],
       ['received', card.received],
       ['bytes', card.bytes],
-      ['holds', card.holds],
       ['original', card.original],
     ]),
     '',

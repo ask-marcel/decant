@@ -160,7 +160,7 @@ describe('writing one conversation as one file', () => {
     expect(card).toContain(`attachment_of: "${THREAD_ID}"`);
     expect(card).toContain('filename: Contrat.docx');
     expect(card).toContain('sender: Jane Doe');
-    expect(card).toContain(`holds: ../../../_attachments/${storedName('Contrat.docx', 'att1')}.md`);
+    expect(card).toContain('converted att1');
     // A document is read and its own copy dropped, so there is nothing else for the card to name.
     expect(card).not.toContain('original:');
   });
@@ -201,7 +201,6 @@ describe('writing one conversation as one file', () => {
     const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: picture } });
     const card = files.written.get(`${CARDS}/rack.jpg.md`) ?? '';
 
-    expect(card).toContain(`holds: ../../../_attachments/${storedName('rack.jpg', 'att1')}.md`);
     expect(card).toContain(`original: ../../../_attachments/${storedName('rack.jpg', 'att1')}`);
   });
 
@@ -338,7 +337,7 @@ describe('keeping what a conversation carried', () => {
     const written = files.written.get(THREAD_FILE) ?? '';
 
     expect(written).toContain('attachments:');
-    expect(written).toContain(`  - ../../_attachments/${storedName('Contrat.docx', 'att1')}.md`);
+    expect(written).toContain('  - _attachments/Contrat.docx.md');
     expect(written).not.toContain('  - kb/Mailbox/');
   });
 
@@ -397,7 +396,7 @@ describe('keeping what a conversation carried', () => {
     const { outcome, files } = await run({ reader: withAttachment, attachments: store });
 
     expect(files.written.has(`${ATTACHMENTS_STORE}/Contrat.docx.md`)).toBe(false);
-    expect(files.written.get(THREAD_FILE)).toContain('  - ../../_attachments/Contrat.docx.md');
+    expect(files.written.get(THREAD_FILE)).toContain('  - _attachments/Contrat.docx.md');
     expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENTS_STORE}/Contrat.docx.md`]);
   });
 
@@ -784,7 +783,7 @@ describe('an email attached to an email', () => {
     const stored = `${ATTACHMENTS_STORE}/${renderedName(EMBEDDED.name, RENDERED)}.md`;
 
     expect(files.written.get(stored)).toContain('**Subject:** Customs documents');
-    expect(files.written.get(THREAD_FILE)).toContain(`- [Customs documents MSDU1691268](../../_attachments/${renderedName(EMBEDDED.name, RENDERED)}.md) (2.6 MB)`);
+    expect(files.written.get(THREAD_FILE)).toContain('- [Customs documents MSDU1691268](_attachments/Customs documents MSDU1691268.md) (2.6 MB)');
   });
 
   it('is stored once, however many messages of the conversation forwarded it', async () => {
@@ -816,9 +815,28 @@ describe('what a message body says about the files it carried', () => {
     const { outcome, files } = await run({ reader: { conversations: { [CONV]: messages }, bodies, attachments: { m1: [PASTED] } } });
     const raw = `${ATTACHMENTS_STORE}/${storedName('logo.png', 'sig')}`;
 
-    expect(files.written.get(THREAD_FILE)).toContain('inline_images:\n  - ../../_attachments/');
+    // Pinned as the whole list, not by its key: a fragment cannot tell two entries from three, and
+    // a file that is NOT shown leaking into this list is exactly the mistake worth catching.
+    expect(files.written.get(THREAD_FILE)).toContain(
+      `inline_images:\n  - ../../_attachments/${storedName('logo.png', 'sig')}\n  - ../../_attachments/${storedName('logo.png', 'sig')}.md\n`
+    );
     expect(files.written.get(THREAD_FILE)).not.toContain('attachments:\n');
     expect(outcome?.kind === 'rendered' && outcome.thread.record.inlineImages).toEqual([raw, `${raw}.md`]);
+  });
+
+  // A message carrying both kinds at once: the picture is shown and listed under inline_images, the
+  // document is not shown and belongs to the attachments. Only a message holding both can tell the
+  // two lists apart, which is what a single-file test cannot do however exactly it is pinned.
+  it('a picture shown beside a file that is not keeps each to its own list', async () => {
+    const carried = [PASTED, { id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 10, isInline: false }];
+    const bodies = { m1: '\\[inline image: logo.png\\]' };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, bodies, attachments: { m1: carried } } });
+    const written = files.written.get(THREAD_FILE) ?? '';
+    const raw = `../../_attachments/${storedName('logo.png', 'sig')}`;
+
+    // What FOLLOWS the list is pinned too. Without it, a file leaking in after the picture's two
+    // entries still satisfies a `toContain`, which is the whole mistake this test exists to catch.
+    expect(written).toContain(`attachments:\n  - _attachments/Contrat.docx.md\ninline_images:\n  - ${raw}\n  - ${raw}.md\n---`);
   });
 
   it('a message Graph says carries nothing, showing no picture, is never asked what it carried', async () => {
@@ -833,7 +851,9 @@ describe('what a message body says about the files it carried', () => {
     const attachments = { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false }] };
     const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
 
-    expect(files.written.get(THREAD_FILE)).toContain(`**Attachments:**\n- [Contrat.docx](${shownAt('att1', 'Contrat.docx')}.md) (4.0 KB, application/vnd)`);
+    // The card beside the thread, not the store: `shownAt` still names the store, and stays correct
+    // for a picture shown in the body, which points at the image itself rather than at a card.
+    expect(files.written.get(THREAD_FILE)).toContain('**Attachments:**\n- [Contrat.docx](_attachments/Contrat.docx.md) (4.0 KB, application/vnd)');
   });
 
   it('the list the converter closed the body with is replaced, taking its Graph id with it', async () => {
@@ -852,6 +872,6 @@ describe('what a message body says about the files it carried', () => {
     const attachments = { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 4096, isInline: false }] };
     const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
 
-    expect(files.written.get(THREAD_FILE)).toContain('- Demo.mp4 (4.0 KB, video/mp4), a kind of file this tool does not read');
+    expect(files.written.get(THREAD_FILE)).toContain('- [Demo.mp4](_attachments/Demo.mp4.md) (4.0 KB, video/mp4), a kind of file this tool does not read');
   });
 });

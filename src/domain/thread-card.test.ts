@@ -10,7 +10,7 @@ const card = {
   sender: 'Jane Doe',
   received: '2026-05-12T09:31:00Z',
   bytes: 412887,
-  holds: '../../../_attachments/Contrat-a1b2c3d4.docx.md',
+  body: '## 1. Scope\n\nPOS terminals, back office switch…',
   original: '../../../_attachments/Contrat-a1b2c3d4.docx',
 };
 
@@ -27,31 +27,33 @@ describe('standing for a file a thread carried', () => {
         'sender: Jane Doe',
         'received: "2026-05-12T09:31:00Z"',
         'bytes: 412887',
-        'holds: ../../../_attachments/Contrat-a1b2c3d4.docx.md',
         'original: ../../../_attachments/Contrat-a1b2c3d4.docx',
         '---',
         '',
         '# Contrat.docx',
         '',
-        'Carried by Jane Doe on 2026-05-12. The text read out of it is in [the shared store](../../../_attachments/Contrat-a1b2c3d4.docx.md),',
-        'where it is held once however many threads carried it.',
+        'Carried by Jane Doe on 2026-05-12.',
+        '',
+        '## 1. Scope',
+        '',
+        'POS terminals, back office switch…',
         '',
       ].join('\n')
     );
   });
 
   it('a file nobody could read says why, rather than pointing at nothing', () => {
-    const written = renderThreadCard({ ...card, holds: undefined, original: undefined, note: 'larger than the 50 MB cap' });
+    const written = renderThreadCard({ ...card, body: undefined, original: undefined, note: 'larger than the 50 MB cap' });
 
     expect(written).toContain('larger than the 50 MB cap');
-    expect(written).not.toContain('holds:');
+    expect(written).not.toContain('## 1. Scope');
   });
 
   it('a file that was kept whole but never read points only at what was kept', () => {
-    const written = renderThreadCard({ ...card, holds: undefined });
+    const written = renderThreadCard({ ...card, body: undefined });
 
     expect(written).toContain('original: ../../../_attachments/Contrat-a1b2c3d4.docx');
-    expect(written).not.toContain('holds:');
+    expect(written).toContain('Nothing was read out of it.');
   });
 
   it('a file from nobody in particular still says when it arrived', () => {
@@ -63,7 +65,7 @@ describe('standing for a file a thread carried', () => {
   });
 
   it('a file nothing was read from and nothing explains still says so plainly', () => {
-    expect(renderThreadCard({ ...card, holds: undefined, original: undefined })).toContain('Nothing was read out of it.');
+    expect(renderThreadCard({ ...card, body: undefined, original: undefined })).toContain('Nothing was read out of it.');
   });
 });
 

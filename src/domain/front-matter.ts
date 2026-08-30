@@ -40,3 +40,25 @@ const withoutTrailingNewlines = (body: string): string => {
 
 // Generated files end with exactly one newline, the way every other text file on disk does.
 export const withFrontMatter = (frontMatter: string, body: string): string => (body.length === 0 ? `${frontMatter}\n` : `${frontMatter}\n\n${withoutTrailingNewlines(body)}\n`);
+
+const FENCE = '---';
+
+const NOT_FOUND = -1;
+
+// The stamp off a document that already carries one, so it can be carried into another that has its
+// own. Only a stamp: a document must OPEN with the fence, and the fence must close, or it is left
+// exactly as it came. A rule between paragraphs is not a stamp, and half a stamp is not one either,
+// so neither is allowed to eat the document.
+export const withoutFrontMatter = (document: string): string => {
+  const lines = document.split('\n');
+  if (lines[0] !== FENCE) return document;
+  // Exactly "not found": searched from the second line, `indexOf` answers -1 or an index of at least
+  // one, never zero, so a `< 0` test carries a case nothing can reach.
+  const close = lines.indexOf(FENCE, 1);
+  return close === NOT_FOUND
+    ? document
+    : lines
+        .slice(close + 1)
+        .join('\n')
+        .trim();
+};

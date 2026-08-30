@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { renderFrontMatter, withFrontMatter } from './front-matter.ts';
+import { renderFrontMatter, withFrontMatter, withoutFrontMatter } from './front-matter.ts';
 
 describe('stamping a generated markdown file with where it came from', () => {
   it('a converted document carries its source, its path and when it was synced', () => {
@@ -100,5 +100,33 @@ describe('joining the stamp to the converted body', () => {
 
   it('a document that converted to nothing still gets its stamp', () => {
     expect(withFrontMatter(renderFrontMatter([['site', 'Espace Contoso']]), '')).toBe(['---', 'site: Espace Contoso', '---', ''].join('\n'));
+  });
+});
+
+// A stored extract opens with its own stamp. Carrying it into a card that already has one would
+// nest two, and a reader would meet a `---` block in the middle of a document.
+describe('taking the stamp off a document that already carries one', () => {
+  it('the stamp goes and the document it opened stays', () => {
+    expect(withoutFrontMatter('---\nsource: x\nsite: y\n---\n\n# Title\n\nBody.')).toBe('# Title\n\nBody.');
+  });
+
+  it('a document that never had one is left exactly as it came', () => {
+    expect(withoutFrontMatter('# Title\n\nBody.')).toBe('# Title\n\nBody.');
+  });
+
+  // A rule between paragraphs is not a stamp, and a document that opens on one is not stamped.
+  it('a rule inside the body is left alone', () => {
+    expect(withoutFrontMatter('# Title\n\n---\n\nBody.')).toBe('# Title\n\n---\n\nBody.');
+  });
+
+  // Trailing newline and all: an unclosed stamp is not a stamp, so the document comes back exactly
+  // as it came rather than trimmed on the way through.
+  it('a stamp that was never closed is left alone, rather than eating the document', () => {
+    expect(withoutFrontMatter('---\nsource: x\n\n# Title')).toBe('---\nsource: x\n\n# Title');
+    expect(withoutFrontMatter('---\nsource: x\n\n# Title\n')).toBe('---\nsource: x\n\n# Title\n');
+  });
+
+  it('a document that is nothing but its stamp reads as empty', () => {
+    expect(withoutFrontMatter('---\nsource: x\n---\n')).toBe('');
   });
 });

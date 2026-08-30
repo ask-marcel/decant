@@ -4,7 +4,7 @@ import type { DocumentStamp } from '../domain/kb-document.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import type { AttachmentRecord, LinkedRecord, ThreadRecord } from '../domain/mail-state.ts';
-import { renderFrontMatter } from '../domain/front-matter.ts';
+import { renderFrontMatter, withoutFrontMatter } from '../domain/front-matter.ts';
 import { carriesInlineImage } from '../domain/inline-image.ts';
 import type { CarriedFile } from '../domain/mail-body.ts';
 import { rewriteMessageBody } from '../domain/mail-body.ts';
@@ -320,32 +320,71 @@ const pictureOf = (here: string, file: MessageFile): string | undefined => {
 };
 
 // Paths are written the way a reader follows them: from the folder the conversation sits in.
-const carriedBy = (here: string, files: ReadonlyArray<MessageFile>): ReadonlyArray<CarriedFile> =>
+// Named in one pure pass before anything is rewritten, so the link a body carries and the file on
+// disk are decided together and cannot disagree. A picture shown in the body still takes a name it
+// will not use, which keeps the numbering of everything after it stable whether or not it is shown.
+const cardNames = (parts: ReadonlyArray<ThreadPart>, byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>): Readonly<Record<string, string>> => {
+  const taken: string[] = [];
+  const named: Record<string, string> = {};
+  for (const part of parts) {
+    for (const file of byMessage[part.message.id] ?? []) {
+      const name = cardFileName(file.attachment.name, taken);
+      taken.push(name);
+      named[file.attachment.id] = name;
+    }
+  }
+  return named;
+};
+
+// `cards` is the card folder's own path, not the segment: `pathBetween` resolves its second argument
+// against the working directory, so handing it `_attachments` climbs out of the vault entirely.
+// The card and the file it stands for, kept together rather than lined up by index: what a body
+// links to and what the record counts as shown are two views of one file, and pairing them is what
+// stops a guard standing in for an invariant that already holds.
+type Carried = { readonly carried: CarriedFile; readonly stored?: string };
+
+const carriedBy = (here: string, cards: string, names: Readonly<Record<string, string>>, files: ReadonlyArray<MessageFile>): ReadonlyArray<Carried> =>
   files.map((file) => ({
-    name: file.attachment.name,
-    size: file.attachment.size,
-    contentType: file.attachment.contentType,
-    contentId: file.attachment.contentId,
-    isInline: file.attachment.isInline,
-    path: file.primary === undefined ? undefined : pathBetween(here, file.primary),
-    picture: pictureOf(here, file),
-    note: file.note,
+    stored: file.primary,
+    carried: {
+      name: file.attachment.name,
+      size: file.attachment.size,
+      contentType: file.attachment.contentType,
+      contentId: file.attachment.contentId,
+      isInline: file.attachment.isInline,
+      path: pathBetween(here, `${cards}/${names[file.attachment.id] ?? file.attachment.name}`),
+      picture: pictureOf(here, file),
+      note: file.note,
+    },
   }));
 
 type ThreadBodies = { readonly parts: ReadonlyArray<ThreadPart>; readonly pictures: ReadonlyArray<string> };
 
 // A picture shown in a body is named nowhere else, so both files it produced, the picture and the
 // text read out of it, leave the attachment list and go under `inline_images` instead.
-const shownPaths = (here: string, carried: ReadonlyArray<CarriedFile>, pictures: ReadonlyArray<string>): ReadonlyArray<string> =>
-  carried
-    .filter((file) => file.picture !== undefined && pictures.includes(file.picture))
-    .flatMap((file) => [file.picture, file.path].flatMap((ref) => (ref === undefined ? [] : [pathUnder(here, ref)])));
+// Reported as STORE paths, not as the card paths a body now links to: this is what filters the
+// record's attachment list, and that list names what is in the store.
+const shownPaths = (here: string, carried: ReadonlyArray<Carried>, pictures: ReadonlyArray<string>): ReadonlyArray<string> =>
+  carried.flatMap((pair) => {
+    const picture = pair.carried.picture;
+    if (picture === undefined || !pictures.includes(picture)) return [];
+    return pair.stored === undefined ? [pathUnder(here, picture)] : [pathUnder(here, picture), pair.stored];
+  });
 
-const rewriteBodies = (here: string, parts: ReadonlyArray<ThreadPart>, byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>): ThreadBodies => {
+const rewriteBodies = (
+  here: string,
+  cards: string,
+  names: Readonly<Record<string, string>>,
+  parts: ReadonlyArray<ThreadPart>,
+  byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>
+): ThreadBodies => {
   const pictures: string[] = [];
   const rewritten = parts.map((part) => {
-    const carried = carriedBy(here, byMessage[part.message.id] ?? []);
-    const body = rewriteMessageBody(part.body, carried);
+    const carried = carriedBy(here, cards, names, byMessage[part.message.id] ?? []);
+    const body = rewriteMessageBody(
+      part.body,
+      carried.map((pair) => pair.carried)
+    );
     for (const path of shownPaths(here, carried, body.pictures)) if (!pictures.includes(path)) pictures.push(path);
     return { message: part.message, body: body.body };
   });
@@ -406,16 +445,21 @@ const writeCards = async (
   place: ThreadPlace,
   parts: ReadonlyArray<ThreadPart>,
   byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>,
+  names: Readonly<Record<string, string>>,
   shown: ReadonlySet<string>
-): Promise<void> => {
+): Promise<ReadonlyArray<string>> => {
   const folder = `${place.here}/${CARDS_FOLDER}`;
-  const taken: string[] = [];
+  const written: string[] = [];
   for (const part of parts) {
     for (const file of byMessage[part.message.id] ?? []) {
       if (file.primary !== undefined && shown.has(file.primary)) continue;
-      const name = cardFileName(file.attachment.name, taken);
-      taken.push(name);
+      const name = names[file.attachment.id];
+      if (name === undefined) continue;
       const raw = file.paths.find((path) => path !== file.primary);
+      // Read back out of the store and carried here, rather than linked. The bytes stay stored once,
+      // which is where duplication actually costs; the text is a fraction of their size, and a
+      // thread that has to be followed three levels up to be read is not a thread anyone can read.
+      const stored = file.primary === undefined ? undefined : await deps.files.readText(file.primary);
       const card = renderThreadCard({
         threadId: input.threadId,
         messageId: part.message.id,
@@ -423,14 +467,16 @@ const writeCards = async (
         sender: part.message.from?.name,
         received: part.message.received,
         bytes: file.attachment.size,
-        holds: file.primary === undefined ? undefined : pathBetween(folder, file.primary),
+        body: stored?.ok === true ? withoutFrontMatter(stored.value) : undefined,
         original: raw === undefined ? undefined : pathBetween(folder, raw),
         note: file.note,
       });
       const saved = await deps.files.writeText(`${folder}/${name}`, card);
-      if (!saved.ok) deps.logger.warn('card.failed', { filename: file.attachment.name, cause: saved.error.kind });
+      if (saved.ok) written.push(`${folder}/${name}`);
+      else deps.logger.warn('card.failed', { filename: file.attachment.name, cause: saved.error.kind });
     }
   }
+  return written;
 };
 
 const LINK_CARDS_FOLDER = '_linked';
@@ -480,11 +526,14 @@ const writeThread = async (
   // Attachments live in the shared store one level up from the thread, so their references climb out
   // of the thread's own folder rather than sitting beside it.
   const here = place.here;
-  const bodies = rewriteBodies(here, parts, attachments.byMessage);
+  const names = cardNames(parts, attachments.byMessage);
+  const bodies = rewriteBodies(here, `${here}/${CARDS_FOLDER}`, names, parts, attachments.byMessage);
   const shown = new Set([...bodies.pictures, ...attachments.media]);
-  await writeCards(deps, input, place, parts, attachments.byMessage, shown);
+  // The head cites the thread's OWN cards, not the store three levels up, so a reader follows a
+  // path that stays inside the folder they already opened.
+  const cardPaths = await writeCards(deps, input, place, parts, attachments.byMessage, names, shown);
   await writeLinkCards(deps, input, place, links.referenced);
-  const attachmentRefs = attachments.paths.filter((path) => !shown.has(path)).map((path) => pathBetween(here, path));
+  const attachmentRefs = cardPaths.map((path) => pathBetween(here, path));
   const inlineRefs = bodies.pictures.map((path) => pathBetween(here, path));
   // Linked files are written from the thread's own folder, exactly as attachments are: both climb out
   // of it to a store the whole mailbox shares, and a reader follows either one the same way.
