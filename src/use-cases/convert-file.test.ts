@@ -160,11 +160,23 @@ describe('converting one document out of a library', () => {
 
   it('a meeting invitation in a library is read down to the meeting', async () => {
     const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'SUMMARY:Kick-off', 'DTSTART:20260812T060000Z', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
-    const { files } = await run({ name: 'invite.ics' }, { reader: { markdown: { '01ABC': ics } } });
+    const { outcome, files } = await run({ name: 'invite.ics' }, { reader: { markdown: { '01ABC': ics } } });
     const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/invite.ics.md') ?? '';
 
     expect(written).toContain('## Kick-off');
     expect(written).not.toContain('BEGIN:VEVENT');
+    // The one document it produces, named. An invitation keeps no copy of the file it came from:
+    // the fields are the whole of it, and the `.ics` around them says nothing a reader wants.
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/invite.ics.md'] });
+  });
+
+  // An invitation the library passes through with nothing in it still gets a document saying so,
+  // rather than a file holding an empty string, which reads as a conversion that worked.
+  it('an invitation with no fields to read is written as a note, not as an empty document', async () => {
+    const { files } = await run({ name: 'invite.ics' }, { reader: { markdown: { '01ABC': 'BEGIN:VCALENDAR\nEND:VCALENDAR' } } });
+    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/invite.ics.md') ?? '';
+
+    expect(written).toContain('No text could be read from this file');
   });
 
   it('the markdown carries where it came from, when it changed and who changed it', async () => {
@@ -402,6 +414,23 @@ describe('converting one document out of a library', () => {
     const { outcome, files } = await run({ name: 'Contrat.pdf', path: 'Contrat.pdf' }, { reader: { failWith: { kind: 'permanent', status: 404, message: 'gone' } } });
 
     expect(outcome.kind).toBe('failed');
+    expect(files.written.size).toBe(0);
+  });
+
+  // The three kinds whose failure had never been exercised. Each reads the source before it writes
+  // anything, so a refusal there has to end the conversion rather than leave a document behind
+  // saying the file held nothing.
+  it('a workbook the source will not read is reported, not written as an empty one', async () => {
+    const { outcome, files } = await run({ name: 'Budget.xlsx', path: 'Budget.xlsx' }, { reader: { failWith: { kind: 'transient', message: 'timed out' } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'transient: timed out' });
+    expect(files.written.size).toBe(0);
+  });
+
+  it('an invitation the source will not read is reported, not written as an empty one', async () => {
+    const { outcome, files } = await run({ name: 'Kick-off.ics', path: 'Kick-off.ics' }, { reader: { failWith: { kind: 'permanent', status: 404, message: 'gone' } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'permanent: gone' });
     expect(files.written.size).toBe(0);
   });
 
