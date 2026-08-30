@@ -299,6 +299,38 @@ describe('the pictures a document attached to a mail holds', () => {
   });
 });
 
+// The one place the thread's own stamp reaches disk. A card is written over every document the
+// converter produced at the top level, so what that stamp said is normally replaced; a saved email
+// unpacks into a FOLDER, and the documents inside it are below the card's path and keep it.
+describe('a saved email unpacked into its parts', () => {
+  const EML = [
+    'From: Tina Wu <tina@example.com>',
+    'Subject: Fwd: Contrat',
+    'Content-Type: multipart/mixed; boundary="B"',
+    '',
+    '--B',
+    'Content-Type: text/plain',
+    '',
+    'Voici le contrat.',
+    '--B',
+    'Content-Type: application/vnd; name="Contrat.docx"',
+    'Content-Transfer-Encoding: base64',
+    '',
+    'Q29udHJhdA==',
+    '--B--',
+  ].join('\n');
+
+  it('the documents inside it say which mailbox they came out of', async () => {
+    const carried = { m1: [{ id: 'att1', name: 'Fwd.eml', contentType: 'message/rfc822', size: 512, isInline: false }] };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: carried, attachmentRaw: { att1: EML } } });
+    const inside = files.written.get(`${ATTACHMENTS_STORE}/Fwd/Contrat.docx.md`) ?? '';
+
+    expect(inside).toContain(`source: conversation ${CONV}`);
+    expect(inside).toContain('site: Mailbox');
+    expect(inside).toContain('library: Mailbox');
+  });
+});
+
 describe('an email attached to an email', () => {
   const EMBEDDED = { kind: 'item' as const, id: 'att1', name: 'Customs documents MSDU1691268', contentType: '', size: 2764134, isInline: false };
   const RENDERED = '**Subject:** Customs documents\n\nSee attached.';

@@ -349,12 +349,15 @@ describe('when the mailbox or the disk refuses', () => {
     expect(files.written.size).toBe(0);
   });
 
-  it('a knowledge base that cannot be written to is reported', async () => {
-    const { ok: succeeded } = await run({
+  // Reported with the reason the disk gave, and as permanent: a full disk is not something a retry
+  // of this thread fixes, and an error with no kind on it tells a caller nothing it can act on.
+  it('a knowledge base that cannot be written to is reported, with what the disk said', async () => {
+    const { ok: succeeded, error } = await run({
       reader: { conversations: { [CONV]: [message()] } },
       files: { failWriteWith: { kind: 'write-failed', path: 'kb', message: 'disk full' } },
     });
 
     expect(succeeded).toBe(false);
+    expect(error).toEqual({ kind: 'permanent', message: 'disk full' });
   });
 });

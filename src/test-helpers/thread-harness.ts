@@ -21,6 +21,7 @@ import { createProgressFake } from './progress-fake.ts';
 import { createConvertAttachment } from '../use-cases/convert-attachment.ts';
 import { createConvertFile } from '../use-cases/convert-file.ts';
 import { createRenderThread } from '../use-cases/render-thread.ts';
+import type { MailReaderError } from '../use-cases/ports/mail-reader.ts';
 import type { RenderThreadOutcome } from '../use-cases/render-thread.ts';
 
 export const CONV = 'AAQkADk0...=';
@@ -74,6 +75,7 @@ export const run = async (
   logger: LoggerFake;
   reader: ReturnType<typeof createMailReaderFake>;
   drive: ReturnType<typeof createDriveReaderFake>;
+  error: MailReaderError | undefined;
   ok: boolean;
 }> => {
   const files = createFilesFake(seeds.files);
@@ -100,5 +102,5 @@ export const run = async (
     linked: seeds.linked ?? {},
     attachments: seeds.attachments ?? {},
   });
-  return { outcome: result.ok ? result.value : undefined, files, logger, reader, drive, ok: result.ok };
+  return { outcome: result.ok ? result.value : undefined, error: result.ok ? undefined : result.error, files, logger, reader, drive, ok: result.ok };
 };
