@@ -10,11 +10,10 @@ import type { CarriedFile } from '../domain/mail-body.ts';
 import { rewriteMessageBody } from '../domain/mail-body.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
-import { disambiguateSegment } from '../domain/kb-path.ts';
 import { participantsOf, renderThread, threadTitle } from '../domain/thread.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
 import { renderLinkCard } from '../domain/link-card.ts';
-import { cardFileName, renderThreadCard } from '../domain/thread-card.ts';
+import { cardFileName, renderThreadCard, uniqueName } from '../domain/thread-card.ts';
 import { threadFolderName } from '../domain/thread-folder.ts';
 import type { ThreadId } from '../domain/thread-id.ts';
 import { FILE_SLUG_LIMIT, FOLDER_SLUG_LIMIT, slugify } from '../domain/thread-slug.ts';
@@ -58,8 +57,9 @@ export type RenderThreadInput = {
   readonly maxBytes: number;
   // Files already pulled from SharePoint by an earlier thread, so one link is fetched once.
   readonly linked: Readonly<Record<string, LinkedRecord>>;
-  // The shared attachment store as earlier threads left it, keyed by content address, so a file
-  // sent across many threads is converted once and later threads reference what is on disk.
+  // The attachment store as earlier threads left it, keyed by content address. Carried through and
+  // handed back so the index in `_meta` names every file the mailbox holds; no longer consulted
+  // before converting, since a thread now keeps its own copy of what it carried.
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
 };
 
@@ -213,7 +213,16 @@ const ATTACHMENTS_FOLDER = '_attachments';
 // to is the one place a reader looks for it, and a thread-wide list cannot say which message it came
 // with. A file the thread already stored for an earlier message is recorded again here, pointing at
 // the same copy on disk, so every message that carried it names it.
-type MessageFile = { readonly attachment: MailAttachment; readonly paths: ReadonlyArray<string>; readonly primary?: string; readonly note?: string };
+type MessageFile = {
+  readonly attachment: MailAttachment;
+  // The name the file was written under inside this thread's folder. Always present, taken before a
+  // single byte is fetched, so a file that never arrives still has a card to be recorded on and a
+  // name for the body to link at. The card is this plus `.md`, so the two cannot drift.
+  readonly asName: string;
+  readonly paths: ReadonlyArray<string>;
+  readonly primary?: string;
+  readonly note?: string;
+};
 
 type Media = ReadonlyArray<string>;
 
@@ -228,7 +237,14 @@ type AttachmentTally = {
   readonly failed: ReadonlyArray<ReportEntry>;
 };
 
-type Placed = { readonly paths: ReadonlyArray<string>; readonly primary?: string; readonly media?: Media; readonly skipped?: ReportEntry; readonly failed?: ReportEntry };
+type Placed = {
+  readonly asName: string;
+  readonly paths: ReadonlyArray<string>;
+  readonly primary?: string;
+  readonly media?: Media;
+  readonly skipped?: ReportEntry;
+  readonly failed?: ReportEntry;
+};
 
 // One attachment into the shared store. Its content address decides everything: a content already
 // stored is referenced without being converted again; a new content is converted once, under a name
@@ -253,7 +269,9 @@ const addressOf = async (deps: RenderThreadDeps, messageId: string, attachment: 
 const placeAttachment = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
+  place: ThreadPlace,
   store: Record<string, AttachmentRecord>,
+  taken: string[],
   messageId: string,
   attachment: MailAttachment,
   stamp: DocumentStamp
@@ -261,24 +279,41 @@ const placeAttachment = async (
   // The size cap is checked before the bytes are pulled, so a file past it is reported without ever
   // being downloaded. A kind we do not read is caught by the converter, which is the one authority
   // on that; by then the file is already in hand, so the only skip it can report is unsupported.
-  if (attachment.size > input.maxBytes) return { paths: [], skipped: { path: attachment.name, reason: tooLargeReason(input.maxBytes) } };
+  // Named before anything is fetched, so a file that never arrives still has somewhere to be
+  // recorded. A card for a file too large to pull, or of a kind nothing reads, is the only place
+  // its arrival and the reason are written down, and the body needs a name to link at.
+  const asName = uniqueName(attachment.name, taken);
+  taken.push(asName);
+  if (attachment.size > input.maxBytes) return { asName, paths: [], skipped: { path: attachment.name, reason: tooLargeReason(input.maxBytes) } };
   const address = await addressOf(deps, messageId, attachment);
-  if (!address.ok) return { paths: [], failed: { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` } };
+  if (!address.ok) return { asName, paths: [], failed: { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` } };
   const hash = address.value.hash;
+  // Within this thread only. A signature riding on ten messages of one conversation is converted
+  // once; the same file arriving in another thread is written there too, because a thread folder
+  // that has to reach into another thread to be read is not self-contained.
   const seen = store[hash];
-  if (seen !== undefined) return { paths: seen.paths, primary: seen.primary, media: seen.media };
-  const asName = disambiguateSegment(attachment.name, hash);
-  const folder = `${deps.mailboxRoot}/${ATTACHMENTS_FOLDER}`;
+  if (seen !== undefined) return { asName: seen.name, paths: seen.paths, primary: seen.primary, media: seen.media };
+  // No content address in the name any more. It was there because one store held every thread's
+  // files and needed names that could not collide across all of them; inside one thread only a
+  // same-name-different-content pair needs separating, and a number says that more plainly.
+  const folder = `${place.here}/${ATTACHMENTS_FOLDER}`;
   const rendered = address.value.rendered;
   const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, asName, rendered });
-  if (outcome.kind === 'skipped') return { paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, input.maxBytes) } };
-  if (outcome.kind === 'failed') return { paths: [], failed: { path: attachment.name, reason: outcome.reason } };
+  if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, input.maxBytes) } };
+  if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: attachment.name, reason: outcome.reason } };
   store[hash] = { name: asName, paths: outcome.outputs, primary: outcome.primary, media: outcome.media };
-  return { paths: outcome.outputs, primary: outcome.primary, media: outcome.media };
+  return { asName, paths: outcome.outputs, primary: outcome.primary, media: outcome.media };
 };
 
-const attachmentsOf = async (deps: RenderThreadDeps, input: RenderThreadInput, parts: ReadonlyArray<ThreadPart>, stamp: DocumentStamp): Promise<AttachmentTally> => {
-  const store: Record<string, AttachmentRecord> = { ...input.attachments };
+const attachmentsOf = async (
+  deps: RenderThreadDeps,
+  input: RenderThreadInput,
+  place: ThreadPlace,
+  parts: ReadonlyArray<ThreadPart>,
+  stamp: DocumentStamp
+): Promise<AttachmentTally> => {
+  const store: Record<string, AttachmentRecord> = {};
+  const taken: string[] = [];
   const paths: string[] = [];
   const skipped: ReportEntry[] = [];
   const failed: ReportEntry[] = [];
@@ -300,12 +335,12 @@ const attachmentsOf = async (deps: RenderThreadDeps, input: RenderThreadInput, p
     }
     const carried: MessageFile[] = [];
     for (const attachment of listed.value) {
-      const placed = await placeAttachment(deps, input, store, part.message.id, attachment, stamp);
+      const placed = await placeAttachment(deps, input, place, store, taken, part.message.id, attachment, stamp);
       for (const path of placed.paths) if (!paths.includes(path)) paths.push(path);
       if (placed.skipped) skipped.push(placed.skipped);
       if (placed.failed) failed.push(placed.failed);
       for (const path of placed.media ?? []) if (!media.includes(path)) media.push(path);
-      carried.push({ attachment, paths: placed.paths, primary: placed.primary, note: placed.skipped?.reason ?? placed.failed?.reason });
+      carried.push({ attachment, asName: placed.asName, paths: placed.paths, primary: placed.primary, note: placed.skipped?.reason ?? placed.failed?.reason });
     }
     byMessage[part.message.id] = carried;
   }
@@ -323,18 +358,9 @@ const pictureOf = (here: string, file: MessageFile): string | undefined => {
 // Named in one pure pass before anything is rewritten, so the link a body carries and the file on
 // disk are decided together and cannot disagree. A picture shown in the body still takes a name it
 // will not use, which keeps the numbering of everything after it stable whether or not it is shown.
-const cardNames = (parts: ReadonlyArray<ThreadPart>, byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>): Readonly<Record<string, string>> => {
-  const taken: string[] = [];
-  const named: Record<string, string> = {};
-  for (const part of parts) {
-    for (const file of byMessage[part.message.id] ?? []) {
-      const name = cardFileName(file.attachment.name, taken);
-      taken.push(name);
-      named[file.attachment.id] = name;
-    }
-  }
-  return named;
-};
+// The card sits beside the file it stands for and takes its name, so neither the body's link nor the
+// write below has to look anything up: both ask the file what it was called.
+const cardNameOf = (file: MessageFile): string => `${file.asName}.md`;
 
 // `cards` is the card folder's own path, not the segment: `pathBetween` resolves its second argument
 // against the working directory, so handing it `_attachments` climbs out of the vault entirely.
@@ -343,7 +369,7 @@ const cardNames = (parts: ReadonlyArray<ThreadPart>, byMessage: Readonly<Record<
 // stops a guard standing in for an invariant that already holds.
 type Carried = { readonly carried: CarriedFile; readonly stored?: string };
 
-const carriedBy = (here: string, cards: string, names: Readonly<Record<string, string>>, files: ReadonlyArray<MessageFile>): ReadonlyArray<Carried> =>
+const carriedBy = (here: string, cards: string, files: ReadonlyArray<MessageFile>): ReadonlyArray<Carried> =>
   files.map((file) => ({
     stored: file.primary,
     carried: {
@@ -352,7 +378,7 @@ const carriedBy = (here: string, cards: string, names: Readonly<Record<string, s
       contentType: file.attachment.contentType,
       contentId: file.attachment.contentId,
       isInline: file.attachment.isInline,
-      path: pathBetween(here, `${cards}/${names[file.attachment.id] ?? file.attachment.name}`),
+      path: pathBetween(here, `${cards}/${cardNameOf(file)}`),
       picture: pictureOf(here, file),
       note: file.note,
     },
@@ -371,16 +397,10 @@ const shownPaths = (here: string, carried: ReadonlyArray<Carried>, pictures: Rea
     return pair.stored === undefined ? [pathUnder(here, picture)] : [pathUnder(here, picture), pair.stored];
   });
 
-const rewriteBodies = (
-  here: string,
-  cards: string,
-  names: Readonly<Record<string, string>>,
-  parts: ReadonlyArray<ThreadPart>,
-  byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>
-): ThreadBodies => {
+const rewriteBodies = (here: string, cards: string, parts: ReadonlyArray<ThreadPart>, byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>): ThreadBodies => {
   const pictures: string[] = [];
   const rewritten = parts.map((part) => {
-    const carried = carriedBy(here, cards, names, byMessage[part.message.id] ?? []);
+    const carried = carriedBy(here, cards, byMessage[part.message.id] ?? []);
     const body = rewriteMessageBody(
       part.body,
       carried.map((pair) => pair.carried)
@@ -445,20 +465,26 @@ const writeCards = async (
   place: ThreadPlace,
   parts: ReadonlyArray<ThreadPart>,
   byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>,
-  names: Readonly<Record<string, string>>,
   shown: ReadonlySet<string>
 ): Promise<ReadonlyArray<string>> => {
   const folder = `${place.here}/${CARDS_FOLDER}`;
   const written: string[] = [];
+  const carded = new Set<string>();
   for (const part of parts) {
     for (const file of byMessage[part.message.id] ?? []) {
       if (file.primary !== undefined && shown.has(file.primary)) continue;
-      const name = names[file.attachment.id];
-      if (name === undefined) continue;
+      // One card per FILE, not per arrival: a signature riding on ten messages of one thread is one
+      // file on disk and reads as one entry in the folder beside it.
+      const name = cardNameOf(file);
+      if (carded.has(name)) continue;
+      carded.add(name);
       const raw = file.paths.find((path) => path !== file.primary);
-      // Read back out of the store and carried here, rather than linked. The bytes stay stored once,
-      // which is where duplication actually costs; the text is a fraction of their size, and a
-      // thread that has to be followed three levels up to be read is not a thread anyone can read.
+      // Read, then written back over the same path, deliberately. The converter puts the extracted
+      // text at `<name>.<ext>.md` inside this folder and the card wants that exact name, because a
+      // reader opening the folder should find ONE document per file, not a card and an extract
+      // saying the same thing. Reading first is what makes the overwrite safe: the body comes
+      // forward, and the arrival facts, who sent it and under which message, replace a stamp that
+      // said which library it came from, which is the wrong question for mail.
       const stored = file.primary === undefined ? undefined : await deps.files.readText(file.primary);
       const card = renderThreadCard({
         threadId: input.threadId,
@@ -521,17 +547,16 @@ const writeThread = async (
   const place = placeOf(deps, input, first);
   const relative = place.relative;
   const stamp = stampFor(deps, input, first, last);
-  const attachments = await attachmentsOf(deps, input, parts, stamp);
+  const attachments = await attachmentsOf(deps, input, place, parts, stamp);
   const links = await linkedFiles(deps, input, parts);
-  // Attachments live in the shared store one level up from the thread, so their references climb out
-  // of the thread's own folder rather than sitting beside it.
+  // Everything the thread carried sits inside the thread's own folder, so every reference below is
+  // relative to `here` and stays within the directory a reader already has open.
   const here = place.here;
-  const names = cardNames(parts, attachments.byMessage);
-  const bodies = rewriteBodies(here, `${here}/${CARDS_FOLDER}`, names, parts, attachments.byMessage);
+  const bodies = rewriteBodies(here, `${here}/${CARDS_FOLDER}`, parts, attachments.byMessage);
   const shown = new Set([...bodies.pictures, ...attachments.media]);
   // The head cites the thread's OWN cards, not the store three levels up, so a reader follows a
   // path that stays inside the folder they already opened.
-  const cardPaths = await writeCards(deps, input, place, parts, attachments.byMessage, names, shown);
+  const cardPaths = await writeCards(deps, input, place, parts, attachments.byMessage, shown);
   await writeLinkCards(deps, input, place, links.referenced);
   const attachmentRefs = cardPaths.map((path) => pathBetween(here, path));
   const inlineRefs = bodies.pictures.map((path) => pathBetween(here, path));
