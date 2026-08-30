@@ -103,6 +103,7 @@ const threadHeader = (
   first: MailMessage,
   last: MailMessage,
   syncedAt: string,
+  relative: string,
   attachments: ReadonlyArray<string>,
   inlineImages: ReadonlyArray<string>,
   linked: ReadonlyArray<string>
@@ -116,6 +117,12 @@ const threadHeader = (
     ['conversation_id', input.conversationIds],
     ['source', sourceOf(input)],
     ['site', 'Mailbox'],
+    // Where this document is, said by the document. Every path below is relative to the folder it
+    // sits in, which is exactly what a thread pasted into a context window no longer has: without
+    // this line nothing in the file can be resolved once it leaves the disk, and the thread cannot
+    // be traced back to where it came from. Relative to the mailbox root, the way the drive-side
+    // documents name themselves.
+    ['path', relative],
     ['subject', threadTitle(first.subject)],
     ['participants', participantsOf(parts)],
     ['first_message', first.received],
@@ -198,7 +205,7 @@ const writeThread = async (
   // Linked files are written from the thread's own folder, exactly as attachments are: both climb out
   // of it to a store the whole mailbox shares, and a reader follows either one the same way.
   const linkedRefs = links.paths.map((path) => pathBetween(here, path));
-  const header = threadHeader(input, parts, first, last, stamp.syncedAt, attachmentRefs, inlineRefs, linkedRefs);
+  const header = threadHeader(input, parts, first, last, stamp.syncedAt, relative, attachmentRefs, inlineRefs, linkedRefs);
   const written = await deps.files.writeText(`${deps.mailboxRoot}/${relative}`, `${header}\n\n${renderThread({ subject: first.subject, parts: bodies.parts }, deps.timezone)}\n`);
   if (!written.ok) return err({ kind: 'permanent', message: written.error.message });
   // Named with the conversation they arrived in: two threads can each carry an `image002.wmz`, and

@@ -46,6 +46,7 @@ describe('writing one conversation as one file', () => {
         `  - ${CONV}`,
         `source: conversation ${CONV}`,
         'site: Mailbox',
+        `path: ${THREAD_RELATIVE}`,
         'subject: Contrat Contoso',
         'participants:',
         '  - Jane Doe <jane@example.com>',
