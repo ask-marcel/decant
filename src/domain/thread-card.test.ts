@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { cardFileName, renderThreadCard } from './thread-card.ts';
+import { renderThreadCard, uniqueName } from './thread-card.ts';
 
 const text = (value: string): string => value;
 
@@ -69,29 +69,31 @@ describe('standing for a file a thread carried', () => {
   });
 });
 
-describe('naming a card beside its thread', () => {
-  it('a card is named for the file it stands for, so a folder listing reads as an inventory', () => {
-    expect(text(cardFileName('Contrat.docx', []))).toBe('Contrat.docx.md');
+// One name for the file and its card both: the card is this plus `.md`, so a folder listing reads
+// as an inventory and the two cannot drift apart.
+describe('naming a file inside the thread folder it landed in', () => {
+  it('a file keeps the name it was sent under, which is what a reader is looking for', () => {
+    expect(text(uniqueName('Contrat.docx', []))).toBe('Contrat.docx');
   });
 
   // Two attachments of one name in a single thread is ordinary: a form resent after correction
-  // keeps its name. Both are kept, since the store holds them apart by content.
-  it('a second file of the same name in one thread gets its own card', () => {
-    expect(text(cardFileName('Contrat.docx', ['Contrat.docx.md']))).toBe('Contrat-2.docx.md');
-    expect(text(cardFileName('Contrat.docx', ['Contrat.docx.md', 'Contrat-2.docx.md']))).toBe('Contrat-3.docx.md');
+  // keeps its name. Both are kept, told apart by a number.
+  it('a second file of the same name in one thread is numbered rather than overwriting the first', () => {
+    expect(text(uniqueName('Contrat.docx', ['Contrat.docx']))).toBe('Contrat-2.docx');
+    expect(text(uniqueName('Contrat.docx', ['Contrat.docx', 'Contrat-2.docx']))).toBe('Contrat-3.docx');
   });
 
   it('a file with no extension is numbered without inventing one', () => {
-    expect(text(cardFileName('README', ['README.md']))).toBe('README-2.md');
+    expect(text(uniqueName('README', ['README']))).toBe('README-2');
   });
 
   // A leading dot names a hidden file rather than opening an extension, so the number goes on the
   // end of the whole name instead of in front of what looks like one.
   it('a hidden file is numbered whole, since its leading dot opens no extension', () => {
-    expect(text(cardFileName('.gitignore', ['.gitignore.md']))).toBe('.gitignore-2.md');
+    expect(text(uniqueName('.gitignore', ['.gitignore']))).toBe('.gitignore-2');
   });
 
   it('a name the filesystem could not hold is made safe before it becomes a path', () => {
-    expect(text(cardFileName('Q1/Q2 budget.xlsx', []))).toBe('Q1_Q2 budget.xlsx.md');
+    expect(text(uniqueName('Q1/Q2 budget.xlsx', []))).toBe('Q1_Q2 budget.xlsx');
   });
 });

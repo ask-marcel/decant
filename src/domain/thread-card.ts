@@ -79,18 +79,3 @@ export const uniqueName = (filename: string, taken: ReadonlyArray<string>): Safe
   }
   return candidate;
 };
-
-// The same, for a card that stands alone: a linked file lives in the dated `_linked/` store, so the
-// thread holds only the card and the name it is numbered under is the card's own.
-export const cardFileName = (filename: string, taken: ReadonlyArray<string>): SafeSegment => {
-  const cut = extensionStart(filename);
-  const stem = filename.slice(0, cut);
-  const extension = filename.slice(cut);
-  let attempt = 1;
-  let candidate = safeSegment(`${filename}.md`);
-  while (taken.includes(candidate)) {
-    attempt += 1;
-    candidate = safeSegment(`${stem}-${attempt}${extension}.md`);
-  }
-  return candidate;
-};
