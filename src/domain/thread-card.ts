@@ -63,9 +63,25 @@ const extensionStart = (name: string): number => {
   return lastDot <= 0 ? name.length : lastDot;
 };
 
-// Two attachments of one name in a single thread is ordinary, a form resent after correction being
-// the usual way. Both are kept: the store already holds them apart by content, so the only thing
-// missing is a name for the second card.
+// The file itself, under a name no other file in this thread has taken. Two attachments of one name
+// in a single thread is ordinary, a form resent after correction being the usual way, and both are
+// kept: the second is numbered. The card beside it is this plus `.md`, so the pair is one decision
+// rather than two that have to be kept in step.
+export const uniqueName = (filename: string, taken: ReadonlyArray<string>): SafeSegment => {
+  const cut = extensionStart(filename);
+  const stem = filename.slice(0, cut);
+  const extension = filename.slice(cut);
+  let attempt = 1;
+  let candidate = safeSegment(filename);
+  while (taken.includes(candidate)) {
+    attempt += 1;
+    candidate = safeSegment(`${stem}-${attempt}${extension}`);
+  }
+  return candidate;
+};
+
+// The same, for a card that stands alone: a linked file lives in the dated `_linked/` store, so the
+// thread holds only the card and the name it is numbered under is the card's own.
 export const cardFileName = (filename: string, taken: ReadonlyArray<string>): SafeSegment => {
   const cut = extensionStart(filename);
   const stem = filename.slice(0, cut);
