@@ -140,7 +140,10 @@ const pullLinked = async (deps: LinkDeps, here: string, maxBytes: number, link: 
   if (outcome.kind === 'converted') return { record: { paths: outcome.outputs }, lastModified, modifiedBy };
   deps.logger.warn(outcome.kind === 'skipped' ? 'linked.skipped' : 'linked.failed', { itemId, name, cause: outcome.reason });
   if (outcome.kind === 'failed') return { failed: { path: name, reason: outcome.reason } };
-  return { skipped: { path: name, reason: skipReason(outcome.reason, maxBytes) } };
+  // The reason names the file at the SOURCE, not the link. A message can point at a document under
+  // any words it likes, and `.docx, which this tool does not read` about a recording is a lie the
+  // link's own label would have told.
+  return { skipped: { path: name, reason: skipReason(outcome.reason, maxBytes, found.value.name) } };
 };
 
 // One card per document the thread pointed at, beside the thread rather than in the store the

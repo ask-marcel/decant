@@ -100,7 +100,9 @@ describe('following the SharePoint files a conversation points at', () => {
     const seeded = { items: { '01ABC': { ...REPORT, name: 'Recording.mp4', path: 'Recording.mp4' } } };
     const { outcome, logger } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: seeded });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Rapport.docx`, reason: 'a kind of file this tool does not read' }]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([
+      { path: `${THREAD_RELATIVE}: Rapport.docx`, reason: 'a .mp4 file, which this tool does not read' },
+    ]);
     // Skipped, not failed: the two are told apart in the log as well as in the report, since one is
     // a decision this tool made and the other is something that went wrong.
     expect(logger.calls).toContainEqual({
