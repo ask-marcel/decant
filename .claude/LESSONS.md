@@ -453,6 +453,10 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   read from the same machine, where the default would have filed every thread under a Shanghai day.
   `my-quick-context` reports the tenant zone in Windows spelling, which `--timezone` refuses, so the
   mapping is a human step: Romance Standard Time is `Europe/Paris`.
+  Ask it per run rather than carrying the answer forward. On 2026-08-30 the signed-in account was
+  `vincent.delacourt@moovlogistics.com` reporting `China Standard Time`, so the machine default was
+  right and a run "corrected" to `Europe/Paris` on the strength of this note would have been wrong.
+  One call settles it; the note above records what one account said once.
 
 - [gotcha] Concurrency 4 is proven clean against real mail: 169 threads, 169 documents, no thread id
   in two folders. The race the sequential folder resolution guards against did not occur, and the
@@ -474,3 +478,22 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   proposed and declined in favour of an upstream fix, so the vault under-reports message bodies
   until the library changes. Anything reading these threads should be told that, and a thread whose
   section is a single line is a candidate for re-fetching rather than a short message.
+
+- [lesson] Deleting a shared store leaves dead code that only mutation testing sees. Moving
+  attachments from one content-addressed store at the mailbox root into each thread's own folder
+  dropped `render-thread.ts` from 91.13 to 88.60, under the per-file gate, with the whole suite
+  green and line coverage at 100. Every new survivor pointed at the same thing: naming the file
+  before its bytes are fetched made `asName` total, so an optional field, two `=== undefined`
+  guards, a `Record<string, string>` of card names and the three function parameters that carried it
+  were all answering a question that could no longer be asked. Removing them, rather than writing
+  tests for paths nothing can reach, put the file back over 90. Read a mutation drop after a
+  deletion as a map of what the deletion orphaned.
+
+- [gotcha] The card is written OVER the converter's extract, on purpose: both want
+  `_attachments/<name>.<ext>.md`, so `writeCards` reads the extract, carries the body forward and
+  replaces the library's stamp with the arrival facts. One document per file in the folder, not a
+  card and an extract saying the same thing. The consequence for tests is that the path is written
+  twice per file, so a "written once, not once per message" test asserts a write count of exactly 2
+  and a third write is the bug. Asserting `written.has(path)` instead passes against a card written
+  once per arrival, which is the mutant the test exists to catch: an assertion weakened to make a
+  test green stops testing the thing it was named for.
