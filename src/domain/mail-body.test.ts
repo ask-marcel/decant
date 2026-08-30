@@ -102,6 +102,17 @@ const CV: CarriedFile = {
 };
 
 describe('what a message body says once the files it carried are on disk', () => {
+  // The wiring, not the function. `withoutPlaceholders` had its own tests and passed them while
+  // nothing called it, so the vault kept ten markers a re-sync was supposed to have taken away.
+  it('a marker for a file nothing could place is gone from the rewritten body', () => {
+    const refused: CarriedFile = { ...LOGO, path: undefined, picture: undefined };
+    const rewritten = rewriteMessageBody('Hi,\n\n\\[inline image: image931066.png\\]\n\nRegards,', [refused]);
+
+    expect(rewritten.body).toContain('Hi,');
+    expect(rewritten.body).toContain('Regards,');
+    expect(rewritten.body).not.toContain('inline image:');
+  });
+
   // The picture and its words arrive together or the words are lost: nothing else in the thread
   // names an inline picture, so a reader who does not open it never learns what it said.
   it('the text read out of an inline picture is carried into the body under it', () => {
@@ -154,15 +165,18 @@ describe('what a message body says once the files it carried are on disk', () =>
     const rewritten = rewriteMessageBody('\\[inline image: image931066.png\\]', [refused]);
 
     expect(rewritten.body).toContain('- image931066.png (63.2 KB, image/png), larger than the 50 MB cap');
-    expect(rewritten.body).toContain('\\[inline image: image931066.png\\]');
+    // The marker goes with it. Nothing was placed, so it names a file that is not there, and the
+    // list above already says what arrived and why it is not here.
+    expect(rewritten.body).not.toContain('inline image:');
   });
 
   it('a picture attached rather than pasted is listed, never put into the body', () => {
     const attached: CarriedFile = { ...LOGO, isInline: false };
     const rewritten = rewriteMessageBody('\\[inline image: image931066.png\\]', [attached]);
 
-    expect(rewritten.body).toContain('\\[inline image: image931066.png\\]');
     expect(rewritten.body).toContain('**Attachments:**');
+    // Attached rather than pasted, so nothing shows it and no marker stands where it did not.
+    expect(rewritten.body).not.toContain('inline image:');
     expect(rewritten.pictures).toEqual([]);
   });
 

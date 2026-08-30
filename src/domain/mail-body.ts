@@ -1,4 +1,4 @@
-import { inlineImageLabels, linkInlineImages, pairInlineImages, showPicture } from './inline-image.ts';
+import { inlineImageLabels, linkInlineImages, pairInlineImages, showPicture, withoutPlaceholders } from './inline-image.ts';
 import { linkDestination } from './markdown-link.ts';
 import type { InlineImage } from './inline-image.ts';
 
@@ -99,7 +99,11 @@ export const rewriteMessageBody = (body: string, files: ReadonlyArray<CarriedFil
   const rest = files.filter((file) => !shown.some((picture) => picture.file === file));
   const unplaced = unplacedPictures(rest);
   const listed = rest.filter((file) => !unplaced.some((pair) => pair.file === file));
-  const parts = [linkInlineImages(text, shown), ...unplaced.map((pair) => showPicture(pair.file.name, pair.picture, pair.file.text)), renderAttachmentList(listed.map(asLink))];
+  const parts = [
+    withoutPlaceholders(linkInlineImages(text, shown)),
+    ...unplaced.map((pair) => showPicture(pair.file.name, pair.picture, pair.file.text)),
+    renderAttachmentList(listed.map(asLink)),
+  ];
   return {
     body: parts.filter((part) => part.length > 0).join('\n\n'),
     pictures: [...shown.map((picture) => picture.path), ...unplaced.map((pair) => pair.picture)],
