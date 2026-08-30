@@ -28,21 +28,23 @@ export type ConvertFileDeps = {
   readonly progress: Progress;
 };
 
+// Where the file goes, one way or the other. A sweep files a library under the day each document
+// last changed and the folders it had at the source, which is what `libraryRoot` is the root of. A
+// thread pulling one document names the folder outright: it sits beside the card standing for it,
+// and a library tree rebuilt inside a thread folder would bury it four levels down. Written as a
+// choice rather than an override so neither caller has to pass a root the other one ignores.
+type Placement =
+  | { readonly libraryRoot: string; readonly into?: undefined; readonly asName?: undefined }
+  // `asName` is given when two documents one thread linked share a name, so both are kept.
+  | { readonly libraryRoot?: undefined; readonly into: string; readonly asName?: string };
+
 export type ConvertFileInput = {
   readonly item: DriveItem;
   readonly driveId: string;
-  readonly libraryRoot: string;
   readonly site: string;
   readonly library: string;
   readonly maxBytes: number;
-  // Write into exactly this folder rather than under the day and the SharePoint folders the file
-  // had. A document pulled into the thread that linked it sits beside the card standing for it, and
-  // a library tree rebuilt inside a thread folder would bury it four levels down.
-  readonly into?: string;
-  // What to call it there. Given when two documents one thread linked share a name, so both are
-  // kept rather than one overwriting the other.
-  readonly asName?: string;
-};
+} & Placement;
 
 export type ConvertOutcome =
   | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string> }
@@ -70,7 +72,7 @@ const failure = (error: DriveReaderError | FilesError): ConvertOutcome =>
 
 // The day the document last changed, then the folders it had in SharePoint underneath it.
 const targetDir = (input: ConvertFileInput): string => {
-  if (input.into !== undefined) return input.into;
+  if (input.libraryRoot === undefined) return input.into;
   const day = datedRoot(input.libraryRoot, input.item.lastModified);
   const relative = safeRelPath(input.item.path.split('/').slice(0, -1));
   return relative.length === 0 ? day : `${day}/${relative}`;

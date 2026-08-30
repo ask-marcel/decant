@@ -127,15 +127,13 @@ const pullLinked = async (deps: LinkDeps, here: string, maxBytes: number, link: 
     deps.logger.warn('linked.failed', { itemId, name, cause: found.error.kind });
     return { failed: { path: name, reason: `${found.error.kind}: ${found.error.message}` } };
   }
-  const into = `${here}/${LINKED_FOLDER}`;
   const outcome = await deps.convertFile({
     item: found.value,
     driveId,
-    libraryRoot: into,
     site: 'Mailbox',
     library: LINKED_FOLDER,
     maxBytes,
-    into,
+    into: `${here}/${LINKED_FOLDER}`,
     asName,
   });
   const { lastModified, modifiedBy } = found.value;
