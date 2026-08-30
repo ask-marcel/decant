@@ -35,6 +35,13 @@ export type ConvertFileInput = {
   readonly site: string;
   readonly library: string;
   readonly maxBytes: number;
+  // Write into exactly this folder rather than under the day and the SharePoint folders the file
+  // had. A document pulled into the thread that linked it sits beside the card standing for it, and
+  // a library tree rebuilt inside a thread folder would bury it four levels down.
+  readonly into?: string;
+  // What to call it there. Given when two documents one thread linked share a name, so both are
+  // kept rather than one overwriting the other.
+  readonly asName?: string;
 };
 
 export type ConvertOutcome =
@@ -63,6 +70,7 @@ const failure = (error: DriveReaderError | FilesError): ConvertOutcome =>
 
 // The day the document last changed, then the folders it had in SharePoint underneath it.
 const targetDir = (input: ConvertFileInput): string => {
+  if (input.into !== undefined) return input.into;
   const day = datedRoot(input.libraryRoot, input.item.lastModified);
   const relative = safeRelPath(input.item.path.split('/').slice(0, -1));
   return relative.length === 0 ? day : `${day}/${relative}`;
@@ -302,6 +310,6 @@ export const createConvertFile =
   async (input) => {
     const decision = planFile({ name: input.item.name, size: input.item.size }, input.maxBytes);
     if (decision.kind === 'skip') return { kind: 'skipped', reason: decision.reason };
-    const context = { deps, input, dir: targetDir(input), name: safeSegment(input.item.name), stamp: stampFor(input, deps.clock) };
+    const context = { deps, input, dir: targetDir(input), name: safeSegment(input.asName ?? input.item.name), stamp: stampFor(input, deps.clock) };
     return CONVERTERS[decision.route](context);
   };
