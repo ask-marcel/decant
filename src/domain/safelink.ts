@@ -7,7 +7,10 @@
 // Unwrapping means a click from the vault reaches the destination without passing through the
 // scanner. That is the trade, taken deliberately: this is an archive of what was sent, and what was
 // sent is the destination. The wrapper is Microsoft's delivery mechanism, not the sender's link.
-const WRAPPED = /https?:\/\/[a-z0-9-]+\.safelinks\.protection\.outlook\.com\/\?[^\s)<>\]]*/gi;
+// The path between the host and the query is not always empty: a link inside a Teams notification
+// arrives as `.../ap/t-59584e83/?url=…`, and a pattern demanding `.com/?` walked straight past
+// twelve of them.
+const WRAPPED = /https?:\/\/[a-z0-9-]+\.safelinks\.protection\.outlook\.com\/[^\s?)<>\]]*\?[^\s)<>\]]*/gi;
 
 // Everything up to the next parameter. What follows is `data`, `sdata` and `reserved`: a signature
 // over the recipient and the tenant, which says nothing about where the link points.

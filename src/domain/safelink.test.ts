@@ -17,6 +17,13 @@ describe('reading where a link really goes', () => {
     expect(unwrapSafelinks(`${WRAPPED} and ${WRAPPED}`)).toBe('https://teams.microsoft.com/l/meetup and https://teams.microsoft.com/l/meetup');
   });
 
+  // Twelve of ninety-eight had one, and a pattern demanding `.com/?` walked straight past them.
+  it('a wrapper with a path before its query is unwrapped like any other', () => {
+    const withPath = 'https://apc01.safelinks.protection.outlook.com/ap/t-59584e83/?url=https%3A%2F%2Fteams.microsoft.com%2Fl%2Fchat&reserved=0';
+
+    expect(unwrapSafelinks(withPath)).toBe('https://teams.microsoft.com/l/chat');
+  });
+
   it('a link nobody wrapped is left exactly as it stands', () => {
     expect(unwrapSafelinks('https://teams.microsoft.com/l/meetup')).toBe('https://teams.microsoft.com/l/meetup');
   });
