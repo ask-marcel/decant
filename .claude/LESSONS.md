@@ -568,3 +568,25 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   documents sit below the card's path and keep the stamp. Asserting one of those killed all four.
   The pattern generalises: when a field appears untestable, find the one path where it survives to
   disk, and if there is none, the field is dead rather than untested.
+
+- [gotcha] A markdown link destination ends at the first space unless it is wrapped in `<>`. Every
+  path this vault writes goes into one, and mail attachments are named by people, so
+  `[Fw- DC Data -- Pepco.eml](_attachments/Fw- DC Data -- Pepco.eml.md)` rendered as literal text
+  with a stray link to `Pepco.eml.md` in the middle of it. Nothing caught it for weeks because the
+  tests pinned the string that was written, not what a renderer does with it, and the paths in the
+  fixtures had no spaces. `linkDestination` in `markdown-link.ts` is now the only way a path becomes
+  a destination; unbalanced parentheses end one the same way, so `Budget (final).xlsx` is wrapped too.
+
+- [lesson] Do not file a picture by whether its placeholder survived. An inline image whose
+  `[inline image: …]` marker the converter dropped was landing under **Attachments:**, which tells a
+  reader to go and open a signature logo. It is part of the message however the pairing turned out,
+  so it is shown after the text and counted under `inline_images`. The rule matters because the
+  pairing fails for a reason outside our control: when `convert-mail-to-markdown` misreads a
+  structured mail as a quoted chain it takes the placeholders with the body, and every picture in
+  that message then arrives looking like an attachment.
+
+- [gotcha] OCR text needs to say it is OCR, in words. A `>` block means quoted correspondence
+  everywhere else in a mail vault, so a signature read off a logo reads as something a person wrote.
+  It is not a theoretical risk: this vault has `TRATEGO` for a logo saying STRATEGO and `AOOWE` for
+  one saying MOOV. Every picture with readable text now carries one line saying the words were read
+  by a machine and pointing at the image above it.
