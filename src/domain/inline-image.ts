@@ -50,7 +50,7 @@ export type InlineImageLink = { readonly label: string; readonly path: string; r
 // signature under an image has no reason to conclude the words were guessed at from pixels. This
 // sample got `TRATEGO` out of a logo reading STRATEGO, so the warning is not theoretical, and the
 // picture is right above for anyone who needs to settle it.
-const READ_BY_MACHINE = '_Text read out of the picture by OCR, so it can be wrong. Open the image above to check._';
+const READ_BY_MACHINE = '_Text below was read out of the picture by OCR, so it can be wrong. Open the image above to check._';
 
 // Quoted, so it reads as text lifted off a picture rather than as something the sender typed. Every
 // line takes the marker, blank ones included, or markdown ends the quote at the first gap and the

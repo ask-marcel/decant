@@ -3,7 +3,7 @@ import { carriesInlineImage, inlineImageLabels, linkInlineImages, pairInlineImag
 
 // The words the vault uses to say a block was read off a picture rather than typed by a person.
 // Pinned here because saying it in words is the point: a `>` block alone reads as quoted mail.
-const NOTE = '_Text read out of the picture by OCR, so it can be wrong. Open the image above to check._';
+const NOTE = '_Text below was read out of the picture by OCR, so it can be wrong. Open the image above to check._';
 
 // The converter runs the body through turndown, which escapes the brackets, so this is the shape a
 // placeholder really arrives in. The bare form is kept working too: the escaping is not a contract.
