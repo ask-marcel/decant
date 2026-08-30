@@ -1,5 +1,6 @@
 import { relative as pathBetween } from 'node:path';
 import { withoutFrontMatter } from '../domain/front-matter.ts';
+import { unwrapSafelinks } from '../domain/safelink.ts';
 import { renderLinkCard } from '../domain/link-card.ts';
 import type { LinkedRecord } from '../domain/mail-state.ts';
 import type { ReportEntry } from '../domain/report.ts';
@@ -174,7 +175,7 @@ export const writeLinkCards = async (deps: LinkDeps, threadId: string, here: str
       inMessage: entry.received,
       lastModified: entry.lastModified,
       modifiedBy: entry.modifiedBy,
-      body: stored?.ok === true ? withoutFrontMatter(stored.value) : undefined,
+      body: stored?.ok === true ? unwrapSafelinks(withoutFrontMatter(stored.value)) : undefined,
       original: original === undefined ? undefined : pathBetween(folder, original),
       note: entry.note,
     });

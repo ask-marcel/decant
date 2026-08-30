@@ -239,6 +239,20 @@ describe('writing one conversation as one file', () => {
     expect(written).not.toContain('\n> ');
   });
 
+  // The card takes its body from what the converter wrote, which never passed through the thread's
+  // own cleaning: a saved email's signature sat in a card at six hundred characters a line while
+  // the thread beside it was clean.
+  it('a link Outlook wrapped inside a carded file is unwrapped, as it is in the thread', async () => {
+    const wrapped = 'https://apc01.safelinks.protection.outlook.com/?url=https%3A%2F%2Faka.ms%2FAAb9ysg&reserved=0';
+    const { files } = await run({
+      reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: attached, attachmentTexts: { att1: `See ${wrapped}` } },
+    });
+    const card = files.written.get(`${CARDS}/Contrat.docx.md`) ?? '';
+
+    expect(card).toContain('See https://aka.ms/AAb9ysg');
+    expect(card).not.toContain('safelinks');
+  });
+
   it('a file from nobody in particular is still carded, with no sender named', async () => {
     const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true, from: undefined })] }, attachments: attached } });
     const card = files.written.get(`${CARDS}/Contrat.docx.md`) ?? '';
