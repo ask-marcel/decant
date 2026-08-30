@@ -16,6 +16,10 @@ import {
   storedName,
 } from '../test-helpers/thread-harness.ts';
 
+// The words the vault uses to say a block was read off a picture rather than typed by a person.
+// Pinned here because saying it in words is the point: a `>` block alone reads as quoted mail.
+const NOTE = '_Text read out of the picture by OCR, so it can be wrong. Open the image above to check._';
+
 describe('writing one conversation as one file', () => {
   it('the whole thread lands in a single file, filed under the day it began', async () => {
     const conversations = { [CONV]: [message({ id: 'm2', received: '2026-05-13T10:00:00Z' }), message()] };
@@ -162,7 +166,7 @@ describe('writing one conversation as one file', () => {
       ocr: { texts },
     });
 
-    expect(files.written.get(THREAD_FILE)).toContain('![logo.png](../../_inline/logo-3d8c205c.png)\n\n> Michael Pronk\n> Stratego Development\n> +31618225472');
+    expect(files.written.get(THREAD_FILE)).toContain(`![logo.png](../../_inline/logo-3d8c205c.png)\n\n${NOTE}\n\n> Michael Pronk\n> Stratego Development\n> +31618225472`);
   });
 
   const SIGNATURE = `${INLINE_STORE}/logo-3d8c205c.png`;
@@ -179,7 +183,7 @@ describe('writing one conversation as one file', () => {
     const { files } = await run({ reader: showing, attachments: storedPicture('Michael Pronk') });
 
     expect(files.binary.size).toBe(0);
-    expect(files.written.get(THREAD_FILE)).toContain('![logo.png](../../_inline/logo-3d8c205c.png)\n\n> Michael Pronk');
+    expect(files.written.get(THREAD_FILE)).toContain(`![logo.png](../../_inline/logo-3d8c205c.png)\n\n${NOTE}\n\n> Michael Pronk`);
   });
 
   // Self-healing rather than silently wordless: a run from before pictures carried their reading
@@ -193,9 +197,9 @@ describe('writing one conversation as one file', () => {
   });
 
   // No placeholder in the text answered for it, so nothing shows it. It is still a picture, so it
-  // gets no card, and the list that has to name it links the picture rather than a file nothing
-  // wrote. A link to a card that was never written is worse than no link at all.
-  it('a picture the body never showed is listed as itself, with no card standing in for it', async () => {
+  // gets no card, and it is shown after the text rather than listed as a file to open: a logo the
+  // conversion lost the placeholder for still belongs in the message, not in an inventory.
+  it('a picture the body never showed is shown after the text, with no card standing in for it', async () => {
     // Graph reports the attachment, and the body shows no placeholder for it: the message is asked
     // what it carried, and what comes back is a picture nothing in the text points at.
     const { files } = await run({ reader: { ...showing, conversations: { [CONV]: [message({ hasAttachments: true })] }, bodies: { m1: 'Regards,' } } });
@@ -203,7 +207,8 @@ describe('writing one conversation as one file', () => {
     // No document of any kind in the thread's own folder: the picture is in the mailbox store, and
     // a card for it would be a card for something that stands for itself.
     expect([...files.written.keys()].filter((path) => path.startsWith(`${ATTACHMENTS_STORE}/`))).toEqual([]);
-    expect(files.written.get(THREAD_FILE)).toContain('- [logo.png](../../_inline/logo-3d8c205c.png) (100 B, image/png)');
+    expect(files.written.get(THREAD_FILE)).toContain('Regards,\n\n![logo.png](../../_inline/logo-3d8c205c.png)');
+    expect(files.written.get(THREAD_FILE)).not.toContain('**Attachments:**');
   });
 
   // `isInline` alone does not make a picture. A PDF the body points at by `cid:` is a document: it

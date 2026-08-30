@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'bun:test';
 import { carriesInlineImage, inlineImageLabels, linkInlineImages, pairInlineImages } from './inline-image.ts';
 
+// The words the vault uses to say a block was read off a picture rather than typed by a person.
+// Pinned here because saying it in words is the point: a `>` block alone reads as quoted mail.
+const NOTE = '_Text read out of the picture by OCR, so it can be wrong. Open the image above to check._';
+
 // The converter runs the body through turndown, which escapes the brackets, so this is the shape a
 // placeholder really arrives in. The bare form is kept working too: the escaping is not a contract.
 const ESCAPED = 'Regards,\n\n\\[inline image: image931066.png\\]';
@@ -88,7 +92,7 @@ describe('putting the picture back where the message showed it', () => {
   it('text read out of a picture is shown under it, quoted', () => {
     const linked = linkInlineImages(ESCAPED, [{ label: 'image931066.png', path: './logo.png', text: 'Michael Pronk\nStratego Development' }]);
 
-    expect(linked).toBe('Regards,\n\n![image931066.png](./logo.png)\n\n> Michael Pronk\n> Stratego Development');
+    expect(linked).toBe(`Regards,\n\n![image931066.png](./logo.png)\n\n${NOTE}\n\n> Michael Pronk\n> Stratego Development`);
   });
 
   it('a picture nothing could be read out of is shown alone, with no empty quote under it', () => {
@@ -100,7 +104,7 @@ describe('putting the picture back where the message showed it', () => {
   it('a blank line inside the read text stays a blank line, quoted like the rest', () => {
     const linked = linkInlineImages('[inline image: logo.png]', [{ label: 'logo.png', path: './logo.png', text: 'MOOV\n\nLogistics' }]);
 
-    expect(linked).toBe('![logo.png](./logo.png)\n\n> MOOV\n>\n> Logistics');
+    expect(linked).toBe(`![logo.png](./logo.png)\n\n${NOTE}\n\n> MOOV\n>\n> Logistics`);
   });
 
   it('the same picture shown twice is put back both times', () => {

@@ -72,10 +72,11 @@ describe('keeping what a conversation carried', () => {
     const messages = [message({ id: 'm1', hasAttachments: true }), message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true })];
     const signature = [{ id: 'sig', name: 'image001.png', contentType: 'image/png', size: 100, isInline: true }];
     const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments: { m1: signature, m2: signature } } });
-    // Under `attachments` rather than `inline_images` because no placeholder in the body answered
-    // for it, so nothing shows it. It still lives in the mailbox's picture store, where the next
-    // thread its sender writes into will find it already there.
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${INLINE_STORE}/${disambiguateSegment('image001.png', contentHash(bytesOf('sig')))}`]);
+    // Under `inline_images`, not `attachments`: no placeholder answered for it, and it is shown
+    // after the text all the same, because a picture a message carried inline is part of it. One
+    // entry for two messages, since the mailbox's picture store holds it once.
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.inlineImages).toEqual([`${INLINE_STORE}/${disambiguateSegment('image001.png', contentHash(bytesOf('sig')))}`]);
   });
 
   // Written here even though another thread holds the same bytes. That is the trade this layout
@@ -347,7 +348,9 @@ describe('an email attached to an email', () => {
     const stored = `${ATTACHMENTS_STORE}/${renderedName(EMBEDDED.name)}.md`;
 
     expect(files.written.get(stored)).toContain('**Subject:** Customs documents');
-    expect(files.written.get(THREAD_FILE)).toContain('- [Customs documents MSDU1691268](_attachments/Customs documents MSDU1691268.md) (2.6 MB)');
+    // Wrapped, because a bare destination ends at the first space and the rest of the path became
+    // visible text: this is the name that showed the bug.
+    expect(files.written.get(THREAD_FILE)).toContain('- [Customs documents MSDU1691268](<_attachments/Customs documents MSDU1691268.md>) (2.6 MB)');
   });
 
   it('is stored once, however many messages of the conversation forwarded it', async () => {
