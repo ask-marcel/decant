@@ -144,13 +144,26 @@ type LinkedTally = {
 
 // A file already pulled for another thread is referenced, not fetched again: the same weekly report
 // linked from thirty mails is one document on disk.
-const linkedFiles = async (deps: RenderThreadDeps, input: RenderThreadInput, messages: ReadonlyArray<MailMessage>): Promise<LinkedTally> => {
+// Asked only of a message whose text carries one. `extract-sharepoint-links-in-mail` costs a Graph
+// call per message and fetches the message again to scan it, and a full run over this mailbox spent
+// a thousand of those to find thirty-six links. The body is already in hand, so it decides.
+//
+// The guard reads the CONVERTED markdown while the extractor reads the body Graph holds, so in
+// principle a link surviving only in an HTML attribute the conversion dropped would now be missed.
+// Measured against the vault before this landed: all thirty-six links sat in threads whose text
+// carries the URL, none would have been lost. Any host, not the tenant's own: half this mailbox is
+// vendors and partners sharing from their own SharePoint.
+const POINTS_SOMEWHERE = /sharepoint\./i;
+
+const linkedFiles = async (deps: RenderThreadDeps, input: RenderThreadInput, parts: ReadonlyArray<ThreadPart>): Promise<LinkedTally> => {
   const linked: Record<string, LinkedRecord> = { ...input.linked };
   const paths: string[] = [];
   const skipped: ReportEntry[] = [];
   const failed: ReportEntry[] = [];
   const referenced: MessageLink[] = [];
-  for (const message of messages) {
+  for (const part of parts) {
+    if (!POINTS_SOMEWHERE.test(part.body)) continue;
+    const message = part.message;
     const found = await deps.reader.sharepointLinks(message.id);
     if (!found.ok) continue;
     for (const link of found.value) {
@@ -463,11 +476,7 @@ const writeThread = async (
   const relative = place.relative;
   const stamp = stampFor(deps, input, first, last);
   const attachments = await attachmentsOf(deps, input, parts, stamp);
-  const links = await linkedFiles(
-    deps,
-    input,
-    parts.map((part) => part.message)
-  );
+  const links = await linkedFiles(deps, input, parts);
   // Attachments live in the shared store one level up from the thread, so their references climb out
   // of the thread's own folder rather than sitting beside it.
   const here = place.here;
