@@ -419,3 +419,11 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   user weighed that and chose the gap. Long-running threads that got a reply after 5 August ARE
   present and carry their older messages, which is why folder dates reach back to March: the dates
   understate what is missing. Do not "fix" this by re-sweeping without asking.
+
+- [decision] `internetMessageHeaders` IS honored on `list-conversation-messages --select`, verified
+  live, and the per-conversation `get-mail-message` call stays anyway. The header read happens in
+  the SWEEP, off delta data, before any conversation has been fetched, so there is no existing call
+  to fold the select into: both cost one call per conversation, and `get-mail-message` returns one
+  message's headers (~4 KB) where the conversation call returns every message's (~120 KB on a
+  30-message thread). A capability being available is not the same as it being the cheaper option;
+  check which call is actually being made at that point in the run before folding anything into it.
