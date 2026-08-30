@@ -81,8 +81,14 @@ const bodiesOf = async (deps: RenderThreadDeps, messages: ReadonlyArray<MailMess
   return ok(parts);
 };
 
+// The conversation a thread is rooted in, named the same way wherever it is named. A merged thread
+// lists every conversation it was assembled from under `conversation_id`; this points at the one it
+// began as. Written once because the head and every document the thread writes both carry it, and
+// two copies of the expression drift.
+const sourceOf = (input: RenderThreadInput): string => `conversation ${input.conversationIds[0] ?? ''}`;
+
 const stampFor = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailMessage, last: MailMessage): DocumentStamp => ({
-  source: `conversation ${input.conversationIds[0] ?? ''}`,
+  source: sourceOf(input),
   site: 'Mailbox',
   library: 'Mailbox',
   path: threadTitle(first.subject),
@@ -108,7 +114,7 @@ const threadHeader = (
     ['thread_id', input.threadId],
     ['root_message_id', input.root],
     ['conversation_id', input.conversationIds],
-    ['source', `conversation ${input.conversationIds[0] ?? ''}`],
+    ['source', sourceOf(input)],
     ['site', 'Mailbox'],
     ['subject', threadTitle(first.subject)],
     ['participants', participantsOf(parts)],
@@ -128,8 +134,11 @@ export const createRenderThread =
     if (!held.ok) return held;
     const alive = inReceivedOrder(held.value.filter((message) => !message.isDeleted));
     const first = alive[0];
-    const last = alive[alive.length - 1];
-    if (first === undefined || last === undefined) return ok({ kind: 'empty' });
+    if (first === undefined) return ok({ kind: 'empty' });
+    // Asked once, not twice: a list with a first element has a last one, so testing both said the
+    // same thing in two ways and neither way could be wrong on its own. `first` stands in for the
+    // case the compiler insists on and nothing can reach.
+    const last = alive[alive.length - 1] ?? first;
     const parts = await bodiesOf(deps, alive);
     if (!parts.ok) return parts;
     return writeThread(deps, input, parts.value, first, last);
