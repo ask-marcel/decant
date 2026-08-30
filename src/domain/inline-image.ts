@@ -71,8 +71,18 @@ export const showPicture = (label: string, path: string, read?: string): string 
 
 const shown = (label: string, link: InlineImageLink): string => showPicture(label, link.path, link.text);
 
+// The converter carries the emphasis the surrounding HTML had onto the placeholder, and a signature
+// block is bold, so a picture arrives as `**\[inline image: logo.png\]**`. That cost nothing while a
+// picture replaced it with a single line; the replacement is three blocks now, so the opening marker
+// would strand itself on the image line and the closer land after the quote.
+//
+// Only when the markers wrap the placeholder and NOTHING else, which is why the pattern demands the
+// same marker on both sides with the placeholder alone between them: a bold sentence that happens to
+// contain a picture is somebody's emphasis, and eating its markers would unbold their words.
+const WRAPPED_ALONE = /(\*\*|__|\*|_)(\\?\[inline image: [^\\\]]+\\?\])\1/g;
+
 export const linkInlineImages = (body: string, links: ReadonlyArray<InlineImageLink>): string =>
-  body.replace(PLACEHOLDER, (placeholder, label: string) => {
+  body.replace(WRAPPED_ALONE, '$2').replace(PLACEHOLDER, (placeholder, label: string) => {
     const link = links.find((candidate) => candidate.label === label);
     return link === undefined ? placeholder : shown(label, link);
   });

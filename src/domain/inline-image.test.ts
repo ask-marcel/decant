@@ -107,6 +107,34 @@ describe('putting the picture back where the message showed it', () => {
     expect(linked).toBe(`![logo.png](./logo.png)\n\n${NOTE}\n\n> MOOV\n>\n> Logistics`);
   });
 
+  // The converter wraps a placeholder in the emphasis the surrounding HTML had, and a signature
+  // block is bold, so a picture arrives as `**\\[inline image: logo.png\\]**`. That was harmless while
+  // a picture replaced it with one line. It is not harmless now: the replacement is three blocks,
+  // so the opening marker strands itself on the image line and the closer lands after the quote.
+  // Emphasis around a lone picture means nothing anyway, so it goes.
+  it('emphasis wrapping a placeholder alone is dropped, the replacement being more than one line', () => {
+    const linked = linkInlineImages('**\\[inline image: logo.png\\]**', [{ label: 'logo.png', path: './logo.png', text: 'MOOV' }]);
+
+    expect(linked).toBe(`![logo.png](./logo.png)\n\n${NOTE}\n\n> MOOV`);
+  });
+
+  it('the same is true of the other markers a converter reaches for', () => {
+    expect(linkInlineImages('_[inline image: logo.png]_', [{ label: 'logo.png', path: './logo.png' }])).toBe('![logo.png](./logo.png)');
+    expect(linkInlineImages('__[inline image: logo.png]__', [{ label: 'logo.png', path: './logo.png' }])).toBe('![logo.png](./logo.png)');
+  });
+
+  // Only when it wraps the placeholder and nothing else. A run of bold text that happens to contain
+  // a picture is somebody's sentence, and eating its markers would unbold the words around it.
+  it('emphasis around words as well as a picture is left alone', () => {
+    const linked = linkInlineImages('**see [inline image: logo.png] here**', [{ label: 'logo.png', path: './logo.png' }]);
+
+    expect(linked).toBe('**see ![logo.png](./logo.png) here**');
+  });
+
+  it('a marker on one side only is left alone, being somebody else s unclosed emphasis', () => {
+    expect(linkInlineImages('**[inline image: logo.png]', [{ label: 'logo.png', path: './logo.png' }])).toBe('**![logo.png](./logo.png)');
+  });
+
   it('the same picture shown twice is put back both times', () => {
     const linked = linkInlineImages('\\[inline image: logo.png\\] and \\[inline image: logo.png\\]', [{ label: 'logo.png', path: './logo.png' }]);
 
