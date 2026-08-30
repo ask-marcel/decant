@@ -81,6 +81,22 @@ const shown = (label: string, link: InlineImageLink): string => showPicture(labe
 // contain a picture is somebody's emphasis, and eating its markers would unbold their words.
 const WRAPPED_ALONE = /(\*\*|__|\*|_)(\\?\[inline image: [^\\\]]+\\?\])\1/g;
 
+// What is left once every picture that could be shown has been. A placeholder still standing names
+// a file nothing was placed for: a Teams notification carries its icons named by a machine id with
+// no extension, so nothing could read them, and the marker says only that something unreadable was
+// once there. Worse than noise, in fact: `\[…\]` is LaTeX display-math, so a renderer with maths
+// support sets the id in italic serif as though it meant something. The run's report is where the
+// record belongs, and it already holds one line per file.
+//
+// The whole line goes when the marker was all it held, or a table of icons leaves a ladder of empty
+// cells behind it.
+const ORPHANED_LINE = /^[ \t>|-]*(?:\\?\[inline image: [^\\\]]+\\?\][ \t|]*)+$\n?/gm;
+
+export const withoutPlaceholders = (body: string): string => body.replace(ORPHANED_LINE, '').replace(PLACEHOLDER, '').replace(WIDENED_GAP, '\n\n');
+
+// Taking a marker out leaves the blank lines that surrounded it next to each other.
+const WIDENED_GAP = /\n{3,}/g;
+
 export const linkInlineImages = (body: string, links: ReadonlyArray<InlineImageLink>): string =>
   body.replace(WRAPPED_ALONE, '$2').replace(PLACEHOLDER, (placeholder, label: string) => {
     const link = links.find((candidate) => candidate.label === label);

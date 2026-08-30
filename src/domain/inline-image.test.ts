@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { carriesInlineImage, inlineImageLabels, linkInlineImages, pairInlineImages } from './inline-image.ts';
+import { carriesInlineImage, inlineImageLabels, linkInlineImages, pairInlineImages, withoutPlaceholders } from './inline-image.ts';
 
 // The words the vault uses to say a block was read off a picture rather than typed by a person.
 // Pinned here because saying it in words is the point: a `>` block alone reads as quoted mail.
@@ -67,6 +67,29 @@ describe('deciding which picture a placeholder stands for', () => {
 
   it('a message showing a picture it never carried pairs nothing', () => {
     expect(pairInlineImages(['gone.png'], [])).toEqual([]);
+  });
+});
+
+describe('taking away a marker nothing could be placed for', () => {
+  // The Teams notification case. Its icons are named by a machine id with no extension, so nothing
+  // could read them and no picture was placed; the marker stayed, and `\\[…\\]` is LaTeX display-math,
+  // so a renderer with maths support set the id in italic serif as though it meant something.
+  it('a marker standing alone on a line takes the line with it', () => {
+    expect(withoutPlaceholders('Hi,\n\n\\[inline image: e8afd596-d899\\]\n\nRegards,')).toBe('Hi,\n\nRegards,');
+  });
+
+  it('a marker among other things on a line leaves the line, and only itself', () => {
+    expect(withoutPlaceholders('| \\[inline image: a1b\\] | [Reply in Teams](https://x) |')).toBe('|  | [Reply in Teams](https://x) |');
+  });
+
+  // A row of them is what a notification's icon strip becomes, and an empty ladder of cells says
+  // as little as the ids did.
+  it('a line holding nothing but markers and table pipes goes whole', () => {
+    expect(withoutPlaceholders('Hi,\n| [inline image: a] | [inline image: b] |\nRegards,')).toBe('Hi,\nRegards,');
+  });
+
+  it('a body with nothing left over is untouched', () => {
+    expect(withoutPlaceholders('Hi,\n\nRegards,')).toBe('Hi,\n\nRegards,');
   });
 });
 
