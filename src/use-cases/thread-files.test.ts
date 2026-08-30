@@ -158,13 +158,15 @@ describe('keeping what a conversation carried', () => {
   // two real files in the same vault. The run still counts them, so nothing goes unaccounted for.
   const ICON = { id: 'att1', name: 'a594de8f-caa3-427e-b800-23755374d464', contentType: 'image/png', size: 963, isInline: false };
 
-  it('a refused file whose name is only a machine id gets no card and no mention in the thread', async () => {
+  it('a refused file whose name is only a machine id is left out of the thread and the report alike', async () => {
     const messages = [message({ hasAttachments: true })];
     const { outcome, files } = await run({ reader: { conversations: { [CONV]: messages }, attachments: { m1: [ICON] } } });
 
     expect(files.written.has(`${ATTACHMENTS_STORE}/${ICON.name}.md`)).toBe(false);
     expect(files.written.get(THREAD_FILE)).not.toContain(ICON.name);
-    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toHaveLength(1);
+    // Nor in the run's report. A report is what a reader should look into, and thirteen lines
+    // saying an icon had no extension were the whole of one run's while nothing had gone wrong.
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([]);
   });
 
   // Both halves are needed. A machine id on a file that reads fine still yields a document worth

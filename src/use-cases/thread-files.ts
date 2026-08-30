@@ -186,14 +186,16 @@ export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: Rea
     for (const attachment of listed.value) {
       const placed = await placeAttachment(deps, place, store, shared, taken, part.message.id, attachment, stamp);
       for (const path of placed.paths) if (!paths.includes(path)) paths.push(path);
+      // Dropped entirely, and not reported: a file nothing can read, named by a machine id, is the
+      // decoration a sharing notification is built from. It gets no card and no line in the thread,
+      // and reporting it contradicts that: a report is what a reader should look into, and thirteen
+      // lines saying an icon had no extension were the whole of one run's report while nothing had
+      // gone wrong at all. It keeps its place in `taken`, so the numbering of what follows does not
+      // shift with a decision about what to show.
+      if (placed.skipped !== undefined && isOpaqueName(attachment.name)) continue;
       if (placed.skipped) skipped.push(placed.skipped);
       if (placed.failed) failed.push(placed.failed);
       for (const path of placed.media ?? []) if (!media.includes(path)) media.push(path);
-      // Counted above and then dropped: a file nothing can read, named by a machine id, has no fact
-      // left to record. Sharing notifications carry a handful each, and a card apiece buried the
-      // real attachments of the same vault. It keeps its place in `taken`, so the numbering of what
-      // follows does not shift with a decision about what to show.
-      if (placed.skipped !== undefined && isOpaqueName(attachment.name)) continue;
       carried.push({
         attachment,
         asName: placed.asName,
