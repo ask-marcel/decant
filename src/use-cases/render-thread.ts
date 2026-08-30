@@ -13,6 +13,7 @@ import { err, ok } from '../domain/result.ts';
 import { participantsOf, renderThread, threadTitle } from '../domain/thread.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
 import { renderLinkCard } from '../domain/link-card.ts';
+import { isOpaqueName } from '../domain/opaque-name.ts';
 import { cardFileName, renderThreadCard, uniqueName } from '../domain/thread-card.ts';
 import { threadFolderName } from '../domain/thread-folder.ts';
 import type { ThreadId } from '../domain/thread-id.ts';
@@ -340,6 +341,11 @@ const attachmentsOf = async (
       if (placed.skipped) skipped.push(placed.skipped);
       if (placed.failed) failed.push(placed.failed);
       for (const path of placed.media ?? []) if (!media.includes(path)) media.push(path);
+      // Counted above and then dropped: a file nothing can read, named by a machine id, has no fact
+      // left to record. Sharing notifications carry a handful each, and a card apiece buried the
+      // real attachments of the same vault. It keeps its place in `taken`, so the numbering of what
+      // follows does not shift with a decision about what to show.
+      if (placed.skipped !== undefined && isOpaqueName(attachment.name)) continue;
       carried.push({ attachment, asName: placed.asName, paths: placed.paths, primary: placed.primary, note: placed.skipped?.reason ?? placed.failed?.reason });
     }
     byMessage[part.message.id] = carried;
@@ -478,7 +484,12 @@ const writeCards = async (
       const name = cardNameOf(file);
       if (carded.has(name)) continue;
       carded.add(name);
-      const raw = file.paths.find((path) => path !== file.primary);
+      // The output that IS the file, told by its name rather than by not being the extract. A mail
+      // attached to a mail unpacks into a folder of its own parts, and a document has its pictures
+      // pulled out beside it, so "the first output that is not the extract" named whichever came
+      // first: a logo, in the one real case. Nothing matches when the original was not kept, and no
+      // `original:` line is the truthful answer there.
+      const raw = file.paths.find((path) => path.endsWith(`/${file.asName}`));
       // Read, then written back over the same path, deliberately. The converter puts the extracted
       // text at `<name>.<ext>.md` inside this folder and the card wants that exact name, because a
       // reader opening the folder should find ONE document per file, not a card and an extract

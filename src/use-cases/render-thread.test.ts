@@ -463,6 +463,54 @@ describe('keeping what a conversation carried', () => {
     expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENTS_STORE}/Pile.docx.md`]);
   });
 
+  // `original:` is the card saying "the file itself is here, beside me". A conversion that yields
+  // several outputs, a document with its pictures pulled out or a mail unpacked into its parts, has
+  // no output that IS the file, and naming any of them is worse than naming none.
+  it('a card names no original when none of the conversion outputs is the file itself', async () => {
+    const messages = [message({ hasAttachments: true })];
+    const attachments = { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false }] };
+    const images = { att1: [{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }] };
+    const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments, attachmentImages: images } });
+    const card = files.written.get(`${ATTACHMENTS_STORE}/Contrat.docx.md`) ?? '';
+
+    expect(card).toContain('filename: Contrat.docx');
+    expect(card).not.toContain('original:');
+  });
+
+  // A notification saying somebody shared a folder carries the icons its HTML is built from, named
+  // by a machine id and carrying no extension, which is why nothing reads them. A card for one says
+  // only that an unreadable thing with an unreadable name arrived, and thirteen of them buried the
+  // two real files in the same vault. The run still counts them, so nothing goes unaccounted for.
+  const ICON = { id: 'att1', name: 'a594de8f-caa3-427e-b800-23755374d464', contentType: 'image/png', size: 963, isInline: false };
+
+  it('a refused file whose name is only a machine id gets no card and no mention in the thread', async () => {
+    const messages = [message({ hasAttachments: true })];
+    const { outcome, files } = await run({ reader: { conversations: { [CONV]: messages }, attachments: { m1: [ICON] } } });
+
+    expect(files.written.has(`${ATTACHMENTS_STORE}/${ICON.name}.md`)).toBe(false);
+    expect(files.written.get(THREAD_FILE)).not.toContain(ICON.name);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toHaveLength(1);
+  });
+
+  // Both halves are needed. A machine id on a file that reads fine still yields a document worth
+  // keeping, and the id is then the least of what the card says about it.
+  it('a file named by a machine id is kept when something can read it after all', async () => {
+    const messages = [message({ hasAttachments: true })];
+    const readable = { m1: [{ ...ICON, name: `${ICON.name}.pdf` }] };
+    const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments: readable } });
+
+    expect(files.written.has(`${ATTACHMENTS_STORE}/${ICON.name}.pdf.md`)).toBe(true);
+  });
+
+  it('a refused file somebody named keeps its card, the name being the fact worth recording', async () => {
+    const messages = [message({ hasAttachments: true })];
+    const named = { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 10, isInline: false }] };
+    const { files } = await run({ reader: { conversations: { [CONV]: messages }, attachments: named } });
+
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Demo.mp4.md`) ?? '').toContain('filename: Demo.mp4');
+    expect(files.written.get(THREAD_FILE)).toContain('Demo.mp4');
+  });
+
   it('an unsupported attachment adds nothing to what the conversation lists', async () => {
     const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 10, isInline: false }] } };
     const { outcome } = await run({ reader });
