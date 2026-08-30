@@ -18,7 +18,7 @@ import {
 
 // The words the vault uses to say a block was read off a picture rather than typed by a person.
 // Pinned here because saying it in words is the point: a `>` block alone reads as quoted mail.
-const NOTE = '_Text read out of the picture by OCR, so it can be wrong. Open the image above to check._';
+const NOTE = '_Text below was read out of the picture by OCR, so it can be wrong. Open the image above to check._';
 
 describe('writing one conversation as one file', () => {
   it('the whole thread lands in a single file, filed under the day it began', async () => {
@@ -48,8 +48,9 @@ describe('writing one conversation as one file', () => {
         'site: Mailbox',
         'subject: Contrat Contoso',
         'participants:',
-        '  - Jane Doe',
-        '  - Vincent DELACOURT',
+        '  - Jane Doe <jane@example.com>',
+        '  - Vincent DELACOURT <v@example.com>',
+        '  - Vincent DELACOURT <vincent@example.com>',
         'first_message: "2026-05-12T09:31:00Z"',
         'last_message: "2026-05-13T10:00:00Z"',
         'message_count: 2',

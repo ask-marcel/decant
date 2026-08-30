@@ -236,13 +236,35 @@ describe('finding where a message actually starts', () => {
 });
 
 describe('listing who took part in a conversation', () => {
+  // The headings name people the way a reader says them, so this list is the one place a thread
+  // records how to write to any of them. One person under two addresses stays two entries: they are
+  // two ways to reach the same person, and collapsing them loses one.
+  it('a name is written with its address, the way mail itself writes one', () => {
+    const parts = [{ message: message(), body: '' }];
+
+    expect(participantsOf(parts)).toEqual(['Jane Doe <jane@example.com>', 'Vincent DELACOURT <vincent@example.com>']);
+  });
+
+  it('somebody the source named without an address is listed by name alone', () => {
+    const parts = [{ message: message({ from: { name: 'Jane Doe', address: '' }, to: [] }), body: '' }];
+
+    expect(participantsOf(parts)).toEqual(['Jane Doe']);
+  });
+
   it('everyone who wrote or received is named once, in a stable order', () => {
     const parts = [
       { message: message(), body: '' },
       { message: message({ id: 'm2', from: { name: 'Vincent DELACOURT', address: 'v@example.com' }, to: [{ name: 'Jane Doe', address: 'j@example.com' }] }), body: '' },
     ];
 
-    expect(participantsOf(parts)).toEqual(['Jane Doe', 'Vincent DELACOURT']);
+    // One person under two addresses is two entries: two ways to reach them, and dropping either
+    // loses a way. Sorted on the whole string, so the shorter address of a pair comes first.
+    expect(participantsOf(parts)).toEqual([
+      'Jane Doe <j@example.com>',
+      'Jane Doe <jane@example.com>',
+      'Vincent DELACOURT <v@example.com>',
+      'Vincent DELACOURT <vincent@example.com>',
+    ]);
   });
 
   // The length is pinned beside the contents: an array holding one `undefined` satisfies `toEqual([])`
@@ -260,14 +282,14 @@ describe('listing who took part in a conversation', () => {
       { message: message({ id: 'm2', from: { name: 'Marc Petit', address: 'm@example.com' }, to: [] }), body: '' },
     ];
 
-    expect(participantsOf(parts)).toEqual(['Adam Bell', 'Marc Petit', 'Zoe Wang']);
+    expect(participantsOf(parts)).toEqual(['Adam Bell <a@example.com>', 'Marc Petit <m@example.com>', 'Zoe Wang <z@example.com>']);
   });
 
   it('a message with no sender still counts the people it was written to', () => {
     const parts = [{ message: message({ from: undefined, to: [{ name: 'Jane Doe', address: 'j@example.com' }] }), body: '' }];
     const named = participantsOf(parts);
 
-    expect(named).toEqual(['Jane Doe']);
+    expect(named).toEqual(['Jane Doe <j@example.com>']);
     expect(named).toHaveLength(1);
   });
 });

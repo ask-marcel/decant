@@ -83,7 +83,14 @@ export const renderThread = (thread: Thread, timezone: string): string => {
   return [`# ${threadTitle(thread.subject)}`, ...ordered.map((part) => section(part, timezone))].join('\n\n');
 };
 
+// Name and address both, in the shape mail itself uses. The headings name people the way a reader
+// says them, so this list is the one place the addresses live: without it a thread names eleven
+// people and gives no way to write to any of them, which is most of what a reader wants a
+// conversation for. Deduplicated on the pair, since one person writing from two addresses is two
+// ways to reach them and worth keeping apart.
+const asWritten = (who: Correspondent): string => (who.address.length === 0 ? who.name : `${who.name} <${who.address}>`);
+
 export const participantsOf = (parts: ReadonlyArray<ThreadPart>): ReadonlyArray<string> => {
   const everyone = parts.flatMap((part) => [...(part.message.from === undefined ? [] : [part.message.from]), ...part.message.to]);
-  return [...new Set(everyone.map((who) => who.name))].sort((left, right) => left.localeCompare(right));
+  return [...new Set(everyone.map(asWritten))].sort((left, right) => left.localeCompare(right));
 };
