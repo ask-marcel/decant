@@ -497,3 +497,28 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   and a third write is the bug. Asserting `written.has(path)` instead passes against a card written
   once per arrival, which is the mutant the test exists to catch: an assertion weakened to make a
   test green stops testing the thing it was named for.
+
+- [lesson] `isInline` does not mean picture. Graph sets it for anything the body points at by `cid:`,
+  a PDF included, so the test for "show this in the thread rather than card it" is `isInline` AND an
+  `image/` content type. The mirror of the older gotcha that Graph reports `hasAttachments: false`
+  for a message whose only attachment is inline: neither flag means on its own what its name
+  suggests, and both need the other half.
+
+- [lesson] Moving a picture's text into the thread means the state has to remember it. Once no
+  document holds the reading, a second thread meeting the same picture has nothing to put under it,
+  so `AttachmentRecord` carries `text` and the shared `_inline/` store is what makes the dedup pay.
+  A record written before that change holds no text, and honouring it would show the picture
+  wordlessly for ever, so a record with no text is treated as unstored: one extra fetch, and it
+  repairs itself. Prefer that shape to a state version bump whenever the repair is cheap, since a
+  bump makes every user rebuild for a field most of them could have refilled in a second.
+
+- [gotcha] The same note can be right in one place and wrong in another. `_No text could be read
+  from this file_` is what a document holding nothing has to say; quoted under a picture in a thread
+  it tells the reader to open a file that no longer exists, once per signature down a long thread.
+  A converter that returns text rather than a document has to drop it.
+
+- [gotcha] `mutate:changed` scores the ALL FILES aggregate, so its exit code passes while a single
+  file sits under 90. `render-thread.ts` has now gone 91.13 → 88.60 → 90.08 → 89.92 → 88.24 → 90.03
+  across four changes, each time pulled back by tests written against the survivors. Read the
+  per-file row and treat that file's number as the gate; the aggregate only says the others are
+  carrying it.
