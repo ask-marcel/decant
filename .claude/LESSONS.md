@@ -459,3 +459,18 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   test needed threads being CREATED, since a re-run over threads already written writes nothing and
   exercises no parallel folder creation at all. Run it into a scratch `KB_ROOT` with the OCR cache
   symlinked in, which keeps it off the real vault and off a cold cache.
+
+- [gotcha] `convert-mail-to-markdown` can strip an ENTIRE body as a "quoted reply chain" and report
+  success. Measured on a 7-day sync: 10 of 42 message sections, 24%, reduced to one short line. The
+  same message with `keepQuoted: true` returns 6912 bytes over 109 lines with ZERO lines starting
+  with `>`, so nothing was quoted; the heuristic misread an Outlook HTML body with headings and
+  numbered lists. The bias is the worst part: a two-line reply survives, a scoped proposal with
+  sections and a sign-off is destroyed. Nothing in the result tells the two apart, since the `note`
+  fires identically whether one line or a hundred was removed.
+  A genuine chain is NOT `>`-quoted either: it is delimited by a second `**From:**` header block
+  partway down the document, which is what a reliable rule would cut at. Written up for the
+  maintainer in `docs/bug-convert-mail-to-markdown-strips-body.md`.
+  **Decision: not worked around here.** Asking for `keepQuoted` and cutting at that header block was
+  proposed and declined in favour of an upstream fix, so the vault under-reports message bodies
+  until the library changes. Anything reading these threads should be told that, and a thread whose
+  section is a single line is a candidate for re-fetching rather than a short message.
