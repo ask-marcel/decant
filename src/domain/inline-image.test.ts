@@ -81,6 +81,28 @@ describe('putting the picture back where the message showed it', () => {
     expect(linkInlineImages(ESCAPED, [])).toBe(ESCAPED);
   });
 
+  // What the picture SAYS, put where the picture is. A signature block read out of an image is the
+  // sender's phone number and company, and a reader looking at the thread should not have to open a
+  // second document to find them. Quoted, so it reads as text lifted from somewhere rather than as
+  // something the sender typed.
+  it('text read out of a picture is shown under it, quoted', () => {
+    const linked = linkInlineImages(ESCAPED, [{ label: 'image931066.png', path: './logo.png', text: 'Michael Pronk\nStratego Development' }]);
+
+    expect(linked).toBe('Regards,\n\n![image931066.png](./logo.png)\n\n> Michael Pronk\n> Stratego Development');
+  });
+
+  it('a picture nothing could be read out of is shown alone, with no empty quote under it', () => {
+    const linked = linkInlineImages(ESCAPED, [{ label: 'image931066.png', path: './logo.png', text: '   ' }]);
+
+    expect(linked).toBe('Regards,\n\n![image931066.png](./logo.png)');
+  });
+
+  it('a blank line inside the read text stays a blank line, quoted like the rest', () => {
+    const linked = linkInlineImages('[inline image: logo.png]', [{ label: 'logo.png', path: './logo.png', text: 'MOOV\n\nLogistics' }]);
+
+    expect(linked).toBe('![logo.png](./logo.png)\n\n> MOOV\n>\n> Logistics');
+  });
+
   it('the same picture shown twice is put back both times', () => {
     const linked = linkInlineImages('\\[inline image: logo.png\\] and \\[inline image: logo.png\\]', [{ label: 'logo.png', path: './logo.png' }]);
 

@@ -39,10 +39,28 @@ export const pairInlineImages = (labels: ReadonlyArray<string>, images: Readonly
   return alone ? [...paired, { label, image }] : paired;
 };
 
-export type InlineImageLink = { readonly label: string; readonly path: string };
+// `text` is what was read out of the picture, when anything was. A signature block holds the
+// sender's company and phone number, and a thread that shows the picture but hides its words makes
+// a reader open a second document for them.
+export type InlineImageLink = { readonly label: string; readonly path: string; readonly text?: string };
+
+// Quoted, so it reads as text lifted off a picture rather than as something the sender typed. Every
+// line takes the marker, blank ones included, or markdown ends the quote at the first gap and the
+// rest of a two-paragraph signature falls out of it.
+const quoted = (text: string): string =>
+  text
+    .split('\n')
+    .map((line) => (line.length === 0 ? '>' : `> ${line}`))
+    .join('\n');
+
+const shown = (label: string, link: InlineImageLink): string => {
+  const picture = `![${label}](${link.path})`;
+  const text = link.text?.trim() ?? '';
+  return text.length === 0 ? picture : `${picture}\n\n${quoted(text)}`;
+};
 
 export const linkInlineImages = (body: string, links: ReadonlyArray<InlineImageLink>): string =>
   body.replace(PLACEHOLDER, (placeholder, label: string) => {
     const link = links.find((candidate) => candidate.label === label);
-    return link === undefined ? placeholder : `![${label}](${link.path})`;
+    return link === undefined ? placeholder : shown(label, link);
   });

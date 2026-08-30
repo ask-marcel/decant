@@ -55,6 +55,9 @@ export type CarriedFile = {
   readonly isInline: boolean;
   readonly path?: string;
   readonly picture?: string;
+  // What was read out of the picture, for a file shown in the body rather than linked from it. It
+  // travels with the picture because nothing else in the thread would name it.
+  readonly text?: string;
   readonly note?: string;
 };
 
@@ -63,13 +66,13 @@ export type CarriedFile = {
 const picturesOf = (files: ReadonlyArray<CarriedFile>): Map<InlineImage, CarriedFile> =>
   new Map(files.filter((file) => file.isInline && file.picture !== undefined).map((file) => [{ name: file.name, contentId: file.contentId }, file]));
 
-type ShownPicture = { readonly label: string; readonly path: string; readonly file: CarriedFile };
+type ShownPicture = { readonly label: string; readonly path: string; readonly text?: string; readonly file: CarriedFile };
 
 const shownPictures = (text: string, files: ReadonlyArray<CarriedFile>): ReadonlyArray<ShownPicture> => {
   const candidates = picturesOf(files);
   return pairInlineImages(inlineImageLabels(text), [...candidates.keys()]).flatMap((pair) => {
     const file = candidates.get(pair.image);
-    return file?.picture === undefined ? [] : [{ label: pair.label, path: file.picture, file }];
+    return file?.picture === undefined ? [] : [{ label: pair.label, path: file.picture, text: file.text, file }];
   });
 };
 
