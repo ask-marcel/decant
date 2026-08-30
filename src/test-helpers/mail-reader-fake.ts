@@ -105,6 +105,9 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
       const refused = seed.failCalls?.['messageHeaders'];
       return refused ? err(refused) : forMessage(messageId, 'headers', seed.headers?.[messageId] ?? []);
     },
-    sharepointLinks: async (messageId) => forMessage(messageId, 'links', seed.links?.[messageId] ?? []),
+    sharepointLinks: async (messageId) => {
+      const refused = seed.failCalls?.['sharepointLinks'];
+      return refused ? err(refused) : forMessage(messageId, 'links', seed.links?.[messageId] ?? []);
+    },
   };
 };

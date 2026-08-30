@@ -1,35 +1,29 @@
-import { join as pathUnder, relative as pathBetween } from 'node:path';
-import { contentHash } from '../domain/content-hash.ts';
+import { relative as pathBetween } from 'node:path';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import type { AttachmentRecord, LinkedRecord, ThreadRecord } from '../domain/mail-state.ts';
-import { renderFrontMatter, withoutFrontMatter } from '../domain/front-matter.ts';
-import { carriesInlineImage } from '../domain/inline-image.ts';
-import type { CarriedFile } from '../domain/mail-body.ts';
-import { rewriteMessageBody } from '../domain/mail-body.ts';
+import { renderFrontMatter } from '../domain/front-matter.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import { participantsOf, renderThread, threadTitle } from '../domain/thread.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
-import { disambiguateSegment } from '../domain/kb-path.ts';
-import { renderLinkCard } from '../domain/link-card.ts';
-import { isOpaqueName } from '../domain/opaque-name.ts';
-import { renderThreadCard, uniqueName } from '../domain/thread-card.ts';
 import { threadFolderName } from '../domain/thread-folder.ts';
 import type { ThreadId } from '../domain/thread-id.ts';
 import { FILE_SLUG_LIMIT, FOLDER_SLUG_LIMIT, slugify } from '../domain/thread-slug.ts';
 import { dayIn } from '../domain/zoned-day.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
-import { skipReason, tooLargeReason } from '../domain/report.ts';
 import type { ConvertAttachment } from './convert-attachment.ts';
+import { ATTACHMENTS_FOLDER, attachmentsOf } from './thread-files.ts';
+import { rewriteBodies, writeCards } from './thread-documents.ts';
 import type { ConvertFile } from './convert-file.ts';
+import { linkedFiles, writeLinkCards } from './thread-links.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
-import type { LinkedFile, MailAttachment, MailReader, MailReaderError } from './ports/mail-reader.ts';
+import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 
 export type RenderThreadDeps = {
   readonly reader: MailReader;
@@ -76,8 +70,6 @@ export type RenderedThread = {
 export type RenderThreadOutcome = { readonly kind: 'rendered'; readonly thread: RenderedThread } | { readonly kind: 'empty' };
 
 export type RenderThread = (input: RenderThreadInput) => Promise<Result<RenderThreadOutcome, MailReaderError>>;
-
-const LINKED_FOLDER = '_linked';
 
 const bodiesOf = async (deps: RenderThreadDeps, messages: ReadonlyArray<MailMessage>): Promise<Result<ReadonlyArray<ThreadPart>, MailReaderError>> => {
   const parts: ThreadPart[] = [];
@@ -129,377 +121,6 @@ const threadHeader = (
     ['linked_files', linked],
   ]);
 
-// What one linked document came to: the files it produced, or the one line saying why it produced
-// none. Same shape as `Placed` for an attachment, so both feed the report the same way.
-type Pulled = {
-  readonly record?: LinkedRecord;
-  // Read off the document at the source, so the card can say which version of it the thread meant.
-  readonly lastModified?: string;
-  readonly modifiedBy?: string;
-  readonly skipped?: ReportEntry;
-  readonly failed?: ReportEntry;
-};
-
-// What one message pointed at, kept per message so a card can say when the thread referenced it.
-type MessageLink = {
-  readonly link: LinkedFile;
-  readonly received: string;
-  // What the document was called inside this thread's folder. The card is this plus `.md`, so the
-  // pair is one decision taken once, before the pull, and a document nobody could fetch still has a
-  // name for its card to be written under.
-  readonly asName: string;
-  readonly paths: ReadonlyArray<string>;
-  readonly lastModified?: string;
-  readonly modifiedBy?: string;
-  readonly note?: string;
-};
-
-type LinkedTally = {
-  readonly paths: ReadonlyArray<string>;
-  readonly linked: Record<string, LinkedRecord>;
-  readonly referenced: ReadonlyArray<MessageLink>;
-  readonly skipped: ReadonlyArray<ReportEntry>;
-  readonly failed: ReadonlyArray<ReportEntry>;
-};
-
-// A file already pulled for another thread is referenced, not fetched again: the same weekly report
-// linked from thirty mails is one document on disk.
-// Asked only of a message whose text carries one. `extract-sharepoint-links-in-mail` costs a Graph
-// call per message and fetches the message again to scan it, and a full run over this mailbox spent
-// a thousand of those to find thirty-six links. The body is already in hand, so it decides.
-//
-// The guard reads the CONVERTED markdown while the extractor reads the body Graph holds, so in
-// principle a link surviving only in an HTML attribute the conversion dropped would now be missed.
-// Measured against the vault before this landed: all thirty-six links sat in threads whose text
-// carries the URL, none would have been lost. Any host, not the tenant's own: half this mailbox is
-// vendors and partners sharing from their own SharePoint.
-const POINTS_SOMEWHERE = /sharepoint\./i;
-
-const linkedFiles = async (deps: RenderThreadDeps, input: RenderThreadInput, place: ThreadPlace, parts: ReadonlyArray<ThreadPart>): Promise<LinkedTally> => {
-  // Within this thread only, the way its attachments are. The same weekly report linked from thirty
-  // mails across ten threads is pulled once per thread rather than once for the mailbox: a folder
-  // that has to reach into another thread to be read is not self-contained, and the document is the
-  // cheap half of what a thread costs.
-  const linked: Record<string, LinkedRecord> = {};
-  // One name per document, not per mention: a deck cited in four replies is one file. The names
-  // already handed out are what a new one has to avoid, so the map is the taken list.
-  const names: Record<string, string> = {};
-  const paths: string[] = [];
-  const skipped: ReportEntry[] = [];
-  const failed: ReportEntry[] = [];
-  const referenced: MessageLink[] = [];
-  for (const part of parts) {
-    if (!POINTS_SOMEWHERE.test(part.body)) continue;
-    const message = part.message;
-    const found = await deps.reader.sharepointLinks(message.id);
-    if (!found.ok) continue;
-    for (const link of found.value) {
-      const key = `${link.driveId}:${link.itemId}`;
-      const asName = names[key] ?? uniqueName(link.name, Object.values(names));
-      names[key] = asName;
-      const already = linked[key];
-      const pulled = already === undefined ? await pullLinked(deps, input, place, link, asName) : { record: already };
-      if (pulled.skipped !== undefined) skipped.push(pulled.skipped);
-      if (pulled.failed !== undefined) failed.push(pulled.failed);
-      // Recorded whether or not it came: a card for a document nobody could pull is the only place
-      // the thread's dependence on it is written down.
-      referenced.push({
-        link,
-        received: message.received,
-        asName,
-        paths: pulled.record?.paths ?? [],
-        lastModified: pulled.lastModified,
-        modifiedBy: pulled.modifiedBy,
-        note: (pulled.skipped ?? pulled.failed)?.reason,
-      });
-      if (pulled.record === undefined) continue;
-      linked[key] = pulled.record;
-      for (const path of pulled.record.paths) if (!paths.includes(path)) paths.push(path);
-    }
-  }
-  return { paths, linked, referenced, skipped, failed };
-};
-
-// The same route a file found by walking a library takes. A linked document is read for its own
-// metadata first, because the name in the link cannot say when the file changed, how big it is, or
-// what kind of thing it is: the day decides the folder, the size decides whether it is pulled at
-// all, and the kind decides whether a deck also renders a PDF beside its text.
-const pullLinked = async (deps: RenderThreadDeps, input: RenderThreadInput, place: ThreadPlace, link: LinkedFile, asName: string): Promise<Pulled> => {
-  const { driveId, itemId, name } = link;
-  const found = await deps.drive.item({ driveId, itemId });
-  if (!found.ok) {
-    deps.logger.warn('linked.failed', { itemId, name, cause: found.error.kind });
-    return { failed: { path: name, reason: `${found.error.kind}: ${found.error.message}` } };
-  }
-  const into = `${place.here}/${LINKED_FOLDER}`;
-  const outcome = await deps.convertFile({
-    item: found.value,
-    driveId,
-    libraryRoot: into,
-    site: 'Mailbox',
-    library: LINKED_FOLDER,
-    maxBytes: input.maxBytes,
-    into,
-    asName,
-  });
-  const { lastModified, modifiedBy } = found.value;
-  if (outcome.kind === 'converted') return { record: { paths: outcome.outputs }, lastModified, modifiedBy };
-  deps.logger.warn(outcome.kind === 'skipped' ? 'linked.skipped' : 'linked.failed', { itemId, name, cause: outcome.reason });
-  if (outcome.kind === 'failed') return { failed: { path: name, reason: outcome.reason } };
-  return { skipped: { path: name, reason: skipReason(outcome.reason, input.maxBytes) } };
-};
-
-const ATTACHMENTS_FOLDER = '_attachments';
-
-// What one message carried, kept per message rather than per thread: the body that message rendered
-// to is the one place a reader looks for it, and a thread-wide list cannot say which message it came
-// with. A file the thread already stored for an earlier message is recorded again here, pointing at
-// the same copy on disk, so every message that carried it names it.
-type MessageFile = {
-  readonly attachment: MailAttachment;
-  // The name the file was written under inside this thread's folder. Always present, taken before a
-  // single byte is fetched, so a file that never arrives still has a card to be recorded on and a
-  // name for the body to link at. The card is this plus `.md`, so the two cannot drift.
-  readonly asName: string;
-  readonly paths: ReadonlyArray<string>;
-  readonly primary?: string;
-  // Set only for a picture the message showed inside itself: the file to display, and the words
-  // read off it. Both travel with the message rather than with the thread, because a body is the
-  // one place either is named.
-  readonly picture?: string;
-  readonly text?: string;
-  readonly note?: string;
-};
-
-type Media = ReadonlyArray<string>;
-
-type AttachmentTally = {
-  readonly paths: ReadonlyArray<string>;
-  readonly store: Readonly<Record<string, AttachmentRecord>>;
-  readonly byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>;
-  // Pictures taken out of the documents themselves. Written, recorded, and left out of the head of
-  // the thread: the document's own markdown links them under `## Images`.
-  readonly media: Media;
-  readonly skipped: ReadonlyArray<ReportEntry>;
-  readonly failed: ReadonlyArray<ReportEntry>;
-};
-
-type Placed = {
-  readonly asName: string;
-  readonly paths: ReadonlyArray<string>;
-  readonly primary?: string;
-  readonly picture?: string;
-  readonly text?: string;
-  readonly media?: Media;
-  readonly skipped?: ReportEntry;
-  readonly failed?: ReportEntry;
-};
-
-// One attachment into the shared store. Its content address decides everything: a content already
-// stored is referenced without being converted again; a new content is converted once, under a name
-// that always carries a short slice of that address so the name is fixed by the bytes alone. That is
-// what lets conversations render at the same time without ever racing to claim a name on disk.
-// Where an attachment's content address comes from. A file has bytes to take one from. An item
-// attachment has none at all, Graph answering a request for them with the item itself, so its
-// address is the address of what it renders to: stable for the same embedded mail within a library
-// version, which is what lets two threads carrying it share one copy on disk. The rendering is kept
-// and handed on, so the conversion does not ask for it a second time.
-type Addressed = { readonly hash: string; readonly rendered?: string };
-
-const addressOf = async (deps: RenderThreadDeps, messageId: string, attachment: MailAttachment): Promise<Result<Addressed, MailReaderError>> => {
-  if (attachment.kind !== 'item') {
-    const raw = await deps.reader.attachmentBytes(messageId, attachment.id);
-    return raw.ok ? ok({ hash: contentHash(raw.value) }) : raw;
-  }
-  const rendered = await deps.reader.attachmentMarkdown(messageId, attachment.id);
-  return rendered.ok ? ok({ hash: contentHash(new TextEncoder().encode(rendered.value)), rendered: rendered.value }) : rendered;
-};
-
-// A picture the message showed inside itself, as against a file it attached. Both arrive as
-// attachments and Graph tells them apart by `isInline`, which it sets for anything the body points
-// at by `cid:`. Only an image is treated this way: a `cid:`-referenced PDF is still a document.
-const isInlinePicture = (attachment: MailAttachment): boolean => attachment.isInline && attachment.contentType.startsWith('image/');
-
-const INLINE_FOLDER = '_inline';
-
-// A record written before pictures carried their reading has nothing to put in a body, so it is
-// treated as though the picture had never been stored: converting it again is cheap and self-
-// healing, where showing it wordlessly would be a silent loss no run ever repaired.
-const withText = (record: AttachmentRecord | undefined): AttachmentRecord | undefined => (record?.text === undefined ? undefined : record);
-
-const placeAttachment = async (
-  deps: RenderThreadDeps,
-  input: RenderThreadInput,
-  place: ThreadPlace,
-  store: Record<string, AttachmentRecord>,
-  shared: Record<string, AttachmentRecord>,
-  taken: string[],
-  messageId: string,
-  attachment: MailAttachment,
-  stamp: DocumentStamp
-): Promise<Placed> => {
-  // The size cap is checked before the bytes are pulled, so a file past it is reported without ever
-  // being downloaded. A kind we do not read is caught by the converter, which is the one authority
-  // on that; by then the file is already in hand, so the only skip it can report is unsupported.
-  // Named before anything is fetched, so a file that never arrives still has somewhere to be
-  // recorded. A card for a file too large to pull, or of a kind nothing reads, is the only place
-  // its arrival and the reason are written down, and the body needs a name to link at.
-  const inline = isInlinePicture(attachment);
-  const asName = uniqueName(attachment.name, taken);
-  taken.push(asName);
-  if (attachment.size > input.maxBytes) return { asName, paths: [], skipped: { path: attachment.name, reason: tooLargeReason(input.maxBytes) } };
-  const address = await addressOf(deps, messageId, attachment);
-  if (!address.ok) return { asName, paths: [], failed: { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` } };
-  const hash = address.value.hash;
-  // Within this thread only. A signature riding on ten messages of one conversation is converted
-  // once; the same file arriving in another thread is written there too, because a thread folder
-  // that has to reach into another thread to be read is not self-contained.
-  // A picture is shared by the whole mailbox, an attachment by its thread alone. A signature logo
-  // rides on every message its sender ever wrote, so storing one per thread would write the same
-  // hundred kilobytes into every folder; a spreadsheet belongs to the conversation it was sent in.
-  // A record from an older run holding no text is treated as unseen, since the picture would
-  // otherwise be shown in this thread with nothing under it.
-  const seen = inline ? withText(shared[hash]) : store[hash];
-  if (seen !== undefined) return { asName: seen.name, paths: seen.paths, primary: seen.primary, picture: inline ? seen.primary : undefined, text: seen.text, media: seen.media };
-  const folder = inline ? `${deps.mailboxRoot}/${INLINE_FOLDER}` : `${place.here}/${ATTACHMENTS_FOLDER}`;
-  // A shared folder needs names that cannot collide across every thread that writes into it, which
-  // is what the content address gives. Inside one thread only a same-name-different-content pair
-  // needs separating, and a number says that more plainly than ten hex.
-  const storedAs = inline ? disambiguateSegment(attachment.name, hash) : asName;
-  const rendered = address.value.rendered;
-  const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: input.maxBytes, asName: storedAs, rendered, textOnly: inline });
-  if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, input.maxBytes) } };
-  if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: attachment.name, reason: outcome.reason } };
-  const record = { name: storedAs, paths: outcome.outputs, primary: outcome.primary, media: outcome.media, text: outcome.text };
-  if (inline) shared[hash] = record;
-  else store[hash] = record;
-  return { asName: storedAs, paths: outcome.outputs, primary: outcome.primary, picture: inline ? outcome.primary : undefined, text: outcome.text, media: outcome.media };
-};
-
-const attachmentsOf = async (
-  deps: RenderThreadDeps,
-  input: RenderThreadInput,
-  place: ThreadPlace,
-  parts: ReadonlyArray<ThreadPart>,
-  stamp: DocumentStamp
-): Promise<AttachmentTally> => {
-  const store: Record<string, AttachmentRecord> = {};
-  // Pictures shown inside message bodies, which the whole mailbox shares, seeded with what earlier
-  // threads stored so a signature logo is written once rather than once per conversation.
-  const shared: Record<string, AttachmentRecord> = { ...input.attachments };
-  const taken: string[] = [];
-  const paths: string[] = [];
-  const skipped: ReportEntry[] = [];
-  const failed: ReportEntry[] = [];
-  // A signature logo rides on every message of a thread, so the same file is offered many times.
-  // Every offer is fetched and hashed rather than recognised beforehand by its name and length: a
-  // spreadsheet edited and resent down a thread keeps its name, and an edit that leaves the byte
-  // count untouched would pass for the version before it. The content address then dedupes the
-  // repeat, here and across every other thread, so the bytes are paid for and the conversion is not.
-  const byMessage: Record<string, MessageFile[]> = {};
-  const media: string[] = [];
-  // Graph reports `hasAttachments: false` for a message whose only attachment is an inline image, so
-  // a signature or a pasted screenshot would never be listed at all. A body showing a picture it does
-  // not carry is the other half of the question, and asking it costs nothing on a message with neither.
-  for (const part of parts.filter((candidate) => candidate.message.hasAttachments || carriesInlineImage(candidate.body))) {
-    const listed = await deps.reader.attachments(part.message.id);
-    if (!listed.ok) {
-      failed.push({ path: `message ${part.message.id}`, reason: `could not list what it carried: ${listed.error.message}` });
-      continue;
-    }
-    const carried: MessageFile[] = [];
-    for (const attachment of listed.value) {
-      const placed = await placeAttachment(deps, input, place, store, shared, taken, part.message.id, attachment, stamp);
-      for (const path of placed.paths) if (!paths.includes(path)) paths.push(path);
-      if (placed.skipped) skipped.push(placed.skipped);
-      if (placed.failed) failed.push(placed.failed);
-      for (const path of placed.media ?? []) if (!media.includes(path)) media.push(path);
-      // Counted above and then dropped: a file nothing can read, named by a machine id, has no fact
-      // left to record. Sharing notifications carry a handful each, and a card apiece buried the
-      // real attachments of the same vault. It keeps its place in `taken`, so the numbering of what
-      // follows does not shift with a decision about what to show.
-      if (placed.skipped !== undefined && isOpaqueName(attachment.name)) continue;
-      carried.push({
-        attachment,
-        asName: placed.asName,
-        paths: placed.paths,
-        primary: placed.primary,
-        picture: placed.picture,
-        text: placed.text,
-        note: placed.skipped?.reason ?? placed.failed?.reason,
-      });
-    }
-    byMessage[part.message.id] = carried;
-  }
-  // Both stores fold into the one the run remembers: the shared pictures so a later thread finds
-  // them, this thread's files so the mailbox index names everything on disk.
-  return { paths, store: { ...shared, ...store }, byMessage, media, skipped, failed };
-};
-
-// Decided where the file was placed, not worked out again from its outputs: a picture shown in a
-// body is converted differently from everything else, and the placement is what knows that.
-const pictureOf = (here: string, file: MessageFile): string | undefined => (file.picture === undefined ? undefined : pathBetween(here, file.picture));
-
-// Paths are written the way a reader follows them: from the folder the conversation sits in.
-// Named in one pure pass before anything is rewritten, so the link a body carries and the file on
-// disk are decided together and cannot disagree. A picture shown in the body still takes a name it
-// will not use, which keeps the numbering of everything after it stable whether or not it is shown.
-// The card sits beside the file it stands for and takes its name, so neither the body's link nor the
-// write below has to look anything up: both ask the file what it was called.
-const cardNameOf = (file: MessageFile): string => `${file.asName}.md`;
-
-// `cards` is the card folder's own path, not the segment: `pathBetween` resolves its second argument
-// against the working directory, so handing it `_attachments` climbs out of the vault entirely.
-// The card and the file it stands for, kept together rather than lined up by index: what a body
-// links to and what the record counts as shown are two views of one file, and pairing them is what
-// stops a guard standing in for an invariant that already holds.
-type Carried = { readonly carried: CarriedFile; readonly stored?: string };
-
-const carriedBy = (here: string, cards: string, files: ReadonlyArray<MessageFile>): ReadonlyArray<Carried> =>
-  files.map((file) => ({
-    stored: file.primary,
-    carried: {
-      name: file.attachment.name,
-      size: file.attachment.size,
-      contentType: file.attachment.contentType,
-      contentId: file.attachment.contentId,
-      isInline: file.attachment.isInline,
-      // A picture stands for itself. It gets no card, so a body that has to name one, because no
-      // placeholder in the text answered for it, links the picture rather than a file nothing wrote.
-      path: file.picture === undefined ? pathBetween(here, `${cards}/${cardNameOf(file)}`) : pathBetween(here, file.picture),
-      picture: pictureOf(here, file),
-      text: file.text,
-      note: file.note,
-    },
-  }));
-
-type ThreadBodies = { readonly parts: ReadonlyArray<ThreadPart>; readonly pictures: ReadonlyArray<string> };
-
-// A picture shown in a body is named nowhere else, so both files it produced, the picture and the
-// text read out of it, leave the attachment list and go under `inline_images` instead.
-// Reported as STORE paths, not as the card paths a body now links to: this is what filters the
-// record's attachment list, and that list names what is in the store.
-const shownPaths = (here: string, carried: ReadonlyArray<Carried>, pictures: ReadonlyArray<string>): ReadonlyArray<string> =>
-  carried.flatMap((pair) => {
-    const picture = pair.carried.picture;
-    if (picture === undefined || !pictures.includes(picture)) return [];
-    return pair.stored === undefined ? [pathUnder(here, picture)] : [pathUnder(here, picture), pair.stored];
-  });
-
-const rewriteBodies = (here: string, cards: string, parts: ReadonlyArray<ThreadPart>, byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>): ThreadBodies => {
-  const pictures: string[] = [];
-  const rewritten = parts.map((part) => {
-    const carried = carriedBy(here, cards, byMessage[part.message.id] ?? []);
-    const body = rewriteMessageBody(
-      part.body,
-      carried.map((pair) => pair.carried)
-    );
-    for (const path of shownPaths(here, carried, body.pictures)) if (!pictures.includes(path)) pictures.push(path);
-    return { message: part.message, body: body.body };
-  });
-  return { parts: rewritten, pictures };
-};
-
 export const createRenderThread =
   (deps: RenderThreadDeps): RenderThread =>
   async (input) => {
@@ -541,104 +162,6 @@ const placeOf = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailMe
   return { folder, relative: `threads/${folder}/${slugify(bare, FILE_SLUG_LIMIT)}.md`, here: `${deps.mailboxRoot}/threads/${folder}` };
 };
 
-const CARDS_FOLDER = '_attachments';
-
-// One card per file the thread carried, written HERE rather than inside the conversion. The
-// conversion is short-circuited whenever a content is already in the store, which is the common
-// case for everything after the first thread that carried it, so a card written there would exist
-// only for the thread that happened to arrive first. Every other thread would then name files in
-// its head that its own folder said nothing about.
-const writeCards = async (
-  deps: RenderThreadDeps,
-  input: RenderThreadInput,
-  place: ThreadPlace,
-  parts: ReadonlyArray<ThreadPart>,
-  byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>,
-  shown: ReadonlySet<string>
-): Promise<ReadonlyArray<string>> => {
-  const folder = `${place.here}/${CARDS_FOLDER}`;
-  const written: string[] = [];
-  const carded = new Set<string>();
-  for (const part of parts) {
-    for (const file of byMessage[part.message.id] ?? []) {
-      if (file.picture !== undefined) continue;
-      if (file.primary !== undefined && shown.has(file.primary)) continue;
-      // One card per FILE, not per arrival: a signature riding on ten messages of one thread is one
-      // file on disk and reads as one entry in the folder beside it.
-      const name = cardNameOf(file);
-      if (carded.has(name)) continue;
-      carded.add(name);
-      // The output that IS the file, told by its name rather than by not being the extract. A mail
-      // attached to a mail unpacks into a folder of its own parts, and a document has its pictures
-      // pulled out beside it, so "the first output that is not the extract" named whichever came
-      // first: a logo, in the one real case. Nothing matches when the original was not kept, and no
-      // `original:` line is the truthful answer there.
-      const raw = file.paths.find((path) => path.endsWith(`/${file.asName}`));
-      // Read, then written back over the same path, deliberately. The converter puts the extracted
-      // text at `<name>.<ext>.md` inside this folder and the card wants that exact name, because a
-      // reader opening the folder should find ONE document per file, not a card and an extract
-      // saying the same thing. Reading first is what makes the overwrite safe: the body comes
-      // forward, and the arrival facts, who sent it and under which message, replace a stamp that
-      // said which library it came from, which is the wrong question for mail.
-      const stored = file.primary === undefined ? undefined : await deps.files.readText(file.primary);
-      const card = renderThreadCard({
-        threadId: input.threadId,
-        messageId: part.message.id,
-        filename: file.attachment.name,
-        sender: part.message.from?.name,
-        received: part.message.received,
-        bytes: file.attachment.size,
-        body: stored?.ok === true ? withoutFrontMatter(stored.value) : undefined,
-        original: raw === undefined ? undefined : pathBetween(folder, raw),
-        note: file.note,
-      });
-      const saved = await deps.files.writeText(`${folder}/${name}`, card);
-      if (saved.ok) written.push(`${folder}/${name}`);
-      else deps.logger.warn('card.failed', { filename: file.attachment.name, cause: saved.error.kind });
-    }
-  }
-  return written;
-};
-
-const LINK_CARDS_FOLDER = '_linked';
-
-// One card per document the thread pointed at, beside the thread rather than in the store the
-// document itself sits in. Written here for the same reason the attachment cards are: a document
-// another thread already pulled is referenced without being fetched again, so a card written where
-// the fetching happens would exist only for the thread that got there first.
-const writeLinkCards = async (deps: RenderThreadDeps, input: RenderThreadInput, place: ThreadPlace, referenced: ReadonlyArray<MessageLink>): Promise<void> => {
-  const folder = `${place.here}/${LINK_CARDS_FOLDER}`;
-  // One card per document, not per mention. A deck cited in four replies is one thing the thread
-  // depended on, and the card says when it was first pointed at.
-  const seen = new Set<string>();
-  for (const entry of referenced) {
-    const key = `${entry.link.driveId}:${entry.link.itemId}`;
-    if (seen.has(key)) continue;
-    seen.add(key);
-    const name = `${entry.asName}.md`;
-    // Read, then written back over the same path, the way an attachment card is: the converter puts
-    // the document's text at `<name>.md` in this folder and the card wants that exact name, so a
-    // reader opening the folder finds ONE document per thing the thread pointed at. Reading first
-    // is what makes the overwrite safe, the text coming forward under the thread's own facts.
-    const held = entry.paths.find((path) => path.endsWith('.md'));
-    const stored = held === undefined ? undefined : await deps.files.readText(held);
-    const original = entry.paths.find((path) => path.endsWith(`/${entry.asName}`));
-    const card = renderLinkCard({
-      threadId: input.threadId,
-      title: entry.link.name,
-      url: entry.link.url,
-      inMessage: entry.received,
-      lastModified: entry.lastModified,
-      modifiedBy: entry.modifiedBy,
-      body: stored?.ok === true ? withoutFrontMatter(stored.value) : undefined,
-      original: original === undefined ? undefined : pathBetween(folder, original),
-      note: entry.note,
-    });
-    const saved = await deps.files.writeText(`${folder}/${name}`, card);
-    if (!saved.ok) deps.logger.warn('card.failed', { filename: entry.link.name, cause: saved.error.kind });
-  }
-};
-
 const writeThread = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
@@ -649,17 +172,18 @@ const writeThread = async (
   const place = placeOf(deps, input, first);
   const relative = place.relative;
   const stamp = stampFor(deps, input, first, last);
-  const attachments = await attachmentsOf(deps, input, place, parts, stamp);
-  const links = await linkedFiles(deps, input, place, parts);
+  const attachments = await attachmentsOf(deps, { here: place.here, mailboxRoot: deps.mailboxRoot, maxBytes: input.maxBytes, stored: input.attachments }, parts, stamp);
+  const links = await linkedFiles(deps, place.here, input.maxBytes, parts);
   // Everything the thread carried sits inside the thread's own folder, so every reference below is
   // relative to `here` and stays within the directory a reader already has open.
   const here = place.here;
-  const bodies = rewriteBodies(here, `${here}/${CARDS_FOLDER}`, parts, attachments.byMessage);
+  const cards = `${here}/${ATTACHMENTS_FOLDER}`;
+  const bodies = rewriteBodies(here, cards, parts, attachments.byMessage);
   const shown = new Set([...bodies.pictures, ...attachments.media]);
   // The head cites the thread's OWN cards, not the store three levels up, so a reader follows a
   // path that stays inside the folder they already opened.
-  const cardPaths = await writeCards(deps, input, place, parts, attachments.byMessage, shown);
-  await writeLinkCards(deps, input, place, links.referenced);
+  const cardPaths = await writeCards(deps, { threadId: input.threadId, here, folder: cards }, parts, attachments.byMessage, shown);
+  await writeLinkCards(deps, input.threadId, place.here, links.referenced);
   const attachmentRefs = cardPaths.map((path) => pathBetween(here, path));
   const inlineRefs = bodies.pictures.map((path) => pathBetween(here, path));
   // Linked files are written from the thread's own folder, exactly as attachments are: both climb out

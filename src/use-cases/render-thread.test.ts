@@ -286,7 +286,9 @@ describe('writing one conversation as one file', () => {
     // what it carried, and what comes back is a picture nothing in the text points at.
     const { files } = await run({ reader: { ...showing, conversations: { [CONV]: [message({ hasAttachments: true })] }, bodies: { m1: 'Regards,' } } });
 
-    expect(files.written.has(`${ATTACHMENTS_STORE}/logo.png.md`)).toBe(false);
+    // No document of any kind in the thread's own folder: the picture is in the mailbox store, and
+    // a card for it would be a card for something that stands for itself.
+    expect([...files.written.keys()].filter((path) => path.startsWith(`${ATTACHMENTS_STORE}/`))).toEqual([]);
     expect(files.written.get(THREAD_FILE)).toContain('- [logo.png](../../_inline/logo-3d8c205c.png) (100 B, image/png)');
   });
 
@@ -774,16 +776,26 @@ describe('following the SharePoint files a conversation points at', () => {
   });
 
   it('a linked file the drive will not hand over is named in the report as having failed', async () => {
-    const { outcome } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked } });
+    const { outcome, logger } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked } });
 
     expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([{ path: `${THREAD_RELATIVE}: Rapport.docx`, reason: 'permanent: fake has no item 01ABC' }]);
+    // The log says WHICH document and why. An event with an empty payload names a failure nobody
+    // can act on, which is the shape these lines quietly rot into.
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'linked.failed', meta: { itemId: '01ABC', name: 'Rapport.docx', cause: 'permanent' } });
   });
 
   it('a linked file of a kind this tool does not read is named in the report', async () => {
     const seeded = { items: { '01ABC': { ...REPORT, name: 'Recording.mp4', path: 'Recording.mp4' } } };
-    const { outcome } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: seeded });
+    const { outcome, logger } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: seeded });
 
     expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Rapport.docx`, reason: 'a kind of file this tool does not read' }]);
+    // Skipped, not failed: the two are told apart in the log as well as in the report, since one is
+    // a decision this tool made and the other is something that went wrong.
+    expect(logger.calls).toContainEqual({
+      level: 'warn',
+      event: 'linked.skipped',
+      meta: { itemId: '01ABC', name: 'Rapport.docx', cause: 'unsupported-type' },
+    });
   });
 
   it('a linked file that could not be converted is named in the report, not lost between the two', async () => {
@@ -831,7 +843,7 @@ describe('following the SharePoint files a conversation points at', () => {
     const seeded = { items: { '01BOOK': { ...REPORT, id: '01BOOK', name: 'Budget.xlsx', path: 'Budget.xlsx' } } };
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: book }, drive: seeded });
 
-    expect(files.written.get(`${LINKED_HERE}/Budget.xlsx.md`) ?? '').toContain('original: Budget.xlsx');
+    expect(files.written.get(`${LINKED_HERE}/Budget.xlsx.md`) ?? '').toContain('original: Budget.xlsx\n');
   });
 
   // A deck renders slides as well as text. The card carries the TEXT, so the reading is what a
@@ -851,6 +863,34 @@ describe('following the SharePoint files a conversation points at', () => {
     const { drive } = await run({ reader: { conversations, bodies: LINK_BODIES, links: { ...linked, m2: linked.m1 } }, drive: items });
 
     expect(drive.calls.filter((call: string) => call === 'item:01ABC')).toHaveLength(1);
+  });
+
+  // A thread whose links cannot be read at all still renders. The mailbox is asked per message and
+  // the answer can fail on its own, separately from the drive refusing a document later.
+  it('a message whose links the mailbox will not list costs that message, not the thread', async () => {
+    const { outcome, files } = await run({
+      reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked, failCalls: { sharepointLinks: { kind: 'transient', message: 'timeout' } } },
+      drive: items,
+    });
+
+    expect(outcome?.kind).toBe('rendered');
+    expect(files.written.has(REPORT_MD)).toBe(false);
+  });
+
+  // Told apart by the document they stand for, not merely counted: a thread pointing at two things
+  // gets two cards, and a key that failed to distinguish them would silently keep one.
+  it('two documents one thread pointed at each get their own card', async () => {
+    const both = {
+      m1: [
+        { url: 'https://tenant.sharepoint.com/x', driveId: 'b!one', itemId: '01ABC', name: 'Rapport.docx' },
+        { url: 'https://tenant.sharepoint.com/y', driveId: 'b!one', itemId: '01DECK', name: 'Deck.pptx' },
+      ],
+    };
+    const seeded = { items: { '01ABC': REPORT, '01DECK': { ...REPORT, id: '01DECK', name: 'Deck.pptx', path: 'Deck.pptx' } } };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: both }, drive: seeded });
+
+    expect(files.written.has(REPORT_MD)).toBe(true);
+    expect(files.written.has(`${LINKED_HERE}/Deck.pptx.md`)).toBe(true);
   });
 
   it('a linked file past the size cap is left where it is rather than pulled', async () => {
