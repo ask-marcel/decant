@@ -368,3 +368,45 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   any of them. One `toBe` against a whole small rendering killed all ten and took the file to 100%.
   Where the output IS a document, pin at least one complete example; keep the fragment tests for the
   scenarios they name, but never let them be the only thing holding the shape.
+
+## 2026-08-30
+
+- [gotcha] Exchange sends the FULL RFC `References` chain, CRLF-folded across continuation lines: a
+  30-message thread in this mailbox carries 52 ids on its newest reply. Three earlier samples each
+  showed a single id equal to `In-Reply-To`, which looked like "Exchange only sends the parent" and
+  is not: all three were direct replies to their own root, where parent and root are the same
+  message and the two hypotheses are indistinguishable. Sample a thread deep enough to contain a
+  reply-to-a-reply before concluding anything about a threading header, and read the first
+  angle-bracketed token of the whole folded value rather than splitting on lines or whitespace.
+
+- [gotcha] `expect(rendered).toContain('- name')` cannot tell a bare list entry from that entry with
+  a suffix appended, so every mutant that appends something survives it. Five survivors in
+  `zip-manifest.ts` and two in `thread-card.ts` were all of this shape: a member with nothing read
+  out of it must list as its name ALONE, and only a whole-document `toBe` says so. This is the same
+  lesson as the 2026-08-28 entry on fragment assertions, met from the other direction: there the
+  fragments missed a collapsed layout, here they miss an added suffix.
+
+- [mistake] An ordering test whose keys the engine already orders proves nothing. The first version
+  of the `mail-meta` sort test used `'1234567890'` and `'ffff000000'`, and passed against an
+  implementation with no sort at all, because JavaScript hoists integer-like keys to the front of an
+  object whatever order it was built in. That hoisting was the very hazard the sort existed for, so
+  the test was written from the right instinct and still tested nothing. Two keys that are NOT
+  integer-like, inserted in reverse, is what makes the sort the only explanation for the result.
+
+- [gotcha] `eslint --cache` reports findings against paths that no longer hold them. Several rounds
+  went into a `prettier/prettier` warning attributed to `mail-meta.test.ts` that actually lived in
+  `mail-meta.ts`, and `--fix` on the named file changed nothing because nothing there was wrong.
+  When a warning points at a file you have already corrected, re-run with `--no-cache` before
+  believing the location.
+
+- [decision] Per-thread cards are written in `writeThread`, never inside the conversion. The
+  conversion short-circuits on a content the store already holds, which is the common case for
+  every thread after the first that carried a given file, so a card written there would exist only
+  for whichever thread arrived first and every other thread would name files in its head that its
+  own folder said nothing about. The same reasoning covers link cards, since a document another
+  thread already pulled is referenced rather than fetched again.
+
+- [decision] An archive's `primary` is its manifest, not the `.zip`. A thread used to point its
+  reader at a binary they had to unpack while the text was already on disk beside it, one file per
+  member. The archive is still kept and still listed among the outputs; it is no longer the thing
+  anything links to.
