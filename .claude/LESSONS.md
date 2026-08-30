@@ -541,3 +541,16 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   one: moving 690 lines counts as some 750 changed however the commits are cut, so splitting the
   commit does not help. Run lint, typecheck, the suite, coverage and mutation by hand first, and say
   in the body that you did.
+
+- [lesson] Splitting a test file is not the same as splitting the code. The four thread modules got
+  their own test files but kept ONE harness, because what each of them does is only visible in the
+  documents a whole run writes: a card names a file the placement chose, and a body links a card the
+  writing made. Narrower fakes per module would test the seams between them rather than the vault
+  they produce. Mutation is scored per source file whatever drives it, so the measurement was never
+  the reason to split the tests; readability was.
+
+- [gotcha] An untested error path looks exactly like a covered one. `convert-file.ts` sat at 89.07
+  with line coverage at 100: every `if (!x.ok) return failure(x.error)` could be deleted outright
+  and the suite still passed, because no test ever made `x` fail. Two seeds, a workbook and an
+  invitation the source refuses, put it over 90. Coverage says the line ran; only mutation says the
+  line mattered.
