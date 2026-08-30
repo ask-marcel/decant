@@ -67,7 +67,14 @@ const run = async (
     attachments?: Record<string, AttachmentRecord>;
     ocr?: OcrSeed;
   } = {}
-): Promise<{ outcome: RenderThreadOutcome | undefined; files: FilesFake; logger: LoggerFake; reader: ReturnType<typeof createMailReaderFake>; ok: boolean }> => {
+): Promise<{
+  outcome: RenderThreadOutcome | undefined;
+  files: FilesFake;
+  logger: LoggerFake;
+  reader: ReturnType<typeof createMailReaderFake>;
+  drive: ReturnType<typeof createDriveReaderFake>;
+  ok: boolean;
+}> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
   const reader = createMailReaderFake(seeds.reader);
@@ -92,7 +99,7 @@ const run = async (
     linked: seeds.linked ?? {},
     attachments: seeds.attachments ?? {},
   });
-  return { outcome: result.ok ? result.value : undefined, files, logger, reader, ok: result.ok };
+  return { outcome: result.ok ? result.value : undefined, files, logger, reader, drive, ok: result.ok };
 };
 
 describe('writing one conversation as one file', () => {
@@ -691,11 +698,16 @@ describe('following the SharePoint files a conversation points at', () => {
     size: 4096,
     path: 'Rapport.docx',
     lastModified: '2026-05-11T08:00:00Z',
+    modifiedBy: 'Bruno Martin',
     cTag: 'c1',
     webUrl: 'https://tenant.sharepoint.com/sites/team/Shared%20Documents/Rapport.docx',
   };
   const items = { items: { '01ABC': REPORT } };
-  const REPORT_MD = 'kb/Mailbox/_linked/2026-05-11/Rapport.docx.md';
+  // Beside the card standing for it, in the thread's own folder. The folders it had in SharePoint
+  // are recorded in the card's `url` rather than rebuilt on disk: a library tree inside a thread
+  // would bury one document four levels under the card that points at it.
+  const LINKED_HERE = `kb/Mailbox/threads/${THREAD_FOLDER}/_linked`;
+  const REPORT_MD = `${LINKED_HERE}/Rapport.docx.md`;
 
   // Asking costs a Graph call per message, and a full run asked a thousand times to find thirty-six
   // links. The body is already in hand by then, so it is what decides whether the question is worth
@@ -712,17 +724,19 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(files.written.has(REPORT_MD)).toBe(true);
     // Pinned whole rather than by its key: a reader follows this path from the folder the thread sits
     // in, so a value that resolves from the mailbox root instead would read as present and be broken.
-    expect(files.written.get(THREAD_FILE)).toContain('linked_files:\n  - ../../_linked/2026-05-11/Rapport.docx.md');
+    expect(files.written.get(THREAD_FILE)).toContain('linked_files:\n  - _linked/Rapport.docx.md');
     expect(outcome?.kind === 'rendered' && outcome.thread.linked['b!one:01ABC']).toEqual({ paths: [REPORT_MD] });
   });
 
   it('a document a thread pointed at gets a card beside the thread, naming its address at the source', async () => {
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: items });
-    const card = files.written.get(`kb/Mailbox/threads/${THREAD_FOLDER}/_linked/Rapport.docx.md`) ?? '';
+    const card = files.written.get(REPORT_MD) ?? '';
 
     expect(card).toContain(`linked_from: "${THREAD_ID}"`);
     expect(card).toContain('url: https://tenant.sharepoint.com/x');
-    expect(card).toContain('holds: ../../../_linked/2026-05-11/Rapport.docx.md');
+    // The document's own text, carried into the card rather than linked from it: the two want the
+    // same path, and one document per thing is what a reader opening the folder should find.
+    expect(card).toContain('converted 01ABC');
   });
 
   // The card is the only place a thread's dependence on something the vault does not hold is
@@ -739,15 +753,16 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(card).not.toContain('holds:');
   });
 
+  // The card stands where the converter's own stamp used to, so it has to carry what that stamp
+  // carried: not just the address, but which version of the document the thread meant.
   it('a linked document is stamped with where it came from, so it can be traced back', async () => {
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: items });
     const written = files.written.get(REPORT_MD) ?? '';
 
-    expect(written).toContain('source: https://tenant.sharepoint.com/sites/team/Shared%20Documents/Rapport.docx?web=1');
-    expect(written).toContain('site: Mailbox');
-    expect(written).toContain('library: _linked');
-    expect(written).toContain('path: Rapport.docx');
-    expect(written).toContain('synced_at: "2026-07-23T14:00:00Z"');
+    expect(written).toContain('url: https://tenant.sharepoint.com/x');
+    expect(written).toContain('last_modified: "2026-05-11T08:00:00Z"');
+    expect(written).toContain('modified_by: Bruno Martin');
+    expect(written).toContain('in_message: "2026-05-12T09:31:00Z"');
   });
 
   it('a message whose links cannot be looked up leaves the other messages of the thread intact', async () => {
@@ -782,19 +797,19 @@ describe('following the SharePoint files a conversation points at', () => {
     const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })] };
     const { files } = await run({ reader: { conversations, bodies: LINK_BODIES, links: { ...linked, m2: linked.m1 } }, drive: items });
 
-    expect((files.written.get(THREAD_FILE) ?? '').match(/- \.\.\/\.\.\/_linked\/2026-05-11\/Rapport\.docx\.md/g)).toHaveLength(1);
+    expect((files.written.get(THREAD_FILE) ?? '').match(/- _linked\/Rapport\.docx\.md/g)).toHaveLength(1);
     // And one card, not one per mention: a deck cited in four replies is one thing depended on.
-    expect([...files.written.keys()].filter((path) => path.startsWith(`kb/Mailbox/threads/${THREAD_FOLDER}/_linked/`))).toEqual([
-      `kb/Mailbox/threads/${THREAD_FOLDER}/_linked/Rapport.docx.md`,
-    ]);
+    expect([...files.written.keys()].filter((path) => path.startsWith(`${LINKED_HERE}/`))).toEqual([REPORT_MD]);
   });
 
-  it('a document another conversation already pulled is referenced, not fetched again', async () => {
-    const already = { 'b!one:01ABC': { paths: [REPORT_MD] } };
+  // Pulled here even though another thread holds the same document. That is the trade this layout
+  // makes: a report linked from ten threads is fetched ten times, so each folder reads on its own.
+  it('a document another thread pulled is pulled here too, so this thread reads on its own', async () => {
+    const already = { 'b!one:01ABC': { paths: ['kb/Mailbox/threads/other/_linked/Rapport.docx.md'] } };
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: items, linked: already });
 
-    expect(files.written.has(REPORT_MD)).toBe(false);
-    expect(files.written.get(THREAD_FILE)).toContain('  - ../../_linked/2026-05-11/Rapport.docx.md');
+    expect(files.written.has(REPORT_MD)).toBe(true);
+    expect(files.written.get(THREAD_FILE)).toContain('  - _linked/Rapport.docx.md');
   });
 
   it('a linked deck is kept as slides as well as text, the way a deck in a library is', async () => {
@@ -802,15 +817,50 @@ describe('following the SharePoint files a conversation points at', () => {
     const seeded = { items: { '01DECK': { ...REPORT, id: '01DECK', name: 'Deck.pptx', path: 'Deck.pptx' } } };
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: deck }, drive: seeded });
 
-    expect(files.binary.has('kb/Mailbox/_linked/2026-05-11/Deck.pptx.pdf')).toBe(true);
-    expect(files.written.has('kb/Mailbox/_linked/2026-05-11/Deck.pptx.md')).toBe(true);
+    expect(files.binary.has(`${LINKED_HERE}/Deck.pptx.pdf`)).toBe(true);
+    expect(files.written.has(`${LINKED_HERE}/Deck.pptx.md`)).toBe(true);
+  });
+
+  // The document is kept as it came as well as read, so the card can point at the file itself.
+  // Which output that is, told by its name: a deck also renders a PDF, and a document with pictures
+  // writes them out beside it, so "not the markdown" would have named whichever came first.
+  it('a card names the document beside it, not whatever else the conversion produced', async () => {
+    // A workbook, because reading one is never the whole of it: a formula, a second sheet and a
+    // chart are in the file and nowhere else, so the file is kept and the card points at it.
+    const book = { m1: [{ url: 'https://tenant.sharepoint.com/b', driveId: 'b!one', itemId: '01BOOK', name: 'Budget.xlsx' }] };
+    const seeded = { items: { '01BOOK': { ...REPORT, id: '01BOOK', name: 'Budget.xlsx', path: 'Budget.xlsx' } } };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: book }, drive: seeded });
+
+    expect(files.written.get(`${LINKED_HERE}/Budget.xlsx.md`) ?? '').toContain('original: Budget.xlsx');
+  });
+
+  // A deck renders slides as well as text. The card carries the TEXT, so the reading is what a
+  // reader meets, and the slides are named beside it rather than opened as if they were words.
+  it('a card carries the text a conversion produced, not another of its outputs', async () => {
+    const deck = { m1: [{ url: 'https://tenant.sharepoint.com/d', driveId: 'b!one', itemId: '01DECK', name: 'Deck.pptx' }] };
+    const seeded = { items: { '01DECK': { ...REPORT, id: '01DECK', name: 'Deck.pptx', path: 'Deck.pptx' } } };
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: deck }, drive: seeded });
+
+    expect(files.written.get(`${LINKED_HERE}/Deck.pptx.md`) ?? '').toContain('converted 01DECK');
+  });
+
+  // Once, however many messages of the thread cited it. The drive is asked for a document's own
+  // metadata before it is pulled, and asking twice is a round trip per mention of a popular deck.
+  it('a document two messages of a thread cite is fetched once, not once per mention', async () => {
+    const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })] };
+    const { drive } = await run({ reader: { conversations, bodies: LINK_BODIES, links: { ...linked, m2: linked.m1 } }, drive: items });
+
+    expect(drive.calls.filter((call: string) => call === 'item:01ABC')).toHaveLength(1);
   });
 
   it('a linked file past the size cap is left where it is rather than pulled', async () => {
     const seeded = { items: { '01ABC': { ...REPORT, size: 60 * 1024 * 1024 } } };
     const { files, logger } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: seeded });
 
-    expect(files.written.has(REPORT_MD)).toBe(false);
+    // A card is still written there, being the only record the thread depended on it. What is not
+    // written is the document: the card says why, and names no original beside it.
+    expect(files.written.get(REPORT_MD) ?? '').toContain('larger than the 50 MB cap');
+    expect(files.written.get(REPORT_MD) ?? '').not.toContain('original:');
     expect(logger.calls.some((call) => call.event === 'linked.skipped')).toBe(true);
   });
 
@@ -821,11 +871,15 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([{ path: `${THREAD_RELATIVE}: Rapport.docx`, reason: 'larger than the 50 MB cap' }]);
   });
 
-  it('a linked file the folders under SharePoint hold is filed under those folders too', async () => {
+  // Flat, whatever tree it sat in at the source. A document three folders deep in a library would
+  // otherwise land three folders away from the card that points at it, and the card already records
+  // where it came from, so the tree is written down rather than rebuilt.
+  it('a linked document sits beside its card, the folders it had at the source not rebuilt here', async () => {
     const seeded = { items: { '01ABC': { ...REPORT, path: 'Decks/Q3/Rapport.docx' } } };
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: seeded });
 
-    expect(files.written.has('kb/Mailbox/_linked/2026-05-11/Decks/Q3/Rapport.docx.md')).toBe(true);
+    expect(files.written.has(REPORT_MD)).toBe(true);
+    expect([...files.written.keys()].some((path) => path.includes('Decks/Q3'))).toBe(false);
   });
 
   it('the same document linked from two messages of a thread is listed once', async () => {
