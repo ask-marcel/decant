@@ -611,3 +611,20 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   retype the path, so the card links it.
   Describe the file at the SOURCE, not the words a message linked it under: a message can point at
   a recording calling it `Rapport.docx`, and the reason would then name a kind that was never there.
+
+- [lesson] A report earns attention only if everything in it deserves attention. Two decisions had
+  drifted apart: a notification icon was dropped from the thread as decoration, then reported as
+  something that did not reach the knowledge base. One run's report was fourteen lines, all false
+  positives, thirteen icons and a shared folder, with nothing lost in any of them. Whatever is
+  deliberately ignored has to be ignored everywhere, or the report is noise on the day something
+  real lands in it. Ask of every line: would a reader do anything about this?
+
+- [gotcha] `--since` bounds the sweep, not the folder date. A thread whose first message is from
+  April but which had activity inside the window is filed under April, because the folder is named
+  from the first message and frozen there. That is correct and looks wrong in a directory listing.
+
+- [gotcha] Check `my-quick-context` before diagnosing a slow or surprising run. A sync that had
+  taken ninety seconds ran past an hour and wrote threads nobody recognised: the signed-in account
+  had changed to another tenant whose mail is full of pasted screenshots, 113 of them against 5,
+  each costing an OCR pass at some twenty seconds on a cold cache. Nothing in the code had changed
+  that path's cost. One call would have said so in a second.
