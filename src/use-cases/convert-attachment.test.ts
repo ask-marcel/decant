@@ -261,6 +261,48 @@ describe('keeping what was attached to a mail', () => {
     });
   });
 
+  // The wiring, not the builder. The document standing for a saved email named none of its parts:
+  // a spreadsheet the mail was written to send sat converted beside it and was mentioned nowhere.
+  it('the document standing for a saved email names what the email carried, and links it', async () => {
+    const { files } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: EML } } });
+    const written = files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '';
+
+    expect(written).toContain('**Carried by this message:**');
+    expect(written).toContain('- [Contrat.docx](Contrat.docx.md)');
+  });
+
+  // The reading is what a reader wants; when the converter could not make one, the file is all
+  // there is and the link has to reach that instead.
+  it('a part nothing could read is linked as the file itself, there being no reading to open', async () => {
+    const { files } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: EML } }, drive: { failWith: { kind: 'permanent', message: 'not convertible' } } });
+
+    expect(files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '').toContain('- [Contrat.docx](Contrat.docx)');
+  });
+
+  // Where the sender put it. The signature of a forwarded mail reads `[cid:Logo5_….png]` with the
+  // picture on disk beside it under exactly that name, and nothing joined the two up.
+  it('a picture the saved email pointed at by cid is shown where it pointed', async () => {
+    const withLogo = EML.replace('Voici le contrat.', 'Regards\r\n\r\n[cid:Logo.png]')
+      .replace('Content-Type: application/vnd; name="Contrat.docx"', 'Content-Type: image/png; name="Logo.png"')
+      .replace('filename="Contrat.docx"', 'filename="Logo.png"');
+    const { files } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: withLogo } } });
+    const written = files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '';
+
+    expect(written).toContain('![Logo.png](Logo.png)');
+    expect(written).not.toContain('[cid:Logo.png]');
+    expect(written).not.toContain('- [Logo.png]');
+  });
+
+  // The card standing for a saved email takes its body from this document, so a wrapper left here
+  // is a wrapper in the thread's folder too.
+  it('a link Outlook wrapped inside a saved email is unwrapped like any other', async () => {
+    const wrapped = 'https://apc01.safelinks.protection.outlook.com/?url=https%3A%2F%2Faka.ms%2FAAb9ysg&reserved=0';
+    const withLink = EML.replace('Voici le contrat.', `See ${wrapped}`);
+    const { files } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: withLink } } });
+
+    expect(files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '').toContain('See https://aka.ms/AAb9ysg');
+  });
+
   it('a file inside a saved email that nothing can read keeps the file and loses only the text', async () => {
     const { outcome, files } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: EML } }, drive: { failWith: { kind: 'permanent', message: 'not convertible' } } });
 

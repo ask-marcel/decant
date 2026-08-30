@@ -4,6 +4,8 @@ import type { DocumentStamp } from '../domain/kb-document.ts';
 import { renderCalendar } from '../domain/icalendar.ts';
 import type { MimePart } from '../domain/mime.ts';
 import { readMime } from '../domain/mime.ts';
+import { unwrapSafelinks } from '../domain/safelink.ts';
+import { savedMailBody } from '../domain/saved-mail.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import { renderZipManifest } from '../domain/zip-manifest.ts';
@@ -204,11 +206,20 @@ const asMessage = async (context: Context): Promise<AttachmentOutcome> => {
   if (!raw.ok) return failure(raw.error);
   const folder = `${context.input.folder}/${safeSegment(context.name.slice(0, context.name.lastIndexOf('.')))}`;
   const read = readMime(new TextDecoder().decode(raw.value));
-  const message = `${folder}/${context.name}.md`;
-  const wrote = await context.deps.files.writeText(message, kbDocument(context.input.stamp, read.text.trim().length === 0 ? NO_TEXT_NOTE : read.text));
-  if (!wrote.ok) return failure(wrote.error);
+  // The parts are written FIRST now, because the document standing for the message has to name them
+  // and cannot until it knows which of them the converter managed to read.
   const carried = await writeParts(context, folder, read.parts);
-  return carried.ok ? { kind: 'converted', outputs: [message, ...carried.value], primary: message, media: [] } : failure(carried.error);
+  if (!carried.ok) return failure(carried.error);
+  const message = `${folder}/${context.name}.md`;
+  const beside = new Set(carried.value.map((path) => path.slice(folder.length + 1)));
+  const parts = read.parts.map((part) => {
+    const name = String(safeSegment(part.name));
+    return { name, opens: beside.has(`${name}.md`) ? `${name}.md` : name };
+  });
+  const text = unwrapSafelinks(read.text);
+  const body = text.trim().length === 0 && parts.length === 0 ? NO_TEXT_NOTE : savedMailBody(text, parts);
+  const wrote = await context.deps.files.writeText(message, kbDocument(context.input.stamp, body));
+  return wrote.ok ? { kind: 'converted', outputs: [message, ...carried.value], primary: message, media: [] } : failure(wrote.error);
 };
 
 // An archive is kept as it came and also unpacked, one markdown file per document inside, so a
