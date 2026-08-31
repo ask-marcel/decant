@@ -148,7 +148,7 @@ describe('writing one conversation as one file', () => {
   // and no document is written for it at all: what was read off it is in the thread, under the
   // picture, where a reader is already looking. A card and a document would both say it again.
   it('a picture shown in the body is written as itself, with no document of any kind beside it', async () => {
-    const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' }];
+    const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 64 * 1024, isInline: true, contentId: 'logo.png@01DC1234' }];
     const { files } = await run({
       reader: { conversations: { [CONV]: [message({ hasAttachments: false })] }, bodies: { m1: '\\[inline image: logo.png\\]' }, attachments: { m1: pasted } },
     });
@@ -161,7 +161,7 @@ describe('writing one conversation as one file', () => {
   // phone number, and a thread that shows the picture but hides its words makes a reader open a
   // second document for them. Quoted, so it reads as text lifted off a picture.
   it('what was read out of a picture is shown in the thread, under the picture', async () => {
-    const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' }];
+    const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 64 * 1024, isInline: true, contentId: 'logo.png@01DC1234' }];
     const texts = { 'kb/Mailbox/_inline/logo-3d8c205c.png': 'Michael Pronk\nStratego Development\n+31618225472' };
     const { files } = await run({
       reader: { conversations: { [CONV]: [message({ hasAttachments: false })] }, bodies: { m1: '\\[inline image: logo.png\\]' }, attachments: { m1: pasted } },
@@ -175,7 +175,7 @@ describe('writing one conversation as one file', () => {
   const storedPicture = (text?: string): Record<string, AttachmentRecord> => ({
     [contentHash(bytesOf('sig'))]: { name: 'logo-3d8c205c.png', paths: [SIGNATURE], primary: SIGNATURE, media: [], text },
   });
-  const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' }];
+  const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 64 * 1024, isInline: true, contentId: 'logo.png@01DC1234' }];
   const showing = { conversations: { [CONV]: [message({ hasAttachments: false })] }, bodies: { m1: '\\[inline image: logo.png\\]' }, attachments: { m1: pasted } };
 
   // The reason the store is shared at all: one signature logo rides on every message its sender
@@ -228,7 +228,7 @@ describe('writing one conversation as one file', () => {
   // quoted under the picture, once per signature down a long thread, telling a reader to open a
   // file beside a note that is not there any more.
   it('a picture nothing could be read out of is shown alone, with no note quoted under it', async () => {
-    const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 100, isInline: true, contentId: 'logo.png@01DC1234' }];
+    const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 64 * 1024, isInline: true, contentId: 'logo.png@01DC1234' }];
     const { files } = await run({
       reader: { conversations: { [CONV]: [message({ hasAttachments: false })] }, bodies: { m1: '\\[inline image: logo.png\\]' }, attachments: { m1: pasted } },
     });

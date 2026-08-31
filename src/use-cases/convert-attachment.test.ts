@@ -153,8 +153,9 @@ describe('keeping what was attached to a mail', () => {
     expect(files.written.get(`${FOLDER}/Scan.pdf.md`) ?? '').toContain('carries no text layer');
   });
 
+  // Big enough to be worth reading. Below ten kilobytes a picture is chrome and is not asked.
   it('a photo attachment is kept, with the text read out of it', async () => {
-    const { outcome, files } = await run({ name: 'Tableau.jpg' }, { ocr: { texts: { [`${FOLDER}/Tableau.jpg`]: 'Sprint 4 backlog' } } });
+    const { outcome, files } = await run({ name: 'Tableau.jpg', size: 64 * 1024 }, { ocr: { texts: { [`${FOLDER}/Tableau.jpg`]: 'Sprint 4 backlog' } } });
     const written = files.written.get(`${FOLDER}/Tableau.jpg.md`) ?? '';
 
     expect(outcome.kind).toBe('converted');
@@ -281,16 +282,23 @@ describe('keeping what was attached to a mail', () => {
 
   // Where the sender put it. The signature of a forwarded mail reads `[cid:Logo5_….png]` with the
   // picture on disk beside it under exactly that name, and nothing joined the two up.
+  // `QUJD` decodes to three bytes, so it is repeated until the part clears the ten-kilobyte line
+  // below which a picture is treated as chrome and never read.
+  const BIG = 'QUJD'.repeat(4000);
+
+  const asPicture = (): string =>
+    EML.replace('Voici le contrat.', 'Regards\r\n\r\n[cid:Logo.png]')
+      .replace('Content-Type: application/vnd; name="Contrat.docx"', 'Content-Type: image/png; name="Logo.png"')
+      .replace('filename="Contrat.docx"', 'filename="Logo.png"')
+      .replace('\r\nQUJD\r\n', `\r\n${BIG}\r\n`);
+
   // The wiring, not the builder. The library refuses an image outright, so a signature inside a
   // forwarded mail was kept and never read while the same signature mailed directly was.
   it('a picture inside a saved email is read by OCR, the library refusing to convert one', async () => {
-    const withLogo = EML.replace('Voici le contrat.', 'Regards\r\n\r\n[cid:Logo.png]')
-      .replace('Content-Type: application/vnd; name="Contrat.docx"', 'Content-Type: image/png; name="Logo.png"')
-      .replace('filename="Contrat.docx"', 'filename="Logo.png"');
     const { files } = await run(
       { name: 'Fwd.eml' },
       {
-        reader: { attachmentRaw: { att1: withLogo } },
+        reader: { attachmentRaw: { att1: asPicture() } },
         drive: { failWith: { kind: 'permanent', message: 'png is an image' } },
         ocr: { texts: { [`${FOLDER}/Fwd/Logo.png`]: 'Bartosz Rozga' } },
       }
@@ -300,11 +308,6 @@ describe('keeping what was attached to a mail', () => {
     expect(written).toContain('![Logo.png](Logo.png)');
     expect(written).toContain('> Bartosz Rozga');
   });
-
-  const asPicture = (): string =>
-    EML.replace('Voici le contrat.', 'Regards\r\n\r\n[cid:Logo.png]')
-      .replace('Content-Type: application/vnd; name="Contrat.docx"', 'Content-Type: image/png; name="Logo.png"')
-      .replace('filename="Contrat.docx"', 'filename="Logo.png"');
 
   const REFUSED = { failWith: { kind: 'permanent' as const, message: 'png is an image' } };
 
@@ -351,6 +354,27 @@ describe('keeping what was attached to a mail', () => {
     );
 
     expect(outcome.kind).toBe('failed');
+  });
+
+  // Below the line the picture is chrome: it is shown, and never asked what it says. A reading seeded
+  // for it must not appear, which is what proves nothing asked rather than that nothing answered.
+  it('a picture too small to hold words is shown without being read', async () => {
+    const small = asPicture().replace(BIG, 'QUJD');
+    const { files } = await run(
+      { name: 'Fwd.eml' },
+      { reader: { attachmentRaw: { att1: small } }, drive: REFUSED, ocr: { texts: { [`${FOLDER}/Fwd/Logo.png`]: 'should not be read' } } }
+    );
+    const written = files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '';
+
+    expect(written).toContain('![Logo.png](Logo.png)');
+    expect(written).not.toContain('should not be read');
+  });
+
+  it('a photo attachment too small to hold words is kept without being read', async () => {
+    const { files } = await run({ name: 'Tableau.jpg', size: 5589 }, { ocr: { texts: { [`${FOLDER}/Tableau.jpg`]: 'should not be read' } } });
+
+    expect(files.written.get(`${FOLDER}/Tableau.jpg.md`) ?? '').not.toContain('should not be read');
+    expect(files.binary.has(`${FOLDER}/Tableau.jpg`)).toBe(true);
   });
 
   it('a picture the saved email pointed at by cid is shown where it pointed', async () => {

@@ -1,4 +1,4 @@
-import { embedsImages, planFile } from '../domain/conversion-plan.ts';
+import { embedsImages, planFile, worthReading } from '../domain/conversion-plan.ts';
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { renderCalendar } from '../domain/icalendar.ts';
@@ -159,11 +159,17 @@ const asPdf = async (context: Context): Promise<AttachmentOutcome> =>
     return { text: read.body, stamp: { ...context.input.stamp, pdf: `./${context.name}`, ocr: read.ocr } };
   });
 
+// What OCR actually said, or nothing. Whitespace is nothing: a page of spaces is OCR finding no
+// words, and writing it down reads as a picture that held something. Asked in two places, the
+// document a photo becomes and the reading shown under a picture, and they must agree.
+const wordsIn = (read: Awaited<ReturnType<Ocr['read']>> | undefined): string | undefined => (read?.ok === true && read.value.text.trim().length > 0 ? read.value.text : undefined);
+
 const asImage = async (context: Context): Promise<AttachmentOutcome> =>
   rawAndMarkdown(context, async (rawPath) => {
-    const read = await context.deps.ocr.read(rawPath);
-    const body = read.ok && read.value.text.trim().length > 0 ? read.value.text : NO_TEXT_NOTE;
-    return { text: body, stamp: { ...context.input.stamp, image: `./${context.name}`, ocr: read.ok ? read.value.label : undefined } };
+    // Not asked at all below the threshold: a logo is not worth a pass, and what comes back from
+    // one reads as text somebody wrote rather than as the two letters OCR could make out.
+    const read = worthReading(context.input.attachment.size) ? await context.deps.ocr.read(rawPath) : undefined;
+    return { text: wordsIn(read) ?? NO_TEXT_NOTE, stamp: { ...context.input.stamp, image: `./${context.name}`, ocr: read?.ok === true ? read.value.label : undefined } };
   });
 
 // A workbook is read for its cell text and kept as it came, because the reading is all the markdown
@@ -187,10 +193,7 @@ const asVector = async (context: Context): Promise<AttachmentOutcome> =>
 // directly with a vision-capable model". So a picture inside a saved email was kept and never read,
 // while the same picture pasted into a message body was, because only the inline path fell back to
 // OCR. A signature is read when its owner mails you and silent when somebody forwards them.
-const readPicture = async (context: Context, path: string): Promise<string | undefined> => {
-  const found = await context.deps.ocr.read(path);
-  return found.ok && found.value.text.trim().length > 0 ? found.value.text : undefined;
-};
+const readPicture = async (context: Context, path: string): Promise<string | undefined> => wordsIn(await context.deps.ocr.read(path));
 
 type WrittenParts = { readonly paths: ReadonlyArray<string>; readonly carried: ReadonlyArray<CarriedPart> };
 
@@ -210,7 +213,12 @@ const writeParts = async (context: Context, folder: string, parts: ReadonlyArray
       if (!wroteText.ok) return wroteText;
       paths.push(`${path}.md`);
     }
-    carried.push({ name, opens: text.ok ? `${name}.md` : name, picture, read: text.ok || !picture ? undefined : await readPicture(context, path) });
+    carried.push({
+      name,
+      opens: text.ok ? `${name}.md` : name,
+      picture,
+      read: text.ok || !picture || !worthReading(part.bytes.length) ? undefined : await readPicture(context, path),
+    });
   }
   return ok({ paths, carried });
 };
