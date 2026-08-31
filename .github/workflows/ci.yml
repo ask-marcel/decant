@@ -53,5 +53,10 @@ jobs:
           else
             bun run mutate
           fi
+      # The two ignores are `xlsx`, reached through `ask-marcel-office-cli`. SheetJS left npm: 0.18.5
+      # is the newest published there and the advisories want 0.19.3 and 0.20.2, which exist only on
+      # the SheetJS CDN. No upgrade can satisfy this from here, so the gate would fail for ever on
+      # something no change to this repo can fix. The real fix is in `ask-marcel-office-cli`,
+      # pointing xlsx at the CDN tarball; take these back out when it lands.
       - name: dependency CVEs (fails on high)
-        run: bun audit --audit-level=high
+        run: bun audit --audit-level=high --ignore GHSA-4r6h-8v6p-xvw6 --ignore GHSA-5pgg-2g8v-p4x9
