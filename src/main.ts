@@ -1,3 +1,4 @@
+#!/usr/bin/env bun
 import { buildDeps } from './composition/build-deps.ts';
 import { readConfig } from './composition/config.ts';
 import { parseOptions, USAGE } from './composition/options.ts';

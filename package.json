@@ -1,9 +1,35 @@
 {
   "name": "decant",
+  "version": "0.1.0",
   "description": "Pour your Microsoft 365 into plain markdown, sediment left behind.",
-  "module": "src/main.ts",
+  "keywords": [
+    "microsoft-365",
+    "office-365",
+    "outlook",
+    "sharepoint",
+    "markdown",
+    "second-brain",
+    "obsidian",
+    "export",
+    "cli",
+    "bun"
+  ],
+  "license": "MIT",
   "type": "module",
-  "private": true,
+  "module": "src/main.ts",
+  "bin": {
+    "decant": "src/main.ts"
+  },
+  "files": [
+    "src",
+    "!src/**/*.test.ts",
+    "!src/test-helpers",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "bun": ">=1.2.0"
+  },
   "scripts": {
     "start": "bun run src/main.ts",
     "sync": "bun run src/main.ts",

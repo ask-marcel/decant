@@ -114,7 +114,7 @@ export const parseOptions = (argv: ReadonlyArray<string>): Result<Options, Optio
 };
 
 export const USAGE = [
-  'Usage: bun run sync [update] [options]',
+  'Usage: decant [update] [options]',
   '',
   '  update              sync every source already in kb/, without asking anything',
   '  --site-id <id>      sync this site without showing the picker',
