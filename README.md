@@ -1,7 +1,14 @@
-# Knowledge base sync CLI
+# decant
+
+Pour your Microsoft 365 into plain markdown, sediment left behind.
 
 A Bun CLI that mirrors Microsoft 365 content into a local `kb/` folder as markdown, so agents
 running on this machine can read company knowledge without calling Microsoft Graph themselves.
+
+To decant is to pour the wine off the sediment. That is the job: Outlook's link wrappers were a
+third of one vault by weight, a notification's icons are named by machine ids nothing can read, and
+a picture's words belong under the picture rather than in a file of their own. What lands in `kb/`
+is what a reader, or an agent, can actually use.
 
 It syncs **SharePoint document libraries** and your **Outlook mailbox**, the latter as one markdown
 file per conversation with its attachments and the SharePoint files it links to.

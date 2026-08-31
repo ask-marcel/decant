@@ -1,5 +1,6 @@
 {
-  "name": "moov-knowledge-base",
+  "name": "decant",
+  "description": "Pour your Microsoft 365 into plain markdown, sediment left behind.",
   "module": "src/main.ts",
   "type": "module",
   "private": true,

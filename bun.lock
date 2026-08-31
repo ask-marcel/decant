@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "moov-knowledge-base",
+      "name": "decant",
       "dependencies": {
         "ask-marcel-office-cli": "^2.3.0",
         "winston": "^3.19.0",
