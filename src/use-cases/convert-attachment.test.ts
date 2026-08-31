@@ -281,6 +281,78 @@ describe('keeping what was attached to a mail', () => {
 
   // Where the sender put it. The signature of a forwarded mail reads `[cid:Logo5_….png]` with the
   // picture on disk beside it under exactly that name, and nothing joined the two up.
+  // The wiring, not the builder. The library refuses an image outright, so a signature inside a
+  // forwarded mail was kept and never read while the same signature mailed directly was.
+  it('a picture inside a saved email is read by OCR, the library refusing to convert one', async () => {
+    const withLogo = EML.replace('Voici le contrat.', 'Regards\r\n\r\n[cid:Logo.png]')
+      .replace('Content-Type: application/vnd; name="Contrat.docx"', 'Content-Type: image/png; name="Logo.png"')
+      .replace('filename="Contrat.docx"', 'filename="Logo.png"');
+    const { files } = await run(
+      { name: 'Fwd.eml' },
+      {
+        reader: { attachmentRaw: { att1: withLogo } },
+        drive: { failWith: { kind: 'permanent', message: 'png is an image' } },
+        ocr: { texts: { [`${FOLDER}/Fwd/Logo.png`]: 'Bartosz Rozga' } },
+      }
+    );
+    const written = files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '';
+
+    expect(written).toContain('![Logo.png](Logo.png)');
+    expect(written).toContain('> Bartosz Rozga');
+  });
+
+  const asPicture = (): string =>
+    EML.replace('Voici le contrat.', 'Regards\r\n\r\n[cid:Logo.png]')
+      .replace('Content-Type: application/vnd; name="Contrat.docx"', 'Content-Type: image/png; name="Logo.png"')
+      .replace('filename="Contrat.docx"', 'filename="Logo.png"');
+
+  const REFUSED = { failWith: { kind: 'permanent' as const, message: 'png is an image' } };
+
+  it('a picture OCR cannot read is shown alone, with nothing quoted under it', async () => {
+    const { files } = await run(
+      { name: 'Fwd.eml' },
+      { reader: { attachmentRaw: { att1: asPicture() } }, drive: REFUSED, ocr: { failWith: { kind: 'unavailable', message: 'no python' } } }
+    );
+    const written = files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '';
+
+    expect(written).toContain('![Logo.png](Logo.png)');
+    expect(written).not.toContain('\n> ');
+  });
+
+  // Nothing read is shown as nothing. OCR answering with a page of spaces is OCR finding nothing.
+  it('a picture OCR read as blank is shown alone, blank being nothing read', async () => {
+    const { files } = await run(
+      { name: 'Fwd.eml' },
+      { reader: { attachmentRaw: { att1: asPicture() } }, drive: REFUSED, ocr: { texts: { [`${FOLDER}/Fwd/Logo.png`]: '   \n  ' } } }
+    );
+
+    expect(files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '').not.toContain('\n> ');
+  });
+
+  // OCR answers for pictures and nothing else. A spreadsheet the library could not read is not a
+  // picture with words in it, and running OCR over it would cost a fetch to learn that.
+  it('a part that is not a picture is not read by OCR when the library refuses it', async () => {
+    // A reading is seeded for it and must not appear: OCR answers for pictures and nothing else, and
+    // a spreadsheet the library could not read is not a picture with words in it.
+    const { files } = await run(
+      { name: 'Fwd.eml' },
+      { reader: { attachmentRaw: { att1: EML } }, drive: REFUSED, ocr: { texts: { [`${FOLDER}/Fwd/Contrat.docx`]: 'should not be read' } } }
+    );
+    const written = files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '';
+
+    expect(written).toContain('- [Contrat.docx](Contrat.docx)');
+    expect(written).not.toContain('should not be read');
+  });
+
+  it('a part whose bytes cannot be written ends the conversion rather than half unpacking it', async () => {
+    const { outcome } = await run(
+      { name: 'Fwd.eml' },
+      { reader: { attachmentRaw: { att1: EML } }, files: { failWriteWith: { kind: 'write-failed', path: 'kb', message: 'disk full' } } }
+    );
+
+    expect(outcome.kind).toBe('failed');
+  });
+
   it('a picture the saved email pointed at by cid is shown where it pointed', async () => {
     const withLogo = EML.replace('Voici le contrat.', 'Regards\r\n\r\n[cid:Logo.png]')
       .replace('Content-Type: application/vnd; name="Contrat.docx"', 'Content-Type: image/png; name="Logo.png"')

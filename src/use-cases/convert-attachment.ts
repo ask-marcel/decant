@@ -5,6 +5,7 @@ import { renderCalendar } from '../domain/icalendar.ts';
 import type { MimePart } from '../domain/mime.ts';
 import { readMime } from '../domain/mime.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
+import type { CarriedPart } from '../domain/saved-mail.ts';
 import { savedMailBody } from '../domain/saved-mail.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
@@ -182,20 +183,36 @@ const asVector = async (context: Context): Promise<AttachmentOutcome> =>
 
 // Each file a saved email carried, written as it was and read where the library can read it. A kind
 // it refuses keeps the file and loses only the text, the same bargain a picture in a document gets.
-const writeParts = async (context: Context, folder: string, parts: ReadonlyArray<MimePart>): Promise<Result<ReadonlyArray<string>, FilesError>> => {
-  const written: string[] = [];
+// `convert-local-file-to-markdown` refuses an image outright: "png is an image, read the file
+// directly with a vision-capable model". So a picture inside a saved email was kept and never read,
+// while the same picture pasted into a message body was, because only the inline path fell back to
+// OCR. A signature is read when its owner mails you and silent when somebody forwards them.
+const readPicture = async (context: Context, path: string): Promise<string | undefined> => {
+  const found = await context.deps.ocr.read(path);
+  return found.ok && found.value.text.trim().length > 0 ? found.value.text : undefined;
+};
+
+type WrittenParts = { readonly paths: ReadonlyArray<string>; readonly carried: ReadonlyArray<CarriedPart> };
+
+const writeParts = async (context: Context, folder: string, parts: ReadonlyArray<MimePart>): Promise<Result<WrittenParts, FilesError>> => {
+  const paths: string[] = [];
+  const carried: CarriedPart[] = [];
   for (const part of parts) {
-    const name = safeSegment(part.name);
-    const wrote = await context.deps.files.writeBytes(`${folder}/${name}`, part.bytes);
+    const name = String(safeSegment(part.name));
+    const path = `${folder}/${name}`;
+    const wrote = await context.deps.files.writeBytes(path, part.bytes);
     if (!wrote.ok) return wrote;
-    written.push(`${folder}/${name}`);
-    const text = await context.deps.convertLocal(`${folder}/${name}`);
-    if (!text.ok) continue;
-    const wroteText = await context.deps.files.writeText(`${folder}/${name}.md`, kbDocument({ ...context.input.stamp, original: `./${name}` }, text.value));
-    if (!wroteText.ok) return wroteText;
-    written.push(`${folder}/${name}.md`);
+    paths.push(path);
+    const picture = part.contentType.startsWith('image/');
+    const text = await context.deps.convertLocal(path);
+    if (text.ok) {
+      const wroteText = await context.deps.files.writeText(`${path}.md`, kbDocument({ ...context.input.stamp, original: `./${name}` }, text.value));
+      if (!wroteText.ok) return wroteText;
+      paths.push(`${path}.md`);
+    }
+    carried.push({ name, opens: text.ok ? `${name}.md` : name, picture, read: text.ok || !picture ? undefined : await readPicture(context, path) });
   }
-  return ok(written);
+  return ok({ paths, carried });
 };
 
 // A saved email is a folder like an archive is. The library has no parser for one, so the message is
@@ -211,15 +228,10 @@ const asMessage = async (context: Context): Promise<AttachmentOutcome> => {
   const carried = await writeParts(context, folder, read.parts);
   if (!carried.ok) return failure(carried.error);
   const message = `${folder}/${context.name}.md`;
-  const beside = new Set(carried.value.map((path) => path.slice(folder.length + 1)));
-  const parts = read.parts.map((part) => {
-    const name = String(safeSegment(part.name));
-    return { name, opens: beside.has(`${name}.md`) ? `${name}.md` : name };
-  });
   const text = unwrapSafelinks(read.text);
-  const body = text.trim().length === 0 && parts.length === 0 ? NO_TEXT_NOTE : savedMailBody(text, parts);
+  const body = text.trim().length === 0 && carried.value.carried.length === 0 ? NO_TEXT_NOTE : savedMailBody(text, carried.value.carried);
   const wrote = await context.deps.files.writeText(message, kbDocument(context.input.stamp, body));
-  return wrote.ok ? { kind: 'converted', outputs: [message, ...carried.value], primary: message, media: [] } : failure(wrote.error);
+  return wrote.ok ? { kind: 'converted', outputs: [message, ...carried.value.paths], primary: message, media: [] } : failure(wrote.error);
 };
 
 // An archive is kept as it came and also unpacked, one markdown file per document inside, so a
