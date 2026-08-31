@@ -15,13 +15,13 @@
     "bun"
   ],
   "license": "MIT",
-  "homepage": "https://github.com/vdelacou/decant",
+  "homepage": "https://github.com/ask-marcel/decant",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/vdelacou/decant.git"
+    "url": "git+https://github.com/ask-marcel/decant.git"
   },
   "bugs": {
-    "url": "https://github.com/vdelacou/decant/issues"
+    "url": "https://github.com/ask-marcel/decant/issues"
   },
   "type": "module",
   "module": "src/main.ts",
