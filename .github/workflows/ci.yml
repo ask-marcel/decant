@@ -51,16 +51,10 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             bun run mutate:changed
           else
-            # `--incremental false`, and no html reporter. Stryker writes the incremental file by
-            # pretty-printing the whole report through `JSON.stringify`, and on a full sweep of
-            # 4,413 mutants that string is long enough to throw `RangeError: Invalid string length`
-            # under Node. It happens in `reportAll`, AFTER every mutant has run, so the gate spent
-            # twenty-five minutes and then reported nothing at all.
-            #
-            # The file is dead weight here regardless: every run is a fresh checkout, nothing
-            # restores `reports/` from a cache, so it is written once and thrown away. Locally it is
-            # worth having and `bun run mutate` still writes it.
-            bunx stryker run --reporters clear-text,progress --incremental false
+            # Without the html reporter: serialising 4,413 mutants into one document is a lot of
+            # string for a report nobody reads on CI. Incremental mode is off in the config itself,
+            # which is where the crash lived; see the comment there.
+            bunx stryker run --reporters clear-text,progress
           fi
       # The two ignores are `xlsx`, reached through `ask-marcel-office-cli`. SheetJS left npm: 0.18.5
       # is the newest published there and the advisories want 0.19.3 and 0.20.2, which exist only on

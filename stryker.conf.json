@@ -19,11 +19,14 @@
     "low": 90,
     "break": 90
   },
-  "incremental": true,
-  "incrementalFile": "reports/stryker-incremental.json",
+  "_incremental_comment": "No incremental mode. Stryker writes that file by pretty-printing the whole report through JSON.stringify, and on a full sweep of 4,413 mutants the string is long enough to throw RangeError: Invalid string length under Node, in reportAll, after every mutant has already run. It bought nothing anyway: mutate-changed.sh and mutate-staged.sh delete the file before every run, and CI discards it with the checkout.",
   "concurrency": 4,
   "timeoutMS": 30000,
-  "reporters": ["clear-text", "progress", "html"],
+  "reporters": [
+    "clear-text",
+    "progress",
+    "html"
+  ],
   "htmlReporter": {
     "fileName": "reports/mutation/index.html"
   },
