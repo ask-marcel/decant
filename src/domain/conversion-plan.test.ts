@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { ConversionRoute } from './conversion-plan.ts';
-import { embedsImages, planFile } from './conversion-plan.ts';
+import { embedsImages, planFile, worthReading } from './conversion-plan.ts';
 
 const CAP = 50 * 1024 * 1024;
 
@@ -228,4 +228,24 @@ describe('which documents are asked for the pictures inside them', () => {
       expect(embedsImages(name.includes('.') || name === 'Makefile' ? name : `Document.${name}`)).toBe(expected);
     });
   }
+});
+
+describe('deciding whether a picture is worth reading', () => {
+  // Measured across one vault: everything OCR found real text in was 64 KB or more, a table
+  // screenshot at 104 KB and a signature block at 64 KB. Everything under ten kilobytes was a logo,
+  // and what came back was `pe` from one saying PEPCO and `AOOWE` from one saying MOOV.
+  it('a picture big enough to hold words is read', () => {
+    expect(worthReading(64 * 1024)).toBe(true);
+  });
+
+  it('a logo is not, a reading of one being worse than none', () => {
+    expect(worthReading(5589)).toBe(false);
+  });
+
+  // The PEPCO logo, ten kilobytes and thirty-seven bytes short of the line, which is the side of it
+  // the reading `pe` belongs on.
+  it('exactly at the line is not past it', () => {
+    expect(worthReading(10 * 1024)).toBe(false);
+    expect(worthReading(10 * 1024 + 1)).toBe(true);
+  });
 });

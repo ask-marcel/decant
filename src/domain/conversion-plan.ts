@@ -114,6 +114,15 @@ export const embedsImages = (name: string): boolean => {
   return extension !== undefined && EMBEDS_IMAGES.has(extension);
 };
 
+// A picture small enough to be chrome is not worth reading. Measured across one vault: everything
+// OCR found real text in was 64 KB or more, a table screenshot at 104 KB and a signature block at
+// 64 KB; everything below ten was a logo, and what came back was `pe` from one saying PEPCO and
+// `AOOWE` from one saying MOOV. A reading like that is worse than none, since it reads as text
+// somebody wrote, and each one costs a pass at some twenty seconds on a cold cache.
+const WORTH_READING = 10 * 1024;
+
+export const worthReading = (bytes: number): boolean => bytes > WORTH_READING;
+
 export const planFile = (file: PlannedFile, maxBytes: number): FileDecision => {
   const extension = extensionOf(file.name);
   if (extension === undefined) return { kind: 'skip', reason: 'unsupported-type' };
