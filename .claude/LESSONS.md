@@ -628,3 +628,38 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   had changed to another tenant whose mail is full of pasted screenshots, 113 of them against 5,
   each costing an OCR pass at some twenty seconds on a cold cache. Nothing in the code had changed
   that path's cost. One call would have said so in a second.
+
+- [gotcha] A unit test proves the function, never the call. `withoutPlaceholders` was written, tested
+  and never called: the edit meant to wire it into `rewriteMessageBody` missed its anchor because
+  prettier had collapsed the array onto one line, and the function's own tests passed regardless. The
+  suite stayed green, the mutation gate stayed green, and a re-sync left the ten markers exactly
+  where they were. Counting the vault afterwards is what caught it. Wiring a new transformation in
+  needs one test at the level of the thing that should USE it, and the proof it works is that
+  removing the call turns a test red. Two of the tests it turned red were asserting the old
+  behaviour, which is how you know the call was doing something.
+
+- [lesson] A capability wired in one place and not its mirror is the shape this codebase keeps
+  producing. The safelink unwrapping went into thread bodies and not card bodies, so a signature sat
+  in a card at six hundred characters a line beside a thread that read cleanly. OCR went into the
+  inline-image path and not into the parts of a saved email, so a signature block was read when its
+  owner mailed you and silent when somebody forwarded them. Both times the rule belonged to "text
+  that came out of mail" and was applied to one of the places such text lands. When adding one, list
+  every route the same content can arrive by before calling it done.
+
+- [lesson] Measure before choosing a threshold. Asked to skip OCR on small pictures, the vault
+  answered what small meant: everything OCR found real text in was 64 KB or more, a table screenshot
+  at 104 KB and a signature block at 64 KB, and everything under ten kilobytes was a logo that came
+  back as `pe` from one saying PEPCO and `AOOWE` from one saying MOOV. Ten kilobytes put the PEPCO
+  logo thirty-seven bytes on the right side of the line. A reading like that is worse than none,
+  since it reads as text somebody wrote.
+
+- [gotcha] `convert-local-file-to-markdown` refuses an image outright: "png is an image, read the
+  file directly with a vision-capable model". Anything wanting words off a picture has to go to OCR
+  itself, and the two places that decide what OCR actually said, a photo attachment and a picture
+  inside a forward, have to agree that a page of whitespace is nothing. They share `wordsIn` now.
+
+- [gotcha] The OCR cache is keyed by content hash alone, so it is shared by every mailbox synced on
+  this machine and cannot be cleaned per account. What can be identified is what the current vault
+  does not reference: 115 of 123 entries after a run against another tenant. That also drops
+  readings for mail outside the current `--since` window, which costs one pass each if that mail
+  comes back into range. It survives `rm -rf kb/Mailbox`, which is why a killed sync loses no OCR.
