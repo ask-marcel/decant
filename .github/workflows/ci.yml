@@ -51,7 +51,12 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             bun run mutate:changed
           else
-            bun run mutate
+            # Without the html reporter. A full sweep is 4,413 mutants across 90 files, and
+            # serialising all of them into one HTML document exceeds V8's maximum string length:
+            # Stryker dies with `RangeError: Invalid string length` after every mutant has run, so
+            # the gate never reports. The report is worth having locally, where a sweep is one file;
+            # `bun run mutate` still writes it there.
+            bunx stryker run --reporters clear-text,progress
           fi
       # The two ignores are `xlsx`, reached through `ask-marcel-office-cli`. SheetJS left npm: 0.18.5
       # is the newest published there and the advisories want 0.19.3 and 0.20.2, which exist only on
