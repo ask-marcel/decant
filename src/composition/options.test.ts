@@ -3,6 +3,28 @@ import { parseOptions } from './options.ts';
 
 const parse = (line: string): ReturnType<typeof parseOptions> => parseOptions(line.length === 0 ? [] : line.split(' '));
 
+describe('answering a request for help', () => {
+  // A released CLI answers `--help`. It reached the unknown-option branch, which prints the usage
+  // and exits 2, so anything checking the exit code read a working install as a failure.
+  it('asking for help is answered rather than refused', () => {
+    expect(parse('--help')).toMatchObject({ ok: true, value: { help: true } });
+  });
+
+  it('the short form is the same question', () => {
+    expect(parse('-h')).toMatchObject({ ok: true, value: { help: true } });
+  });
+
+  // Asked beside real work, help still wins. Printing it and doing nothing is the safe reading of
+  // `decant --mailbox --help`; the alternative is a sync nobody meant to start.
+  it('help asked beside other options still wins', () => {
+    expect(parse('--mailbox --help')).toMatchObject({ ok: true, value: { help: true, mailbox: true } });
+  });
+
+  it('a run that asked for no help says so, since the flag decides whether anything happens', () => {
+    expect(parse('--mailbox')).toMatchObject({ ok: true, value: { help: false } });
+  });
+});
+
 describe('reading what the operator asked for', () => {
   it('running the command with nothing else picks a source and writes for real', () => {
     expect(parse('')).toEqual({
@@ -17,6 +39,7 @@ describe('reading what the operator asked for', () => {
         concurrency: 4,
         assumeYes: false,
         mailbox: false,
+        help: false,
         refresh: false,
         timezone: '',
       },

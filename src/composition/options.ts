@@ -17,6 +17,10 @@ export type Options = {
   readonly concurrency: number;
   readonly assumeYes: boolean;
   readonly mailbox: boolean;
+  // Asked for the usage and nothing else. A flag rather than a command, because it can be asked
+  // beside real work and has to win there: printing the usage and doing nothing is the safe reading
+  // of `decant --mailbox --help`, where the alternative is a sync nobody meant to start.
+  readonly help: boolean;
   readonly since?: string;
   // Empty means the machine's own zone, resolved where the run is composed rather than here: a
   // default read at module load would be a runtime value frozen into a constant.
@@ -36,6 +40,7 @@ const DEFAULTS: Options = {
   concurrency: 4,
   assumeYes: false,
   mailbox: false,
+  help: false,
   timezone: '',
 };
 
@@ -91,6 +96,7 @@ const withFlag = (options: Options, flag: string): Result<Options, OptionsError>
   if (flag === '--refresh') return ok({ ...options, refresh: true });
   if (flag === '--mailbox') return ok({ ...options, mailbox: true });
   if (flag === '--yes' || flag === '-y') return ok({ ...options, assumeYes: true });
+  if (flag === '--help' || flag === '-h') return ok({ ...options, help: true });
   return err({ kind: 'bad-option', message: `unknown option: ${flag}` });
 };
 
@@ -130,4 +136,5 @@ export const USAGE = [
   '  --ocr-lang <code>   force one language for images and scanned PDFs (default auto, per image)',
   "  --timezone <zone>   IANA zone the mailbox counts its days in (default this machine's)",
   '  --yes, -y           take the saved choices instead of asking',
+  '  --help, -h          print this and do nothing else',
 ].join('\n');

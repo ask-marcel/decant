@@ -13,6 +13,12 @@ const run = async (): Promise<number> => {
     printLine(`${options.error.message}\n\n${USAGE}`);
     return 2;
   }
+  // Asked for, so answering it is success. It used to fall to the branch above and exit 2, which
+  // reads as a broken install to anything that checks.
+  if (options.value.help) {
+    printLine(USAGE);
+    return 0;
+  }
   const config = readConfig({
     env: process.env,
     ocrLang: options.value.ocrLang,
