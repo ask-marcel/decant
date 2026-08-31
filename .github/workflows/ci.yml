@@ -51,12 +51,16 @@ jobs:
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             bun run mutate:changed
           else
-            # Without the html reporter. A full sweep is 4,413 mutants across 90 files, and
-            # serialising all of them into one HTML document exceeds V8's maximum string length:
-            # Stryker dies with `RangeError: Invalid string length` after every mutant has run, so
-            # the gate never reports. The report is worth having locally, where a sweep is one file;
-            # `bun run mutate` still writes it there.
-            bunx stryker run --reporters clear-text,progress
+            # `--incremental false`, and no html reporter. Stryker writes the incremental file by
+            # pretty-printing the whole report through `JSON.stringify`, and on a full sweep of
+            # 4,413 mutants that string is long enough to throw `RangeError: Invalid string length`
+            # under Node. It happens in `reportAll`, AFTER every mutant has run, so the gate spent
+            # twenty-five minutes and then reported nothing at all.
+            #
+            # The file is dead weight here regardless: every run is a fresh checkout, nothing
+            # restores `reports/` from a cache, so it is written once and thrown away. Locally it is
+            # worth having and `bun run mutate` still writes it.
+            bunx stryker run --reporters clear-text,progress --incremental false
           fi
       # The two ignores are `xlsx`, reached through `ask-marcel-office-cli`. SheetJS left npm: 0.18.5
       # is the newest published there and the advisories want 0.19.3 and 0.20.2, which exist only on
