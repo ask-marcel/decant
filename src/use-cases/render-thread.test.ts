@@ -192,7 +192,7 @@ describe('writing one conversation as one file', () => {
   // left records with no text, and honouring one would show the picture in this thread with nothing
   // under it, a loss no later run would ever repair. Converting again costs one fetch.
   it('a picture stored before the words were kept is read again rather than shown wordless', async () => {
-    const { files } = await run({ reader: showing, attachments: storedPicture(undefined), ocr: { texts: { [SIGNATURE]: 'Nina Alder' } } });
+    const { files } = await run({ reader: showing, attachments: storedPicture(), ocr: { texts: { [SIGNATURE]: 'Nina Alder' } } });
 
     expect(files.binary.has(SIGNATURE)).toBe(true);
     expect(files.written.get(THREAD_FILE)).toContain('> Nina Alder');
