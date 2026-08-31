@@ -15,6 +15,14 @@
     "bun"
   ],
   "license": "MIT",
+  "homepage": "https://github.com/vdelacou/decant",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/vdelacou/decant.git"
+  },
+  "bugs": {
+    "url": "https://github.com/vdelacou/decant/issues"
+  },
   "type": "module",
   "module": "src/main.ts",
   "bin": {

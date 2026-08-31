@@ -26,8 +26,17 @@ used as a library, which owns authentication, paging and document conversion. Se
 ## Install
 
 ```bash
-bun install
+bun add --global decant
+decant --help
 ```
+
+Or run it without installing anything:
+
+```bash
+bunx decant
+```
+
+To work on it instead, clone the repo and `bun install`; `bun test` runs the suite.
 
 ## Run
 
