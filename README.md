@@ -320,7 +320,7 @@ header row carries the count, and every item still being read from the source ge
 beneath it, naming the step it is on:
 
 ```
-SW Project (Lidl instance) / 文档  4/25 (8 running)
+SW Project (Fabrikam instance) / 文档  4/25 (8 running)
   Projets/PT Findings.xlsx · reading picture 3/6
   General/04_IT_Security_overview/Overview.docx · rendering the slides
 ```

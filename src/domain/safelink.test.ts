@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { unwrapSafelinks } from './safelink.ts';
 
 const WRAPPED =
-  'https://apc01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fteams.microsoft.com%2Fl%2Fmeetup&data=05%7C02%7Cvincent.delacourt%40moovlogistics.com&sdata=P6xTt8ch%3D&reserved=0';
+  'https://apc01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fteams.microsoft.com%2Fl%2Fmeetup&data=05%7C02%7Cvincent.delacourt%40contoso.com&sdata=P6xTt8ch%3D&reserved=0';
 
 describe('reading where a link really goes', () => {
   it('a wrapped link becomes the address it was wrapped around', () => {

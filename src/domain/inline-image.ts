@@ -48,7 +48,7 @@ export type InlineImageLink = { readonly label: string; readonly path: string; r
 // Said in words, not in punctuation. A `>` block means quoted correspondence everywhere else in a
 // mail vault, which is the most available reading here and the wrong one: an LLM meeting a
 // signature under an image has no reason to conclude the words were guessed at from pixels. This
-// sample got `TRATEGO` out of a logo reading STRATEGO, so the warning is not theoretical, and the
+// sample got `LDER` out of a logo reading ALDER, so the warning is not theoretical, and the
 // picture is right above for anyone who needs to settle it.
 const READ_BY_MACHINE = '_Text below was read out of the picture by OCR, so it can be wrong. Open the image above to check._';
 

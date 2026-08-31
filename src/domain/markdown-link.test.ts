@@ -9,7 +9,7 @@ describe('writing a path a markdown renderer will follow', () => {
   // The bug this exists for. Mail attachments are named by people, so spaces are ordinary, and a
   // renderer ends the destination at the first one: the rest of the path became visible text.
   it('a path with a space is wrapped, since a bare destination ends at the first one', () => {
-    expect(linkDestination('_attachments/Fw- DC Data -- Pepco.eml.md')).toBe('<_attachments/Fw- DC Data -- Pepco.eml.md>');
+    expect(linkDestination('_attachments/Fw- DC Data -- Fabrikam.eml.md')).toBe('<_attachments/Fw- DC Data -- Fabrikam.eml.md>');
   });
 
   it('a path with a parenthesis is wrapped too, an unbalanced one closing the destination early', () => {

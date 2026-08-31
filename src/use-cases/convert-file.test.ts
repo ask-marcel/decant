@@ -572,11 +572,11 @@ describe('keeping the pictures a document embeds', () => {
 
   it('the text read out of an embedded picture is written under the document that held it', async () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
-    const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: 'smartMOOV\nExternal\nDB' } } });
+    const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: 'smartRoute\nExternal\nDB' } } });
     const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md') ?? '';
 
     expect(written).toContain('## Images');
-    expect(written).toContain('smartMOOV');
+    expect(written).toContain('smartRoute');
   });
 
   it('a document holding no pictures gains no folder and no section', async () => {
@@ -624,8 +624,8 @@ describe('keeping the pictures a document embeds', () => {
 
   it('the text read out of a picture is trimmed before it goes under the picture', async () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
-    const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: '  \n smartMOOV \n  ' } } });
+    const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: '  \n smartRoute \n  ' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain(')\n\nsmartMOOV\n');
+    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain(')\n\nsmartRoute\n');
   });
 });

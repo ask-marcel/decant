@@ -11,8 +11,8 @@ the entire body as quoted and removes it. The command returns 768 bytes: the hea
 opening line, and the note.
 
 ```
-**Subject:** Demurrage & Detention tracking — in-house build, scope for endorsement
-**From:** Waldo Remijn <...>
+**Subject:** Quarterly tracking build, scope for endorsement
+**From:** A. Sender <...>
 **To:** ...
 **Date:** 2026-08-12T10:54:48Z
 
@@ -61,14 +61,14 @@ Worth stating because it suggests a more reliable rule. In a real reply fetched 
 header block partway down the document:
 
 ```
-Mark/Chris, are you OK with the below for me to start working on with the IT team ?
+Are you OK with the below for me to start working on with the IT team?
 
 Best regards
-Waldo Remijn
+A. Sender
 ...
-**From:** Waldo Remijn <...>          ← line 22, the chain starts here
+**From:** A. Sender <...>          ← line 22, the chain starts here
 **To:** ...
-**Subject:** Demurrage & Detention tracking — in-house build, scope for endorsement
+**Subject:** Quarterly tracking build, scope for endorsement
 ```
 
 A structural rule (cut at the first `**From:**` block occurring after body content has begun) would

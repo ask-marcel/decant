@@ -8,12 +8,12 @@ const rawMessage = {
   id: 'AAMkADk0...=',
   receivedDateTime: '2026-07-23T13:12:06Z',
   hasAttachments: false,
-  subject: 'RE: FENDI Integration Status Update',
+  subject: 'RE: Integration Status Update',
   conversationId: 'AAQkADk0...=',
-  from: { emailAddress: { name: 'Erica English', address: 'erica.english@lvmhfashion.com' } },
+  from: { emailAddress: { name: 'Erica English', address: 'erica.english@contoso.com' } },
   toRecipients: [
-    { emailAddress: { name: 'Vincent DELACOURT', address: 'vincent.delacourt@lvmhfashion.com' } },
-    { emailAddress: { name: 'David Chang', address: 'david.chang@lvmhfashion.com' } },
+    { emailAddress: { name: 'Vincent DELACOURT', address: 'vincent.delacourt@contoso.com' } },
+    { emailAddress: { name: 'David Chang', address: 'david.chang@contoso.com' } },
   ],
 };
 
@@ -22,13 +22,13 @@ describe('reading a message out of a mailbox sweep', () => {
     expect(parseMessage(rawMessage)).toEqual({
       id: 'AAMkADk0...=',
       conversationId: 'AAQkADk0...=',
-      subject: 'RE: FENDI Integration Status Update',
+      subject: 'RE: Integration Status Update',
       received: '2026-07-23T13:12:06Z',
       hasAttachments: false,
-      from: { name: 'Erica English', address: 'erica.english@lvmhfashion.com' },
+      from: { name: 'Erica English', address: 'erica.english@contoso.com' },
       to: [
-        { name: 'Vincent DELACOURT', address: 'vincent.delacourt@lvmhfashion.com' },
-        { name: 'David Chang', address: 'david.chang@lvmhfashion.com' },
+        { name: 'Vincent DELACOURT', address: 'vincent.delacourt@contoso.com' },
+        { name: 'David Chang', address: 'david.chang@contoso.com' },
       ],
       isDeleted: false,
     });

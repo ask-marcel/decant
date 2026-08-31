@@ -17,12 +17,12 @@ const INVITE = [
   'END:STANDARD',
   'END:VTIMEZONE',
   'BEGIN:VEVENT',
-  'ORGANIZER;CN=Michael Pronk:mailto:michael@example.com',
+  'ORGANIZER;CN=Nina Alder:mailto:nina@example.com',
   'ATTENDEE;ROLE=REQ-PARTICIPANT;CN=Vincent Delacourt:mailto:vincent@exa',
   ' mple.com',
-  'ATTENDEE;ROLE=OPT-PARTICIPANT;CN=Tan Choon Sze:mailto:tan@example.com',
+  'ATTENDEE;ROLE=OPT-PARTICIPANT;CN=Lim Wei Ming:mailto:lim@example.com',
   'DESCRIPTION:Everything the mail already said\\, at length',
-  'SUMMARY;LANGUAGE=en-GB:smartMOOV x Lidl',
+  'SUMMARY;LANGUAGE=en-GB:smartRoute x Fabrikam',
   'DTSTART;TZID=W. Europe Standard Time:20260812T080000',
   'DTEND;TZID=W. Europe Standard Time:20260812T090000',
   'LOCATION;LANGUAGE=en-GB:Microsoft Teams Meeting',
@@ -45,12 +45,12 @@ describe('reading a meeting invitation', () => {
   it('is the meeting and nothing else: the timezone rules, the vendor properties and the description all go', () => {
     expect(renderCalendar(INVITE)).toBe(
       [
-        '## smartMOOV x Lidl',
+        '## smartRoute x Fabrikam',
         '',
         '- **When:** 2026-08-12 08:00 (W. Europe Standard Time) to 09:00',
         '- **Where:** Microsoft Teams Meeting',
-        '- **Organiser:** Michael Pronk',
-        '- **Attendees:** Vincent Delacourt, Tan Choon Sze',
+        '- **Organiser:** Nina Alder',
+        '- **Attendees:** Vincent Delacourt, Lim Wei Ming',
       ].join('\n')
     );
   });
@@ -90,21 +90,21 @@ describe('reading a meeting invitation', () => {
   });
 
   it('someone the invitation names only by address is named by it', () => {
-    const bare = INVITE.replace('ATTENDEE;ROLE=OPT-PARTICIPANT;CN=Tan Choon Sze:mailto:tan@example.com', 'ATTENDEE;ROLE=OPT-PARTICIPANT:MAILTO:tan@example.com');
+    const bare = INVITE.replace('ATTENDEE;ROLE=OPT-PARTICIPANT;CN=Lim Wei Ming:mailto:lim@example.com', 'ATTENDEE;ROLE=OPT-PARTICIPANT:MAILTO:lim@example.com');
 
-    expect(renderCalendar(bare)).toContain('- **Attendees:** Vincent Delacourt, tan@example.com');
+    expect(renderCalendar(bare)).toContain('- **Attendees:** Vincent Delacourt, lim@example.com');
   });
 
   it('a line continued after a tab is joined like any other', () => {
-    const tabbed = INVITE.replace('SUMMARY;LANGUAGE=en-GB:smartMOOV x Lidl', 'SUMMARY:smartMOOV x\r\n\t Lidl');
+    const tabbed = INVITE.replace('SUMMARY;LANGUAGE=en-GB:smartRoute x Fabrikam', 'SUMMARY:smartRoute x\r\n\t Fabrikam');
 
-    expect(renderCalendar(tabbed)).toContain('## smartMOOV x Lidl');
+    expect(renderCalendar(tabbed)).toContain('## smartRoute x Fabrikam');
   });
 
   it('an escaped comma is read as the comma it stands for, and an escaped break as a break', () => {
-    const escaped = INVITE.replace('LOCATION;LANGUAGE=en-GB:Microsoft Teams Meeting', 'LOCATION:Lidl\\, Neckarsulm\\nRoom 2');
+    const escaped = INVITE.replace('LOCATION;LANGUAGE=en-GB:Microsoft Teams Meeting', 'LOCATION:Fabrikam\\, Neckarsulm\\nRoom 2');
 
-    expect(renderCalendar(escaped)).toContain('- **Where:** Lidl, Neckarsulm\nRoom 2');
+    expect(renderCalendar(escaped)).toContain('- **Where:** Fabrikam, Neckarsulm\nRoom 2');
   });
 
   it('a meeting with nothing but a name is still a record', () => {
@@ -119,14 +119,14 @@ describe('reading a meeting invitation', () => {
     const second = ['BEGIN:VEVENT', 'SUMMARY:Retro', 'DTSTART:20260813T090000Z', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
     const rendered = renderCalendar(INVITE.replace('END:VCALENDAR', second));
 
-    expect(rendered.indexOf('## smartMOOV x Lidl')).toBeLessThan(rendered.indexOf('## Retro'));
+    expect(rendered.indexOf('## smartRoute x Fabrikam')).toBeLessThan(rendered.indexOf('## Retro'));
     expect(rendered).toContain('\n\n## Retro');
   });
 
   it('a property named in lower case is the property it names', () => {
-    const shouty = INVITE.replace('SUMMARY;LANGUAGE=en-GB:smartMOOV x Lidl', 'summary;language=en-GB:smartMOOV x Lidl');
+    const shouty = INVITE.replace('SUMMARY;LANGUAGE=en-GB:smartRoute x Fabrikam', 'summary;language=en-GB:smartRoute x Fabrikam');
 
-    expect(renderCalendar(shouty)).toContain('## smartMOOV x Lidl');
+    expect(renderCalendar(shouty)).toContain('## smartRoute x Fabrikam');
   });
 
   it('a parameter named in lower case is read too, zones being where that shows', () => {
@@ -138,13 +138,13 @@ describe('reading a meeting invitation', () => {
   it('a line carrying no colon at all is passed over rather than read as a property', () => {
     const noise = INVITE.replace('BEGIN:VEVENT\r\n', 'BEGIN:VEVENT\r\nGARBAGE\r\n');
 
-    expect(renderCalendar(noise)).toContain('## smartMOOV x Lidl');
+    expect(renderCalendar(noise)).toContain('## smartRoute x Fabrikam');
   });
 
   it('a property with an empty name is passed over as well', () => {
     const empty = INVITE.replace('BEGIN:VEVENT\r\n', 'BEGIN:VEVENT\r\n:orphan\r\n');
 
-    expect(renderCalendar(empty)).toContain('## smartMOOV x Lidl');
+    expect(renderCalendar(empty)).toContain('## smartRoute x Fabrikam');
   });
 
   it('an escaped backslash is read as the one backslash it stands for', () => {

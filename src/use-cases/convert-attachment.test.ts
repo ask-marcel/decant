@@ -36,12 +36,19 @@ const attachment = (over: Partial<MailAttachment> = {}): MailAttachment => ({
   kind: over.kind ?? 'file',
 });
 
-const ICS = ['BEGIN:VCALENDAR', 'METHOD:REQUEST', 'BEGIN:VEVENT', 'SUMMARY:smartMOOV x Lidl', 'DTSTART:20260812T060000Z', 'LOCATION:Teams', 'END:VEVENT', 'END:VCALENDAR'].join(
-  '\r\n'
-);
+const ICS = [
+  'BEGIN:VCALENDAR',
+  'METHOD:REQUEST',
+  'BEGIN:VEVENT',
+  'SUMMARY:smartRoute x Fabrikam',
+  'DTSTART:20260812T060000Z',
+  'LOCATION:Teams',
+  'END:VEVENT',
+  'END:VCALENDAR',
+].join('\r\n');
 
 const EML = [
-  'From: Tina Wu <tina@example.com>',
+  'From: Mei Lin <mei@example.com>',
   'Subject: Fwd: Contrat',
   'Content-Type: multipart/mixed; boundary="B"',
   '',
@@ -221,13 +228,13 @@ describe('keeping what was attached to a mail', () => {
 
   it('the pictures a Word attachment holds are taken out of it, since it keeps no copy you can look at', async () => {
     const images = { att1: [{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }] };
-    const { outcome, files } = await run({}, { reader: { attachmentImages: images }, ocr: { texts: { [`${FOLDER}/Contrat.docx.media/word_media_image1.png`]: 'smartMOOV' } } });
+    const { outcome, files } = await run({}, { reader: { attachmentImages: images }, ocr: { texts: { [`${FOLDER}/Contrat.docx.media/word_media_image1.png`]: 'smartRoute' } } });
     const written = files.written.get(`${FOLDER}/Contrat.docx.md`) ?? '';
 
     expect(files.binary.has(`${FOLDER}/Contrat.docx.media/word_media_image1.png`)).toBe(true);
     expect(written).toContain('## Images');
     expect(written).toContain('![word_media_image1.png](./Contrat.docx.media/word_media_image1.png)');
-    expect(written).toContain('smartMOOV');
+    expect(written).toContain('smartRoute');
     expect(outcome.kind === 'converted' && outcome.media).toEqual([`${FOLDER}/Contrat.docx.media/word_media_image1.png`]);
   });
 
@@ -300,13 +307,13 @@ describe('keeping what was attached to a mail', () => {
       {
         reader: { attachmentRaw: { att1: asPicture() } },
         drive: { failWith: { kind: 'permanent', message: 'png is an image' } },
-        ocr: { texts: { [`${FOLDER}/Fwd/Logo.png`]: 'Bartosz Rozga' } },
+        ocr: { texts: { [`${FOLDER}/Fwd/Logo.png`]: 'Tomasz Nowak' } },
       }
     );
     const written = files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '';
 
     expect(written).toContain('![Logo.png](Logo.png)');
-    expect(written).toContain('> Bartosz Rozga');
+    expect(written).toContain('> Tomasz Nowak');
   });
 
   const REFUSED = { failWith: { kind: 'permanent' as const, message: 'png is an image' } };
@@ -469,7 +476,7 @@ describe('keeping what was attached to a mail', () => {
     const written = files.written.get(`${FOLDER}/invite.ics.md`) ?? '';
 
     expect(outcome.kind).toBe('converted');
-    expect(written).toContain('## smartMOOV x Lidl');
+    expect(written).toContain('## smartRoute x Fabrikam');
     expect(written).toContain('**When:** 2026-08-12 06:00 (UTC)');
     expect(written).toContain('**Where:** Teams');
   });

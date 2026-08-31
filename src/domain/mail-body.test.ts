@@ -116,10 +116,10 @@ describe('what a message body says once the files it carried are on disk', () =>
   // The picture and its words arrive together or the words are lost: nothing else in the thread
   // names an inline picture, so a reader who does not open it never learns what it said.
   it('the text read out of an inline picture is carried into the body under it', () => {
-    const withText: CarriedFile = { ...LOGO, text: 'Michael Pronk\nStratego Development' };
+    const withText: CarriedFile = { ...LOGO, text: 'Nina Alder\nAlder Consulting' };
     const { body } = rewriteMessageBody('Regards,\n\n\\[inline image: image931066.png\\]', [withText]);
 
-    expect(body).toBe(`Regards,\n\n![image931066.png](../../_attachments/image931066-a1b2c3d4.png)\n\n${NOTE}\n\n> Michael Pronk\n> Stratego Development`);
+    expect(body).toBe(`Regards,\n\n![image931066.png](../../_attachments/image931066-a1b2c3d4.png)\n\n${NOTE}\n\n> Nina Alder\n> Alder Consulting`);
   });
 
   it('a picture the message showed is shown again, from where it landed', () => {

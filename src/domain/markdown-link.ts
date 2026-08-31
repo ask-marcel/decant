@@ -1,6 +1,6 @@
 // A markdown link destination ends at the first space unless it is wrapped in angle brackets, so
-// `[Fw- DC Data -- Pepco.eml](_attachments/Fw- DC Data -- Pepco.eml.md)` renders as the literal text
-// `[Fw- DC Data -- Pepco.eml](_attachments/Fw- DC Data --` followed by a link to `Pepco.eml.md`.
+// `[Fw- DC Data -- Fabrikam.eml](_attachments/Fw- DC Data -- Fabrikam.eml.md)` renders as the literal text
+// `[Fw- DC Data -- Fabrikam.eml](_attachments/Fw- DC Data --` followed by a link to `Fabrikam.eml.md`.
 // Mail attachments are named by people, so spaces are the rule rather than the exception here.
 //
 // Parentheses end it the same way when they are unbalanced, and a name like `Budget (final).xlsx`

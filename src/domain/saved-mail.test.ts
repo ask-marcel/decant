@@ -36,19 +36,19 @@ describe('a saved email and the parts it travelled with', () => {
   // The library refuses an image outright, so only OCR can answer for one. A picture inside a saved
   // email was kept and never read, while the same picture pasted into a message body was.
   it('what was read off a picture is shown under it, as it is in a thread', () => {
-    const written = savedMailBody('Regards\n\n[cid:Logo5_f97c665d.png]', [{ ...LOGO, read: 'Bartosz Rozga' }]);
+    const written = savedMailBody('Regards\n\n[cid:Logo5_f97c665d.png]', [{ ...LOGO, read: 'Tomasz Nowak' }]);
 
     expect(written).toContain('![Logo5_f97c665d.png](Logo5_f97c665d.png)');
-    expect(written).toContain('> Bartosz Rozga');
+    expect(written).toContain('> Tomasz Nowak');
     expect(written).toContain('read out of the picture by OCR');
   });
 
   // A picture nothing pointed at is shown after the text, the way a thread shows one whose
   // placeholder the conversion lost. Only what is not a picture belongs in an inventory.
   it('a picture no reference pointed at is shown after the text, not listed', () => {
-    const written = savedMailBody('Hello.', [{ name: 'image.png', opens: 'image.png', picture: true, read: 'MOOV' }]);
+    const written = savedMailBody('Hello.', [{ name: 'image.png', opens: 'image.png', picture: true, read: 'NORTHWIND' }]);
 
-    expect(written).toBe('Hello.\n\n![image.png](image.png)\n\n_Text below was read out of the picture by OCR, so it can be wrong. Open the image above to check._\n\n> MOOV');
+    expect(written).toBe('Hello.\n\n![image.png](image.png)\n\n_Text below was read out of the picture by OCR, so it can be wrong. Open the image above to check._\n\n> NORTHWIND');
     expect(written).not.toContain('**Carried by this message:**');
   });
 

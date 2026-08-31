@@ -113,9 +113,9 @@ describe('putting the picture back where the message showed it', () => {
   // second document to find them. Quoted, so it reads as text lifted from somewhere rather than as
   // something the sender typed.
   it('text read out of a picture is shown under it, quoted', () => {
-    const linked = linkInlineImages(ESCAPED, [{ label: 'image931066.png', path: './logo.png', text: 'Michael Pronk\nStratego Development' }]);
+    const linked = linkInlineImages(ESCAPED, [{ label: 'image931066.png', path: './logo.png', text: 'Nina Alder\nAlder Consulting' }]);
 
-    expect(linked).toBe(`Regards,\n\n![image931066.png](./logo.png)\n\n${NOTE}\n\n> Michael Pronk\n> Stratego Development`);
+    expect(linked).toBe(`Regards,\n\n![image931066.png](./logo.png)\n\n${NOTE}\n\n> Nina Alder\n> Alder Consulting`);
   });
 
   it('a picture nothing could be read out of is shown alone, with no empty quote under it', () => {
@@ -125,9 +125,9 @@ describe('putting the picture back where the message showed it', () => {
   });
 
   it('a blank line inside the read text stays a blank line, quoted like the rest', () => {
-    const linked = linkInlineImages('[inline image: logo.png]', [{ label: 'logo.png', path: './logo.png', text: 'MOOV\n\nLogistics' }]);
+    const linked = linkInlineImages('[inline image: logo.png]', [{ label: 'logo.png', path: './logo.png', text: 'NORTHWIND\n\nTraders' }]);
 
-    expect(linked).toBe(`![logo.png](./logo.png)\n\n${NOTE}\n\n> MOOV\n>\n> Logistics`);
+    expect(linked).toBe(`![logo.png](./logo.png)\n\n${NOTE}\n\n> NORTHWIND\n>\n> Traders`);
   });
 
   // The converter wraps a placeholder in the emphasis the surrounding HTML had, and a signature
@@ -136,9 +136,9 @@ describe('putting the picture back where the message showed it', () => {
   // so the opening marker strands itself on the image line and the closer lands after the quote.
   // Emphasis around a lone picture means nothing anyway, so it goes.
   it('emphasis wrapping a placeholder alone is dropped, the replacement being more than one line', () => {
-    const linked = linkInlineImages('**\\[inline image: logo.png\\]**', [{ label: 'logo.png', path: './logo.png', text: 'MOOV' }]);
+    const linked = linkInlineImages('**\\[inline image: logo.png\\]**', [{ label: 'logo.png', path: './logo.png', text: 'NORTHWIND' }]);
 
-    expect(linked).toBe(`![logo.png](./logo.png)\n\n${NOTE}\n\n> MOOV`);
+    expect(linked).toBe(`![logo.png](./logo.png)\n\n${NOTE}\n\n> NORTHWIND`);
   });
 
   it('the same is true of the other markers a converter reaches for', () => {

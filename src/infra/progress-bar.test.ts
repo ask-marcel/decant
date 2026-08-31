@@ -235,13 +235,13 @@ describe('keeping the block inside the rows and columns the cursor can reach', (
       () => 40
     );
 
-    bar.start(11, 'MOOV Leadership Team / 文档');
+    bar.start(11, 'Northwind Leadership Team / 文档');
     bar.begin('HELP - Manuals & Guides/IT topics/TMFF/Ocean Export user manual V 2017 8.8.pdf');
 
     // The control sequences do not occupy a column; what the terminal shows on each row must fit it.
     const shown = rowsShown(writes.at(-1));
     expect(shown.every((row) => [...row].length <= 40)).toBe(true);
-    expect(shown.at(0)).toContain('MOOV Leadership Team / 文档');
+    expect(shown.at(0)).toContain('Northwind Leadership Team / 文档');
   });
 
   it('a path too wide for its row loses its middle, so the filename that says which item it is survives', () => {
@@ -251,7 +251,7 @@ describe('keeping the block inside the rows and columns the cursor can reach', (
       () => 44
     );
 
-    bar.start(11, 'MOOV Leadership Team / 文档');
+    bar.start(11, 'Northwind Leadership Team / 文档');
     bar.begin('HELP - Manuals & Guides/IT topics/TMFF/Ocean Export user manual V 2017 8.8.pdf');
 
     const row = rowsShown(writes.at(-1)).at(1) ?? '';
@@ -267,7 +267,7 @@ describe('keeping the block inside the rows and columns the cursor can reach', (
       () => 44
     );
 
-    bar.start(11, 'MOOV Leadership Team / 文档');
+    bar.start(11, 'Northwind Leadership Team / 文档');
     bar.begin('HELP - Manuals & Guides/IT topics/TMFF/Ocean Export user manual V 2017 8.8.pdf');
     bar.detail('HELP - Manuals & Guides/IT topics/TMFF/Ocean Export user manual V 2017 8.8.pdf', 'reading picture 3/6');
 
@@ -284,8 +284,8 @@ describe('keeping the block inside the rows and columns the cursor can reach', (
       () => 40
     );
 
-    bar.start(25, 'SW Project (Lidl instance) / 文档');
-    bar.begin('General/04_IT_Security_overview/PT Findings for Lidl.xlsx');
+    bar.start(25, 'SW Project (Fabrikam instance) / 文档');
+    bar.begin('General/04_IT_Security_overview/PT Findings for Fabrikam.xlsx');
 
     expect([...(rowsShown(writes.at(-1)).at(1) ?? '')]).toHaveLength(39);
   });

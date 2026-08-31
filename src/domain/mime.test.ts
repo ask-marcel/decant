@@ -18,9 +18,9 @@ describe('reading a saved email', () => {
   // cannot hold, the text quoted-printable, and the attachment base64.
   const read = readMime(
     lines(
-      'From: Tina Wu <tina@example.com>',
+      'From: Mei Lin <mei@example.com>',
       'To: Vincent Delacourt <vincent@example.com>,',
-      '\tBenny Zhang <benny@example.com>',
+      '\tAlex Zhao <alex@example.com>',
       'Subject: =?utf-8?B?5Zue5aSN?= Teams Intv',
       'Date: Mon, 24 Aug 2026 07:22:00 +0000',
       'MIME-Version: 1.0',
@@ -47,8 +47,8 @@ describe('reading a saved email', () => {
     expect(read.text).toBe(
       [
         '**Subject:** 回复 Teams Intv',
-        '**From:** Tina Wu <tina@example.com>',
-        '**To:** Vincent Delacourt <vincent@example.com>, Benny Zhang <benny@example.com>',
+        '**From:** Mei Lin <mei@example.com>',
+        '**To:** Vincent Delacourt <vincent@example.com>, Alex Zhao <alex@example.com>',
         '**Date:** Mon, 24 Aug 2026 07:22:00 +0000',
         '',
         'Bonjour Vincent,',
@@ -65,9 +65,9 @@ describe('reading a saved email', () => {
 
 describe('the shapes a saved email comes in', () => {
   it('a message of nothing but text carries no files and still reads', () => {
-    const read = readMime(lines('From: Tina Wu <tina@example.com>', 'Subject: No files', 'Content-Type: text/plain', '', 'Just a line.'));
+    const read = readMime(lines('From: Mei Lin <mei@example.com>', 'Subject: No files', 'Content-Type: text/plain', '', 'Just a line.'));
 
-    expect(read.text).toBe('**Subject:** No files\n**From:** Tina Wu <tina@example.com>\n\nJust a line.');
+    expect(read.text).toBe('**Subject:** No files\n**From:** Mei Lin <mei@example.com>\n\nJust a line.');
     expect(read.parts).toEqual([]);
   });
 

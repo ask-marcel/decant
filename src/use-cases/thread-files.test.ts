@@ -307,7 +307,7 @@ describe('the pictures a document attached to a mail holds', () => {
 // unpacks into a FOLDER, and the documents inside it are below the card's path and keep it.
 describe('a saved email unpacked into its parts', () => {
   const EML = [
-    'From: Tina Wu <tina@example.com>',
+    'From: Mei Lin <mei@example.com>',
     'Subject: Fwd: Contrat',
     'Content-Type: multipart/mixed; boundary="B"',
     '',

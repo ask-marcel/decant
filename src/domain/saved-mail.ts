@@ -4,7 +4,7 @@ import { linkDestination } from './markdown-link.ts';
 // A saved email is unpacked into a folder of its own parts, and the document standing for it sat in
 // that folder naming none of them. Its signature read `[cid:Logo5_f97c665d-….png]` with the picture
 // on disk beside it under exactly that name, and the spreadsheet the mail was written to send,
-// `Dane.xlsx`, was converted, stored, and mentioned nowhere: "Attached the format that Pepco is able
+// `Dane.xlsx`, was converted, stored, and mentioned nowhere: "Attached the format we are able
 // to provide" and no way to reach it.
 
 // How a plain-text MIME body points at a picture that travelled with it. The label is the part's

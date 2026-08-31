@@ -233,7 +233,7 @@ describe('which documents are asked for the pictures inside them', () => {
 describe('deciding whether a picture is worth reading', () => {
   // Measured across one vault: everything OCR found real text in was 64 KB or more, a table
   // screenshot at 104 KB and a signature block at 64 KB. Everything under ten kilobytes was a logo,
-  // and what came back was `pe` from one saying PEPCO and `AOOWE` from one saying MOOV.
+  // and what came back was `pe` from one logo and `AOOWE` from another.
   it('a picture big enough to hold words is read', () => {
     expect(worthReading(64 * 1024)).toBe(true);
   });
@@ -242,7 +242,7 @@ describe('deciding whether a picture is worth reading', () => {
     expect(worthReading(5589)).toBe(false);
   });
 
-  // The PEPCO logo, ten kilobytes and thirty-seven bytes short of the line, which is the side of it
+  // The logo that read `pe`, ten kilobytes and thirty-seven bytes short of the line, which is the side of it
   // the reading `pe` belongs on.
   it('exactly at the line is not past it', () => {
     expect(worthReading(10 * 1024)).toBe(false);

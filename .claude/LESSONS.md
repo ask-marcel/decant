@@ -132,11 +132,11 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
 ## 2026-07-26
 
 - [gotcha] A batch rename across test fixtures can collide with a real identifier that happens to
-  share the same substring. Renaming the "Espace MOOV" site-name fixture to "Espace Contoso" across
-  21 test files, `build-deps.test.ts` also held `MOOV_KB_LOG_LEVEL`/`MOOV_KB_ROOT`, the actual env
+  share the same substring. Renaming the "Espace Northwind" site-name fixture to "Espace Contoso" across
+  21 test files, `build-deps.test.ts` also held `KB_LOG_LEVEL`/`KB_ROOT`, the actual env
   var names read by `config.ts` and documented in `README.md`. A blind find-and-replace would have
   renamed those too, breaking the test without touching the production contract to match. Before a
-  batch string rename, grep the substring together with its neighbours (here `MOOV_KB`) to separate
+  batch string rename, grep the substring together with its neighbours (here `KB_`) to separate
   fixture text from something that is actually a contract, then handle the contract as its own
   confirmed change.
 
@@ -436,7 +436,7 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   cannot call. Treat those commands as present but inert; they answer `ErrorAccessDenied`.
 
 - [decision] Group mailboxes are the reachable alternative and are still blocked, on post bodies.
-  `list-group-conversations` works today on `Group.Read.All`, verified against MOOV Leadership Team,
+  `list-group-conversations` works today on `Group.Read.All`, verified against a team the account belongs to,
   and returns topic, senders, `hasAttachments` and a PREVIEW truncated mid-word. This sync is bodies
   from end to end: a thread document IS one rendered body per message, and cards, indexes and the
   store all hang off messages already rendered. Listing without bodies would give subject lines with
@@ -454,7 +454,7 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   `my-quick-context` reports the tenant zone in Windows spelling, which `--timezone` refuses, so the
   mapping is a human step: Romance Standard Time is `Europe/Paris`.
   Ask it per run rather than carrying the answer forward. On 2026-08-30 the signed-in account was
-  `vincent.delacourt@moovlogistics.com` reporting `China Standard Time`, so the machine default was
+  an account on another tenant reporting `China Standard Time`, so the machine default was
   right and a run "corrected" to `Europe/Paris` on the strength of this note would have been wrong.
   One call settles it; the note above records what one account said once.
 
@@ -571,8 +571,8 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
 
 - [gotcha] A markdown link destination ends at the first space unless it is wrapped in `<>`. Every
   path this vault writes goes into one, and mail attachments are named by people, so
-  `[Fw- DC Data -- Pepco.eml](_attachments/Fw- DC Data -- Pepco.eml.md)` rendered as literal text
-  with a stray link to `Pepco.eml.md` in the middle of it. Nothing caught it for weeks because the
+  `[Fw- DC Data -- Fabrikam.eml](_attachments/Fw- DC Data -- Fabrikam.eml.md)` rendered as literal text
+  with a stray link to `Fabrikam.eml.md` in the middle of it. Nothing caught it for weeks because the
   tests pinned the string that was written, not what a renderer does with it, and the paths in the
   fixtures had no spaces. `linkDestination` in `markdown-link.ts` is now the only way a path becomes
   a destination; unbalanced parentheses end one the same way, so `Budget (final).xlsx` is wrapped too.
@@ -587,8 +587,8 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
 
 - [gotcha] OCR text needs to say it is OCR, in words. A `>` block means quoted correspondence
   everywhere else in a mail vault, so a signature read off a logo reads as something a person wrote.
-  It is not a theoretical risk: this vault has `TRATEGO` for a logo saying STRATEGO and `AOOWE` for
-  one saying MOOV. Every picture with readable text now carries one line saying the words were read
+  It is not a theoretical risk: this vault has `LDER` for a logo saying ALDER and `AOOWE` for
+  another. Every picture with readable text now carries one line saying the words were read
   by a machine and pointing at the image above it.
 
 - [gotcha] Substituting a multi-line block for an inline placeholder breaks whatever span held it.
@@ -649,7 +649,7 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
 - [lesson] Measure before choosing a threshold. Asked to skip OCR on small pictures, the vault
   answered what small meant: everything OCR found real text in was 64 KB or more, a table screenshot
   at 104 KB and a signature block at 64 KB, and everything under ten kilobytes was a logo that came
-  back as `pe` from one saying PEPCO and `AOOWE` from one saying MOOV. Ten kilobytes put the PEPCO
+  back as `pe` from one logo and `AOOWE` from another. Ten kilobytes put the larger of the two
   logo thirty-seven bytes on the right side of the line. A reading like that is worse than none,
   since it reads as text somebody wrote.
 

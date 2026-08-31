@@ -9,7 +9,7 @@ describe('one report covering everything a run touched', () => {
       at: '2026-08-27T21:00:00Z',
       ran: [
         {
-          source: 'SW Project (Lidl instance)',
+          source: 'SW Project (Fabrikam instance)',
           counts: '4 converted, 0 moved, 0 archived, 1 skipped, 1 failed.',
           skipped: [{ path: 'Projets/big.zip', reason: 'larger than the 50 MB cap' }],
           failed: [{ path: 'Projets/Findings.xlsx', reason: 'read-failed: the source timed out' }],
@@ -19,7 +19,7 @@ describe('one report covering everything a run touched', () => {
       stale: [],
     });
 
-    expect(rendered).toContain('## SW Project (Lidl instance)');
+    expect(rendered).toContain('## SW Project (Fabrikam instance)');
     expect(rendered).toContain('4 converted, 0 moved, 0 archived, 1 skipped, 1 failed.');
     expect(rendered).toContain('- Projets/big.zip: larger than the 50 MB cap');
     expect(rendered).toContain('- Projets/Findings.xlsx: read-failed: the source timed out');

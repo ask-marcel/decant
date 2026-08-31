@@ -162,13 +162,13 @@ describe('writing one conversation as one file', () => {
   // second document for them. Quoted, so it reads as text lifted off a picture.
   it('what was read out of a picture is shown in the thread, under the picture', async () => {
     const pasted = [{ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 64 * 1024, isInline: true, contentId: 'logo.png@01DC1234' }];
-    const texts = { 'kb/Mailbox/_inline/logo-3d8c205c.png': 'Michael Pronk\nStratego Development\n+31618225472' };
+    const texts = { 'kb/Mailbox/_inline/logo-3d8c205c.png': 'Nina Alder\nAlder Consulting\n+31618225472' };
     const { files } = await run({
       reader: { conversations: { [CONV]: [message({ hasAttachments: false })] }, bodies: { m1: '\\[inline image: logo.png\\]' }, attachments: { m1: pasted } },
       ocr: { texts },
     });
 
-    expect(files.written.get(THREAD_FILE)).toContain(`![logo.png](../../_inline/logo-3d8c205c.png)\n\n${NOTE}\n\n> Michael Pronk\n> Stratego Development\n> +31618225472`);
+    expect(files.written.get(THREAD_FILE)).toContain(`![logo.png](../../_inline/logo-3d8c205c.png)\n\n${NOTE}\n\n> Nina Alder\n> Alder Consulting\n> +31618225472`);
   });
 
   const SIGNATURE = `${INLINE_STORE}/logo-3d8c205c.png`;
@@ -182,20 +182,20 @@ describe('writing one conversation as one file', () => {
   // ever wrote, so a mailbox of two hundred threads would otherwise hold two hundred copies of it.
   // The words come back with it, since no document holds them any more.
   it('a picture an earlier thread already stored is not fetched again, and still shows its words', async () => {
-    const { files } = await run({ reader: showing, attachments: storedPicture('Michael Pronk') });
+    const { files } = await run({ reader: showing, attachments: storedPicture('Nina Alder') });
 
     expect(files.binary.size).toBe(0);
-    expect(files.written.get(THREAD_FILE)).toContain(`![logo.png](../../_inline/logo-3d8c205c.png)\n\n${NOTE}\n\n> Michael Pronk`);
+    expect(files.written.get(THREAD_FILE)).toContain(`![logo.png](../../_inline/logo-3d8c205c.png)\n\n${NOTE}\n\n> Nina Alder`);
   });
 
   // Self-healing rather than silently wordless: a run from before pictures carried their reading
   // left records with no text, and honouring one would show the picture in this thread with nothing
   // under it, a loss no later run would ever repair. Converting again costs one fetch.
   it('a picture stored before the words were kept is read again rather than shown wordless', async () => {
-    const { files } = await run({ reader: showing, attachments: storedPicture(undefined), ocr: { texts: { [SIGNATURE]: 'Michael Pronk' } } });
+    const { files } = await run({ reader: showing, attachments: storedPicture(undefined), ocr: { texts: { [SIGNATURE]: 'Nina Alder' } } });
 
     expect(files.binary.has(SIGNATURE)).toBe(true);
-    expect(files.written.get(THREAD_FILE)).toContain('> Michael Pronk');
+    expect(files.written.get(THREAD_FILE)).toContain('> Nina Alder');
   });
 
   // No placeholder in the text answered for it, so nothing shows it. It is still a picture, so it
