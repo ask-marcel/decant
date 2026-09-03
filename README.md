@@ -249,28 +249,38 @@ kb/
   Mailbox/
     .sync-state.json                a cursor per folder, and what every conversation produced
     _sync-report.md                 what did not make it in, and why
-    _attachments/                   every file a mail carried, stored once by content
-    _linked/2026-05-11/             SharePoint files the mail pointed at, each pulled once,
-                                    filed under the day the file itself last changed
+    _inline/                        pictures pasted into messages, stored once for the mailbox
+                                    and named by content, since one signature logo rides on
+                                    every message its sender ever wrote
     threads/2026-05-12-ca0df2c95a-contrat-contoso/    the day it began, its id, what it is about
       contrat-contoso.md                             the whole conversation, oldest message first
-      _attachments/Contrat.docx.md                   a card per file it carried, pointing at the store
-      _linked/Rapport.docx.md                        a card per document it pointed at
+      _attachments/Contrat.docx                      a file a message carried, under its own name
+      _attachments/Contrat.docx.md                   its card: who sent it, when, and its text
+      _linked/Rapport.docx                           a SharePoint file a message pointed at
+      _linked/Rapport.docx.md                        its card: the address, the version, its text
     _meta/threads.jsonl                              one line per thread, for querying
     _meta/attachments.jsonl                          one line per stored file, by content address
     _meta/links.jsonl                                one line per document pointed at
 ```
 
-A thread folder reads as an inventory of what arrived with it, without holding any of it twice.
-The bytes and the text stay in the shared stores, addressed by content; each card beside the
-thread carries what belongs to the arrival rather than to the file, who sent it, when, and under
-which message, and points at the rest. A card is still written for a file that could not be
-fetched or a document that could not be pulled, since that card is the only record the thread
-depended on something the knowledge base does not hold.
+A thread folder is self-contained: everything a conversation carried or pointed at sits inside
+it, beside a card that says how it arrived. The one exception is a picture pasted into a message,
+which lives in `_inline/` for the whole mailbox, because a signature logo rides on every message
+its sender ever wrote and a copy per thread would write the same hundred kilobytes two hundred
+times. Everything else is written into every thread that received it. That is the trade this
+layout makes on purpose: a report sent to ten threads is stored ten times, and no folder has to
+reach into another to be read.
 
-The three `_meta` files are rebuilt at the end of every run from everything the mailbox holds,
-not from what that run happened to write. Front matter inside markdown is only text, so these are
-what make "everything from Li Wei since June", or "every thread citing this deck", a query.
+The card and the file share a name. `Contrat.docx.md` carries what belongs to the arrival, who
+sent it, when, under which message, and the text read out of the file, so a reader opening the
+folder finds one document per thing rather than a card and an extract saying the same. When the
+file itself was kept, a workbook or a PDF, the card names it under `original:` and links it. Two
+files of one name in a single thread, a form resent after correction being the usual way, are
+both kept and the second is numbered. A card is still written for a file too large to fetch or of
+a kind nothing reads, since it is the only record that the thread depended on something the
+knowledge base does not hold; a file nothing can read that is also named by a machine id, the
+icons a sharing notification is built from, is dropped without a card, a line or a report entry,
+there being no fact left to record.
 
 One file per conversation, not per message, in a folder named once and never renamed: the day of
 its **first** message, a ten-character id, and a readable slug of its subject. A reply appends to
@@ -294,31 +304,49 @@ is left unresolved and retried on the next sweep rather than filed under a guess
 The day is counted in the zone given by `--timezone`, defaulting to this machine's. Every
 timestamp Graph returns is UTC, so a message received at 16:40Z is the next day in a UTC+8 tenant,
 and the folder name is written once.
+
 Every folder is swept except Junk, Deleted Items, Drafts and Outbox, which means **the mail you
 sent is included**: Sent Items is a folder like any other, and a conversation is assembled from
 every folder its messages landed in. Quoted reply chains are stripped, since the message being
 quoted is already its own section.
 
-A SharePoint file a mail merely points at is pulled too, once, into `_linked/`. It takes the same
-route as a file found by sweeping a library, so it is filed under the day it last changed and keeps
-the folders it sat in, a linked deck arrives as a PDF as well as its text, a linked image is kept
-beside the text read out of it, and a linked file above the size cap is left where it is. Each is
-stamped with its own SharePoint address, so the link in the front matter opens the original.
+A SharePoint file a mail merely points at is pulled too, into the thread's own `_linked/`, flat,
+beside its card. The card records the address at the source, when the document last changed and
+who changed it, and carries its text, so a thread can be traced to a version of a document and
+not only to its name. A linked deck arrives as a PDF as well as its text, and a linked file above
+the size cap is left where it is with a card saying so. What somebody shares is as often a folder
+as a file: a folder gets a card that says a folder was shared, and no entry in the report, since
+nothing went wrong.
 
-Attachments follow the same conversion rules as SharePoint files, a zip included: it is kept and
-also unpacked, one markdown file per document inside. Every attachment is stored once in the shared
-`_attachments/` folder, addressed by the SHA-256 of its bytes, so a file sent across many threads is
-converted a single time and every conversation after the first references the copy already on disk.
-Each is stored under its own name plus a short slice of that address (`Contrat-a3f9c1b2.docx`), which
-fixes the name to the bytes so conversations rendering in parallel never collide on disk.
+Each message's own section names the files that message carried, linking each card, so a reader
+following a conversation sees what arrived with which reply rather than one list at the head of
+the file. A picture pasted into a message is shown where it stood, or after the text when the
+conversion lost the placeholder that said where, and never listed as a file somebody sent. What
+was read out of it is quoted under it, behind one line saying the words were read by a machine
+and may be wrong: OCR read `pe` off a logo saying something longer, and without that line the
+two letters read as text somebody wrote. A picture under 10 KB is not read at all. Measured across
+one mailbox, everything OCR found real words in was 64 KB or more and everything under ten was a
+logo, so the threshold costs no content and saves a twenty-second pass per logo.
 
-Each message's own section names the files that message carried, linking where each landed, so a
-reader following a conversation sees what arrived with which reply rather than one list at the head
-of the file. A picture pasted into a message is shown where it stood rather than named, and is listed
-under `inline_images` in the front matter instead of among the attachments, so a signature logo does
-not read as a document somebody sent. A file that was left alone keeps its name in that list with
-the reason beside it, and a picture nothing could be matched to is named as a file rather than
-dropped, so nothing a message carried goes unmentioned.
+A saved email attached to a message is unpacked into a folder of its parts, and its card shows
+its pictures where the message showed them, read the same way, and lists every file it carried
+under **Carried by this message:**, linking the reading where one was made and the file where it
+was not.
+
+Every link a message carries is written as the address the sender sent. Outlook rewraps each one
+through its own scanner with a per-recipient tracking blob after it, and measured across one
+mailbox that wrapper was a third of everything written and left no link readable. Unwrapping
+means a click from the vault reaches the destination without Outlook's check at click time; this
+is an archive of what was sent, and what was sent is the destination.
+
+The head of each thread names where the file itself lives under `path:`, so a thread pasted into
+a context window can still be resolved and traced back, and lists every participant with the
+address you would reply to. Message headings keep names alone, since one heading already runs
+to eleven recipients.
+
+`_sync-report.md` holds only what a reader should look into. A run in which every file arrived
+writes the counts and the line "Nothing was left behind." A file left out says which kind it was,
+a `.mp4` this tool does not read, or that its name had no extension so nothing could tell.
 
 A first mailbox run is slow: Outlook hands back changes ten messages at a time and there is no way
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
