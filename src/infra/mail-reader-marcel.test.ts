@@ -31,6 +31,25 @@ describe('reading a mailbox through the ask-marcel library', () => {
     expect(recorded[0]?.params).toMatchObject({ mailFolderId: 'AAMk1' });
   });
 
+  // Graph hides folders flagged hidden from a listing by default, and an Outlook client can hide
+  // any folder, so mail in one was invisible to the sweep: not skipped, not reported, simply never
+  // seen. 2.4.0 exposes the parameter on both listing calls, and a sync means all of the mail.
+  it('the top-level listing asks for hidden folders too, since their mail is mail', async () => {
+    const { reader, recorded } = readerFor({ 'list-mail-folders': ok({ value: [] }) });
+
+    await reader.listFolders();
+
+    expect(recorded[0]?.params).toMatchObject({ includeHiddenFolders: 'true' });
+  });
+
+  it('the nested listing asks for hidden folders too, a hidden folder having children of its own', async () => {
+    const { reader, recorded } = readerFor({ 'list-mail-child-folders': ok({ value: [] }) });
+
+    await reader.listChildFolders('AAMk1');
+
+    expect(recorded[0]?.params).toMatchObject({ includeHiddenFolders: 'true' });
+  });
+
   it('a folder sweep asks for a page size, which 2.3.0 pages through instead of truncating', async () => {
     const { reader, recorded } = readerFor({ 'list-mail-folder-messages-delta': ok({ value: [] }) });
 

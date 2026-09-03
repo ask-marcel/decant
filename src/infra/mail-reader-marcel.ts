@@ -118,12 +118,16 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
   };
 
   return {
+    // `includeHiddenFolders` on both, since 2.4.0. Graph hides folders flagged hidden from a listing
+    // by default, and an Outlook client can hide any folder, so the mail in one was invisible to the
+    // sweep: not skipped, not reported, never seen. A sync means all of the mail. The nested call
+    // takes it as well, a hidden folder having children of its own.
     listFolders: async () => {
-      const raw = await call('list-mail-folders', { top: '200' });
+      const raw = await call('list-mail-folders', { top: '200', includeHiddenFolders: 'true' });
       return raw.ok ? ok(parseMailFolders(raw.value)) : raw;
     },
     listChildFolders: async (folderId) => {
-      const raw = await call('list-mail-child-folders', { mailFolderId: folderId, top: '200' });
+      const raw = await call('list-mail-child-folders', { mailFolderId: folderId, top: '200', includeHiddenFolders: 'true' });
       return raw.ok ? ok(parseMailFolders(raw.value)) : raw;
     },
     // `top` is safe since ask-marcel-office-cli 2.3.0: it is sent as `Prefer: odata.maxpagesize`, a
