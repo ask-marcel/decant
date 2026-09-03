@@ -663,3 +663,38 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   does not reference: 115 of 123 entries after a run against another tenant. That also drops
   readings for mail outside the current `--since` window, which costs one pass each if that mail
   comes back into range. It survives `rm -rf kb/Mailbox`, which is why a killed sync loses no OCR.
+
+- [gotcha] CI had never run on this code before the day it went public, and its first four failures
+  were all first contact rather than regressions: `gitleaks` absent from the runner, one error that
+  only the strict type-aware lint sees, thirteen fixable CVEs, and a mutation sweep that ran every
+  mutant and then died writing its report. None of them showed locally because none of the local
+  gates are the CI gates. `bun run lint` is the cached ordinary pass and `lint:strict` is what CI
+  runs; `mutate:changed` scores a file or two and `mutate` on main scores ninety. Run the CI
+  variant before the first push, not the local one.
+
+- [gotcha] Stryker's incremental mode writes its file by pretty-printing the entire report through
+  `JSON.stringify`, in `reportAll`, after every mutant has already run. On a full sweep of 4,413
+  mutants under Node that string throws `RangeError: Invalid string length`, so the gate burned
+  twenty-five minutes and reported nothing. There is no flag to turn the mode off: `--incremental
+  false` makes Stryker read `false` as a config filename, and `=false` is rejected outright. Only the
+  config file can, and it should, since `mutate-changed.sh` and `mutate-staged.sh` delete the file
+  before every run anyway and CI discards it with the checkout. The same path wrote 75 MB locally
+  and succeeded, and that difference was never explained; the write was removed rather than
+  understood, which is worth knowing if it ever comes back.
+
+- [lesson] Read the stack trace before changing anything. The first fix for the sweep crash dropped
+  the html reporter on the theory that serialising a report is a reporter's job; the trace had said
+  `MutationTestReportHelper.reportAll` and `JSON.stringify` all along, and a second twenty-five
+  minute run was the price of not reading it. The second fix invented a flag that does not exist and
+  cost a third run. Two runs and fifty minutes bought by a guess and a habit.
+
+- [gotcha] `gitleaks/gitleaks-action` asks an organisation repository for a paid licence key and
+  fails without one. Install the pinned binary from the release instead; the asset URL was checked
+  with a HEAD request before it went in, since a guessed version 404s in exactly the same way.
+
+- [lesson] A dependency advisory that no published version can clear is a fact about the registry,
+  not a reason to drop the gate. SheetJS left npm, so `xlsx@0.18.5` was the newest there while the
+  advisories wanted 0.19.3 and 0.20.2, which live only on the SheetJS CDN. The gate ignored those
+  two by id with the reason and the fix written beside them, kept failing on everything else, and
+  found thirteen real upgrades the same day. When `ask-marcel-office-cli` 2.4.0 pointed `xlsx` at
+  the CDN tarball, the ignores came out and the audit was clean with no exceptions at all.
