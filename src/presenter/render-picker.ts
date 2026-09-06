@@ -1,6 +1,6 @@
 import type { PickerRow } from '../domain/picker.ts';
 import type { AddressKind } from '../domain/address-kind.ts';
-import { addressKindOf } from '../domain/address-kind.ts';
+import { kindOf } from '../domain/address-kind.ts';
 import type { RunSummary } from '../use-cases/sync-site.ts';
 
 const files = (count: number): string => (count === 1 ? '1 file' : `${count} files`);
@@ -13,6 +13,7 @@ const line = (row: PickerRow, index: number): string => `${String(index + 1).pad
 
 const HEADINGS: Readonly<Record<AddressKind, string>> = {
   site: 'SharePoint sites:',
+  group: 'Group inboxes:',
   loop: 'Loop workspaces:',
   onedrive: 'OneDrive:',
 };
@@ -24,7 +25,7 @@ const headed = (rows: ReadonlyArray<PickerRow>): ReadonlyArray<string> => {
   const lines: string[] = [];
   let open: AddressKind | undefined;
   for (const [index, row] of rows.entries()) {
-    const kind = addressKindOf(row.webUrl);
+    const kind = kindOf(row);
     if (kind !== open) {
       if (open !== undefined) lines.push('');
       lines.push(HEADINGS[kind]);
