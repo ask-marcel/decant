@@ -61,6 +61,15 @@ describe('writing one conversation as one file', () => {
     );
   });
 
+  it('a thread from a group inbox names that group, not the mailbox, so a reader knows where it came from', async () => {
+    const conversations = { [CONV]: [message()] };
+    const { files } = await run({ reader: { conversations, bodies: { m1: 'One.' } }, sourceName: 'MOOV Leadership Team' });
+    const written = files.written.get(THREAD_FILE) ?? '';
+
+    expect(written).toContain('site: MOOV Leadership Team');
+    expect(written).not.toContain('site: Mailbox');
+  });
+
   // One document per file, not a card beside an extract saying the same thing. The converter writes
   // the text at this path and the card is written over it, carrying the text forward and replacing
   // a stamp about which library it came from with the facts that matter for mail: who sent it, when,

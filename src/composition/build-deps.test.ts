@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
+import { createGroupReaderFake } from '../test-helpers/group-reader-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
@@ -45,6 +46,7 @@ describe('wiring the command together', () => {
       files,
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
+      group: createGroupReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(['q']),
       clock: createClockFake(),
@@ -68,6 +70,7 @@ describe('wiring the command together', () => {
       files,
       logger: createLoggerFake(),
       reader: createDriveReaderFake({ pages: [{ items: [], skipped: 0, deltaLink: 'cursor-1' }] }),
+      group: createGroupReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),
@@ -98,6 +101,7 @@ describe('wiring the command together', () => {
       files,
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
+      group: createGroupReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),
@@ -114,6 +118,7 @@ describe('wiring the command together', () => {
       files,
       logger: createLoggerFake(),
       reader: createDriveReaderFake({ sites: [{ id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' }] }),
+      group: createGroupReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(['q']),
       clock: createClockFake(),
@@ -142,7 +147,14 @@ describe('wiring the command together', () => {
   });
 
   it('the real wiring builds without reaching Microsoft, so a run only signs in when it needs to', () => {
-    const deps = buildDeps(configFor({}), { files: createFilesFake(), logger: createLoggerFake(), prompt: createPromptFake(), clock: createClockFake(), ocr: createOcrFake() });
+    const deps = buildDeps(configFor({}), {
+      files: createFilesFake(),
+      logger: createLoggerFake(),
+      prompt: createPromptFake(),
+      clock: createClockFake(),
+      ocr: createOcrFake(),
+      group: createGroupReaderFake(),
+    });
 
     expect(typeof deps.runSync).toBe('function');
   });
@@ -161,6 +173,7 @@ describe('wiring the command together', () => {
       files: createFilesFake(),
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
+      group: createGroupReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),

@@ -68,6 +68,8 @@ export const run = async (
     linked?: Record<string, { paths: string[] }>;
     attachments?: Record<string, AttachmentRecord>;
     ocr?: OcrSeed;
+    // What the source is called, so a test can render a thread as a group inbox rather than the mailbox.
+    sourceName?: string;
   } = {}
 ): Promise<{
   outcome: RenderThreadOutcome | undefined;
@@ -88,7 +90,7 @@ export const run = async (
     files,
     logger,
     clock: createClockFake(),
-    sourceName: 'Mailbox',
+    sourceName: seeds.sourceName ?? 'Mailbox',
     mailboxRoot: 'kb/Mailbox',
     timezone: 'Europe/Paris',
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(seeds.ocr), logger, unpackArchive: drive.localArchive, convertLocal: drive.localMarkdown }),

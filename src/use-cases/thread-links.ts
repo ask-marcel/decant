@@ -22,6 +22,10 @@ export type LinkDeps = {
   readonly files: Pick<Files, 'readText' | 'writeText'>;
   readonly convertFile: ConvertFile;
   readonly logger: Logger;
+  // The source this thread came from, which is what a pulled document is stamped with. One vault
+  // holds a mailbox and any number of group inboxes, and a document naming the wrong one sends a
+  // reader looking in a folder it never came from.
+  readonly sourceName: string;
 };
 
 // The folder a thread keeps what it pointed at in, holding the documents and the cards standing for
@@ -140,7 +144,7 @@ const pullLinked = async (deps: LinkDeps, here: string, maxBytes: number, link: 
   const outcome = await deps.convertFile({
     item: found.value,
     driveId,
-    site: 'Mailbox',
+    site: deps.sourceName,
     library: LINKED_FOLDER,
     maxBytes,
     into: `${here}/${LINKED_FOLDER}`,

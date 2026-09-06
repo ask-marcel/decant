@@ -5,6 +5,7 @@ import type { MarcelApi, MarcelCommand } from '../infra/drive-reader-marcel.ts';
 import { createDriveReaderFromApi, createMarcelCall } from '../infra/drive-reader-marcel.ts';
 import { MAILBOX_NAME } from '../domain/mail-state.ts';
 import { createGroupReaderFromCall } from '../infra/group-reader-marcel.ts';
+import type { GroupReader } from '../use-cases/ports/group-reader.ts';
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
 import { createWinstonLogger } from '../infra/logger.ts';
@@ -43,6 +44,7 @@ export type DepOverrides = {
   readonly files?: Files;
   readonly reader?: DriveReader;
   readonly mail?: MailReader;
+  readonly group?: GroupReader;
   readonly ocr?: Ocr;
   readonly prompt?: Prompt;
   readonly clock?: Clock;
@@ -124,7 +126,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // A group inbox reads through its own commands but renders through the same path, so it gets the
   // same converters with the group reader underneath them, and a renderer per group because each
   // one writes into its own folder.
-  const group = createGroupReaderFromCall(createMarcelCall(api));
+  const group = overrides.group ?? createGroupReaderFromCall(createMarcelCall(api));
   const convertGroupAttachment = createConvertAttachment({ reader: group, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown });
   const renderGroupThreadFor = (root: string, name: string): ReturnType<typeof createRenderThread> =>
     createRenderThread({
