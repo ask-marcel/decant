@@ -30,8 +30,10 @@ export const addressKindOf = (webUrl: string): AddressKind => {
   return first === LOOP_SEGMENT ? 'loop' : 'site';
 };
 
-// Sites first because they are what a run is nearly always after, then Loop, then the one OneDrive.
-const RANK: Readonly<Record<AddressKind, number>> = { site: 0, group: 1, loop: 2, onedrive: 3 };
+// Sites first because they are what a run is nearly always after, then Loop, then the one OneDrive,
+// then the group inboxes, which is the order the picker draws: the groups are listed separately and
+// appended, so ranking them anywhere else would describe an order nothing produces.
+const RANK: Readonly<Record<AddressKind, number>> = { site: 0, loop: 1, onedrive: 2, group: 3 };
 
 // Sorting is stable in JavaScript, so the order the source listed its rows in survives inside each
 // group: a listing that put the sites you touched most recently first still does.

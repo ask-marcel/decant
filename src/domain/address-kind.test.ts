@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { addressKindOf, orderByKind } from './address-kind.ts';
+import { addressKindOf, kindOf, orderByKind } from './address-kind.ts';
 
 describe('telling one kind of source from another by its address', () => {
   it('a Loop workspace is told from a team site by the path it is stored under', () => {
@@ -20,8 +20,14 @@ describe('telling one kind of source from another by its address', () => {
     expect(addressKindOf('not an address')).toBe('site');
   });
 
-  it('sites come first, then Loop workspaces, then OneDrive, and the order inside each is left alone', () => {
+  it('a source that states its kind is taken at its word, since a group inbox has no address to read', () => {
+    expect(kindOf({ webUrl: '', kind: 'group' })).toBe('group');
+    expect(kindOf({ webUrl: 'https://tenant.sharepoint.com/sites/Direction' })).toBe('site');
+  });
+
+  it('sites come first, then Loop, then OneDrive, then the group inboxes, and the order inside each is left alone', () => {
     const listed = [
+      { webUrl: '', kind: 'group' as const },
       { webUrl: 'https://tenant-my.sharepoint.com/personal/jane' },
       { webUrl: 'https://tenant.sharepoint.com/sites/Direction' },
       { webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_one' },
@@ -35,6 +41,7 @@ describe('telling one kind of source from another by its address', () => {
       'https://tenant.sharepoint.com/contentstorage/CSP_one',
       'https://tenant.sharepoint.com/contentstorage/CSP_two',
       'https://tenant-my.sharepoint.com/personal/jane',
+      '',
     ]);
   });
 });
