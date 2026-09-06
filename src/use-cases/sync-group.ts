@@ -24,7 +24,7 @@ export type SyncGroupDeps = {
   readonly files: Files;
   // Built per group rather than once, because the renderer is given the folder it writes into when
   // it is constructed, and every group writes into its own.
-  readonly renderThreadFor: (root: string) => RenderThread;
+  readonly renderThreadFor: (root: string, name: string) => RenderThread;
   readonly clock: Clock;
   readonly logger: Logger;
   readonly progress: Progress;
@@ -83,7 +83,10 @@ const recordThread = (
 type Rendered = { readonly apply: (state: GroupState) => GroupState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
 
 const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: GroupState, root: string, thread: GroupThread): Promise<Rendered> => {
-  const rendered = await deps.renderThreadFor(root)({
+  const rendered = await deps.renderThreadFor(
+    root,
+    input.group.name
+  )({
     threadId: threadIdOf(thread.id),
     conversationIds: [threadRef(input.group.id, thread.id)],
     root: thread.id,

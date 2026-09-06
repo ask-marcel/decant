@@ -88,6 +88,7 @@ export const run = async (
     files,
     logger,
     clock: createClockFake(),
+    sourceName: 'Mailbox',
     mailboxRoot: 'kb/Mailbox',
     timezone: 'Europe/Paris',
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(seeds.ocr), logger, unpackArchive: drive.localArchive, convertLocal: drive.localMarkdown }),

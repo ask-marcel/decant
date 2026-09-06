@@ -3,6 +3,7 @@ import type { SiteRef } from '../domain/site-state.ts';
 import { createSystemClock } from '../infra/clock-system.ts';
 import type { MarcelApi, MarcelCommand } from '../infra/drive-reader-marcel.ts';
 import { createDriveReaderFromApi, createMarcelCall } from '../infra/drive-reader-marcel.ts';
+import { MAILBOX_NAME } from '../domain/mail-state.ts';
 import { createGroupReaderFromCall } from '../infra/group-reader-marcel.ts';
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
@@ -107,14 +108,25 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // expression as never executed, so splitting it reads as coverage lost. See the comment further
   // down and the journal entry for the same trap in `progress-bar.ts`.
   const mailboxRoot = `${config.kbRoot}/Mailbox`;
-  const renderThread = createRenderThread({ reader: mail, drive: reader, files, convertAttachment, convertFile, clock, logger, mailboxRoot, timezone: config.timezone });
+  const renderThread = createRenderThread({
+    reader: mail,
+    drive: reader,
+    files,
+    convertAttachment,
+    convertFile,
+    clock,
+    logger,
+    mailboxRoot,
+    sourceName: MAILBOX_NAME,
+    timezone: config.timezone,
+  });
   const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot });
   // A group inbox reads through its own commands but renders through the same path, so it gets the
   // same converters with the group reader underneath them, and a renderer per group because each
   // one writes into its own folder.
   const group = createGroupReaderFromCall(createMarcelCall(api));
   const convertGroupAttachment = createConvertAttachment({ reader: group, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown });
-  const renderGroupThreadFor = (root: string): ReturnType<typeof createRenderThread> =>
+  const renderGroupThreadFor = (root: string, name: string): ReturnType<typeof createRenderThread> =>
     createRenderThread({
       reader: group,
       drive: reader,
@@ -124,6 +136,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
       clock,
       logger,
       mailboxRoot: root,
+      sourceName: name,
       timezone: config.timezone,
     });
   const syncGroup = createSyncGroup({ reader: group, files, renderThreadFor: renderGroupThreadFor, clock, logger, progress, kbRoot: config.kbRoot });

@@ -61,6 +61,7 @@ const run = async (
   progress: ProgressFake;
   asked: RenderThreadInput[];
   roots: string[];
+  names: string[];
   ok: boolean;
   error?: StepError;
 }> => {
@@ -69,6 +70,7 @@ const run = async (
   const progress = createProgressFake();
   const asked: RenderThreadInput[] = [];
   const roots: string[] = [];
+  const names: string[] = [];
   const syncGroup = createSyncGroup({
     reader: createGroupReaderFake({ threads: { '0d3b-group': [thread()] }, ...seeds.reader }),
     files,
@@ -76,7 +78,8 @@ const run = async (
     progress,
     clock: createClockFake(),
     kbRoot: 'kb',
-    renderThreadFor: (root) => async (input) => {
+    renderThreadFor: (root, name) => async (input) => {
+      names.push(name);
       asked.push(input);
       roots.push(root);
       if (seeds.failThread === true) return err({ kind: 'permanent' as const, message: 'thread refused' });
@@ -92,6 +95,7 @@ const run = async (
     progress,
     asked,
     roots,
+    names,
     ok: result.ok,
     error: result.ok ? undefined : result.error,
   };
@@ -109,10 +113,11 @@ describe('mirroring a group inbox into the knowledge base', () => {
   });
 
   it('a group is filed apart from the SharePoint site of the same name', async () => {
-    const { files, roots } = await run();
+    const { files, roots, names } = await run();
 
     expect(files.written.has(STATE_PATH)).toBe(true);
     expect(roots).toEqual(['kb/MOOV Leadership Team (group inbox)']);
+    expect(names).toEqual(['MOOV Leadership Team']);
   });
 
   it('a second run over an unchanged group writes nothing, since every thread is already held', async () => {

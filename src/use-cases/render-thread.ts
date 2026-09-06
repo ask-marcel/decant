@@ -34,6 +34,9 @@ export type RenderThreadDeps = {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly mailboxRoot: string;
+  // What the front matter calls the source this thread came from. The mailbox is one name and every
+  // group inbox is another, and a reader sorting a vault by source needs them told apart.
+  readonly sourceName: string;
   // The zone a thread's day is counted in. Config for the run rather than per conversation, since
   // every folder in one vault must be dated the same way or two runs would disagree.
   readonly timezone: string;
@@ -89,8 +92,8 @@ const sourceOf = (input: RenderThreadInput): string => `conversation ${input.con
 
 const stampFor = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailMessage, last: MailMessage): DocumentStamp => ({
   source: sourceOf(input),
-  site: 'Mailbox',
-  library: 'Mailbox',
+  site: deps.sourceName,
+  library: deps.sourceName,
   path: threadTitle(first.subject),
   lastModified: last.received,
   modifiedBy: last.from?.name,
