@@ -698,3 +698,34 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   two by id with the reason and the fix written beside them, kept failing on everything else, and
   found thirteen real upgrades the same day. When `ask-marcel-office-cli` 2.4.0 pointed `xlsx` at
   the CDN tarball, the ignores came out and the audit was clean with no exceptions at all.
+
+- [gotcha] A source can report one condition two ways, as an empty answer or as a refusal, and code
+  that handles one will not handle the other. `convertPdf` fell back to OCR when a PDF's text came
+  back empty, which is the entire reason the OCR-PDF work exists, and still reported a genuinely
+  scanned PDF as failed: the library answers that case with a 415 and a message, never with an empty
+  body, so the fallback was unreachable for the only file type it was written for. Nothing looked
+  wrong from inside, since a failed file reads as an unlucky file rather than as a dead branch, and
+  it took a real library and one appendix sitting beside its converted siblings to show it. When
+  adding a fallback, check what the source actually does in the case the fallback is for, rather
+  than what an absence of data would look like.
+
+- [decision] The group inbox source was measured before it was built, and the measurement is why it
+  was not built. `list-my-memberships` answers three unified groups, and every other group on the
+  tenant refuses with 0xD10, so three is the whole reachable scope. They hold 16 threads, three of
+  them "The new X group is ready", and of the 13 that remain, all in one group, eleven previews are
+  the bare underscore rule of a calendar invitation and the rest say things like "Will re-schedule in
+  outlook". That is a reader port, a picker entry, per-group state and an npm publish, to add a
+  meeting calendar to a vault already holding 54 real mail threads. The library side stands as
+  written in `docs/report-group-thread-posts-verified.md` and the six commands work; what is absent
+  is traffic worth mirroring, which is a fact about this tenant and could change.
+
+- [gotcha] A fake that answers whatever it is handed will keep a dead feature green. The OCR fallback
+  for scanned PDFs passed its tests from 24 July to 6 September and had never read one: `pdfText`
+  gave the reader the PDF's own path, and RapidOCR loads through PIL, which refuses a PDF outright
+  with `UnidentifiedImageError`. The OCR fake returns text for any path at all, so every test agreed
+  the feature worked, and the one thing the fake could not say is that its real counterpart takes
+  pictures and nothing else. It surfaced only because a real library held a scanned appendix and the
+  file came out holding the note instead of its own text. The trap is open wherever a fake is keyed
+  by a path or an id it never validates: those tests prove the wiring, not that the adapter can do
+  what it was asked. The fix was to read the pages, one image per page out of
+  `extract-drive-item-images`, which is what OCR can actually open.
