@@ -201,9 +201,11 @@ const convertPdf = async (context: Context): Promise<ConvertOutcome> => {
   const rawPath = `${context.dir}/${context.name}`;
   const wroteRaw = await context.deps.files.writeBytes(rawPath, raw.value);
   if (!wroteRaw.ok) return failure(wroteRaw.error);
+  // A scanned PDF is refused rather than answered with an empty body, and that refusal names the one
+  // case OCR is here for. The file is already on disk, so read its pages instead of giving up on it.
   const text = await context.deps.reader.markdown(ref);
-  if (!text.ok) return failure(text.error);
-  const read = await pdfText(context, rawPath, text.value);
+  if (!text.ok && text.error.kind !== 'unrenderable') return failure(text.error);
+  const read = await pdfText(context, rawPath, text.ok ? text.value : '');
   const stamp = { ...context.stamp, pdf: `./${context.name}`, ocr: read.ocr };
   const written = await writeMarkdown(context, `${context.name}.md`, stamp, read.body);
   return written.ok ? { kind: 'converted', outputs: [rawPath, ...written.value] } : failure(written.error);

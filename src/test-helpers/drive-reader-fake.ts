@@ -22,6 +22,9 @@ export type DriveReaderSeed = {
   // Fails only the PDF render, the way a source that will not convert a deck does, leaving its text
   // readable.
   readonly failPdf?: DriveReaderError;
+  // Fails only the text conversion, the way a source that hands over a scanned PDF it cannot read
+  // does, leaving the file itself downloadable.
+  readonly failMarkdown?: DriveReaderError;
   // Delta pages served in order: the first call gets the first page, and so on.
   readonly pages?: ReadonlyArray<DriveDeltaPage>;
   readonly markdown?: Readonly<Record<string, string>>;
@@ -84,7 +87,10 @@ export const createDriveReaderFake = (seed: DriveReaderSeed = {}): DriveReaderFa
       if (seed.failFrom && pageIndex > 0) return err(seed.failFrom);
       return nextPage();
     },
-    markdown: async (ref) => forItem(ref, 'markdown'),
+    markdown: async (ref) => {
+      const converted = forItem(ref, 'markdown');
+      return seed.failMarkdown ? err(seed.failMarkdown) : converted;
+    },
     pdf: async (ref) => {
       const rendered = forItem(ref, 'pdf');
       if (seed.failPdf) return err(seed.failPdf);

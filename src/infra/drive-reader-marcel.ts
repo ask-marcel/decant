@@ -46,8 +46,10 @@ const translate = (error: GraphErrorShape): DriveReaderError => {
   if (error.type !== 'api_error') return { kind: 'permanent', message: error.message };
   if (error.status === 429) return { kind: 'throttled', retryAfterSeconds: error.retryAfterSeconds, message: error.message };
   // Graph answers the render endpoint with 406 when it will not convert that file to that format,
-  // whatever the reason on its side: the file is readable, the format is simply not on offer.
-  if (error.status === 406) return { kind: 'unrenderable', message: error.message };
+  // whatever the reason on its side: the file is readable, the format is simply not on offer. The
+  // library answers 415 for the same thing one level down, when the file holds nothing to convert:
+  // a scanned PDF carries page images and no text layer, so there is no text to hand over.
+  if (error.status === 406 || error.status === 415) return { kind: 'unrenderable', message: error.message };
   return error.status !== undefined && error.status >= 500 ? { kind: 'transient', message: error.message } : { kind: 'permanent', status: error.status, message: error.message };
 };
 

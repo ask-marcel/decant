@@ -315,6 +315,17 @@ describe('reading SharePoint through the ask-marcel library', () => {
     expect(recorded).toHaveLength(1);
   });
 
+  it('a scanned PDF the source has no text to give is reported as unrenderable, not as a request that failed', async () => {
+    const { reader, recorded } = readerFor({
+      'download-drive-item-as-markdown': [err({ type: 'api_error', status: 415, message: 'pdf has no extractable text layer' })],
+    });
+
+    const converted = await reader.markdown({ driveId: 'b!one', itemId: '01A' });
+
+    expect(converted).toEqual({ ok: false, error: { kind: 'unrenderable', message: 'pdf has no extractable text layer' } });
+    expect(recorded).toHaveLength(1);
+  });
+
   it('a download the library handed back as text is still written as bytes', async () => {
     const { reader } = readerFor({ 'download-drive-item-content': [ok({ contentType: 'text/plain', text: 'plain notes' })] });
 

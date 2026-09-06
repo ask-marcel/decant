@@ -297,6 +297,28 @@ describe('converting one document out of a library', () => {
     expect(written).toContain('ocr: rapidocr (latin)');
   });
 
+  it('a scanned PDF the source refuses to read as text still has its pages read by OCR', async () => {
+    const { outcome, files } = await run(
+      { name: 'Scan.pdf', path: 'Scan.pdf' },
+      {
+        reader: { failMarkdown: { kind: 'unrenderable', message: 'pdf has no extractable text layer' } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf': 'Invoice total 1200 EUR' } },
+      }
+    );
+    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Scan.pdf', 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md'] });
+    expect(written).toContain('Invoice total 1200 EUR');
+    expect(written).toContain('ocr: rapidocr (latin)');
+  });
+
+  it('a PDF the source refuses for any other reason is reported as failed, so the next run asks for it again', async () => {
+    const { outcome, files } = await run({ name: 'Scan.pdf', path: 'Scan.pdf' }, { reader: { failMarkdown: { kind: 'permanent', status: 404, message: 'item not found' } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'permanent: item not found' });
+    expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md')).toBe(false);
+  });
+
   it('a PDF that already has a text layer is not sent to OCR', async () => {
     const { files } = await run(
       { name: 'Contrat.pdf', path: 'Contrat.pdf' },
