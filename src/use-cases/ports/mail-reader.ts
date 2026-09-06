@@ -32,17 +32,13 @@ export type LinkedFile = {
   readonly name: string;
 };
 
-export type MailReader = {
-  readonly listFolders: () => Promise<Result<ReadonlyArray<MailFolder>, MailReaderError>>;
-  readonly listChildFolders: (folderId: string) => Promise<Result<ReadonlyArray<MailFolder>, MailReaderError>>;
-  // No page size is asked for: Outlook's message delta truncates when given one, answering with a
-  // "you are up to date" cursor and dropping the rest of the folder.
-  readonly folderDelta: (folderId: string) => Promise<Result<MailDeltaPage, MailReaderError>>;
-  readonly deltaFrom: (cursor: string) => Promise<Result<MailDeltaPage, MailReaderError>>;
+// What reading one thread needs, whatever inbox holds it. A personal mailbox and a Microsoft 365
+// group inbox differ in how their threads are FOUND and not at all in how one is READ: both answer
+// with the messages, a rendering of each, and whatever they carried. Named for the job rather than
+// for the mailbox, so a group reader can satisfy it and the vault keeps one rendering path instead
+// of growing a second copy of cards, attachments, images and OCR per source.
+export type ThreadReader = {
   readonly conversation: (conversationId: string) => Promise<Result<ReadonlyArray<MailMessage>, MailReaderError>>;
-  // The RFC headers Graph leaves out of every default projection, which is where `References` lives
-  // and so where a thread's root is. Asked for one message per conversation, not one per message.
-  readonly messageHeaders: (messageId: string) => Promise<Result<ReadonlyArray<MessageHeader>, MailReaderError>>;
   readonly messageMarkdown: (messageId: string) => Promise<Result<string, MailReaderError>>;
   readonly attachments: (messageId: string) => Promise<Result<ReadonlyArray<MailAttachment>, MailReaderError>>;
   readonly attachmentMarkdown: (messageId: string, attachmentId: string) => Promise<Result<string, MailReaderError>>;
@@ -53,3 +49,20 @@ export type MailReader = {
   readonly attachmentImages: (messageId: string, attachmentId: string) => Promise<Result<ReadonlyArray<EmbeddedImage>, MailReaderError>>;
   readonly sharepointLinks: (messageId: string) => Promise<Result<ReadonlyArray<LinkedFile>, MailReaderError>>;
 };
+
+// Finding the threads, which is where the two inboxes part company. A mailbox walks a folder tree,
+// tracks each folder by delta, and reads RFC headers to work out which conversations are one thread.
+// A group inbox needs none of it: Graph hands out a thread id that is stable on its own.
+export type MailSweep = {
+  readonly listFolders: () => Promise<Result<ReadonlyArray<MailFolder>, MailReaderError>>;
+  readonly listChildFolders: (folderId: string) => Promise<Result<ReadonlyArray<MailFolder>, MailReaderError>>;
+  // No page size is asked for: Outlook's message delta truncates when given one, answering with a
+  // "you are up to date" cursor and dropping the rest of the folder.
+  readonly folderDelta: (folderId: string) => Promise<Result<MailDeltaPage, MailReaderError>>;
+  readonly deltaFrom: (cursor: string) => Promise<Result<MailDeltaPage, MailReaderError>>;
+  // The RFC headers Graph leaves out of every default projection, which is where `References` lives
+  // and so where a thread's root is. Asked for one message per conversation, not one per message.
+  readonly messageHeaders: (messageId: string) => Promise<Result<ReadonlyArray<MessageHeader>, MailReaderError>>;
+};
+
+export type MailReader = ThreadReader & MailSweep;

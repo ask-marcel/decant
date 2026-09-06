@@ -23,10 +23,10 @@ import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
-import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
+import type { MailReaderError, ThreadReader } from './ports/mail-reader.ts';
 
 export type RenderThreadDeps = {
-  readonly reader: MailReader;
+  readonly reader: ThreadReader;
   readonly drive: DriveReader;
   readonly files: Files;
   readonly convertAttachment: ConvertAttachment;

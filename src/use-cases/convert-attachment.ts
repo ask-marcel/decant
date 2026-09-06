@@ -15,13 +15,13 @@ import { ok } from '../domain/result.ts';
 import type { SkipReason } from '../domain/report.ts';
 import type { ArchiveEntry } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
-import type { MailAttachment, MailReader, MailReaderError } from './ports/mail-reader.ts';
+import type { MailAttachment, MailReaderError, ThreadReader } from './ports/mail-reader.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Ocr } from './ports/ocr.ts';
 import { placeImages } from './place-images.ts';
 
 export type ConvertAttachmentDeps = {
-  readonly reader: MailReader;
+  readonly reader: ThreadReader;
   readonly files: Files;
   readonly ocr: Ocr;
   readonly logger: Logger;
