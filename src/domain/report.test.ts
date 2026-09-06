@@ -8,6 +8,7 @@ const run = (over: Partial<ReportRun> = {}): ReportRun => ({
   counts: '12 converted, 0 moved, 0 archived, 2 skipped, 1 failed.',
   skipped: [],
   failed: [],
+  givenUp: [],
   archived: [],
   ...over,
 });
@@ -58,6 +59,14 @@ describe('telling the operator what did not reach the knowledge base', () => {
     );
   });
 
+  it('a file given up on is named under its own heading, not the one promising another try', () => {
+    const rendered = renderReportRun(run({ givenUp: [{ path: 'Annexes/appendix_9.1.pdf', reason: 'permanent: locked' }] }));
+
+    expect(rendered).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
+    expect(rendered).toContain('- Annexes/appendix_9.1.pdf: permanent: locked');
+    expect(rendered).not.toContain('will be tried again on the next run');
+  });
+
   it('files the source no longer has are reported as moved aside', () => {
     const rendered = renderReportRun(run({ archived: [{ path: 'Documents/Ancien.docx', reason: 'deleted at the source' }] }));
 
@@ -102,6 +111,10 @@ describe('deciding whether a run is worth reporting', () => {
     expect(hasSomethingToReport(run({ skipped: [{ path: 'a.mp4', reason: unsupportedReason('Demo.mp4') }] }))).toBe(true);
     expect(hasSomethingToReport(run({ failed: [{ path: 'a.docx', reason: 'locked' }] }))).toBe(true);
     expect(hasSomethingToReport(run({ archived: [{ path: 'a.docx', reason: 'deleted' }] }))).toBe(true);
+  });
+
+  it('a run whose only news is a file it has given up on is still written down', () => {
+    expect(hasSomethingToReport(run({ givenUp: [{ path: 'a.pdf', reason: 'permanent: locked' }] }))).toBe(true);
   });
 });
 

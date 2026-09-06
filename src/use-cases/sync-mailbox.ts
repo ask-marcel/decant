@@ -63,7 +63,7 @@ export type SyncMailbox = (input: SyncMailboxInput) => Promise<Result<SourceRun,
 
 const EMPTY: RunSummary = { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 };
 
-const NO_NOTES: RunNotes = { skipped: [], failed: [], archived: [] };
+const NO_NOTES: RunNotes = { skipped: [], failed: [], givenUp: [], archived: [] };
 
 const mailboxRoot = (kbRoot: string): string => `${kbRoot}/Mailbox`;
 
@@ -339,7 +339,12 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
         skipped: summary.skipped + (done.counted.skipped ?? 0),
         failed: summary.failed + (done.counted.failed ?? 0),
       };
-      notes = { skipped: [...notes.skipped, ...(done.notes.skipped ?? [])], failed: [...notes.failed, ...(done.notes.failed ?? [])], archived: notes.archived };
+      notes = {
+        skipped: [...notes.skipped, ...(done.notes.skipped ?? [])],
+        failed: [...notes.failed, ...(done.notes.failed ?? [])],
+        givenUp: notes.givenUp,
+        archived: notes.archived,
+      };
     }
   }
   deps.progress.done();

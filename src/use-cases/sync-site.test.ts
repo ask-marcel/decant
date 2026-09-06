@@ -778,6 +778,24 @@ describe('a document the source would not hand over', () => {
     expect(stateAfter(fourth.files).drives['b!one']?.retry['01ABC']).toMatchObject({ attempts: 3 });
   });
 
+  it('a document out of tries is named once, under the heading that says it will not be tried again', async () => {
+    const second = await again(await swept(), true);
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', true);
+    const report = third.files.written.get(REPORT_PATH) ?? '';
+
+    expect(report).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
+    expect(report).toContain('- Annexes/appendix_9.1.pdf: transient: gateway timeout');
+    expect(report).not.toContain('will be tried again on the next run');
+  });
+
+  it('a document still out of tries is named again by every run after the one that gave up', async () => {
+    const second = await again(await swept(), true);
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', true);
+    const fourth = await again(third.files.written.get(STATE_PATH) ?? '', true);
+
+    expect(fourth.files.written.get(REPORT_PATH)).toContain('- Annexes/appendix_9.1.pdf: transient: gateway timeout');
+  });
+
   it('a document edited at the source after it was given up on is tried again from scratch', async () => {
     const second = await again(await swept(), true);
     const third = await again(second.files.written.get(STATE_PATH) ?? '', true);

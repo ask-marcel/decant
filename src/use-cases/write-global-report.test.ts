@@ -9,7 +9,7 @@ import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import type { SourceRun } from './sync-site.ts';
 import { GLOBAL_REPORT_PATH, createWriteGlobalReport } from './write-global-report.ts';
 
-const NOTHING = { skipped: [], failed: [], archived: [] };
+const NOTHING = { skipped: [], failed: [], givenUp: [], archived: [] };
 
 const COUNTS = { converted: 4, moved: 0, archived: 0, skipped: 1, failed: 1, queued: 0 };
 

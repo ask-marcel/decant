@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { renderGlobalReport } from './global-report.ts';
 
-const CLEAN = { source: 'Espace Contoso', counts: '12 converted, 0 moved, 0 archived, 0 skipped, 0 failed.', skipped: [], failed: [], archived: [] };
+const CLEAN = { source: 'Espace Contoso', counts: '12 converted, 0 moved, 0 archived, 0 skipped, 0 failed.', skipped: [], failed: [], givenUp: [], archived: [] };
 
 describe('one report covering everything a run touched', () => {
   it('a source that left something behind gets its own section, with its counts and its lists', () => {
@@ -13,6 +13,7 @@ describe('one report covering everything a run touched', () => {
           counts: '4 converted, 0 moved, 0 archived, 1 skipped, 1 failed.',
           skipped: [{ path: 'Projets/big.zip', reason: 'larger than the 50 MB cap' }],
           failed: [{ path: 'Projets/Findings.xlsx', reason: 'read-failed: the source timed out' }],
+          givenUp: [],
           archived: [],
         },
       ],
@@ -74,6 +75,7 @@ describe('the shape of the file itself', () => {
           counts: '1 converted, 0 moved, 0 archived, 1 skipped, 0 failed.',
           skipped: [{ path: 'Projets/big.zip', reason: 'larger than the 50 MB cap' }],
           failed: [],
+          givenUp: [],
           archived: [],
         },
       ],

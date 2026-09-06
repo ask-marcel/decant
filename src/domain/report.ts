@@ -1,4 +1,5 @@
 import { extensionOf } from './conversion-plan.ts';
+import { MAX_CONVERSION_ATTEMPTS } from './worklist.ts';
 
 export type ReportEntry = {
   readonly path: string;
@@ -6,10 +7,13 @@ export type ReportEntry = {
 };
 
 // What one source left behind. Named here rather than beside the use-case that fills it, so both the
-// per-source report and the global one draw the same three lists from the same shape.
+// per-source report and the global one draw the same four lists from the same shape.
 export type ReportNotes = {
   readonly skipped: ReadonlyArray<ReportEntry>;
   readonly failed: ReadonlyArray<ReportEntry>;
+  // Held apart from `failed` because the two promise a reader different things, and one heading
+  // covering both would go on saying "next run" about a file no run will pick up again.
+  readonly givenUp: ReadonlyArray<ReportEntry>;
   readonly archived: ReadonlyArray<ReportEntry>;
 };
 
@@ -54,14 +58,15 @@ const list = (title: string, entries: ReadonlyArray<ReportEntry>): ReadonlyArray
 
 // A run that converted everything writes nothing: the state file already records when it ran, and a
 // report that repeats "all good" every night buries the runs that did leave something behind.
-export const hasSomethingToReport = (run: ReportRun): boolean => run.skipped.length + run.failed.length + run.archived.length > 0;
+export const hasSomethingToReport = (run: ReportRun): boolean => run.skipped.length + run.failed.length + run.givenUp.length + run.archived.length > 0;
 
-// The three lists, in the order a reader wants them: what was left out on purpose, what could not be
-// read and is worth another run, then what the source no longer has. Shared with the global report,
-// so the same entry reads the same way whichever file it is opened in.
+// The four lists, in the order a reader wants them: what was left out on purpose, what could not be
+// read and is worth another run, what has run out of runs, then what the source no longer has.
+// Shared with the global report, so the same entry reads the same way whichever file it is opened in.
 export const renderNoteLists = (notes: ReportNotes): ReadonlyArray<string> => [
   ...list('Left in place, nothing was written for these:', notes.skipped),
   ...list('Could not be read, and will be tried again on the next run:', notes.failed),
+  ...list(`Could not be read after ${MAX_CONVERSION_ATTEMPTS} tries, and will not be tried again unless the file changes:`, notes.givenUp),
   ...list('No longer at the source, moved aside:', notes.archived),
 ];
 

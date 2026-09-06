@@ -18,8 +18,8 @@ import {
   withDrive,
 } from '../domain/site-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
-import { buildWorklist, forgetSwept, nextFailure } from '../domain/worklist.ts';
-import type { ReportNotes, ReportRun } from '../domain/report.ts';
+import { buildWorklist, forgetSwept, givenUp, nextFailure } from '../domain/worklist.ts';
+import type { ReportEntry, ReportNotes, ReportRun } from '../domain/report.ts';
 import { appendReportRun, hasSomethingToReport, skipReason } from '../domain/report.ts';
 import type { WorkItem } from '../domain/worklist.ts';
 import type { ConvertFile } from './convert-file.ts';
@@ -187,8 +187,18 @@ const syncDrive = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveS
   const queued = await queueWork(deps, input, drive, state, statePath);
   if (!queued.ok) return queued;
   if (input.dryRun) return ok({ state: queued.value.state, summary: add(EMPTY, { queued: queued.value.state.drives[drive.id]?.pending.length ?? 0 }), notes: NO_NOTES });
-  return processQueue(deps, input, drive, queued.value.state, statePath);
+  const done = await processQueue(deps, input, drive, queued.value.state, statePath);
+  if (!done.ok) return done;
+  return ok({ ...done.value, notes: mergeNotes(done.value.notes, { givenUp: givenUpNotes(done.value.state.drives[drive.id]) }) });
 };
+
+// Read off the ledger rather than off this run's work, because a document out of tries is precisely
+// one this run did nothing about. Naming it every run is the point: it is the only thing standing
+// between a file nobody can convert and a file nobody knows about.
+const givenUpNotes = (drive: DriveState | undefined): ReadonlyArray<ReportEntry> =>
+  Object.values(drive?.retry ?? {})
+    .filter(givenUp)
+    .map((entry) => ({ path: entry.item.path, reason: entry.reason }));
 
 const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, state: SiteState, statePath: string): Promise<Result<{ state: SiteState }, StepError>> => {
   const known: DriveState = state.drives[drive.id] ?? { name: drive.name, pending: [], items: {}, retry: {} };
@@ -255,11 +265,12 @@ const processQueue = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Dri
 // The same three lists the reports draw, named in the domain so both reports share the shape.
 export type RunNotes = ReportNotes;
 
-const NO_NOTES: RunNotes = { skipped: [], failed: [], archived: [] };
+const NO_NOTES: RunNotes = { skipped: [], failed: [], givenUp: [], archived: [] };
 
 const mergeNotes = (left: RunNotes, right: Partial<RunNotes>): RunNotes => ({
   skipped: [...left.skipped, ...(right.skipped ?? [])],
   failed: [...left.failed, ...(right.failed ?? [])],
+  givenUp: [...left.givenUp, ...(right.givenUp ?? [])],
   archived: [...left.archived, ...(right.archived ?? [])],
 });
 
@@ -297,7 +308,10 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   if (outcome.kind === 'failed') {
     deps.logger.warn('convert.failed', { itemId: item.id, reason: outcome.reason });
     const entry = nextFailure(driveState.retry[item.id], item, outcome.reason);
-    return { update: (manifest) => rememberFailure(manifest, entry), counted: { failed: 1 }, notes: { failed: [{ path: item.path, reason: outcome.reason }] } };
+    // The ledger's own list names an item that has run out of tries, so reporting it here as well
+    // would print it twice under headings promising opposite things.
+    const notes = givenUp(entry) ? {} : { failed: [{ path: item.path, reason: outcome.reason }] };
+    return { update: (manifest) => rememberFailure(manifest, entry), counted: { failed: 1 }, notes };
   }
   const outputs = outcome.kind === 'converted' ? outcome.outputs : [];
   // A conversion, and a decision to leave the file alone, both settle what an earlier failure was

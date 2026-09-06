@@ -25,7 +25,7 @@ const EMPTY_SUMMARY = { converted: 2, moved: 0, archived: 0, skipped: 0, failed:
 
 // Every fake source hands back the same run: these tests are about which sources get synced and in
 // what order, never about what any one of them left behind.
-const SOURCE_RUN = { id: 'site!one', source: 'Espace Contoso', summary: EMPTY_SUMMARY, notes: { skipped: [], failed: [], archived: [] } };
+const SOURCE_RUN = { id: 'site!one', source: 'Espace Contoso', summary: EMPTY_SUMMARY, notes: { skipped: [], failed: [], givenUp: [], archived: [] } };
 
 const run = async (
   answers: ReadonlyArray<string>,
