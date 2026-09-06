@@ -44,9 +44,10 @@ To work on it instead, clone the repo and `bun install`; `bun test` runs the sui
 bun run sync
 ```
 
-Lists every SharePoint site you can read plus your mailbox, marking the ones already in `kb/` with
-when they last synced and how much they hold. Pick a number and one or more libraries, or press
-`m` for your mailbox, and it syncs.
+Lists what you can read, grouped by what it is: the SharePoint sites, the Loop workspaces, your
+OneDrive, and the inboxes of the Microsoft 365 groups you belong to. Each is marked with when it
+last synced and how much it holds. Pick a number and one or more libraries, or press `m` for your
+mailbox, and it syncs.
 
 Your Loop workspaces are on that list too, shown as `Loop - <workspace>`. A workspace keeps its
 pages in a container no site listing returns, so they are found through the `.pod` manifest each one
@@ -75,6 +76,7 @@ clear message instead of waiting for input.
 | `--site-url <url>` | Sync the site at this address, for sites the search index does not list |
 | `--drive-id <id>` | Sync only this library; repeat for several |
 | `--mailbox` | Sync your Outlook mailbox without showing the picker |
+| `--group-id <id>` | Sync one group inbox without the picker, by its id or its address |
 | `--since <day>` | With `--mailbox`, only conversations touched since this day (`2026-01-31`) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
@@ -262,6 +264,35 @@ kb/
     _meta/attachments.jsonl                          one line per stored file, by content address
     _meta/links.jsonl                                one line per document pointed at
 ```
+
+### What a group inbox sync writes
+
+The same, in a folder of its own:
+
+```
+kb/
+  Leadership Team (group inbox)/
+    .sync-state.json                what has been filed, and the newest post it reaches
+    threads/2026-07-20-abc1234567-bi-monthly-leadership-meeting/
+      bi-monthly-leadership-meeting.md               every post, oldest first
+```
+
+A Microsoft 365 group is three things wearing one name: a SharePoint site holding files, an inbox
+holding conversations, and a Teams team. The picker offers the first two separately, and the
+`(group inbox)` suffix is what keeps them apart on disk, since both carry the group's name.
+
+Only the groups you belong to can be read. Access is decided by membership rather than by any
+permission this tool can ask for, so a group the directory lists but you have not joined refuses
+every read, and it is not offered.
+
+Three things a mail attachment gets and a post attachment does not, because the library has no
+command for them: a deck is not rendered to a PDF beside its text, a diagram inside an attached
+Word or Excel file is not extracted, and a SharePoint link in a post body is not pulled into
+`_linked/`. The gap is written up in `docs/request-group-post-parity.md`.
+
+Group threads are not tracked by a delta the way a mailbox folder is, because Graph offers none.
+Each run lists a group's threads newest first and stops at the newest post it already holds, so a
+thread that has been replied to comes back and an untouched one does not.
 
 A thread folder is self-contained: everything a conversation carried or pointed at sits inside
 it, beside a card that says how it arrived. The one exception is a picture pasted into a message,
