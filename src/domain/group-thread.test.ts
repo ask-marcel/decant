@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'bun:test';
-import { parseGroupPost, parseGroupThread, postRef, refParts } from './group-thread.ts';
+import { parseGroupPost, parseGroupThread, postRef, refParts, threadRef } from './group-thread.ts';
 import type { GroupThread } from './group-thread.ts';
+
+const GROUP = '0d3b-group';
 
 const thread: GroupThread = { id: 'AAQkAD-thread', topic: 'Bi-Monthly Leadership Meeting', lastDelivered: '2026-07-20T10:45:14Z', hasAttachments: false };
 
@@ -35,7 +37,8 @@ describe('reading a group inbox thread and the posts under it', () => {
         from: { emailAddress: { name: 'MOOV Leadership Team', address: 'MOOVLeadershipTeam@example.com' } },
         sender: { emailAddress: { name: 'Derek Bushaw', address: 'd.bushaw@example.com' } },
       },
-      thread
+      thread,
+      GROUP
     );
 
     expect(parsed?.from).toEqual({ name: 'Derek Bushaw', address: 'd.bushaw@example.com' });
@@ -44,16 +47,15 @@ describe('reading a group inbox thread and the posts under it', () => {
   });
 
   it('a post with no sender falls back to the address it came from, rather than losing the author', () => {
-    const parsed = parseGroupPost({ id: 'AAMkAD-post', from: { emailAddress: { address: 'MOOVLeadershipTeam@example.com' } } }, thread);
+    const parsed = parseGroupPost({ id: 'AAMkAD-post', from: { emailAddress: { address: 'MOOVLeadershipTeam@example.com' } } }, thread, GROUP);
 
     expect(parsed?.from).toEqual({ name: 'MOOVLeadershipTeam@example.com', address: 'MOOVLeadershipTeam@example.com' });
   });
 
   it('a post takes its subject from the thread, because a post has none of its own', () => {
-    const parsed = parseGroupPost({ id: 'AAMkAD-post' }, thread);
+    const parsed = parseGroupPost({ id: 'AAMkAD-post' }, thread, GROUP);
 
     expect(parsed?.subject).toBe('Bi-Monthly Leadership Meeting');
-    expect(parsed?.conversationId).toBe('AAQkAD-thread');
     expect(parsed?.to).toEqual([]);
     expect(parsed?.isDeleted).toBe(false);
     expect(parsed?.received).toBe('');
@@ -61,23 +63,29 @@ describe('reading a group inbox thread and the posts under it', () => {
   });
 
   it('a post with no id is no post, and neither is a payload that is not a record', () => {
-    expect(parseGroupPost({ receivedDateTime: '2026-07-20T10:45:14Z' }, thread)).toBeUndefined();
-    expect(parseGroupPost(undefined, thread)).toBeUndefined();
+    expect(parseGroupPost({ receivedDateTime: '2026-07-20T10:45:14Z' }, thread, GROUP)).toBeUndefined();
+    expect(parseGroupPost(undefined, thread, GROUP)).toBeUndefined();
   });
 
   it('a post with no readable sender address is read as having no author at all', () => {
-    expect(parseGroupPost({ id: 'AAMkAD-post', sender: { emailAddress: {} }, from: 'not a record' }, thread)?.from).toBeUndefined();
+    expect(parseGroupPost({ id: 'AAMkAD-post', sender: { emailAddress: {} }, from: 'not a record' }, thread, GROUP)?.from).toBeUndefined();
   });
 
-  it('a post is addressed by its thread and itself together, and the two come apart again unchanged', () => {
-    const ref = postRef('AAQkAD-thread', 'AAMkAD-post');
+  it('a post is addressed by its group, its thread and itself, and the three come apart unchanged', () => {
+    const ref = postRef(GROUP, 'AAQkAD-thread', 'AAMkAD-post');
 
-    expect(ref).toBe('AAQkAD-thread|AAMkAD-post');
-    expect(refParts(ref)).toEqual({ threadId: 'AAQkAD-thread', postId: 'AAMkAD-post' });
-    expect(parseGroupPost({ id: 'AAMkAD-post' }, thread)?.id).toBe('AAQkAD-thread|AAMkAD-post');
+    expect(ref).toBe('0d3b-group|AAQkAD-thread|AAMkAD-post');
+    expect(refParts(ref)).toEqual({ groupId: GROUP, threadId: 'AAQkAD-thread', postId: 'AAMkAD-post' });
+    expect(parseGroupPost({ id: 'AAMkAD-post' }, thread, GROUP)?.id).toBe('0d3b-group|AAQkAD-thread|AAMkAD-post');
   });
 
-  it('an id that was never a post reference comes apart into nothing, rather than into a wrong half', () => {
+  it('a thread is addressed by the first two parts alone, which is what asking for a conversation asks with', () => {
+    expect(threadRef(GROUP, 'AAQkAD-thread')).toBe('0d3b-group|AAQkAD-thread');
+    expect(refParts(threadRef(GROUP, 'AAQkAD-thread'))).toEqual({ groupId: GROUP, threadId: 'AAQkAD-thread', postId: '' });
+    expect(parseGroupPost({ id: 'AAMkAD-post' }, thread, GROUP)?.conversationId).toBe('0d3b-group|AAQkAD-thread');
+  });
+
+  it('an id that was never a reference comes apart into nothing, rather than into a wrong half', () => {
     expect(refParts('AAMkAD-a-plain-message-id')).toBeUndefined();
   });
 });

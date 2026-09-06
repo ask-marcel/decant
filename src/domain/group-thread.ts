@@ -12,19 +12,23 @@ export type GroupThread = {
   readonly hasAttachments: boolean;
 };
 
-// Graph addresses a post as `/groups/{g}/threads/{t}/posts/{p}`, while the rendering path speaks in
-// one opaque id per message and always has. So the two parts travel joined and are split again by
-// the adapter that joined them; nothing between the two ever looks inside. The separator is safe
-// because a Graph id is base64url plus `=` padding, and `|` is in neither alphabet.
+// Graph addresses a post as `/groups/{g}/threads/{t}/posts/{p}` and needs all three parts to fetch
+// it again, while the rendering path speaks in one opaque id per message and always has. So the
+// three travel joined and are split again by the adapter that joined them; nothing in between ever
+// looks inside. The separator is safe because a Graph id is base64url plus `=` padding, and `|` is
+// in neither alphabet. A thread is addressed by the first two alone, which is what the rendering
+// path asks for when it asks for a conversation.
 const REF_SEPARATOR = '|';
 
-export const postRef = (threadId: string, postId: string): string => `${threadId}${REF_SEPARATOR}${postId}`;
+export const threadRef = (groupId: string, threadId: string): string => [groupId, threadId].join(REF_SEPARATOR);
 
-export type PostRef = { readonly threadId: string; readonly postId: string };
+export const postRef = (groupId: string, threadId: string, postId: string): string => [groupId, threadId, postId].join(REF_SEPARATOR);
+
+export type PostRef = { readonly groupId: string; readonly threadId: string; readonly postId: string };
 
 export const refParts = (ref: string): PostRef | undefined => {
-  const at = ref.indexOf(REF_SEPARATOR);
-  return at < 0 ? undefined : { threadId: ref.slice(0, at), postId: ref.slice(at + REF_SEPARATOR.length) };
+  const [groupId, threadId, postId] = ref.split(REF_SEPARATOR);
+  return groupId === undefined || threadId === undefined ? undefined : { groupId, threadId, postId: postId ?? '' };
 };
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -53,13 +57,13 @@ const correspondentOf = (raw: unknown): MailMessage['from'] => {
 // `sender` is the person who wrote it where `from` is the group's own address, so a reader is shown
 // who spoke; a post carries no subject, the thread's topic being it; and no recipients, the group
 // itself being the recipient.
-export const parseGroupPost = (raw: unknown, thread: GroupThread): MailMessage | undefined => {
+export const parseGroupPost = (raw: unknown, thread: GroupThread, groupId: string): MailMessage | undefined => {
   if (!isRecord(raw)) return undefined;
   const id = readString(raw, 'id');
   if (id === undefined) return undefined;
   return {
-    id: postRef(thread.id, id),
-    conversationId: thread.id,
+    id: postRef(groupId, thread.id, id),
+    conversationId: threadRef(groupId, thread.id),
     subject: thread.topic,
     received: readString(raw, 'receivedDateTime') ?? '',
     hasAttachments: raw['hasAttachments'] === true,
