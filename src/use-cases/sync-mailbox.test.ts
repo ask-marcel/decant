@@ -110,6 +110,7 @@ const stateAfter = (
   pending: string[];
   linked: Record<string, unknown>;
   attachments: Record<string, unknown>;
+  retry: Record<string, { attempts: number; reason: string }>;
 } => JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
 describe('syncing a mailbox into the knowledge base', () => {
@@ -712,5 +713,84 @@ describe('rendering several conversations at once', () => {
 
     expect(summary).toMatchObject({ converted: 1, skipped: 1 });
     expect(Object.keys(stateAfter(files).threads)).toEqual([threadIdOf('b')]);
+  });
+});
+
+describe('a conversation the run could not write', () => {
+  // No headers are seeded, so the root falls back to the message's own id.
+  const THREAD = threadIdOf('m1');
+  const REPORT_PATH = 'kb/Mailbox/_sync-report.md';
+  // What the second run and every one after it sees: the cursors moved on when the first run swept,
+  // so the folder delta reports nothing. Only what the last run wrote down can bring the thread back.
+  const NOTHING_NEW = { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'c2' }] };
+
+  const swept = async (): Promise<string> => {
+    const first = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, failThread: 'conv-1' });
+    return first.files.written.get(STATE_PATH) ?? '';
+  };
+
+  const again = async (carried: string, failing: boolean): Promise<Awaited<ReturnType<typeof run>>> =>
+    run({ files: { texts: { [STATE_PATH]: carried } }, reader: NOTHING_NEW, ...(failing ? { failThread: 'conv-1' } : {}) });
+
+  it('a conversation that could not be written is remembered against the run that failed it', async () => {
+    const first = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, failThread: 'conv-1' });
+
+    expect(first.summary).toMatchObject({ converted: 0, failed: 1 });
+    expect(stateAfter(first.files).retry[THREAD]).toMatchObject({ attempts: 1, reason: 'thread refused' });
+  });
+
+  it('a conversation that could not be written is named under the heading promising another run, not the one that ends it', async () => {
+    const first = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, failThread: 'conv-1' });
+    const report = first.files.written.get(REPORT_PATH) ?? '';
+
+    expect(report).toContain('Could not be read, and will be tried again on the next run:');
+    expect(report).not.toContain('will not be tried again');
+  });
+
+  it('a conversation that could not be written is rendered again on the next run, although the delta reports nothing', async () => {
+    const second = await again(await swept(), false);
+
+    expect(second.asked).toEqual(['conv-1']);
+    expect(second.summary).toMatchObject({ converted: 1, failed: 0 });
+  });
+
+  it('a conversation that renders on its second try leaves nothing behind to try a third time', async () => {
+    const second = await again(await swept(), false);
+
+    expect(stateAfter(second.files).retry).toEqual({});
+  });
+
+  it('a conversation that fails three runs running is left alone by the fourth', async () => {
+    const second = await again(await swept(), true);
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', true);
+    const fourth = await again(third.files.written.get(STATE_PATH) ?? '', true);
+
+    expect(third.summary).toMatchObject({ failed: 1 });
+    expect(fourth.asked).toEqual([]);
+    expect(fourth.summary).toMatchObject({ converted: 0, failed: 0 });
+    expect(stateAfter(fourth.files).retry[THREAD]).toMatchObject({ attempts: 3 });
+  });
+
+  it('a conversation out of tries is named in the report under the heading that says it will not be tried again', async () => {
+    const second = await again(await swept(), true);
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', true);
+    const report = third.files.written.get(REPORT_PATH) ?? '';
+
+    expect(report).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
+    expect(report).toContain(`- thread ${THREAD}: thread refused`);
+    expect(report).not.toContain('will be tried again on the next run');
+  });
+
+  it('a conversation that gained a reply after it was given up on is written again from scratch', async () => {
+    const second = await again(await swept(), true);
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', true);
+    const replied = await run({
+      files: { texts: { [STATE_PATH]: third.files.written.get(STATE_PATH) ?? '' } },
+      reader: { folders: [folder()], pages: [{ messages: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })], skipped: 0, deltaLink: 'c3' }] },
+    });
+
+    expect(replied.asked).toEqual(['conv-1']);
+    expect(replied.summary).toMatchObject({ converted: 1 });
+    expect(stateAfter(replied.files).retry).toEqual({});
   });
 });

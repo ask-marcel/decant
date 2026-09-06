@@ -9,9 +9,11 @@ import type { AttachmentRecord, LinkedRecord, MailboxState, ThreadRecord } from 
 import {
   MAILBOX_ID,
   MAILBOX_NAME,
+  abandonedThreads,
   emptyMailboxState,
   needsRender,
   parseMailboxState,
+  retriedThreads,
   serializeMailboxState,
   conversationsInThread,
   threadOfConversation,
@@ -20,7 +22,9 @@ import {
   withFolderCursor,
   withLinked,
   withPending,
+  withRetry,
   withThread,
+  withoutRetry,
 } from '../domain/mail-state.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
@@ -32,6 +36,7 @@ import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread } from './render-thread.ts';
+import { MAX_CONVERSION_ATTEMPTS } from '../domain/worklist.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 
@@ -230,10 +235,15 @@ const finishQueue = async (
   const dirty = conversations.filter((conversation) => needsRender(state, conversation.id, conversation.messageIds));
   deps.logger.info('mail.enumerated', { messages: messages.length, conversations: conversations.length, queued: dirty.length });
   const resolved = await resolveThreads(deps, state, dirty);
-  const queued = withPending(resolved, threadsToRender(resolved, dirty));
+  const fresh = threadsToRender(resolved, dirty);
+  const queued = withPending(cleared(resolved, fresh), [...fresh, ...retriedThreads(resolved, fresh)]);
   const saved = await save(deps.files, statePath, queued, input.dryRun);
   return saved.ok ? ok(queued) : saved;
 };
+
+// A thread the sweep queued for itself is written from the messages the mailbox holds now, so what an
+// earlier run remembered about it is settled either way and goes with the queueing.
+const cleared = (state: MailboxState, fresh: ReadonlyArray<string>): MailboxState => fresh.reduce(withoutRetry, state);
 
 // The queue holds THREADS, not conversations, and the grouping happens here rather than inside the
 // window. Two conversations of one merged thread arriving in the same window would each decide the
@@ -261,7 +271,7 @@ const renderOne = async (
   // A queue naming a thread no conversation points at has nothing to render. It is reachable: the
   // queue outlives a run, so a state file carrying a queue but not the map behind it lands here.
   // Skipping leaves it for the next sweep, where the conversation is resolved again.
-  if (first === undefined) return { apply: (carried) => carried, counted: { skipped: 1 }, notes: {} };
+  if (first === undefined) return { apply: (carried) => withoutRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
   const rendered = await deps.renderThread({
     threadId,
     conversationIds: held.map((conversation) => conversation.id),
@@ -275,12 +285,16 @@ const renderOne = async (
   });
   if (!rendered.ok) {
     deps.logger.warn('thread.failed', { cause: rendered.error.kind });
-    return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: `thread ${threadId}`, reason: rendered.error.message }] } };
+    const attempts = (state.retry[threadId]?.attempts ?? 0) + 1;
+    // The ledger's own list names a thread that has run out of tries, so reporting it here as well
+    // would print it twice under headings promising opposite things.
+    const notes = attempts >= MAX_CONVERSION_ATTEMPTS ? {} : { failed: [{ path: `thread ${threadId}`, reason: rendered.error.message }] };
+    return { apply: (carried) => withRetry(carried, threadId, { attempts, reason: rendered.error.message }), counted: { failed: 1 }, notes };
   }
-  if (rendered.value.kind === 'empty') return { apply: (carried) => carried, counted: { skipped: 1 }, notes: {} };
+  if (rendered.value.kind === 'empty') return { apply: (carried) => withoutRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
   const thread = rendered.value.thread;
   return {
-    apply: (carried) => recordThread(carried, threadId, thread),
+    apply: (carried) => withoutRetry(recordThread(carried, threadId, thread), threadId),
     counted: { converted: 1, skipped: thread.filesSkipped.length, failed: thread.filesFailed.length },
     notes: { skipped: thread.filesSkipped, failed: thread.filesFailed },
   };
@@ -352,6 +366,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
   const saved = await save(deps.files, statePath, finished, input.dryRun);
   if (!saved.ok) return saved;
   await writeIndexes(deps, input, finished);
-  await writeReport(deps, input, mailboxRoot(deps.kbRoot), MAILBOX_NAME, summary, notes);
-  return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary, notes });
+  const withAbandoned = { ...notes, givenUp: abandonedThreads(finished).map((entry) => ({ path: `thread ${entry.threadId}`, reason: entry.reason })) };
+  await writeReport(deps, input, mailboxRoot(deps.kbRoot), MAILBOX_NAME, summary, withAbandoned);
+  return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary, notes: withAbandoned });
 };

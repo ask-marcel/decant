@@ -1,5 +1,6 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
+import { MAX_CONVERSION_ATTEMPTS } from './worklist.ts';
 
 // What a mailbox run leaves behind: a cursor per folder, what every conversation produced, and the
 // files already fetched, so a re-run converts nothing it has seen and a stop loses one thread.
@@ -61,6 +62,12 @@ export const STATE_VERSION = 2;
 // cheaper mistake: a missed merge is a second folder, a changed one is a moved tree.
 export type ConversationRecord = { readonly threadId: string; readonly root: string };
 
+// One thread the run could not write, and how many runs have tried. Only the id is kept: everything
+// a render needs is rebuilt from the conversations, which are recorded whether the render worked or
+// not. Without this record a failure disappears, because the folder cursors moved on when the thread
+// was swept and a delta only ever reports what changed since.
+export type RetryRecord = { readonly attempts: number; readonly reason: string };
+
 export type MailboxState = {
   readonly version: typeof STATE_VERSION;
   readonly source: { readonly kind: 'mailbox'; readonly id: string; readonly name: string };
@@ -71,6 +78,9 @@ export type MailboxState = {
   readonly linked: Readonly<Record<string, LinkedRecord>>;
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
   readonly pending: ReadonlyArray<string>;
+  // Additive, so `STATE_VERSION` stays where it is: a file written before this loads with an empty
+  // ledger, which is what it means, and bumping would cost a full mailbox re-sweep for nothing.
+  readonly retry: Readonly<Record<string, RetryRecord>>;
 };
 
 export type MailStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -88,6 +98,7 @@ export const emptyMailboxState = (): MailboxState => ({
   linked: {},
   attachments: {},
   pending: [],
+  retry: {},
 });
 
 export const serializeMailboxState = (state: MailboxState): string => `${JSON.stringify(state, undefined, 2)}\n`;
@@ -143,6 +154,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     linked: mapOf(raw['linked'], (entry) => ({ paths: stringList(entry['paths']) })),
     attachments: mapOf(raw['attachments'], attachmentOf),
     pending: stringList(raw['pending']),
+    retry: mapOf(raw['retry'], (entry) => ({ attempts: typeof entry['attempts'] === 'number' ? entry['attempts'] : 0, reason: readString(entry, 'reason') ?? '' })),
   });
 };
 
@@ -168,6 +180,32 @@ export const withLinked = (state: MailboxState, key: string, record: LinkedRecor
 export const withAttachment = (state: MailboxState, hash: string, record: AttachmentRecord): MailboxState => ({ ...state, attachments: { ...state.attachments, [hash]: record } });
 
 export const withPending = (state: MailboxState, pending: ReadonlyArray<string>): MailboxState => ({ ...state, pending });
+
+export const withRetry = (state: MailboxState, threadId: string, record: RetryRecord): MailboxState => ({ ...state, retry: { ...state.retry, [threadId]: record } });
+
+export const withoutRetry = (state: MailboxState, threadId: string): MailboxState => ({
+  ...state,
+  retry: Object.fromEntries(Object.entries(state.retry).filter(([id]) => id !== threadId)),
+});
+
+// What the queue owes on top of what the sweep found. A thread the sweep queued for itself is being
+// written from the messages the mailbox holds now, so the older attempt it remembers has nothing left
+// to answer for: it is dropped rather than counted, which is also what lets a thread that gains a
+// reply start its count over.
+export const retriedThreads = (state: MailboxState, queued: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const fresh = new Set(queued);
+  return Object.entries(state.retry)
+    .filter(([id, record]) => !fresh.has(id) && record.attempts < MAX_CONVERSION_ATTEMPTS)
+    .map(([id]) => id);
+};
+
+// Read off the ledger rather than off this run's work, because a thread out of tries is precisely one
+// this run did nothing about. Naming it every run is the point: it is the only thing standing between
+// a conversation nobody can write and a conversation nobody knows about.
+export const abandonedThreads = (state: MailboxState): ReadonlyArray<{ readonly threadId: string; readonly reason: string }> =>
+  Object.entries(state.retry)
+    .filter(([, record]) => record.attempts >= MAX_CONVERSION_ATTEMPTS)
+    .map(([threadId, record]) => ({ threadId, reason: record.reason }));
 
 // Every conversation resolved into one thread. Derived rather than stored beside the thread, so
 // there is one place a conversation's thread is written and no second copy to fall out of step.

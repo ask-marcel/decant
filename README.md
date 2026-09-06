@@ -350,6 +350,11 @@ to eleven recipients.
 writes the counts and the line "Nothing was left behind." A file left out says which kind it was,
 a `.mp4` this tool does not read, or that its name had no extension so nothing could tell.
 
+A conversation that could not be written is remembered and rendered again on the next run, the same
+three tries a SharePoint document gets, and named under the same two headings: the one that promises
+another run, then the one that says there will not be another. A reply arriving on a thread that had
+run out of tries starts it over.
+
 A first mailbox run is slow: Outlook hands back changes ten messages at a time and there is no way
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
 are cheap, reading only what changed. `--since` narrows what gets *written*, not what gets swept.

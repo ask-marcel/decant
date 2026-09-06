@@ -4,6 +4,7 @@ import {
   emptyMailboxState,
   needsRender,
   parseMailboxState,
+  retriedThreads,
   serializeMailboxState,
   threadOfConversation,
   withAttachment,
@@ -11,7 +12,9 @@ import {
   withFolderCursor,
   withLinked,
   withPending,
+  withRetry,
   withThread,
+  withoutRetry,
 } from './mail-state.ts';
 
 const thread = {
@@ -36,6 +39,7 @@ describe('remembering where a mailbox sync got to', () => {
       linked: {},
       attachments: {},
       pending: [],
+      retry: {},
     });
   });
 
@@ -179,5 +183,49 @@ describe('deciding whether a conversation has to be written again', () => {
     expect(needsRender(state, 'conv-1', ['m1', 'm2'])).toBe(false);
     expect(needsRender(state, 'conv-1', ['m2'])).toBe(false);
     expect(needsRender(state, 'conv-1', [])).toBe(false);
+  });
+});
+
+describe('remembering a conversation the run could not write', () => {
+  const failed = { attempts: 1, reason: 'permanent: thread refused' };
+
+  it('a state file written before failed threads were remembered loads with an empty ledger', () => {
+    const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox' } });
+
+    expect(parsed.ok && parsed.value.retry).toEqual({});
+  });
+
+  it('what one run remembers about a failed thread, the next run reads back unchanged', () => {
+    const state = withRetry(emptyMailboxState(), 'd9f4e0a3c1', failed);
+
+    expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
+  });
+
+  it('a remembered failure written with nothing usable in it loads as a first try with no reason', () => {
+    const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox' }, retry: { d9f4e0a3c1: { attempts: 'lots' } } });
+
+    expect(parsed.ok && parsed.value.retry['d9f4e0a3c1']).toEqual({ attempts: 0, reason: '' });
+  });
+
+  it('a thread remembered as failed is dropped once it renders', () => {
+    expect(withoutRetry(withRetry(emptyMailboxState(), 'd9f4e0a3c1', failed), 'd9f4e0a3c1').retry).toEqual({});
+  });
+
+  it('a thread nothing failed on leaves the ledger untouched', () => {
+    const remembered = withRetry(emptyMailboxState(), 'd9f4e0a3c1', failed);
+
+    expect(withoutRetry(remembered, 'other')).toEqual(remembered);
+  });
+
+  it('a thread that failed last run is queued again although the sweep found nothing for it', () => {
+    expect(retriedThreads(withRetry(emptyMailboxState(), 'd9f4e0a3c1', failed), [])).toEqual(['d9f4e0a3c1']);
+  });
+
+  it('a thread the sweep queued again drops what an earlier run remembered about it', () => {
+    expect(retriedThreads(withRetry(emptyMailboxState(), 'd9f4e0a3c1', failed), ['d9f4e0a3c1'])).toEqual([]);
+  });
+
+  it('a thread that has failed three times is left alone', () => {
+    expect(retriedThreads(withRetry(emptyMailboxState(), 'd9f4e0a3c1', { attempts: 3, reason: 'permanent: thread refused' }), [])).toEqual([]);
   });
 });
