@@ -1,4 +1,6 @@
 import type { PickerRow } from '../domain/picker.ts';
+import type { SourceKind } from '../domain/source-kind.ts';
+import { sourceKindOf } from '../domain/source-kind.ts';
 import type { RunSummary } from '../use-cases/sync-site.ts';
 
 const files = (count: number): string => (count === 1 ? '1 file' : `${count} files`);
@@ -9,11 +11,35 @@ const hint = (row: PickerRow): string => (row.hint === undefined ? '' : `  [${ro
 
 const line = (row: PickerRow, index: number): string => `${String(index + 1).padStart(3)}) ${row.name}${hint(row)}  (${mark(row)})`;
 
+const HEADINGS: Readonly<Record<SourceKind, string>> = {
+  site: 'SharePoint sites:',
+  loop: 'Loop workspaces:',
+  onedrive: 'OneDrive:',
+};
+
+// A heading is opened whenever the kind changes, so a kind nobody has never gets an empty one. The
+// rows arrive already ordered by kind (`orderByKind`, applied where the picker and the choice share
+// one array), which is what keeps this to a single pass and the numbering to a single run.
+const headed = (rows: ReadonlyArray<PickerRow>): ReadonlyArray<string> => {
+  const lines: string[] = [];
+  let open: SourceKind | undefined;
+  for (const [index, row] of rows.entries()) {
+    const kind = sourceKindOf(row.webUrl);
+    if (kind !== open) {
+      if (open !== undefined) lines.push('');
+      lines.push(HEADINGS[kind]);
+      open = kind;
+    }
+    lines.push(line(row, index));
+  }
+  return lines;
+};
+
 export const renderSitePicker = (rows: ReadonlyArray<PickerRow>, mailbox: PickerRow): string =>
   [
-    'SharePoint sites you can read:',
+    'Sources you can read:',
     '',
-    ...rows.map(line),
+    ...headed(rows),
     '',
     `  m) My mailbox  (${mark(mailbox)})`,
     '',

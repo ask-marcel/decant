@@ -1,5 +1,6 @@
 import type { PickerRow, Selection, SyncedMark } from '../domain/picker.ts';
 import { annotate, parseSelection } from '../domain/picker.ts';
+import { orderByKind } from '../domain/source-kind.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { SiteRef } from '../domain/site-state.ts';
@@ -168,7 +169,11 @@ type Picked = { readonly chosen: Chosen; readonly fromCache: boolean };
 const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<Picked, StepError>> => {
   const listing = await listedSites(deps, input);
   if (!listing.ok) return listing;
-  const { sites, fromCache } = listing.value;
+  const { fromCache } = listing.value;
+  // Ordered once, here, because this same array is both what the picker draws and what a chosen
+  // number indexes into. Sorting it anywhere else would let the two disagree, and a listing that
+  // shows one source against a number while picking another is worse than an unsorted one.
+  const sites = orderByKind(listing.value.sites);
   const marks = await syncedMarks(deps);
   deps.prompt.show(renderSitePicker(annotate(sites, marks), annotate([{ id: MAILBOX_ID, name: MAILBOX_NAME }], marks)[0] ?? { id: MAILBOX_ID, name: MAILBOX_NAME, webUrl: '' }));
   const chosen = parseSelection(await deps.prompt.ask('Source:'), sites.length);

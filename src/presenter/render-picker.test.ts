@@ -17,6 +17,27 @@ describe('showing the operator what there is to sync', () => {
     expect(rendered).toContain('  2) Direction  (new)');
   });
 
+  it('each kind of source is headed, and the numbers run straight through them', () => {
+    const mixed = [
+      { id: 'a', name: 'Direction', webUrl: 'https://tenant.sharepoint.com/sites/Direction' },
+      { id: 'b', name: 'Loop - Direction', webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_one' },
+      { id: 'c', name: 'jane.doe@example.com', webUrl: 'https://tenant-my.sharepoint.com/personal/jane' },
+    ];
+
+    const rendered = renderSitePicker(mixed, mailbox);
+
+    expect(rendered).toContain('SharePoint sites:\n  1) Direction  (new)');
+    expect(rendered).toContain('Loop workspaces:\n  2) Loop - Direction  (new)');
+    expect(rendered).toContain('OneDrive:\n  3) jane.doe@example.com  (new)');
+  });
+
+  it('a kind nobody has gets no heading of its own', () => {
+    const rendered = renderSitePicker([{ id: 'a', name: 'Direction', webUrl: 'https://tenant.sharepoint.com/sites/Direction' }], mailbox);
+
+    expect(rendered).not.toContain('Loop workspaces');
+    expect(rendered).not.toContain('OneDrive');
+  });
+
   it('the site picker says that every site can be taken at once', () => {
     expect(renderSitePicker(rows, mailbox)).toContain('all');
   });

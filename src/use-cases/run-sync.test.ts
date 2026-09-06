@@ -176,6 +176,17 @@ describe('choosing what to sync', () => {
     expect(prompt.asked).toEqual(['Source:']);
   });
 
+  it('the number shown against a source is the one that picks it, once the listing is grouped', async () => {
+    const mixed = [
+      { id: 'drive,1,1', name: 'My files', webUrl: 'https://tenant-my.sharepoint.com/personal/jane' },
+      { id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/contoso' },
+    ];
+    const { calls, prompt } = await run(['2', 'all'], {}, { reader: { sites: mixed } });
+
+    expect(prompt.shown.join('\n')).toContain('  2) My files');
+    expect(calls.map((call) => call.site.name)).toEqual(['My files']);
+  });
+
   it('every site is reported as it finishes, not only once the whole run is over', async () => {
     const { prompt } = await run(['all']);
 
