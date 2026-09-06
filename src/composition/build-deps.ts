@@ -3,6 +3,7 @@ import type { SiteRef } from '../domain/site-state.ts';
 import { createSystemClock } from '../infra/clock-system.ts';
 import type { MarcelApi, MarcelCommand } from '../infra/drive-reader-marcel.ts';
 import { createDriveReaderFromApi, createMarcelCall } from '../infra/drive-reader-marcel.ts';
+import { createGroupReaderFromCall } from '../infra/group-reader-marcel.ts';
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
 import { createWinstonLogger } from '../infra/logger.ts';
@@ -23,6 +24,7 @@ import type { Prompt } from '../use-cases/ports/prompt.ts';
 import { createRunSync } from '../use-cases/run-sync.ts';
 import type { RunSync } from '../use-cases/run-sync.ts';
 import { createRenderThread } from '../use-cases/render-thread.ts';
+import { createSyncGroup } from '../use-cases/sync-group.ts';
 import { createSyncMailbox } from '../use-cases/sync-mailbox.ts';
 import { createWriteGlobalReport } from '../use-cases/write-global-report.ts';
 import { createSyncSite, resolveSite } from '../use-cases/sync-site.ts';
@@ -107,12 +109,43 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const mailboxRoot = `${config.kbRoot}/Mailbox`;
   const renderThread = createRenderThread({ reader: mail, drive: reader, files, convertAttachment, convertFile, clock, logger, mailboxRoot, timezone: config.timezone });
   const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot });
+  // A group inbox reads through its own commands but renders through the same path, so it gets the
+  // same converters with the group reader underneath them, and a renderer per group because each
+  // one writes into its own folder.
+  const group = createGroupReaderFromCall(createMarcelCall(api));
+  const convertGroupAttachment = createConvertAttachment({ reader: group, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown });
+  const renderGroupThreadFor = (root: string): ReturnType<typeof createRenderThread> =>
+    createRenderThread({
+      reader: group,
+      drive: reader,
+      files,
+      convertAttachment: convertGroupAttachment,
+      convertFile,
+      clock,
+      logger,
+      mailboxRoot: root,
+      timezone: config.timezone,
+    });
+  const syncGroup = createSyncGroup({ reader: group, files, renderThreadFor: renderGroupThreadFor, clock, logger, progress, kbRoot: config.kbRoot });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
   // expression as never executed, so spreading this call out reads as a third of the file going
   // uncovered. See the journal entry for the same trap in `progress-bar.ts`.
   const writeGlobalReport = createWriteGlobalReport({ files, clock, logger, listSyncedSources, kbRoot: config.kbRoot });
-  const runSync = createRunSync({ reader, prompt, logger, syncSite, listSyncedSources, savedDrives, syncMailbox, cachedSites, rememberSites, writeGlobalReport });
+  const runSync = createRunSync({
+    reader,
+    prompt,
+    logger,
+    syncSite,
+    listSyncedSources,
+    savedDrives,
+    syncMailbox,
+    syncGroup,
+    groups: group,
+    cachedSites,
+    rememberSites,
+    writeGlobalReport,
+  });
   return { logger, runSync };
 };

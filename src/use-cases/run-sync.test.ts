@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { ok } from '../domain/result.ts';
+import { err, ok } from '../domain/result.ts';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import type { DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
@@ -35,11 +35,14 @@ const run = async (
     synced?: ReadonlyArray<SyncedSource>;
     savedDrives?: ReadonlyArray<{ id: string; name: string }>;
     cached?: SiteCache;
+    groups?: ReadonlyArray<{ id: string; name: string; mail: string }>;
+    failGroups?: boolean;
     reportPath?: string;
     summary?: RunSummary;
   } = {}
 ): Promise<{
   calls: SyncSiteInput[];
+  groupRuns: string[];
   mailboxRuns: SyncMailboxInput[];
   reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }>;
   prompt: PromptFake;
@@ -53,6 +56,7 @@ const run = async (
   reader: ReturnType<typeof createDriveReaderFake>;
 }> => {
   const calls: SyncSiteInput[] = [];
+  const groupRuns: string[] = [];
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
   const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }> = [];
@@ -61,6 +65,11 @@ const run = async (
   const reader = createDriveReaderFake({ sites, drives, ...seeds.reader });
   const runSync = createRunSync({
     reader,
+    syncGroup: async (input) => {
+      groupRuns.push(input.group.name);
+      return ok({ ...SOURCE_RUN, id: input.group.id, source: input.group.name });
+    },
+    groups: { listGroups: async () => (seeds.failGroups === true ? err({ kind: 'permanent' as const, message: 'ErrorAccessDenied' }) : ok(seeds.groups ?? [])) },
     cachedSites: async () => seeds.cached,
     rememberSites: async (listed) => {
       remembered.push(listed);
@@ -85,6 +94,7 @@ const run = async (
   const result = await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, concurrency: 4, dryRun: false, ...over });
   return {
     calls,
+    groupRuns,
     mailboxRuns,
     reported,
     prompt,
@@ -159,6 +169,75 @@ describe('choosing what to sync', () => {
     const { calls } = await run(['1', '1,2']);
 
     expect(calls[0]?.drives).toEqual(drives);
+  });
+
+  it('the group inboxes are offered under the sites, and a number below them picks one', async () => {
+    const { groupRuns, prompt, logger } = await run(['3'], {}, { groups: [{ id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' }] });
+
+    expect(prompt.shown.join('\n')).toContain('Group inboxes:\n  3) MOOV Leadership Team  (new)');
+    expect(groupRuns).toEqual(['MOOV Leadership Team']);
+    expect(prompt.shown.join('\n')).toContain('MOOV Leadership Team (group inbox): 2 converted');
+    expect(logger.calls.some((entry) => entry.event === 'group.started')).toBe(true);
+  });
+
+  it('a site and a group taken together are both synced, and the site is not asked about its libraries', async () => {
+    const { calls, groupRuns, prompt } = await run(['1,3'], {}, { groups: [{ id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' }] });
+
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
+    expect(groupRuns).toEqual(['MOOV Leadership Team']);
+    expect(prompt.asked).toEqual(['Source:']);
+  });
+
+  it('a group named outright is synced without drawing the picker, by its id or its address', async () => {
+    const groups = [{ id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' }];
+    const byId = await run([], { groupId: '0d3b-group' }, { groups });
+    const byMail = await run([], { groupId: 'MOOVLeadershipTeam@example.com' }, { groups });
+
+    expect(byId.groupRuns).toEqual(['MOOV Leadership Team']);
+    expect(byMail.groupRuns).toEqual(['MOOV Leadership Team']);
+    expect(byId.prompt.asked).toEqual([]);
+  });
+
+  it('a group you do not belong to is refused by name rather than syncing something else', async () => {
+    const { ok: succeeded, step, error } = await run([], { groupId: 'support@moovlogistics.com' }, { groups: [] });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('findGroup');
+    expect(error).toBe('no group you belong to is support@moovlogistics.com');
+  });
+
+  it('a named group whose listing is refused stops the run and names the step, rather than syncing nothing', async () => {
+    const { ok: succeeded, step, error } = await run([], { groupId: '0d3b-group' }, { failGroups: true });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('listGroups');
+    expect(error).toBe('ErrorAccessDenied');
+  });
+
+  it('a picker drawn while the group listing is refused still offers the sites, and says why it is short', async () => {
+    const { calls, prompt, logger } = await run(['1', 'all'], {}, { failGroups: true });
+
+    expect(prompt.shown.join('\n')).not.toContain('Group inboxes:');
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
+    expect(logger.calls.some((entry) => entry.event === 'groups.unlisted')).toBe(true);
+  });
+
+  it('an update refreshes the group inboxes already in the knowledge base, alongside the sites', async () => {
+    const { groupRuns } = await run(
+      [],
+      { command: 'update' },
+      { synced: [{ kind: 'group', id: '0d3b-group', name: 'MOOV Leadership Team', lastRun: '2026-09-06T09:00:00Z', fileCount: 13 }] }
+    );
+
+    expect(groupRuns).toEqual(['MOOV Leadership Team']);
+  });
+
+  it('a group listing that fails costs the group inboxes and not the picker', async () => {
+    const { calls, prompt, logger } = await run(['1', 'all'], {}, { groups: undefined });
+
+    expect(prompt.shown.join('\n')).not.toContain('Group inboxes:');
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
+    expect(logger.calls.every((entry) => entry.event !== 'groups.unlisted')).toBe(true);
   });
 
   it('choosing every site syncs each one, taking every library in each', async () => {
@@ -348,6 +427,8 @@ describe('when the knowledge base itself cannot be read', () => {
     const prompt = createPromptFake(['1', '1']);
     const runSync = createRunSync({
       writeGlobalReport: async () => undefined,
+      syncGroup: async () => ok(SOURCE_RUN),
+      groups: { listGroups: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -371,6 +452,8 @@ describe('when the knowledge base itself cannot be read', () => {
   it('a refresh over an unreadable knowledge base stops rather than syncing nothing quietly', async () => {
     const runSync = createRunSync({
       writeGlobalReport: async () => undefined,
+      syncGroup: async () => ok(SOURCE_RUN),
+      groups: { listGroups: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -416,6 +499,8 @@ describe('when one site in a refresh fails', () => {
     ];
     const calls: SyncSiteInput[] = [];
     const runSync = createRunSync({
+      syncGroup: async () => ok(SOURCE_RUN),
+      groups: { listGroups: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -465,7 +550,7 @@ describe('stopping with the step and reason named', () => {
     expect(succeeded).toBe(false);
     expect(step).toBe('pickSite');
     expect(cause).toBe('bad-choice');
-    expect(error).toBe('choose at least one site');
+    expect(error).toBe('choose at least one source');
   });
 
   it('a source answer nobody offered names the pickSite step', async () => {
@@ -558,6 +643,8 @@ describe('when a source run fails after it began', () => {
   it('a mailbox run that fails is not reported as a summary', async () => {
     const prompt = createPromptFake();
     const runSync = createRunSync({
+      syncGroup: async () => ok(SOURCE_RUN),
+      groups: { listGroups: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -583,6 +670,8 @@ describe('when a source run fails after it began', () => {
       { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 },
     ];
     const runSync = createRunSync({
+      syncGroup: async () => ok(SOURCE_RUN),
+      groups: { listGroups: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -640,6 +729,8 @@ describe('pointing a reader at the report a run leaves behind', () => {
     const reported: Array<{ ran: ReadonlyArray<SourceRun>; stopped?: string }> = [];
     let started = 0;
     const runSync = createRunSync({
+      syncGroup: async () => ok(SOURCE_RUN),
+      groups: { listGroups: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -669,6 +760,8 @@ describe('pointing a reader at the report a run leaves behind', () => {
   it('a run that fails on its very first source reports nothing, since nothing finished', async () => {
     const reported: Array<{ ran: ReadonlyArray<SourceRun> }> = [];
     const runSync = createRunSync({
+      syncGroup: async () => ok(SOURCE_RUN),
+      groups: { listGroups: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),

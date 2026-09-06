@@ -53,11 +53,22 @@ const run = async (
     outcome?: (input: RenderThreadInput) => RenderThreadOutcome;
     failThread?: boolean;
   } = {}
-): Promise<{ summary: RunSummary; notes: RunNotes; files: FilesFake; logger: LoggerFake; progress: ProgressFake; asked: RenderThreadInput[]; ok: boolean; error?: StepError }> => {
+): Promise<{
+  summary: RunSummary;
+  notes: RunNotes;
+  files: FilesFake;
+  logger: LoggerFake;
+  progress: ProgressFake;
+  asked: RenderThreadInput[];
+  roots: string[];
+  ok: boolean;
+  error?: StepError;
+}> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
   const progress = createProgressFake();
   const asked: RenderThreadInput[] = [];
+  const roots: string[] = [];
   const syncGroup = createSyncGroup({
     reader: createGroupReaderFake({ threads: { '0d3b-group': [thread()] }, ...seeds.reader }),
     files,
@@ -65,8 +76,9 @@ const run = async (
     progress,
     clock: createClockFake(),
     kbRoot: 'kb',
-    renderThread: async (input) => {
+    renderThreadFor: (root) => async (input) => {
       asked.push(input);
+      roots.push(root);
       if (seeds.failThread === true) return err({ kind: 'permanent' as const, message: 'thread refused' });
       return ok(seeds.outcome === undefined ? rendered() : seeds.outcome(input));
     },
@@ -79,6 +91,7 @@ const run = async (
     logger,
     progress,
     asked,
+    roots,
     ok: result.ok,
     error: result.ok ? undefined : result.error,
   };
@@ -96,9 +109,10 @@ describe('mirroring a group inbox into the knowledge base', () => {
   });
 
   it('a group is filed apart from the SharePoint site of the same name', async () => {
-    const { files } = await run();
+    const { files, roots } = await run();
 
     expect(files.written.has(STATE_PATH)).toBe(true);
+    expect(roots).toEqual(['kb/MOOV Leadership Team (group inbox)']);
   });
 
   it('a second run over an unchanged group writes nothing, since every thread is already held', async () => {
