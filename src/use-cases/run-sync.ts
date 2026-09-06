@@ -1,6 +1,6 @@
 import type { PickerRow, Selection, SyncedMark } from '../domain/picker.ts';
 import { annotate, parseSelection } from '../domain/picker.ts';
-import { orderByKind } from '../domain/source-kind.ts';
+import { orderByKind } from '../domain/address-kind.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { SiteRef } from '../domain/site-state.ts';
