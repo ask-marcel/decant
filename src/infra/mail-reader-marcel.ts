@@ -10,15 +10,15 @@ import type { MarcelCall } from './drive-reader-marcel.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
-const readString = (value: unknown, key: string): string | undefined => {
+export const readString = (value: unknown, key: string): string | undefined => {
   if (!isRecord(value)) return undefined;
   const found = value[key];
   return typeof found === 'string' ? found : undefined;
 };
 
-const listOf = (value: unknown): ReadonlyArray<unknown> => (isRecord(value) && Array.isArray(value['value']) ? value['value'] : []);
+export const listOf = (value: unknown): ReadonlyArray<unknown> => (isRecord(value) && Array.isArray(value['value']) ? value['value'] : []);
 
-const toBytes = (value: unknown): Result<Uint8Array, MailReaderError> => {
+export const toBytes = (value: unknown): Result<Uint8Array, MailReaderError> => {
   const base64 = readString(value, 'base64');
   if (base64 !== undefined) return ok(new Uint8Array(Buffer.from(base64, 'base64')));
   const text = readString(value, 'text');
@@ -45,7 +45,7 @@ const KIND_BY_TYPE: Readonly<Partial<Record<string, AttachmentKind>>> = {
 // file: that is the common case and the only one carrying bytes.
 const kindOf = (value: unknown): AttachmentKind => KIND_BY_TYPE[readString(value, '@odata.type') ?? ''] ?? 'file';
 
-const toAttachment = (value: unknown): ReadonlyArray<MailAttachment> => {
+export const toAttachment = (value: unknown): ReadonlyArray<MailAttachment> => {
   const id = readString(value, 'id');
   const name = readString(value, 'name');
   if (id === undefined || name === undefined || !isRecord(value)) return [];
