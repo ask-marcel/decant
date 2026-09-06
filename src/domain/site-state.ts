@@ -1,14 +1,17 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
-import type { Manifest, ManifestEntry, WorkItem } from './worklist.ts';
+import type { Manifest, ManifestEntry, RetryEntry, RetryLedger, WorkItem } from './worklist.ts';
 
 // What one run leaves behind so the next one, or a restart after a stop, picks up exactly where it
-// left off: the cursor Graph gave us, the queue still to process, and what every item produced.
+// left off: the cursor Graph gave us, the queue still to process, what every item produced, and what
+// could not be read. The last of those is not derivable from the others: the cursor has moved past a
+// failed item, and a delta only reports what changed, so nothing but this record brings it back.
 export type DriveState = {
   readonly name: string;
   readonly deltaLink?: string;
   readonly pending: ReadonlyArray<WorkItem>;
   readonly items: Manifest;
+  readonly retry: RetryLedger;
 };
 
 export type SiteRef = { readonly id: string; readonly name: string; readonly webUrl: string };
@@ -64,13 +67,18 @@ const entryOf = (entry: Record<string, unknown>): ManifestEntry => ({
 // by the JSON parse before it reaches here.
 const parsePending = (raw: unknown): ReadonlyArray<WorkItem> => (Array.isArray(raw) ? (raw.filter(isRecord) as unknown as ReadonlyArray<WorkItem>) : []);
 
+// Trusted as written, for the same reason the queue above is. A file from before failures were
+// remembered carries no ledger at all and loads with an empty one, which is what it means.
+const parseRetry = (raw: unknown): RetryLedger => (isRecord(raw) ? (Object.fromEntries(Object.entries(raw).filter(([, entry]) => isRecord(entry))) as unknown as RetryLedger) : {});
+
 const parseDrive = (raw: unknown): DriveState => {
-  if (!isRecord(raw)) return { name: '', pending: [], items: {} };
+  if (!isRecord(raw)) return { name: '', pending: [], items: {}, retry: {} };
   return {
     name: readString(raw, 'name') ?? '',
     deltaLink: readString(raw, 'deltaLink'),
     pending: parsePending(raw['pending']),
     items: parseManifest(raw['items']),
+    retry: parseRetry(raw['retry']),
   };
 };
 
@@ -101,9 +109,18 @@ export const withDrive = (state: SiteState, driveId: string, drive: DriveState):
 
 export const recordItem = (drive: DriveState, itemId: string, entry: ManifestEntry): DriveState => ({ ...drive, items: { ...drive.items, [itemId]: entry } });
 
+// Forgotten whole: an item the source no longer has owes nothing, neither an output to keep track of
+// nor a conversion to try again.
 export const forgetItem = (drive: DriveState, itemId: string): DriveState => {
   const remaining = Object.entries(drive.items).filter(([id]) => id !== itemId);
-  return { ...drive, items: Object.fromEntries(remaining) };
+  return forgetFailure({ ...drive, items: Object.fromEntries(remaining) }, itemId);
+};
+
+export const rememberFailure = (drive: DriveState, entry: RetryEntry): DriveState => ({ ...drive, retry: { ...drive.retry, [entry.item.id]: entry } });
+
+export const forgetFailure = (drive: DriveState, itemId: string): DriveState => {
+  const remaining = Object.entries(drive.retry).filter(([id]) => id !== itemId);
+  return { ...drive, retry: Object.fromEntries(remaining) };
 };
 
 export const renameItem = (drive: DriveState, itemId: string, path: string, outputs: ReadonlyArray<string>): DriveState => {

@@ -3,7 +3,7 @@ import type { DriveItem } from '../domain/drive-item.ts';
 import { serializeSiteState } from '../domain/site-state.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
-import type { DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
+import type { DriveReaderFake, DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
 import type { FilesFake, FilesFakeSeed } from '../test-helpers/files-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
@@ -33,7 +33,7 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 
 const run = async (
   seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; drives?: typeof drives } = {}
-): Promise<{ summary: RunSummary; files: FilesFake; logger: LoggerFake; progress: ProgressFake; ok: boolean }> => {
+): Promise<{ summary: RunSummary; files: FilesFake; logger: LoggerFake; progress: ProgressFake; reader: DriveReaderFake; ok: boolean }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
   const progress = createProgressFake();
@@ -55,13 +55,22 @@ const run = async (
     concurrency: seeds.concurrency ?? 1,
     dryRun: seeds.dryRun ?? false,
   });
-  return { summary: result.ok ? result.value.summary : ({} as RunSummary), files, logger, progress, ok: result.ok };
+  return { summary: result.ok ? result.value.summary : ({} as RunSummary), files, logger, progress, reader, ok: result.ok };
 };
 
 const stateAfter = (
   files: FilesFake
-): { drives: Record<string, { deltaLink?: string; pending: unknown[]; items: Record<string, { path: string; cTag: string; outputs: string[] }> }> } =>
-  JSON.parse(files.written.get(STATE_PATH) ?? '{}');
+): {
+  drives: Record<
+    string,
+    {
+      deltaLink?: string;
+      pending: unknown[];
+      items: Record<string, { path: string; cTag: string; outputs: string[] }>;
+      retry: Record<string, { attempts: number; reason: string }>;
+    }
+  >;
+} => JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
 const REPORT_PATH = 'kb/Espace Contoso/_sync-report.md';
 
@@ -107,7 +116,7 @@ describe('reporting what did not reach the knowledge base', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      drives: { 'b!one': { name: 'Documents', deltaLink: 'c1', pending: [], items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['x.md'] } } } },
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'c1', pending: [], items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['x.md'] } }, retry: {} } },
     });
     const { files } = await run({ files: { texts: { [STATE_PATH]: known } }, reader: { pages: [{ items: [item({ kind: 'deleted' })], skipped: 0, deltaLink: 'c2' }] } });
 
@@ -166,6 +175,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           deltaLink: 'c1',
           pending: [],
           items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md'] } },
+          retry: {},
         },
       },
     });
@@ -211,7 +221,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [{ kind: 'convert', item: item() }], items: {} } },
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [{ kind: 'convert', item: item() }], items: {}, retry: {} } },
     });
 
     const { summary, files, logger } = await run({ files: { texts: { [STATE_PATH]: halfDone } } });
@@ -239,6 +249,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           deltaLink: 'cursor-1',
           pending: [],
           items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md'] } },
+          retry: {},
         },
       },
     });
@@ -264,6 +275,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           deltaLink: 'cursor-1',
           pending: [],
           items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md'] } },
+          retry: {},
         },
       },
     });
@@ -324,6 +336,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
             renamed: { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/old.docx.md'] },
             gone: { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/gone.docx.md'] },
           },
+          retry: {},
         },
       },
     });
@@ -390,6 +403,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           deltaLink: 'cursor-1',
           pending: [],
           items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/old.docx.md'] } },
+          retry: {},
         },
       },
     });
@@ -414,6 +428,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           deltaLink: 'cursor-1',
           pending: [],
           items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/gone.docx.md'] } },
+          retry: {},
         },
       },
     });
@@ -600,7 +615,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [{ kind: 'convert', item: item() }], items: {} } },
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [{ kind: 'convert', item: item() }], items: {}, retry: {} } },
     });
     const { logger } = await run({ files: { texts: { [STATE_PATH]: halfDone } } });
     const resuming = logger.calls.find((call) => call.event === 'sync.resuming');
@@ -628,6 +643,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
           deltaLink: 'cursor-1',
           pending: [],
           items: { '01ABC': { path: 'old.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/old.docx.md'] } },
+          retry: {},
         },
       },
     });
@@ -651,6 +667,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
           deltaLink: 'cursor-1',
           pending: [],
           items: { '01ABC': { path: 'gone.docx', cTag: 'c1', outputs: ['kb/Espace Contoso/Documents/2026-05-12/gone.docx.md'] } },
+          retry: {},
         },
       },
     });
@@ -677,6 +694,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
             { kind: 'convert', item: item({ id: 'b', path: 'b.docx' }) },
           ],
           items: {},
+          retry: {},
         },
       },
     });
@@ -711,5 +729,64 @@ describe('a site name that collides with another site already on disk', () => {
     expect(files.written.get('kb/Team Site/.sync-state.json')).toBe(existingText);
     expect([...files.written.keys()].some((path) => path.startsWith('kb/Team Site-') && path.endsWith('.sync-state.json'))).toBe(true);
     expect(logger.calls.find((call) => call.event === 'sync.site-name-collision')?.meta).toEqual({ siteId: 'contoso,1,2', name: 'Team Site' });
+  });
+});
+
+describe('a document the source would not hand over', () => {
+  const APPENDIX = item({ name: 'appendix_9.1.pdf', path: 'Annexes/appendix_9.1.pdf' });
+  const REFUSED: DriveReaderSeed['failItems'] = { '01ABC': { kind: 'transient', message: 'gateway timeout' } };
+  // What the second run and every one after it sees: the cursor moved on when the first run swept, so
+  // Graph reports nothing at all. Only what the last run wrote down can bring the document back.
+  const NOTHING_CHANGED = { pages: [{ items: [], skipped: 0, deltaLink: 'cursor-2' }] };
+
+  const swept = async (): Promise<string> => {
+    const first = await run({ reader: { pages: [{ items: [APPENDIX], skipped: 0, deltaLink: 'cursor-1' }], failItems: REFUSED } });
+    return first.files.written.get(STATE_PATH) ?? '';
+  };
+
+  const again = async (carried: string, failing: boolean): Promise<Awaited<ReturnType<typeof run>>> =>
+    run({ files: { texts: { [STATE_PATH]: carried } }, reader: { ...NOTHING_CHANGED, ...(failing ? { failItems: REFUSED } : {}) } });
+
+  it('a document that could not be read is remembered against the run that failed it', async () => {
+    const first = await run({ reader: { pages: [{ items: [APPENDIX], skipped: 0, deltaLink: 'cursor-1' }], failItems: REFUSED } });
+
+    expect(first.summary).toMatchObject({ converted: 0, failed: 1 });
+    expect(stateAfter(first.files).drives['b!one']?.retry['01ABC']).toMatchObject({ attempts: 1, reason: 'transient: gateway timeout' });
+  });
+
+  it('a document that could not be read is converted on the next run, although the delta reports nothing', async () => {
+    const second = await again(await swept(), false);
+
+    expect(second.summary).toMatchObject({ converted: 1, failed: 0 });
+    expect(Object.keys(stateAfter(second.files).drives['b!one']?.items ?? {})).toEqual(['01ABC']);
+  });
+
+  it('a document that converts on its second try leaves nothing behind to try a third time', async () => {
+    const second = await again(await swept(), false);
+
+    expect(stateAfter(second.files).drives['b!one']?.retry).toEqual({});
+  });
+
+  it('a document that fails three runs running is left alone by the fourth', async () => {
+    const second = await again(await swept(), true);
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', true);
+    const fourth = await again(third.files.written.get(STATE_PATH) ?? '', true);
+
+    expect(third.summary).toMatchObject({ failed: 1 });
+    expect(fourth.summary).toMatchObject({ converted: 0, failed: 0 });
+    expect(fourth.reader.calls.some((call) => call.endsWith(':01ABC'))).toBe(false);
+    expect(stateAfter(fourth.files).drives['b!one']?.retry['01ABC']).toMatchObject({ attempts: 3 });
+  });
+
+  it('a document edited at the source after it was given up on is tried again from scratch', async () => {
+    const second = await again(await swept(), true);
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', true);
+    const edited = await run({
+      files: { texts: { [STATE_PATH]: third.files.written.get(STATE_PATH) ?? '' } },
+      reader: { pages: [{ items: [item({ ...APPENDIX, cTag: 'c2' })], skipped: 0, deltaLink: 'cursor-3' }] },
+    });
+
+    expect(edited.summary).toMatchObject({ converted: 1 });
+    expect(stateAfter(edited.files).drives['b!one']?.retry).toEqual({});
   });
 });

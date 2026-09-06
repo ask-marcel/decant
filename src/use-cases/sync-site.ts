@@ -4,9 +4,21 @@ import { archivePath, datedRoot, outputPrefix, recordedPrefix, remapOutputs } fr
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { DriveState, SiteRef, SiteState } from '../domain/site-state.ts';
-import { belongsToAnotherSite, emptySiteState, forgetItem, parseSiteState, recordItem, renameItem, serializeSiteState, siteIdHash, withDrive } from '../domain/site-state.ts';
+import {
+  belongsToAnotherSite,
+  emptySiteState,
+  forgetFailure,
+  forgetItem,
+  parseSiteState,
+  recordItem,
+  rememberFailure,
+  renameItem,
+  serializeSiteState,
+  siteIdHash,
+  withDrive,
+} from '../domain/site-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
-import { buildWorklist } from '../domain/worklist.ts';
+import { buildWorklist, forgetSwept, nextFailure } from '../domain/worklist.ts';
 import type { ReportNotes, ReportRun } from '../domain/report.ts';
 import { appendReportRun, hasSomethingToReport, skipReason } from '../domain/report.ts';
 import type { WorkItem } from '../domain/worklist.ts';
@@ -179,7 +191,7 @@ const syncDrive = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveS
 };
 
 const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, state: SiteState, statePath: string): Promise<Result<{ state: SiteState }, StepError>> => {
-  const known: DriveState = state.drives[drive.id] ?? { name: drive.name, pending: [], items: {} };
+  const known: DriveState = state.drives[drive.id] ?? { name: drive.name, pending: [], items: {}, retry: {} };
   if (known.pending.length > 0) {
     deps.logger.info('sync.resuming', { driveId: drive.id, pending: known.pending.length });
     return ok({ state });
@@ -187,7 +199,13 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
   const swept = await sweepDrive(deps.reader, drive.id, known.deltaLink);
   if (!swept.ok) return { ok: false, error: { step: 'enumerate', cause: swept.error.kind, message: swept.error.message } };
   deps.logger.info('sync.enumerated', { driveId: drive.id, items: swept.value.items.length, skipped: swept.value.skipped });
-  const queued = { ...known, name: drive.name, deltaLink: swept.value.deltaLink, pending: buildWorklist(swept.value.items, known.items) };
+  const queued = {
+    ...known,
+    name: drive.name,
+    deltaLink: swept.value.deltaLink,
+    pending: buildWorklist(swept.value.items, known.items, known.retry),
+    retry: forgetSwept(known.retry, swept.value.items),
+  };
   const next = withDrive(state, drive.id, queued);
   const saved = await save(deps.files, statePath, next, input.dryRun);
   return saved.ok ? ok({ state: next }) : saved;
@@ -278,10 +296,13 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   });
   if (outcome.kind === 'failed') {
     deps.logger.warn('convert.failed', { itemId: item.id, reason: outcome.reason });
-    return { update: (manifest) => manifest, counted: { failed: 1 }, notes: { failed: [{ path: item.path, reason: outcome.reason }] } };
+    const entry = nextFailure(driveState.retry[item.id], item, outcome.reason);
+    return { update: (manifest) => rememberFailure(manifest, entry), counted: { failed: 1 }, notes: { failed: [{ path: item.path, reason: outcome.reason }] } };
   }
   const outputs = outcome.kind === 'converted' ? outcome.outputs : [];
-  const update = (manifest: DriveState): DriveState => recordItem(manifest, item.id, { path: item.path, cTag: item.cTag, outputs });
+  // A conversion, and a decision to leave the file alone, both settle what an earlier failure was
+  // waiting on: the ledger entry goes with them.
+  const update = (manifest: DriveState): DriveState => forgetFailure(recordItem(manifest, item.id, { path: item.path, cTag: item.cTag, outputs }), item.id);
   if (outcome.kind === 'converted') {
     await archiveSuperseded(deps, input, drive, driveState.items[item.id]?.outputs ?? [], outputs);
     return { update, counted: { converted: 1 } };

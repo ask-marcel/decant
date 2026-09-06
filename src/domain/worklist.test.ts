@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { DriveItem } from './drive-item.ts';
-import { buildWorklist } from './worklist.ts';
+import type { RetryEntry } from './worklist.ts';
+import { buildWorklist, forgetSwept, nextFailure } from './worklist.ts';
 
 const file = (over: Partial<DriveItem> = {}): DriveItem => ({
   id: '01ABC',
@@ -79,5 +80,56 @@ describe('deciding what the next run has to do', () => {
     const items = [file({ id: 'b', path: 'b.docx' }), file({ id: 'a', path: 'a.docx' })];
 
     expect(buildWorklist(items, {}).map((work) => (work.kind === 'archive' ? work.itemId : work.item.id))).toEqual(['a', 'b']);
+  });
+});
+
+describe('bringing back a file whose conversion failed', () => {
+  const failed = (over: Partial<DriveItem> = {}, attempts = 1): RetryEntry => ({ item: file(over), attempts, reason: 'transient: gateway timeout' });
+
+  it('a file that failed last run is queued again although the sweep has nothing to say about it', () => {
+    expect(buildWorklist([], {}, { '01ABC': failed() })).toEqual([{ kind: 'convert', item: file() }]);
+  });
+
+  it('a file the sweep returned again is converted from what the sweep holds, not from the copy that failed', () => {
+    const edited = file({ cTag: 'c2' });
+
+    expect(buildWorklist([edited], {}, { '01ABC': failed() })).toEqual([{ kind: 'convert', item: edited }]);
+  });
+
+  it('a file deleted at the source is not retried, even with tries left', () => {
+    expect(buildWorklist([file({ kind: 'deleted' })], {}, { '01ABC': failed() })).toEqual([]);
+  });
+
+  it('a file that has failed three times is left alone', () => {
+    expect(buildWorklist([], {}, { '01ABC': failed({}, 3) })).toEqual([]);
+  });
+
+  it('a retried file takes its place in the queue by the day it last changed', () => {
+    const ledger = { b: failed({ id: 'b', path: 'b.docx', lastModified: '2026-05-02T00:00:00Z' }) };
+    const swept = [file({ id: 'c', path: 'c.docx', lastModified: '2026-05-03T00:00:00Z' }), file({ id: 'a', path: 'a.docx', lastModified: '2026-05-01T00:00:00Z' })];
+
+    expect(buildWorklist(swept, {}, ledger).map((work) => (work.kind === 'archive' ? work.itemId : work.item.id))).toEqual(['a', 'b', 'c']);
+  });
+
+  it('a second failure of the same version counts as a second try', () => {
+    expect(nextFailure(failed(), file(), 'transient: gateway timeout')).toEqual({ item: file(), attempts: 2, reason: 'transient: gateway timeout' });
+  });
+
+  it('a failure of a version edited since starts the count again', () => {
+    expect(nextFailure(failed({}, 2), file({ cTag: 'c2' }), 'permanent: locked').attempts).toBe(1);
+  });
+
+  it('a file failing for the first time is on its first try', () => {
+    expect(nextFailure(undefined, file(), 'permanent: locked').attempts).toBe(1);
+  });
+
+  it('an item the sweep returned is dropped from the ledger, whatever it decided about it', () => {
+    expect(forgetSwept({ '01ABC': failed() }, [file({ kind: 'deleted' })])).toEqual({});
+  });
+
+  it('an item the sweep said nothing about stays in the ledger', () => {
+    const ledger = { '01ABC': failed() };
+
+    expect(forgetSwept(ledger, [file({ id: 'other', path: 'other.docx' })])).toEqual(ledger);
   });
 });

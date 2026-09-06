@@ -3,9 +3,11 @@ import {
   belongsToAnotherSite,
   countSyncedItems,
   emptySiteState,
+  forgetFailure,
   forgetItem,
   parseSiteState,
   recordItem,
+  rememberFailure,
   renameItem,
   serializeSiteState,
   siteIdHash,
@@ -25,6 +27,7 @@ describe('remembering where a site sync got to', () => {
       deltaLink: 'https://graph.microsoft.com/v1.0/delta?$deltatoken=abc',
       pending: [],
       items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: ['Contrat.docx.md'] } },
+      retry: {},
     });
 
     expect(parseSiteState(JSON.parse(serializeSiteState(state)))).toEqual({ ok: true, value: state });
@@ -45,7 +48,7 @@ describe('remembering where a site sync got to', () => {
   it('a library entry missing its parts loads as an empty library rather than failing the run', () => {
     const parsed = parseSiteState({ source: { id: 'a', name: 'b' }, drives: { 'b!one': 'broken', 'b!two': { items: { '01': 'broken' } } } });
 
-    expect(parsed.ok && parsed.value.drives['b!one']).toEqual({ name: '', pending: [], items: {} });
+    expect(parsed.ok && parsed.value.drives['b!one']).toEqual({ name: '', pending: [], items: {}, retry: {} });
     expect(parsed.ok && parsed.value.drives['b!two']?.items).toEqual({});
   });
 
@@ -56,10 +59,11 @@ describe('remembering where a site sync got to', () => {
   });
 
   it('the file count the picker shows is the number of items across every library', () => {
-    const state = withDrive(withDrive(emptySiteState(site), 'b!one', { name: 'A', pending: [], items: { a: { path: 'a', cTag: 'c', outputs: [] } } }), 'b!two', {
+    const state = withDrive(withDrive(emptySiteState(site), 'b!one', { name: 'A', pending: [], items: { a: { path: 'a', cTag: 'c', outputs: [] } }, retry: {} }), 'b!two', {
       name: 'B',
       pending: [],
       items: { b: { path: 'b', cTag: 'c', outputs: [] }, c: { path: 'c', cTag: 'c', outputs: [] } },
+      retry: {},
     });
 
     expect(countSyncedItems(state)).toBe(3);
@@ -79,7 +83,7 @@ describe('remembering where a site sync got to', () => {
 });
 
 describe('recording what happened to one document', () => {
-  const drive = { name: 'Documents', pending: [], items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: ['Contrat.docx.md'] } } };
+  const drive = { name: 'Documents', pending: [], items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: ['Contrat.docx.md'] } }, retry: {} };
 
   it('a converted document is recorded with what it produced', () => {
     const updated = recordItem(drive, '01NEW', { path: 'Note.docx', cTag: 'c9', outputs: ['Note.docx.md'] });
@@ -99,5 +103,50 @@ describe('recording what happened to one document', () => {
 
   it('renaming something never recorded leaves the manifest untouched', () => {
     expect(renameItem(drive, '01OTHER', 'x', [])).toEqual(drive);
+  });
+});
+
+describe('remembering a document the run could not read', () => {
+  const item = {
+    id: '01ABC',
+    name: 'appendix_9.1.pdf',
+    kind: 'file' as const,
+    size: 4096,
+    path: 'Annexes/appendix_9.1.pdf',
+    lastModified: '2026-09-05T09:31:00Z',
+    cTag: 'c1',
+    webUrl: 'https://tenant.sharepoint.com/sites/X/appendix_9.1.pdf',
+  };
+  const drive = { name: 'Documents', pending: [], items: {}, retry: {} };
+  const failed = { item, attempts: 1, reason: 'transient: gateway timeout' };
+
+  it('a state file written before failures were remembered loads with an empty ledger', () => {
+    const parsed = parseSiteState({ source: { id: 'a', name: 'b' }, drives: { 'b!one': { name: 'Documents', items: {} } } });
+
+    expect(parsed.ok && parsed.value.drives['b!one']?.retry).toEqual({});
+  });
+
+  it('what one run remembers about a failure, the next run reads back unchanged', () => {
+    const state = withDrive(emptySiteState(site), 'b!one', rememberFailure(drive, failed));
+
+    expect(parseSiteState(JSON.parse(serializeSiteState(state)))).toEqual({ ok: true, value: state });
+  });
+
+  it('a failure remembered against a document is dropped once that document converts', () => {
+    expect(forgetFailure(rememberFailure(drive, failed), '01ABC').retry).toEqual({});
+  });
+
+  it('forgetting a document nothing failed on leaves the ledger untouched', () => {
+    const remembered = rememberFailure(drive, failed);
+
+    expect(forgetFailure(remembered, '01OTHER')).toEqual(remembered);
+  });
+
+  it('a document no longer at the source is forgotten from the ledger as well as the manifest', () => {
+    const both = rememberFailure(recordItem(drive, '01ABC', { path: 'Annexes/appendix_9.1.pdf', cTag: 'c1', outputs: [] }), failed);
+    const forgotten = forgetItem(both, '01ABC');
+
+    expect(forgotten.items).toEqual({});
+    expect(forgotten.retry).toEqual({});
   });
 });
