@@ -12,7 +12,7 @@ import type { SkipReason } from '../domain/report.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { Clock } from './ports/clock.ts';
-import type { DriveReader, DriveReaderError } from './ports/drive-reader.ts';
+import type { DriveReader, DriveReaderError, ItemRef } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import { placeImages } from './place-images.ts';
 import type { Logger } from './ports/logger.ts';
@@ -187,11 +187,17 @@ const withSlideText = async (context: Context, pdfPath: string): Promise<Convert
 
 // A PDF with a text layer yields it straight. One without (a scan) is read by OCR from the copy on
 // disk, and only when OCR finds nothing does the note stand in for the text.
-const pdfText = async (context: Context, rawPath: string, extracted: string): Promise<{ readonly body: string; readonly ocr?: string }> => {
-  if (extracted.trim().length > 0) return { body: extracted };
+// A scanned PDF holds pictures of its pages and no text at all, and OCR reads pictures rather than
+// PDFs: handing it the file itself only ever produced the note. So the pages are asked for and read
+// one by one, the same call and the same folder a document's diagrams already go through. The note
+// stays above them either way, because a reading of a scan is a reading and the file is the original.
+const pdfText = async (context: Context, ref: ItemRef, extracted: string): Promise<Result<{ readonly body: string; readonly paths: ReadonlyArray<string> }, FilesError>> => {
+  if (extracted.trim().length > 0) return ok({ body: extracted, paths: [] });
   saying(context, 'reading the pages');
-  const read = await context.deps.ocr.read(rawPath);
-  return read.ok && read.value.text.trim().length > 0 ? { body: read.value.text, ocr: read.value.label } : { body: SCANNED_PDF_NOTE };
+  const pages = await context.deps.reader.images(ref);
+  if (!pages.ok || pages.value.length === 0) return ok({ body: SCANNED_PDF_NOTE, paths: [] });
+  const placed = await placeImages(context.deps, context.dir, context.name, pages.value, (what) => saying(context, what));
+  return placed.ok ? ok({ body: `${SCANNED_PDF_NOTE}${placed.value.section}`, paths: placed.value.paths }) : placed;
 };
 
 const convertPdf = async (context: Context): Promise<ConvertOutcome> => {
@@ -205,10 +211,11 @@ const convertPdf = async (context: Context): Promise<ConvertOutcome> => {
   // case OCR is here for. The file is already on disk, so read its pages instead of giving up on it.
   const text = await context.deps.reader.markdown(ref);
   if (!text.ok && text.error.kind !== 'unrenderable') return failure(text.error);
-  const read = await pdfText(context, rawPath, text.ok ? text.value : '');
-  const stamp = { ...context.stamp, pdf: `./${context.name}`, ocr: read.ocr };
-  const written = await writeMarkdown(context, `${context.name}.md`, stamp, read.body);
-  return written.ok ? { kind: 'converted', outputs: [rawPath, ...written.value] } : failure(written.error);
+  const read = await pdfText(context, ref, text.ok ? text.value : '');
+  if (!read.ok) return failure(read.error);
+  const stamp = { ...context.stamp, pdf: `./${context.name}` };
+  const written = await writeMarkdown(context, `${context.name}.md`, stamp, read.value.body);
+  return written.ok ? { kind: 'converted', outputs: [rawPath, ...read.value.paths, ...written.value] } : failure(written.error);
 };
 
 const convertImage = async (context: Context): Promise<ConvertOutcome> => {

@@ -282,34 +282,73 @@ describe('converting one document out of a library', () => {
 
   it('a scanned PDF says so, so a reader knows to look at the pages rather than the text', async () => {
     const { files } = await run({ name: 'Scan.pdf', path: 'Scan.pdf' }, { reader: { markdown: { '01ABC': '' } } });
+    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md')).toContain('carries no text layer');
+    expect(written).toContain('carries no text layer');
+    expect(written).not.toContain('## Images');
   });
 
   it('a scanned PDF has its pages read by OCR when it carries no text layer', async () => {
-    const { files } = await run(
+    const { files, progress } = await run(
       { name: 'Scan.pdf', path: 'Scan.pdf' },
-      { reader: { markdown: { '01ABC': '' } }, ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf': 'Invoice total 1200 EUR' } } }
+      {
+        reader: { markdown: { '01ABC': '' }, images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png': 'Invoice total 1200 EUR' } },
+      }
     );
     const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
 
     expect(written).toContain('Invoice total 1200 EUR');
-    expect(written).toContain('ocr: rapidocr (latin)');
+    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png')).toBe(true);
+    expect(progress.details).toContainEqual({ label: 'Scan.pdf', what: 'reading picture 1/1' });
+  });
+
+  it('a scanned PDF whose page cannot be written is reported as failed, so no document claims to hold it', async () => {
+    const { outcome } = await run(
+      { name: 'Scan.pdf', path: 'Scan.pdf' },
+      {
+        reader: { markdown: { '01ABC': '' }, images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] } },
+        files: { failByteWritesMatching: '.media/' },
+      }
+    );
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'write-failed: cannot write kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png' });
   });
 
   it('a scanned PDF the source refuses to read as text still has its pages read by OCR', async () => {
     const { outcome, files } = await run(
       { name: 'Scan.pdf', path: 'Scan.pdf' },
       {
-        reader: { failMarkdown: { kind: 'unrenderable', message: 'pdf has no extractable text layer' } },
-        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf': 'Invoice total 1200 EUR' } },
+        reader: {
+          failMarkdown: { kind: 'unrenderable', message: 'pdf has no extractable text layer' },
+          images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] },
+        },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png': 'Invoice total 1200 EUR' } },
       }
     );
     const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Scan.pdf', 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md'] });
+    expect(outcome).toEqual({
+      kind: 'converted',
+      outputs: [
+        'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf',
+        'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png',
+        'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md',
+      ],
+    });
     expect(written).toContain('Invoice total 1200 EUR');
-    expect(written).toContain('ocr: rapidocr (latin)');
+  });
+
+  it('a scanned PDF whose pages the source will not hand over is still written, with nothing standing in for its text', async () => {
+    const { outcome, files } = await run(
+      { name: 'Scan.pdf', path: 'Scan.pdf' },
+      { reader: { failMarkdown: { kind: 'unrenderable', message: 'pdf has no extractable text layer' }, failImages: { kind: 'permanent', message: 'no pages here' } } }
+    );
+    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Scan.pdf', 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md'] });
+    expect(written).toContain('carries no text layer');
+    expect(written).not.toContain('## Images');
   });
 
   it('a PDF the source refuses for any other reason is reported as failed, so the next run asks for it again', async () => {
@@ -334,19 +373,27 @@ describe('converting one document out of a library', () => {
   it('a PDF whose text layer is only whitespace is treated as scanned and read by OCR', async () => {
     const { files } = await run(
       { name: 'Scan.pdf', path: 'Scan.pdf' },
-      { reader: { markdown: { '01ABC': '   ' } }, ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf': 'Read by OCR' } } }
+      {
+        reader: { markdown: { '01ABC': '   ' }, images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png': 'Read by OCR' } },
+      }
     );
 
     expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '').toContain('Read by OCR');
   });
 
-  it('a scanned PDF whose OCR finds only whitespace still falls back to the note', async () => {
+  it('a page whose OCR finds only whitespace is still linked, so a reader can look at it themselves', async () => {
     const { files } = await run(
       { name: 'Scan.pdf', path: 'Scan.pdf' },
-      { reader: { markdown: { '01ABC': '' } }, ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf': '   ' } } }
+      {
+        reader: { markdown: { '01ABC': '' }, images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png': '   ' } },
+      }
     );
+    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '').toContain('carries no text layer');
+    expect(written).toContain('![pdf_page1_img_p0_1.png](./Scan.pdf.media/pdf_page1_img_p0_1.png)');
+    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png')).toBe(true);
   });
 
   it('a photo is kept as it is, with the text read out of it beside it', async () => {

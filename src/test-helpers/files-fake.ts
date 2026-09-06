@@ -22,6 +22,8 @@ export type FilesFakeSeed = {
   readonly failMoveWith?: FilesError;
   // Fails only the writes whose path contains this text, so one file can fail while the rest land.
   readonly failWritesMatching?: string;
+  // The same for bytes, kept apart from the text one so a suite seeding either keeps the path it had.
+  readonly failByteWritesMatching?: string;
 };
 
 const notFound = (path: string): Result<never, FilesError> => err({ kind: 'not-found', path, message: `no such path: ${path}` });
@@ -55,6 +57,7 @@ export const createFilesFake = (seed: FilesFakeSeed = {}): FilesFake => {
     },
     writeBytes: async (path, bytes) => {
       if (seed.failWriteWith) return err(seed.failWriteWith);
+      if (seed.failByteWritesMatching !== undefined && path.includes(seed.failByteWritesMatching)) return err({ kind: 'write-failed', path, message: `cannot write ${path}` });
       binary.set(path, bytes);
       return ok(undefined);
     },
