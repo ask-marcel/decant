@@ -11,6 +11,8 @@ import type { DriveReader, DriveSummary, SiteSummary } from './ports/drive-reade
 import type { Logger } from './ports/logger.ts';
 import type { Prompt } from './ports/prompt.ts';
 import type { StepError } from './ports/step-error.ts';
+import type { GroupReader, GroupSummary } from './ports/group-reader.ts';
+import type { SyncGroup } from './sync-group.ts';
 import type { SourceRun, SyncSite } from './sync-site.ts';
 import type { SiteCache } from '../domain/site-cache.ts';
 import type { SyncMailbox } from './sync-mailbox.ts';
@@ -28,6 +30,10 @@ export type RunSyncDeps = {
   readonly cachedSites: () => Promise<SiteCache | undefined>;
   readonly rememberSites: (sites: ReadonlyArray<SiteSummary>) => Promise<void>;
   readonly syncMailbox: SyncMailbox;
+  readonly syncGroup: SyncGroup;
+  // Only the listing half of the group reader: choosing a source needs to know which groups can be
+  // read, and reading one is the use-case's business, not the picker's.
+  readonly groups: Pick<GroupReader, 'listGroups'>;
   // One file naming what the whole run left behind, written once every source is done.
   readonly writeGlobalReport: WriteGlobalReport;
 };
@@ -41,6 +47,7 @@ export type RunSyncInput = {
   readonly concurrency: number;
   readonly dryRun: boolean;
   readonly mailbox?: boolean;
+  readonly groupId?: string;
   readonly since?: string;
   // Ignore what was stored and list for real, for when a site is known to be new.
   readonly refresh?: boolean;
@@ -111,6 +118,11 @@ const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
+  for (const source of known.value.filter((candidate) => candidate.kind === 'group')) {
+    const summary = await syncTheGroup(deps, input, { id: source.id, name: source.name, mail: '' });
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
+    summaries.push(summary.value);
+  }
   return ok(summaries);
 };
 
@@ -121,24 +133,43 @@ const siteFromOptions = async (deps: RunSyncDeps, input: RunSyncInput): Promise<
   return found.ok ? ok(found.value) : failed('siteById', found.error.kind, found.error.message);
 };
 
+// A group named outright is looked up in the listing rather than fetched by id: `listGroups` is one
+// call and it is the same call that says whether the user belongs to it, which is what decides
+// whether anything can be read at all.
+const groupFromOptions = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<GroupSummary, StepError> | undefined> => {
+  if (input.groupId === undefined) return undefined;
+  const listed = await deps.groups.listGroups();
+  if (!listed.ok) return failed('listGroups', listed.error.kind, listed.error.message);
+  const found = listed.value.find((group) => group.id === input.groupId || group.mail === input.groupId);
+  return found === undefined ? failed('findGroup', 'bad-choice', `no group you belong to is ${input.groupId}`) : ok(found);
+};
+
 const siteAt = async (deps: RunSyncDeps, url: string): Promise<Result<SiteRef, StepError>> => {
   const found = await deps.reader.siteByUrl(url);
   return found.ok ? ok(found.value) : failed('siteByUrl', found.error.kind, found.error.message);
 };
 
-type Chosen = ReadonlyArray<SiteRef> | 'update-all' | 'quit' | 'mailbox';
+// What a choice came to. Sites and groups travel together because one picker offers both and one
+// run can take either, and they are kept apart because syncing them is not the same call.
+type Sources = { readonly sites: ReadonlyArray<SiteRef>; readonly groups: ReadonlyArray<GroupSummary> };
 
-const oneSite = (found: Result<SiteRef, StepError>): Result<Chosen, StepError> => (found.ok ? ok([found.value]) : found);
+type Chosen = Sources | 'update-all' | 'quit' | 'mailbox';
 
-const resolve = async (deps: RunSyncDeps, choice: Selection, sites: ReadonlyArray<SiteRef>): Promise<Result<Chosen, StepError>> => {
+const NOTHING: Sources = { sites: [], groups: [] };
+
+const oneSite = (found: Result<SiteRef, StepError>): Result<Chosen, StepError> => (found.ok ? ok({ ...NOTHING, sites: [found.value] }) : found);
+
+const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): Promise<Result<Chosen, StepError>> => {
   if (choice.kind === 'quit') return ok('quit');
   if (choice.kind === 'mailbox') return ok('mailbox');
   if (choice.kind === 'update-all') return ok('update-all');
   if (choice.kind === 'address') return oneSite(await siteAt(deps, choice.url));
   // Selecting by position rather than by index lookup: `parseSelection` has already refused any
-  // number outside the list, so there is no missing-site case left to guard against here.
-  const chosen = sites.filter((_site, index) => choice.indices.includes(index));
-  return chosen.length === 0 ? failed('pickSite', 'bad-choice', 'choose at least one site') : ok(chosen);
+  // number outside the list, so there is no missing-source case left to guard against here. The
+  // groups are numbered after the sites, in the order the picker drew them.
+  const sites = offered.sites.filter((_site, index) => choice.indices.includes(index));
+  const groups = offered.groups.filter((_group, index) => choice.indices.includes(offered.sites.length + index));
+  return sites.length + groups.length === 0 ? failed('pickSite', 'bad-choice', 'choose at least one source') : ok({ sites, groups });
 };
 
 // What the picker is drawn from, and what to do about it afterwards. A stored list is shown at once
@@ -174,12 +205,27 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
   // number indexes into. Sorting it anywhere else would let the two disagree, and a listing that
   // shows one source against a number while picking another is worse than an unsorted one.
   const sites = orderByKind(listing.value.sites);
+  // A group that cannot be listed costs the group inboxes and not the run: the sites are still
+  // there to choose from, and a picker that refused to draw because one listing failed would be
+  // worse than one drawn short.
+  const groups = await listedGroups(deps);
   const marks = await syncedMarks(deps);
-  deps.prompt.show(renderSitePicker(annotate(sites, marks), annotate([{ id: MAILBOX_ID, name: MAILBOX_NAME }], marks)[0] ?? { id: MAILBOX_ID, name: MAILBOX_NAME, webUrl: '' }));
-  const chosen = parseSelection(await deps.prompt.ask('Source:'), sites.length);
+  const rows = [...annotate(sites, marks), ...annotate(groups.map(asChoosable), marks)];
+  deps.prompt.show(renderSitePicker(rows, annotate([{ id: MAILBOX_ID, name: MAILBOX_NAME }], marks)[0] ?? { id: MAILBOX_ID, name: MAILBOX_NAME, webUrl: '' }));
+  const chosen = parseSelection(await deps.prompt.ask('Source:'), rows.length);
   if (!chosen.ok) return failed('pickSite', chosen.error.kind, chosen.error.message);
-  const resolved = await resolve(deps, chosen.value, sites);
+  const resolved = await resolve(deps, chosen.value, { sites, groups });
   return resolved.ok ? ok({ chosen: resolved.value, fromCache }) : resolved;
+};
+
+// A group inbox has no address of its own, so it says what it is instead of being read off one.
+const asChoosable = (group: GroupSummary): { id: string; name: string; kind: 'group' } => ({ id: group.id, name: group.name, kind: 'group' });
+
+const listedGroups = async (deps: RunSyncDeps): Promise<ReadonlyArray<GroupSummary>> => {
+  const listed = await deps.groups.listGroups();
+  if (listed.ok) return listed.value;
+  deps.logger.warn('groups.unlisted', { cause: listed.error.kind });
+  return [];
 };
 
 const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray<SourceRun>, StepError> => (summary.ok ? ok([summary.value]) : summary);
@@ -187,16 +233,28 @@ const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray
 // Each site is summarised as it lands, so a run over many of them reports along the way. A site that
 // fails stops the run there rather than burying the reason under the ones after it; every site
 // finished before it keeps what it wrote, and a re-run resumes from its own checkpoint.
-const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: ReadonlyArray<SiteRef>): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
+const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   const summaries: SourceRun[] = [];
-  for (const site of chosen) {
-    const drives = await librariesFor(deps, site, input.driveIds, chosen.length === 1);
+  for (const site of chosen.sites) {
+    const drives = await librariesFor(deps, site, input.driveIds, chosen.sites.length === 1 && chosen.groups.length === 0);
     if (!drives.ok) return stoppedAfter(summaries, drives.error);
     const summary = await syncOne(deps, input, site, drives.value);
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
+  for (const group of chosen.groups) {
+    const summary = await syncTheGroup(deps, input, group);
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
+    summaries.push(summary.value);
+  }
   return ok(summaries);
+};
+
+const syncTheGroup = async (deps: RunSyncDeps, input: RunSyncInput, group: GroupSummary): Promise<Result<SourceRun, StepError>> => {
+  deps.logger.info('group.started', { group: group.name });
+  const summary = await deps.syncGroup({ group, maxBytes: input.maxBytes, dryRun: input.dryRun, concurrency: input.concurrency });
+  if (summary.ok) deps.prompt.show(renderSummary(`${group.name} (group inbox)`, summary.value.summary, input.dryRun));
+  return summary;
 };
 
 const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclude<Chosen, 'quit'>): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
@@ -214,7 +272,9 @@ const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
   if (input.command === 'update') return updateEverything(deps, input);
   if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
   const named = await siteFromOptions(deps, input);
-  if (named !== undefined) return named.ok ? runMany(deps, input, [named.value]) : named;
+  if (named !== undefined) return named.ok ? runMany(deps, input, { ...NOTHING, sites: [named.value] }) : named;
+  const group = await groupFromOptions(deps, input);
+  if (group !== undefined) return group.ok ? runMany(deps, input, { ...NOTHING, groups: [group.value] }) : group;
   const picked = await chooseSite(deps, input);
   if (!picked.ok) return picked;
   const { chosen, fromCache } = picked.value;

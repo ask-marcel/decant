@@ -22,7 +22,9 @@ export const GROUP_STATE_FILE = '.sync-state.json';
 export type SyncGroupDeps = {
   readonly reader: GroupReader;
   readonly files: Files;
-  readonly renderThread: RenderThread;
+  // Built per group rather than once, because the renderer is given the folder it writes into when
+  // it is constructed, and every group writes into its own.
+  readonly renderThreadFor: (root: string) => RenderThread;
   readonly clock: Clock;
   readonly logger: Logger;
   readonly progress: Progress;
@@ -80,8 +82,8 @@ const recordThread = (
 
 type Rendered = { readonly apply: (state: GroupState) => GroupState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
 
-const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: GroupState, thread: GroupThread): Promise<Rendered> => {
-  const rendered = await deps.renderThread({
+const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: GroupState, root: string, thread: GroupThread): Promise<Rendered> => {
+  const rendered = await deps.renderThreadFor(root)({
     threadId: threadIdOf(thread.id),
     conversationIds: [threadRef(input.group.id, thread.id)],
     root: thread.id,
@@ -135,7 +137,7 @@ const render = async (deps: SyncGroupDeps, input: SyncGroupInput, state: GroupSt
     const results = await Promise.all(
       window.map((thread) => {
         deps.progress.begin(thread.topic);
-        return renderOne(deps, input, current, thread).then((outcome) => {
+        return renderOne(deps, input, current, root, thread).then((outcome) => {
           deps.progress.step(thread.topic);
           return outcome;
         });
