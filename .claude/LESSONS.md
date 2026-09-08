@@ -799,3 +799,13 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   `git worktree add --detach <dir> <sha>`, install, run the gates there. The tell that was available
   and went unread: the commit's own summary line said 35 files while the reconciliation had touched
   two more, and a diff smaller than the change just verified is never right.
+
+- [decision] Where a source cannot do what its sibling does, the adapter answers honestly and the gap
+  goes upstream, rather than being worked around locally. A group post has no command to render an
+  attachment to PDF, to extract the pictures inside one, or to resolve the SharePoint links in a
+  body, all three of which a mail message has. The adapter returns `unrenderable` for the first and
+  an empty list for the other two, each with the reason written beside it, so a thread records that
+  no PDF exists rather than implying one was refused. Fetching the bytes and converting them here
+  would have duplicated a conversion the library owns and drifted from it within a release or two.
+  The request is `docs/request-group-post-parity.md`; when the commands land, the change is confined
+  to those three methods and nothing else moves, because the rendering path is already shared.

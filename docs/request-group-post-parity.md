@@ -57,3 +57,17 @@ Low for this consumer today, and worth saying so rather than overstating it. On 
 the work, the group inboxes hold meeting invitations: 16 threads across three groups, none with an
 attachment, and the newest a month old. The gap costs nothing here yet. It would matter to any group used the
 way a shared mailbox is used, where a file gets posted and someone expects to find it later.
+
+## What changes in the consumer when this lands
+
+Nothing but three methods in `src/infra/group-reader-marcel.ts`, each currently answering with the
+honest empty described above: `attachmentPdf` becomes a call to the new render command,
+`attachmentImages` to the new extraction, and `sharepointLinks` to the new scan, mirroring what the
+mail adapter already does for the same three.
+
+Everything downstream is already shared, so a post attachment starts getting its rendered pages, its
+extracted diagrams and its linked documents the moment the adapter stops saying no. No use-case, no
+domain module and no test outside that adapter needs to move.
+
+Two notes for whoever does it: take the dependency first, and read the new command names off
+`dist/commands.json` rather than assuming they match the mail spellings.
