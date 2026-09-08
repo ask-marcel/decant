@@ -1,6 +1,6 @@
 import type { PickerRow } from '../domain/picker.ts';
-import type { SourceKind } from '../domain/source-kind.ts';
-import { sourceKindOf } from '../domain/source-kind.ts';
+import type { AddressKind } from '../domain/address-kind.ts';
+import { kindOf } from '../domain/address-kind.ts';
 import type { RunSummary } from '../use-cases/sync-site.ts';
 
 const files = (count: number): string => (count === 1 ? '1 file' : `${count} files`);
@@ -11,8 +11,9 @@ const hint = (row: PickerRow): string => (row.hint === undefined ? '' : `  [${ro
 
 const line = (row: PickerRow, index: number): string => `${String(index + 1).padStart(3)}) ${row.name}${hint(row)}  (${mark(row)})`;
 
-const HEADINGS: Readonly<Record<SourceKind, string>> = {
+const HEADINGS: Readonly<Record<AddressKind, string>> = {
   site: 'SharePoint sites:',
+  group: 'Group inboxes:',
   loop: 'Loop workspaces:',
   onedrive: 'OneDrive:',
 };
@@ -22,9 +23,9 @@ const HEADINGS: Readonly<Record<SourceKind, string>> = {
 // one array), which is what keeps this to a single pass and the numbering to a single run.
 const headed = (rows: ReadonlyArray<PickerRow>): ReadonlyArray<string> => {
   const lines: string[] = [];
-  let open: SourceKind | undefined;
+  let open: AddressKind | undefined;
   for (const [index, row] of rows.entries()) {
-    const kind = sourceKindOf(row.webUrl);
+    const kind = kindOf(row);
     if (kind !== open) {
       if (open !== undefined) lines.push('');
       lines.push(HEADINGS[kind]);

@@ -110,9 +110,9 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
   return typeof value === 'string' ? value : undefined;
 };
 
-const stringList = (raw: unknown): ReadonlyArray<string> => (Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : []);
+export const stringList = (raw: unknown): ReadonlyArray<string> => (Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : []);
 
-const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
+export const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
   folder: readString(raw, 'folder') ?? '',
   conversationIds: stringList(raw['conversationIds']),
   file: readString(raw, 'file') ?? '',
@@ -124,7 +124,7 @@ const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
 
 // A state written before the store remembered which file to link falls back to the first one it
 // wrote, which is the only one for a document and the file itself for everything else.
-const attachmentOf = (entry: Record<string, unknown>): AttachmentRecord => {
+export const attachmentOf = (entry: Record<string, unknown>): AttachmentRecord => {
   const paths = stringList(entry['paths']);
   return {
     name: readString(entry, 'name') ?? '',
@@ -135,7 +135,7 @@ const attachmentOf = (entry: Record<string, unknown>): AttachmentRecord => {
   };
 };
 
-const mapOf = <T>(raw: unknown, parse: (entry: Record<string, unknown>) => T): Readonly<Record<string, T>> => {
+export const mapOf = <T>(raw: unknown, parse: (entry: Record<string, unknown>) => T): Readonly<Record<string, T>> => {
   if (!isRecord(raw)) return {};
   return Object.fromEntries(Object.entries(raw).flatMap(([key, entry]) => (isRecord(entry) ? [[key, parse(entry)] as const] : [])));
 };

@@ -45,6 +45,12 @@ describe('reading the sync state left by a previous run', () => {
     expect(parsed).toEqual({ ok: false, error: { kind: 'malformed', message: 'sync state has no source object' } });
   });
 
+  it('a group inbox is a source like the others, and its threads are counted the same way', () => {
+    const state = { source: { kind: 'group', id: '0d3b-group', name: 'MOOV Leadership Team' }, lastRun: '2026-09-06T09:00:00Z', threads: { 'thread-1': {}, 'thread-2': {} } };
+
+    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'group', id: '0d3b-group', name: 'MOOV Leadership Team', lastRun: '2026-09-06T09:00:00Z', fileCount: 2 } });
+  });
+
   it('a source naming a kind this tool cannot sync is rejected as malformed', () => {
     const parsed = parseSyncedSource({ source: { kind: 'notebook', id: 'x', name: 'y' } });
 

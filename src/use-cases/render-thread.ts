@@ -23,10 +23,10 @@ import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
-import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
+import type { MailReaderError, ThreadReader } from './ports/mail-reader.ts';
 
 export type RenderThreadDeps = {
-  readonly reader: MailReader;
+  readonly reader: ThreadReader;
   readonly drive: DriveReader;
   readonly files: Files;
   readonly convertAttachment: ConvertAttachment;
@@ -34,6 +34,9 @@ export type RenderThreadDeps = {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly mailboxRoot: string;
+  // What the front matter calls the source this thread came from. The mailbox is one name and every
+  // group inbox is another, and a reader sorting a vault by source needs them told apart.
+  readonly sourceName: string;
   // The zone a thread's day is counted in. Config for the run rather than per conversation, since
   // every folder in one vault must be dated the same way or two runs would disagree.
   readonly timezone: string;
@@ -89,8 +92,8 @@ const sourceOf = (input: RenderThreadInput): string => `conversation ${input.con
 
 const stampFor = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailMessage, last: MailMessage): DocumentStamp => ({
   source: sourceOf(input),
-  site: 'Mailbox',
-  library: 'Mailbox',
+  site: deps.sourceName,
+  library: deps.sourceName,
   path: threadTitle(first.subject),
   lastModified: last.received,
   modifiedBy: last.from?.name,
@@ -103,6 +106,7 @@ const threadHeader = (
   first: MailMessage,
   last: MailMessage,
   syncedAt: string,
+  sourceName: string,
   relative: string,
   attachments: ReadonlyArray<string>,
   inlineImages: ReadonlyArray<string>,
@@ -116,7 +120,7 @@ const threadHeader = (
     ['root_message_id', input.root],
     ['conversation_id', input.conversationIds],
     ['source', sourceOf(input)],
-    ['site', 'Mailbox'],
+    ['site', sourceName],
     // Where this document is, said by the document. Every path below is relative to the folder it
     // sits in, which is exactly what a thread pasted into a context window no longer has: without
     // this line nothing in the file can be resolved once it leaves the disk, and the thread cannot
@@ -205,7 +209,7 @@ const writeThread = async (
   // Linked files are written from the thread's own folder, exactly as attachments are: both climb out
   // of it to a store the whole mailbox shares, and a reader follows either one the same way.
   const linkedRefs = links.paths.map((path) => pathBetween(here, path));
-  const header = threadHeader(input, parts, first, last, stamp.syncedAt, relative, attachmentRefs, inlineRefs, linkedRefs);
+  const header = threadHeader(input, parts, first, last, stamp.syncedAt, deps.sourceName, relative, attachmentRefs, inlineRefs, linkedRefs);
   const written = await deps.files.writeText(`${deps.mailboxRoot}/${relative}`, `${header}\n\n${renderThread({ subject: first.subject, parts: bodies.parts }, deps.timezone)}\n`);
   if (!written.ok) return err({ kind: 'permanent', message: written.error.message });
   // Named with the conversation they arrived in: two threads can each carry an `image002.wmz`, and

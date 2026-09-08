@@ -1,3 +1,4 @@
+import type { AddressKind } from './address-kind.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 
@@ -7,11 +8,13 @@ export type PickerRow = {
   readonly id: string;
   readonly name: string;
   readonly webUrl: string;
+  // Stated only by a source whose address cannot say what it is, which is a group inbox.
+  readonly kind?: AddressKind;
   readonly synced?: SyncedMark;
   readonly hint?: string;
 };
 
-export type Choosable = { readonly id: string; readonly name: string; readonly webUrl?: string };
+export type Choosable = { readonly id: string; readonly name: string; readonly webUrl?: string; readonly kind?: AddressKind };
 
 // Two different sites can carry the same display name (an unedited template title, most often), and
 // with it look identical in a numbered list. Anything sharing a name with another source in the same
@@ -42,7 +45,14 @@ export const annotate = (sources: ReadonlyArray<Choosable>, synced: Readonly<Rec
   return sources.map((source) => {
     const mark = synced[source.id];
     const webUrl = source.webUrl ?? '';
-    return { id: source.id, name: source.name, webUrl, ...(mark === undefined ? {} : { synced: mark }), ...(collided.has(source.name) ? { hint: webUrl } : {}) };
+    return {
+      id: source.id,
+      name: source.name,
+      webUrl,
+      ...(source.kind === undefined ? {} : { kind: source.kind }),
+      ...(mark === undefined ? {} : { synced: mark }),
+      ...(collided.has(source.name) ? { hint: webUrl } : {}),
+    };
   });
 };
 

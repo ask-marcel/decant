@@ -1,7 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 
-export type SourceKind = 'site' | 'mailbox';
+export type SourceKind = 'site' | 'mailbox' | 'group';
 
 export type SyncedSource = {
   readonly kind: SourceKind;
@@ -41,13 +41,13 @@ const parseIdentity = (source: Record<string, unknown>): Result<SourceIdentity, 
   const kind = readString(source, 'kind');
   const id = readString(source, 'id');
   const name = readString(source, 'name');
-  if (kind !== 'site' && kind !== 'mailbox') return malformed(`unknown source kind: ${String(kind)}`);
+  if (kind !== 'site' && kind !== 'mailbox' && kind !== 'group') return malformed(`unknown source kind: ${String(kind)}`);
   if (id === undefined || name === undefined) return malformed('source is missing id or name');
   return ok({ kind, id, name });
 };
 
-// A site counts the documents its libraries hold; a mailbox counts its conversations, since one
-// conversation is one file in the knowledge base.
+// A site counts the documents its libraries hold; a mailbox and a group inbox count their threads,
+// since one thread is one file in the knowledge base.
 const countFiles = (raw: Record<string, unknown>): number => {
   const threads = raw['threads'];
   return countItems(raw['drives']) + (isRecord(threads) ? Object.keys(threads).length : 0);
