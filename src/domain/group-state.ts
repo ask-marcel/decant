@@ -4,6 +4,7 @@ import { attachmentOf, mapOf, retryOf, stringList, threadOf } from './mail-state
 import type { AttachmentRecord, LinkedRecord, RetryRecord, ThreadRecord } from './mail-state.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
+import { sourceLabel } from './sync-state.ts';
 
 export const GROUP_STATE_VERSION = 1;
 
@@ -11,7 +12,7 @@ export const GROUP_STATE_VERSION = 1;
 // is a site, an inbox and a team wearing one title, and two of those three land in this vault: the
 // documents under `MOOV Leadership Team/` and the conversations under
 // `MOOV Leadership Team (group inbox)/`. Without the suffix they would be one folder and one state.
-export const groupRootName = (name: string): SafeSegment => safeSegment(`${name} (group inbox)`);
+export const groupRootName = (name: string): SafeSegment => safeSegment(sourceLabel({ name, kind: 'group' }));
 
 // What a group inbox run leaves behind. Smaller than the mailbox's state, and deliberately: there
 // are no folders to hold a cursor for, and no conversation-to-thread map, because Graph hands out a

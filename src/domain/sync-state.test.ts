@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseSyncedSource } from './sync-state.ts';
+import { parseSyncedSource, sourceLabel } from './sync-state.ts';
 
 describe('reading the sync state left by a previous run', () => {
   it('a site synced yesterday is reported with its name and how many files it holds', () => {
@@ -79,5 +79,16 @@ describe('reading the sync state left by a previous run', () => {
     const parsed = parseSyncedSource({ source: { kind: 'site', id: 'a', name: 'b' }, drives: { 'b!one': {}, 'b!two': 'broken', 'b!three': null } });
 
     expect(parsed.ok && parsed.value.fileCount).toBe(0);
+  });
+});
+
+describe('naming a source in a report', () => {
+  it('a group inbox is named apart from the site that shares its name', () => {
+    expect(sourceLabel({ name: 'MOOV Projects 2026', kind: 'group' })).toBe('MOOV Projects 2026 (group inbox)');
+    expect(sourceLabel({ name: 'MOOV Projects 2026', kind: 'site' })).toBe('MOOV Projects 2026');
+  });
+
+  it('the mailbox is named as it calls itself', () => {
+    expect(sourceLabel({ name: 'Mailbox', kind: 'mailbox' })).toBe('Mailbox');
   });
 });

@@ -242,7 +242,9 @@ the runs that did leave something behind.
 do not mean twenty files to open. It is rewritten on every run rather than appended to, and always
 covers every source: the ones the run touched get their counts and their lists, and every other
 source already in `kb/` is named with the date it last ran, so a source that was not rechecked is
-never mistaken for one with nothing wrong. A run that left something behind ends with a line on the
+never mistaken for one with nothing wrong. A group inbox is named as one, `MOOV Projects 2026
+(group inbox)`, because the site of the same name is a separate source with its own section, and
+two identical headings would leave a reader guessing which held the documents. A run that left something behind ends with a line on the
 terminal saying so and naming the file. Its history is the per-source files; this one is the current
 view. A dry run writes neither.
 

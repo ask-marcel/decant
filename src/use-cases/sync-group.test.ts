@@ -57,6 +57,7 @@ const run = async (
   } = {}
 ): Promise<{
   summary: RunSummary;
+  source: string;
   notes: RunNotes;
   files: FilesFake;
   logger: LoggerFake;
@@ -92,6 +93,7 @@ const run = async (
   const result = await syncGroup({ group: GROUP, maxBytes: 50 * 1024 * 1024, dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 1 });
   return {
     summary: result.ok ? result.value.summary : ({} as RunSummary),
+    source: result.ok ? result.value.source : '',
     notes: result.ok ? result.value.notes : { skipped: [], failed: [], givenUp: [], archived: [] },
     files,
     logger,
@@ -233,6 +235,21 @@ describe('mirroring a group inbox into the knowledge base', () => {
     const saved = JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
     expect(saved.linked).toEqual({ 'https://x/Spec.docx': { paths: ['_linked/Spec.docx.md'] } });
+  });
+});
+
+describe('naming a group inbox in a report', () => {
+  it('a group run names itself a group inbox, so a site of the same name reads apart', async () => {
+    const outcome = (): RenderThreadOutcome => rendered({ filesFailed: [{ path: 'budget.xlsx', reason: 'locked' }] });
+    const { files } = await run({ outcome });
+
+    expect(files.written.get('kb/MOOV Leadership Team (group inbox)/_sync-report.md')).toContain('# What did not reach the knowledge base: MOOV Leadership Team (group inbox)');
+  });
+
+  it('the run hands the same name back, so the report covering every source reads apart too', async () => {
+    const { source } = await run();
+
+    expect(source).toBe('MOOV Leadership Team (group inbox)');
   });
 });
 

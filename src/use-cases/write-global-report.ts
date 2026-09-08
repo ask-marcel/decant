@@ -1,5 +1,6 @@
 import type { SourceSection, StaleSource } from '../domain/global-report.ts';
 import { renderGlobalReport } from '../domain/global-report.ts';
+import { sourceLabel } from '../domain/sync-state.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Files } from './ports/files.ts';
@@ -39,7 +40,7 @@ const staleSources = async (deps: WriteGlobalReportDeps, ran: ReadonlyArray<Sour
   const known = await deps.listSyncedSources();
   if (!known.ok) return [];
   const touched = new Set(ran.map((run) => run.id));
-  return known.value.filter((source) => !touched.has(source.id)).map((source) => ({ name: source.name, lastRun: source.lastRun }));
+  return known.value.filter((source) => !touched.has(source.id)).map((source) => ({ name: sourceLabel(source), lastRun: source.lastRun }));
 };
 
 // Rewritten whole each run, so it is always the current view rather than a log that grows. A run that

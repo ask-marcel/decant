@@ -13,6 +13,14 @@ export type SyncedSource = {
 
 export type SyncStateError = { readonly kind: 'malformed'; readonly message: string };
 
+// A Microsoft 365 group is a site and an inbox wearing one title, and both halves land in the vault
+// under that one name. A report naming them alike leaves a reader with two identical headings and no
+// way to tell which is the documents and which the conversations, so the group says what it is.
+export const GROUP_LABEL_SUFFIX = ' (group inbox)';
+
+export const sourceLabel = (source: { readonly name: string; readonly kind: SourceKind }): string =>
+  source.kind === 'group' ? `${source.name}${GROUP_LABEL_SUFFIX}` : source.name;
+
 type SourceIdentity = { readonly kind: SourceKind; readonly id: string; readonly name: string };
 
 export const NEVER_RUN = 'never';

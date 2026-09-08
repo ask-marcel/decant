@@ -17,6 +17,7 @@ import type { AttachmentRecord, LinkedRecord, RetryRecord, ThreadRecord } from '
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
+import { sourceLabel } from '../domain/sync-state.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import type { GroupReader, GroupSummary } from './ports/group-reader.ts';
@@ -181,6 +182,8 @@ const abandoned = (state: GroupState, listing: ReadonlyArray<GroupThread>): RunN
     reason: entry.reason,
   }));
 
+const labelOf = (input: SyncGroupInput): string => sourceLabel({ name: input.group.name, kind: 'group' });
+
 const render = async (
   deps: SyncGroupDeps,
   input: SyncGroupInput,
@@ -217,8 +220,8 @@ const render = async (
   // Added to, never replacing: a run reports the files a rendered thread has stopped owing as well
   // as the threads the ledger still holds, and the two lists are filled from different places.
   const reported = { ...notes, givenUp: [...notes.givenUp, ...abandoned(current, listing)] };
-  await writeReport(deps, input, root, input.group.name, summary, reported);
-  return ok({ id: input.group.id, source: input.group.name, summary, notes: reported });
+  await writeReport(deps, input, root, labelOf(input), summary, reported);
+  return ok({ id: input.group.id, source: labelOf(input), summary, notes: reported });
 };
 
 export const createSyncGroup =
@@ -229,6 +232,6 @@ export const createSyncGroup =
     const listed = await deps.reader.threads(input.group.id);
     if (!listed.ok) return failed('listThreads', listed.error.kind, listed.error.message);
     const fresh = freshThreads(listed.value, watermarkOf(state), state.retry);
-    if (input.dryRun) return ok({ id: input.group.id, source: input.group.name, summary: { ...EMPTY, queued: fresh.length }, notes: NO_NOTES });
+    if (input.dryRun) return ok({ id: input.group.id, source: labelOf(input), summary: { ...EMPTY, queued: fresh.length }, notes: NO_NOTES });
     return render(deps, input, { ...state, version: GROUP_STATE_VERSION }, root, fresh, listed.value);
   };

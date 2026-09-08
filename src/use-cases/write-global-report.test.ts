@@ -68,6 +68,12 @@ describe('one file naming what a whole run left behind', () => {
     expect(written).toContain('- Espace Contoso: last ran 2026-08-01T09:00:00Z');
   });
 
+  it('a group inbox not rechecked by this run is named apart from the site sharing its name', async () => {
+    const { written } = await write([contoso], { known: [synced({ kind: 'group', id: 'group!contoso', name: 'Espace Contoso', lastRun: '2026-08-01T09:00:00Z' })] });
+
+    expect(written).toContain('- Espace Contoso (group inbox): last ran 2026-08-01T09:00:00Z');
+  });
+
   it('a run that stopped partway still reports the sources that did finish, and says it stopped', async () => {
     const { written } = await write([contoso], { stopped: 'enumerate: token expired' });
 
