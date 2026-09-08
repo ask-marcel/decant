@@ -135,6 +135,11 @@ export const attachmentOf = (entry: Record<string, unknown>): AttachmentRecord =
   };
 };
 
+export const retryOf = (entry: Record<string, unknown>): RetryRecord => ({
+  attempts: typeof entry['attempts'] === 'number' ? entry['attempts'] : 0,
+  reason: readString(entry, 'reason') ?? '',
+});
+
 export const mapOf = <T>(raw: unknown, parse: (entry: Record<string, unknown>) => T): Readonly<Record<string, T>> => {
   if (!isRecord(raw)) return {};
   return Object.fromEntries(Object.entries(raw).flatMap(([key, entry]) => (isRecord(entry) ? [[key, parse(entry)] as const] : [])));
@@ -154,7 +159,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     linked: mapOf(raw['linked'], (entry) => ({ paths: stringList(entry['paths']) })),
     attachments: mapOf(raw['attachments'], attachmentOf),
     pending: stringList(raw['pending']),
-    retry: mapOf(raw['retry'], (entry) => ({ attempts: typeof entry['attempts'] === 'number' ? entry['attempts'] : 0, reason: readString(entry, 'reason') ?? '' })),
+    retry: mapOf(raw['retry'], retryOf),
   });
 };
 
@@ -192,9 +197,9 @@ export const withoutRetry = (state: MailboxState, threadId: string): MailboxStat
 // written from the messages the mailbox holds now, so the older attempt it remembers has nothing left
 // to answer for: it is dropped rather than counted, which is also what lets a thread that gains a
 // reply start its count over.
-export const retriedThreads = (state: MailboxState, queued: ReadonlyArray<string>): ReadonlyArray<string> => {
+export const retriedThreads = (retry: Readonly<Record<string, RetryRecord>>, queued: ReadonlyArray<string>): ReadonlyArray<string> => {
   const fresh = new Set(queued);
-  return Object.entries(state.retry)
+  return Object.entries(retry)
     .filter(([id, record]) => !fresh.has(id) && record.attempts < MAX_CONVERSION_ATTEMPTS)
     .map(([id]) => id);
 };
@@ -202,8 +207,8 @@ export const retriedThreads = (state: MailboxState, queued: ReadonlyArray<string
 // Read off the ledger rather than off this run's work, because a thread out of tries is precisely one
 // this run did nothing about. Naming it every run is the point: it is the only thing standing between
 // a conversation nobody can write and a conversation nobody knows about.
-export const abandonedThreads = (state: MailboxState): ReadonlyArray<{ readonly threadId: string; readonly reason: string }> =>
-  Object.entries(state.retry)
+export const abandonedThreads = (retry: Readonly<Record<string, RetryRecord>>): ReadonlyArray<{ readonly threadId: string; readonly reason: string }> =>
+  Object.entries(retry)
     .filter(([, record]) => record.attempts >= MAX_CONVERSION_ATTEMPTS)
     .map(([threadId, record]) => ({ threadId, reason: record.reason }));
 

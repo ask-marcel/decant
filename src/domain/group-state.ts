@@ -1,7 +1,7 @@
 import { safeSegment } from './kb-path.ts';
 import type { SafeSegment } from './kb-path.ts';
-import { attachmentOf, mapOf, stringList, threadOf } from './mail-state.ts';
-import type { AttachmentRecord, LinkedRecord, ThreadRecord } from './mail-state.ts';
+import { attachmentOf, mapOf, retryOf, stringList, threadOf } from './mail-state.ts';
+import type { AttachmentRecord, LinkedRecord, RetryRecord, ThreadRecord } from './mail-state.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 
@@ -24,6 +24,12 @@ export type GroupState = {
   readonly threads: Readonly<Record<string, ThreadRecord>>;
   readonly linked: Readonly<Record<string, LinkedRecord>>;
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
+  // What could not be written, and how many runs have tried. Not derivable from the threads: a
+  // thread that failed records nothing, so the watermark below moves past it on the strength of a
+  // newer thread that did land, and nothing else would ever ask for it again.
+  // Additive, so `GROUP_STATE_VERSION` stays where it is: a file written before this loads with an
+  // empty ledger, which is what it means.
+  readonly retry: Readonly<Record<string, RetryRecord>>;
 };
 
 export type GroupStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -35,6 +41,7 @@ export const emptyGroupState = (id: string, name: string): GroupState => ({
   threads: {},
   linked: {},
   attachments: {},
+  retry: {},
 });
 
 export const serializeGroupState = (state: GroupState): string => `${JSON.stringify(state, undefined, 2)}\n`;
@@ -58,6 +65,7 @@ export const parseGroupState = (raw: unknown): Result<GroupState, GroupStateErro
     threads: mapOf(raw['threads'], threadOf),
     linked: mapOf(raw['linked'], (entry) => ({ paths: stringList(entry['paths']) })),
     attachments: mapOf(raw['attachments'], attachmentOf),
+    retry: mapOf(raw['retry'], retryOf),
   });
 };
 
@@ -74,3 +82,10 @@ export const withGroupThread = (state: GroupState, threadId: string, record: Thr
 // every timestamp Graph writes and so sweeps everything.
 export const watermarkOf = (state: GroupState): string =>
   Object.values(state.threads).reduce<string>((newest, thread) => (thread.lastMessage > newest ? thread.lastMessage : newest), '');
+
+export const withGroupRetry = (state: GroupState, threadId: string, record: RetryRecord): GroupState => ({ ...state, retry: { ...state.retry, [threadId]: record } });
+
+export const withoutGroupRetry = (state: GroupState, threadId: string): GroupState => ({
+  ...state,
+  retry: Object.fromEntries(Object.entries(state.retry).filter(([id]) => id !== threadId)),
+});

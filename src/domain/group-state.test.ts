@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'bun:test';
-import { GROUP_STATE_VERSION, emptyGroupState, groupRootName, parseGroupState, serializeGroupState, watermarkOf, withGroupThread } from './group-state.ts';
+import {
+  GROUP_STATE_VERSION,
+  emptyGroupState,
+  groupRootName,
+  parseGroupState,
+  serializeGroupState,
+  watermarkOf,
+  withGroupRetry,
+  withGroupThread,
+  withoutGroupRetry,
+} from './group-state.ts';
 import type { ThreadRecord } from './mail-state.ts';
 
 const record = (over: Partial<ThreadRecord> = {}): ThreadRecord => ({
@@ -26,6 +36,7 @@ describe('remembering what a group inbox run already filed', () => {
       threads: {},
       linked: {},
       attachments: {},
+      retry: {},
     });
   });
 
@@ -93,5 +104,32 @@ describe('remembering what a group inbox run already filed', () => {
 
   it('a group holding nothing has a watermark older than any post, so the first run sweeps everything', () => {
     expect(watermarkOf(emptyGroupState('0d3b-group', 'MOOV Leadership Team'))).toBe('');
+  });
+});
+
+describe('remembering a group thread the run could not write', () => {
+  const failed = { attempts: 1, reason: 'permanent: thread refused' };
+  const empty = (): ReturnType<typeof emptyGroupState> => emptyGroupState('0d3b-group', 'MOOV Leadership Team');
+
+  it('a state file written before failed threads were remembered loads with an empty ledger', () => {
+    const parsed = parseGroupState({ version: GROUP_STATE_VERSION, source: { kind: 'group', id: '0d3b-group', name: 'MOOV Leadership Team' } });
+
+    expect(parsed.ok && parsed.value.retry).toEqual({});
+  });
+
+  it('what one run remembers about a failed thread, the next run reads back unchanged', () => {
+    const state = withGroupRetry(empty(), 'AAQkAD-thread', failed);
+
+    expect(parseGroupState(JSON.parse(serializeGroupState(state)))).toEqual({ ok: true, value: state });
+  });
+
+  it('a thread remembered as failed is dropped once it renders', () => {
+    expect(withoutGroupRetry(withGroupRetry(empty(), 'AAQkAD-thread', failed), 'AAQkAD-thread').retry).toEqual({});
+  });
+
+  it('a thread nothing failed on leaves the ledger untouched', () => {
+    const remembered = withGroupRetry(empty(), 'AAQkAD-thread', failed);
+
+    expect(withoutGroupRetry(remembered, 'other')).toEqual(remembered);
   });
 });

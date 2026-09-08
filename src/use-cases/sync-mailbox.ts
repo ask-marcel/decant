@@ -236,7 +236,7 @@ const finishQueue = async (
   deps.logger.info('mail.enumerated', { messages: messages.length, conversations: conversations.length, queued: dirty.length });
   const resolved = await resolveThreads(deps, state, dirty);
   const fresh = threadsToRender(resolved, dirty);
-  const queued = withPending(cleared(resolved, fresh), [...fresh, ...retriedThreads(resolved, fresh)]);
+  const queued = withPending(cleared(resolved, fresh), [...fresh, ...retriedThreads(resolved.retry, fresh)]);
   const saved = await save(deps.files, statePath, queued, input.dryRun);
   return saved.ok ? ok(queued) : saved;
 };
@@ -396,7 +396,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
   // the threads the ledger still holds, and the two lists are filled from different places.
   const withAbandoned = {
     ...notes,
-    givenUp: [...notes.givenUp, ...abandonedThreads(finished).map((entry) => ({ path: `thread ${entry.threadId}`, reason: entry.reason }))],
+    givenUp: [...notes.givenUp, ...abandonedThreads(finished.retry).map((entry) => ({ path: `thread ${entry.threadId}`, reason: entry.reason }))],
   };
   await writeReport(deps, input, mailboxRoot(deps.kbRoot), MAILBOX_NAME, summary, withAbandoned);
   return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary, notes: withAbandoned });
