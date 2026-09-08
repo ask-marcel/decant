@@ -296,6 +296,13 @@ Group threads are not tracked by a delta the way a mailbox folder is, because Gr
 Each run lists a group's threads newest first and stops at the newest post it already holds, so a
 thread that has been replied to comes back and an untouched one does not.
 
+A thread that could not be written is remembered and asked for again on the next run, three tries
+in all, whatever the dates say. It has to be remembered rather than found again: a thread that
+failed records nothing, so a newer thread that did land carries that stopping point past it, and
+no reading of the dates alone would ever reach it. The same holds for a thread that lands while one
+of the files it carried does not. After the third try the thread is named once under the heading
+that says it will not be tried again, by its topic rather than its id.
+
 A thread folder is self-contained: everything a conversation carried or pointed at sits inside
 it, beside a card that says how it arrived. The one exception is a picture pasted into a message,
 which lives in `_inline/` for the whole mailbox, because a signature logo rides on every message

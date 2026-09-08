@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { emptyGroupState, serializeGroupState, withGroupThread } from '../domain/group-state.ts';
+import { threadRef } from '../domain/group-thread.ts';
 import type { GroupThread } from '../domain/group-thread.ts';
 import type { ThreadRecord } from '../domain/mail-state.ts';
 import { err, ok } from '../domain/result.ts';
@@ -51,7 +52,8 @@ const run = async (
     dryRun?: boolean;
     concurrency?: number;
     outcome?: (input: RenderThreadInput) => RenderThreadOutcome;
-    failThread?: boolean;
+    // The thread whose render refuses, by id, so one thread can fail while another lands beside it.
+    failThread?: string;
   } = {}
 ): Promise<{
   summary: RunSummary;
@@ -82,14 +84,15 @@ const run = async (
       names.push(name);
       asked.push(input);
       roots.push(root);
-      if (seeds.failThread === true) return err({ kind: 'permanent' as const, message: 'thread refused' });
+      if (seeds.failThread !== undefined && input.conversationIds.includes(threadRef(GROUP.id, seeds.failThread)))
+        return err({ kind: 'permanent' as const, message: 'thread refused' });
       return ok(seeds.outcome === undefined ? rendered() : seeds.outcome(input));
     },
   });
   const result = await syncGroup({ group: GROUP, maxBytes: 50 * 1024 * 1024, dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 1 });
   return {
     summary: result.ok ? result.value.summary : ({} as RunSummary),
-    notes: result.ok ? result.value.notes : { skipped: [], failed: [], archived: [] },
+    notes: result.ok ? result.value.notes : { skipped: [], failed: [], givenUp: [], archived: [] },
     files,
     logger,
     progress,
@@ -101,7 +104,8 @@ const run = async (
   };
 };
 
-const stateAfter = (files: FilesFake): { threads: Record<string, { lastMessage?: string }> } => JSON.parse(files.written.get(STATE_PATH) ?? '{}');
+const stateAfter = (files: FilesFake): { threads: Record<string, { lastMessage?: string }>; retry: Record<string, { attempts: number; reason: string }> } =>
+  JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
 describe('mirroring a group inbox into the knowledge base', () => {
   it('a group nobody has synced before has every thread it holds written as a document', async () => {
@@ -171,7 +175,7 @@ describe('mirroring a group inbox into the knowledge base', () => {
   });
 
   it('a thread that cannot be rendered is counted and named in the report, not merely logged', async () => {
-    const { summary, notes, logger } = await run({ failThread: true });
+    const { summary, notes, logger } = await run({ failThread: 'AAQkAD-thread' });
 
     expect(summary).toMatchObject({ converted: 0, failed: 1, skipped: 0 });
     expect(notes.failed).toEqual([{ path: 'thread Bi-Monthly Leadership Meeting', reason: 'thread refused' }]);
@@ -204,7 +208,7 @@ describe('mirroring a group inbox into the knowledge base', () => {
     const { summary, notes, files } = await run({ outcome: () => ({ kind: 'empty' }) });
 
     expect(summary).toMatchObject({ converted: 0, skipped: 1, failed: 0 });
-    expect(notes).toEqual({ skipped: [], failed: [], archived: [] });
+    expect(notes).toEqual({ skipped: [], failed: [], givenUp: [], archived: [] });
     expect(stateAfter(files).threads).toEqual({});
   });
 
@@ -229,5 +233,101 @@ describe('mirroring a group inbox into the knowledge base', () => {
     const saved = JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
     expect(saved.linked).toEqual({ 'https://x/Spec.docx': { paths: ['_linked/Spec.docx.md'] } });
+  });
+});
+
+describe('a group thread the run could not write', () => {
+  const REPORT_PATH = 'kb/MOOV Leadership Team (group inbox)/_sync-report.md';
+  // The listing Graph hands back every run, newest first: it has no cursor, so the same two threads
+  // arrive whatever happened last time. `late` lands and puts the watermark past `early`, which is
+  // what used to make a failure on `early` unreachable for good.
+  const early = thread({ id: 'early', topic: 'Budget review', lastDelivered: '2026-07-20T10:45:14Z' });
+  const late = thread({ id: 'late', topic: 'Offsite agenda', lastDelivered: '2026-07-25T09:00:00Z' });
+  const LISTING = { threads: { '0d3b-group': [late, early] } };
+
+  const askedFor = (results: { readonly asked: RenderThreadInput[] }): ReadonlyArray<string> =>
+    results.asked.map((input) => input.conversationIds.join(',').replace(`${GROUP.id}|`, ''));
+
+  const isThread = (input: RenderThreadInput, id: string): boolean => input.conversationIds.includes(threadRef(GROUP.id, id));
+
+  // A rendered thread records the date it was delivered, which is what the watermark is drawn from.
+  // A fixed date for both would leave `late` above the watermark it set itself.
+  const landed = (input: RenderThreadInput): RenderThreadOutcome =>
+    rendered({ record: { ...RECORD, lastMessage: isThread(input, 'late') ? late.lastDelivered : early.lastDelivered } });
+
+  const again = async (carried: string, failing: string | undefined): Promise<Awaited<ReturnType<typeof run>>> =>
+    run({ files: { texts: { [STATE_PATH]: carried } }, reader: LISTING, outcome: landed, ...(failing === undefined ? {} : { failThread: failing }) });
+
+  const swept = async (): Promise<string> => {
+    const first = await run({ reader: LISTING, outcome: landed, failThread: 'early' });
+    return first.files.written.get(STATE_PATH) ?? '';
+  };
+
+  it('a thread that could not be rendered comes back on the next run, although a newer thread moved the watermark past it', async () => {
+    const first = await run({ reader: LISTING, outcome: landed, failThread: 'early' });
+    const second = await again(first.files.written.get(STATE_PATH) ?? '', undefined);
+
+    expect(first.summary).toMatchObject({ converted: 1, failed: 1 });
+    expect(stateAfter(first.files).retry['early']).toEqual({ attempts: 1, reason: 'thread refused' });
+    expect(askedFor(second)).toEqual(['early']);
+    expect(stateAfter(second.files).retry).toEqual({});
+  });
+
+  it('a thread that fails three runs running is left alone by the fourth', async () => {
+    const second = await again(await swept(), 'early');
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', 'early');
+    const fourth = await again(third.files.written.get(STATE_PATH) ?? '', 'early');
+
+    expect(askedFor(third)).toEqual(['early']);
+    expect(askedFor(fourth)).toEqual([]);
+    expect(stateAfter(fourth.files).retry['early']).toMatchObject({ attempts: 3 });
+  });
+
+  it('a thread that renders while one of its files does not comes back on the next run', async () => {
+    const owing = (input: RenderThreadInput): RenderThreadOutcome =>
+      isThread(input, 'early') ? rendered({ record: { ...RECORD, lastMessage: early.lastDelivered }, filesFailed: [{ path: 'budget.xlsx', reason: 'locked' }] }) : landed(input);
+    const first = await run({ reader: LISTING, outcome: owing });
+    const second = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } }, reader: LISTING, outcome: owing });
+
+    expect(stateAfter(first.files).retry['early']).toEqual({ attempts: 1, reason: 'budget.xlsx: locked' });
+    expect(askedFor(second)).toEqual(['early']);
+  });
+
+  it('a thread still owing a file after three tries is left alone by the fourth, and the file is named as given up', async () => {
+    const owing = (input: RenderThreadInput): RenderThreadOutcome =>
+      isThread(input, 'early') ? rendered({ record: { ...RECORD, lastMessage: early.lastDelivered }, filesFailed: [{ path: 'budget.xlsx', reason: 'locked' }] }) : landed(input);
+    const owed = async (carried: string): Promise<Awaited<ReturnType<typeof run>>> => run({ files: { texts: { [STATE_PATH]: carried } }, reader: LISTING, outcome: owing });
+    const first = await run({ reader: LISTING, outcome: owing });
+    const second = await owed(first.files.written.get(STATE_PATH) ?? '');
+    const third = await owed(second.files.written.get(STATE_PATH) ?? '');
+    const fourth = await owed(third.files.written.get(STATE_PATH) ?? '');
+
+    expect(askedFor(third)).toEqual(['early']);
+    expect(askedFor(fourth)).toEqual([]);
+    expect(stateAfter(third.files).retry).toEqual({});
+    expect(third.notes.givenUp).toEqual([{ path: 'budget.xlsx', reason: 'locked' }]);
+    expect(third.files.written.get(REPORT_PATH)).toContain('- budget.xlsx: locked');
+  });
+
+  it('a thread given up on and since dropped from the group is named by its id, having no topic left', async () => {
+    const second = await again(await swept(), 'early');
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', 'early');
+    const dropped = await run({
+      files: { texts: { [STATE_PATH]: third.files.written.get(STATE_PATH) ?? '' } },
+      reader: { threads: { '0d3b-group': [late] } },
+      outcome: landed,
+    });
+
+    expect(dropped.files.written.get(REPORT_PATH)).toContain('- thread early: thread refused');
+  });
+
+  it('a thread out of tries is named in the report by its topic, under the heading that says it will not be tried again', async () => {
+    const second = await again(await swept(), 'early');
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', 'early');
+    const report = third.files.written.get(REPORT_PATH) ?? '';
+
+    expect(report).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
+    expect(report).toContain('- thread Budget review: thread refused');
+    expect(report).not.toContain('will be tried again on the next run');
   });
 });
