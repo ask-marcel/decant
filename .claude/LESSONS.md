@@ -729,3 +729,41 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   by a path or an id it never validates: those tests prove the wiring, not that the adapter can do
   what it was asked. The fix was to read the pages, one image per page out of
   `extract-drive-item-images`, which is what OCR can actually open.
+
+## 2026-09-08
+
+- [gotcha] A checkpoint that advances past work it has not confirmed loses that work in silence. Both
+  halves of this sync saved a Graph cursor before the conversion or the render it covered: `sync-site`
+  wrote `deltaLink` when the sweep returned, `sync-mailbox` wrote every folder cursor in `finishQueue`,
+  and both then sliced a window off `pending` whether each item had succeeded or not. A delta only
+  reports what changed, so the failed item was unreachable from that moment on, and the only way back
+  was deleting `deltaLink` by hand to force a full re-sweep. The report meanwhile said "will be tried
+  again on the next run" and the next run said `0 failed`, which is the worst pairing available: a
+  promise, and a clean bill of health covering the thing it promised about. Wherever a cursor moves
+  past work, the record of what that work left unfinished has to move with it, in the same write.
+
+- [gotcha] `src/domain/worklist.ts` carried two NUL bytes where `sortKey` meant spaces, committed in
+  `663d2f2` and invisible in every editor since. NUL is completely ignorable in ICU collation, so
+  `localeCompare` compared `"\x00${itemId}"` against `"${lastModified} ${id}"` as though the prefix
+  were not there, and the archive-first ordering the comment describes held only by luck: real
+  SharePoint ids start with `01`, which sorts before `2026` anyway. Verified rather than reasoned,
+  `" zzz"` sorts before a timestamp and `"\x00zzz"` after it. A NUL in either blob also makes git
+  render the whole file as `Binary files differ`, so the change is invisible to review, which is how
+  the bytes survived a scaffold commit in the first place.
+
+- [decision] Every failed conversion is retried, capped at three attempts, rather than routed by
+  error kind. `DriveReaderError` does distinguish `transient`, `throttled`, `permanent` and
+  `unrenderable`, but `ConvertOutcome.failed` flattens whichever one it was into a `"kind: message"`
+  string, so a kind-aware policy means threading a new field through `convertFile`,
+  `convertAttachment` and `renderThread`. Against that: the kind of the failure that prompted this
+  work was never established, so a policy that gives up on `permanent` might not have brought back
+  the one file it was written for. A flat cap costs at most two pointless calls spread over two later
+  runs and needs no new information anywhere.
+
+- [decision] A file given up on stays in the ledger and is named in every report from then on, under
+  a heading of its own saying it will not be tried again. Dropping the entry at the cap was the
+  obvious alternative and it recreates the original bug three runs later instead of one: the file
+  goes quiet, and quiet is the failure this whole mechanism exists to prevent. The cost is a report
+  written every night for as long as the file sits there unconvertible, which is the honest price and
+  the thing that makes someone go and look at it. An edit at the source clears it, since the sweep
+  returns the file with a new cTag and a fresh conversion drops the entry.
