@@ -786,3 +786,16 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   nothing observable. What found it was the first test that produced a note through that path, which
   is the only thing that could have. When adding a field that nothing fills yet, either fill it from
   something or leave it out until a caller exists.
+
+- [mistake] Ran the gates on the working tree, then committed the index, and reported the gates as
+  proof of what landed. `git merge --no-commit` stages the merge result; edits made after it, which
+  is where the reconciliation for a type that changed on the branch lives, stay unstaged, and a bare
+  `git commit` writes the staged merge without them. Every gate passed on the files on disk, so
+  nothing looked wrong: 1291 tests, tsc clean, lint clean, all true of a tree that was never
+  committed. `main` then carried a `sync-group.ts` that did not typecheck for four commits, and it
+  was found only when a later commit was checked out into a fresh worktree and tested there.
+  Two habits close it. `git add -A` before running the gates, so what is tested is what is staged.
+  And when a commit is the one that lands on a shared branch, prove the COMMIT rather than the tree:
+  `git worktree add --detach <dir> <sha>`, install, run the gates there. The tell that was available
+  and went unread: the commit's own summary line said 35 files while the reconciliation had touched
+  two more, and a diff smaller than the change just verified is never right.
