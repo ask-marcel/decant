@@ -767,3 +767,22 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   written every night for as long as the file sits there unconvertible, which is the honest price and
   the thing that makes someone go and look at it. An edit at the source clears it, since the sweep
   returns the file with a new cTag and a fresh conversion drops the entry.
+
+- [gotcha] A record that brings lost work back has to live at the level the queue is keyed on, not at
+  the level of the thing that failed. The plan for a failed attachment inside a thread that otherwise
+  rendered named two shapes, and the finer one turned out not to exist: a per-attachment record could
+  not get its thread re-queued, because the folder cursors had advanced when the thread's messages
+  were swept and the thread-level ledger is the only thing that reaches a thread afterwards. The
+  document had to be rewritten to carry the recovered file's card in any case, so the finer shape
+  would have saved the other attachments' conversions and nothing besides. Worth checking before
+  designing a partial-retry: whatever re-queues the work sets the smallest unit that can be retried,
+  and everything below it re-runs whether or not it needs to.
+
+- [gotcha] Code written for a case nothing can yet reach is untested by construction, and it was
+  wrong here. `drainQueue` dropped a per-run given-up note in two places, `givenUp: notes.givenUp` in
+  the window fold and a final line that replaced the list rather than adding to it, both written in
+  8f38b2c when only the ledger produced such notes and no render could. Coverage was 100% and
+  mutation 92% over those very lines, because a mutant that drops an always-empty list changes
+  nothing observable. What found it was the first test that produced a note through that path, which
+  is the only thing that could have. When adding a field that nothing fills yet, either fill it from
+  something or leave it out until a caller exists.
