@@ -106,7 +106,7 @@ const run = async (
   };
 };
 
-const stateAfter = (files: FilesFake): { threads: Record<string, { lastMessage?: string }>; retry: Record<string, { attempts: number; reason: string }> } =>
+const stateAfter = (files: FilesFake): { threads: Record<string, { lastMessage?: string }>; retry: Record<string, { attempts: number; reason: string }>; lastRun?: string } =>
   JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
 describe('mirroring a group inbox into the knowledge base', () => {
@@ -132,6 +132,14 @@ describe('mirroring a group inbox into the knowledge base', () => {
 
     expect(summary.converted).toBe(0);
     expect(asked).toEqual([]);
+  });
+
+  it('a run that found nothing new still records that it ran, so a later report does not call it stale', async () => {
+    const held = withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', RECORD);
+    const { asked, files } = await run({ files: { texts: { [STATE_PATH]: serializeGroupState(held) } } });
+
+    expect(asked).toEqual([]);
+    expect(stateAfter(files).lastRun).toBe('2026-07-23T14:00:00Z');
   });
 
   it('a thread that has been replied to since the last run comes back, because its newest post moved', async () => {
@@ -223,6 +231,14 @@ describe('mirroring a group inbox into the knowledge base', () => {
 
   it('a run that cannot record what it did stops there, rather than carrying on and losing the record', async () => {
     const { ok: succeeded, error } = await run({ files: { failWritesMatching: '.sync-state.json' } });
+
+    expect(succeeded).toBe(false);
+    expect(error).toMatchObject({ step: 'saveState' });
+  });
+
+  it('a run that found nothing new and cannot record that it ran stops rather than reporting success', async () => {
+    const held = withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', RECORD);
+    const { ok: succeeded, error } = await run({ files: { texts: { [STATE_PATH]: serializeGroupState(held) }, failWritesMatching: '.sync-state.json' } });
 
     expect(succeeded).toBe(false);
     expect(error).toMatchObject({ step: 'saveState' });

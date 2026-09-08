@@ -217,6 +217,12 @@ const render = async (
     notes = noted(notes, results);
   }
   deps.progress.done();
+  // Saved once at the end as well as per window, which is what the other two sources do. A group
+  // that gained nothing renders nothing, so the window loop never runs and never saved: its state
+  // then carried the date of the last run that happened to find work, and the run report called it
+  // stale on the strength of that.
+  const finished = await save(deps, `${root}/${GROUP_STATE_FILE}`, current);
+  if (!finished.ok) return finished;
   // Added to, never replacing: a run reports the files a rendered thread has stopped owing as well
   // as the threads the ledger still holds, and the two lists are filled from different places.
   const reported = { ...notes, givenUp: [...notes.givenUp, ...abandoned(current, listing)] };
