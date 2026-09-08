@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { DriveItem } from './drive-item.ts';
-import type { RetryEntry } from './worklist.ts';
-import { buildWorklist, forgetSwept, nextFailure } from './worklist.ts';
+import type { RetryEntry } from './retry-policy.ts';
+import { buildWorklist } from './worklist.ts';
 
 const file = (over: Partial<DriveItem> = {}): DriveItem => ({
   id: '01ABC',
@@ -109,27 +109,5 @@ describe('bringing back a file whose conversion failed', () => {
     const swept = [file({ id: 'c', path: 'c.docx', lastModified: '2026-05-03T00:00:00Z' }), file({ id: 'a', path: 'a.docx', lastModified: '2026-05-01T00:00:00Z' })];
 
     expect(buildWorklist(swept, {}, ledger).map((work) => (work.kind === 'archive' ? work.itemId : work.item.id))).toEqual(['a', 'b', 'c']);
-  });
-
-  it('a second failure of the same version counts as a second try', () => {
-    expect(nextFailure(failed(), file(), 'transient: gateway timeout')).toEqual({ item: file(), attempts: 2, reason: 'transient: gateway timeout' });
-  });
-
-  it('a failure of a version edited since starts the count again', () => {
-    expect(nextFailure(failed({}, 2), file({ cTag: 'c2' }), 'permanent: locked').attempts).toBe(1);
-  });
-
-  it('a file failing for the first time is on its first try', () => {
-    expect(nextFailure(undefined, file(), 'permanent: locked').attempts).toBe(1);
-  });
-
-  it('an item the sweep returned is dropped from the ledger, whatever it decided about it', () => {
-    expect(forgetSwept({ '01ABC': failed() }, [file({ kind: 'deleted' })])).toEqual({});
-  });
-
-  it('an item the sweep said nothing about stays in the ledger', () => {
-    const ledger = { '01ABC': failed() };
-
-    expect(forgetSwept(ledger, [file({ id: 'other', path: 'other.docx' })])).toEqual(ledger);
   });
 });

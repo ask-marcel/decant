@@ -18,7 +18,8 @@ import {
   withDrive,
 } from '../domain/site-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
-import { buildWorklist, forgetSwept, givenUp, nextFailure } from '../domain/worklist.ts';
+import { forgetSwept, givenUp, nextFailure } from '../domain/retry-policy.ts';
+import { buildWorklist } from '../domain/worklist.ts';
 import type { ReportEntry, ReportNotes, ReportRun } from '../domain/report.ts';
 import { appendReportRun, hasSomethingToReport, skipReason } from '../domain/report.ts';
 import type { WorkItem } from '../domain/worklist.ts';

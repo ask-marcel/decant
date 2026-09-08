@@ -1,6 +1,6 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
-import { MAX_CONVERSION_ATTEMPTS } from './worklist.ts';
+import { MAX_CONVERSION_ATTEMPTS } from './retry-policy.ts';
 
 // What a mailbox run leaves behind: a cursor per folder, what every conversation produced, and the
 // files already fetched, so a re-run converts nothing it has seen and a stop loses one thread.

@@ -36,7 +36,7 @@ import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread } from './render-thread.ts';
-import { MAX_CONVERSION_ATTEMPTS } from '../domain/worklist.ts';
+import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 

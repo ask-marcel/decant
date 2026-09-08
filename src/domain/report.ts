@@ -1,5 +1,5 @@
 import { extensionOf } from './conversion-plan.ts';
-import { MAX_CONVERSION_ATTEMPTS } from './worklist.ts';
+import { MAX_CONVERSION_ATTEMPTS } from './retry-policy.ts';
 
 export type ReportEntry = {
   readonly path: string;

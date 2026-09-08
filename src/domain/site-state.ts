@@ -1,6 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
-import type { Manifest, ManifestEntry, RetryEntry, RetryLedger, WorkItem } from './worklist.ts';
+import type { RetryEntry, RetryLedger } from './retry-policy.ts';
+import type { Manifest, ManifestEntry, WorkItem } from './worklist.ts';
 
 // What one run leaves behind so the next one, or a restart after a stop, picks up exactly where it
 // left off: the cursor Graph gave us, the queue still to process, what every item produced, and what
