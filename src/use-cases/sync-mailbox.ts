@@ -35,7 +35,7 @@ import type { Progress } from './ports/progress.ts';
 import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
-import type { RenderThread } from './render-thread.ts';
+import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
@@ -292,12 +292,38 @@ const renderOne = async (
     return { apply: (carried) => withRetry(carried, threadId, { attempts, reason: rendered.error.message }), counted: { failed: 1 }, notes };
   }
   if (rendered.value.kind === 'empty') return { apply: (carried) => withoutRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
-  const thread = rendered.value.thread;
-  return {
-    apply: (carried) => withoutRetry(recordThread(carried, threadId, thread), threadId),
-    counted: { converted: 1, skipped: thread.filesSkipped.length, failed: thread.filesFailed.length },
-    notes: { skipped: thread.filesSkipped, failed: thread.filesFailed },
+  return owing(state, threadId, rendered.value.thread);
+};
+
+// The thread landed; one of the files it carried did not. Nothing narrower than the thread can bring
+// that file back, because the folder cursors moved on when its messages were swept and only the queue
+// reaches it now, so the thread is remembered as owing and rendered whole again next run. Writing it
+// twice costs the conversions of the files that already worked, which are content-addressed and land
+// on the same paths, and the document itself has to be rewritten anyway to carry the recovered file's
+// card.
+//
+// At the cap the record goes rather than staying, which is the opposite of what a thread that never
+// rendered at all does. A thread that never rendered leaves nothing in `kb/`, so the report is the
+// only place it exists; this one leaves an attachment card in its own folder carrying the reason,
+// which no later run can take away. So the files are named once, as files, and the ledger lets go.
+const owing = (
+  state: MailboxState,
+  threadId: string,
+  thread: RenderedThread
+): { readonly apply: (state: MailboxState) => MailboxState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> } => {
+  const counted = { converted: 1, skipped: thread.filesSkipped.length, failed: thread.filesFailed.length };
+  const attempts = (state.retry[threadId]?.attempts ?? 0) + 1;
+  // The file this thread is still worth coming back for, or nothing: either it carried none, or it
+  // has run out of tries. Held as the entry rather than a flag so the ledger's own line can name what
+  // the thread is waiting on, which is the only thing a state file opened by hand has to go on.
+  const owed = attempts < MAX_CONVERSION_ATTEMPTS ? thread.filesFailed[0] : undefined;
+  const apply = (carried: MailboxState): MailboxState => {
+    const recorded = recordThread(carried, threadId, thread);
+    if (owed === undefined) return withoutRetry(recorded, threadId);
+    return withRetry(recorded, threadId, { attempts, reason: `${owed.path}: ${owed.reason}` });
   };
+  const failed = owed === undefined ? { givenUp: thread.filesFailed } : { failed: thread.filesFailed };
+  return { apply, counted, notes: { skipped: thread.filesSkipped, ...failed } };
 };
 
 const recordThread = (
@@ -356,7 +382,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
       notes = {
         skipped: [...notes.skipped, ...(done.notes.skipped ?? [])],
         failed: [...notes.failed, ...(done.notes.failed ?? [])],
-        givenUp: notes.givenUp,
+        givenUp: [...notes.givenUp, ...(done.notes.givenUp ?? [])],
         archived: notes.archived,
       };
     }
@@ -366,7 +392,12 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
   const saved = await save(deps.files, statePath, finished, input.dryRun);
   if (!saved.ok) return saved;
   await writeIndexes(deps, input, finished);
-  const withAbandoned = { ...notes, givenUp: abandonedThreads(finished).map((entry) => ({ path: `thread ${entry.threadId}`, reason: entry.reason })) };
+  // Added to, never replacing: a run reports the files a rendered thread has stopped owing as well as
+  // the threads the ledger still holds, and the two lists are filled from different places.
+  const withAbandoned = {
+    ...notes,
+    givenUp: [...notes.givenUp, ...abandonedThreads(finished).map((entry) => ({ path: `thread ${entry.threadId}`, reason: entry.reason }))],
+  };
   await writeReport(deps, input, mailboxRoot(deps.kbRoot), MAILBOX_NAME, summary, withAbandoned);
   return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary, notes: withAbandoned });
 };

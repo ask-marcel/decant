@@ -34,7 +34,11 @@ const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   ...over,
 });
 
-const rendered = (over: Partial<RenderThreadOutcome> = {}): RenderThreadOutcome => ({
+// Narrower than `RenderThreadOutcome` so a test can reach into the thread it describes; it still
+// satisfies every seed that asks for the union.
+type Rendered = Extract<RenderThreadOutcome, { readonly kind: 'rendered' }>;
+
+const rendered = (over: Partial<Rendered> = {}): Rendered => ({
   kind: 'rendered',
   thread: {
     record: {
@@ -792,5 +796,72 @@ describe('a conversation the run could not write', () => {
     expect(replied.asked).toEqual(['conv-1']);
     expect(replied.summary).toMatchObject({ converted: 1 });
     expect(stateAfter(replied.files).retry).toEqual({});
+  });
+});
+
+describe('a thread that renders while one of its files does not', () => {
+  // No headers are seeded, so the root falls back to the message's own id.
+  const THREAD = threadIdOf('m1');
+  const REPORT_PATH = 'kb/Mailbox/_sync-report.md';
+  const NOTHING_NEW = { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'c2' }] };
+  const OWING: RenderThreadOutcome = rendered({
+    thread: { ...rendered().thread, filesFailed: [{ path: 'threads/2026-05-12/thread.md: c.docx', reason: 'locked' }] },
+  });
+
+  const swept = async (outcome: RenderThreadOutcome): Promise<string> => {
+    const first = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome: () => outcome });
+    return first.files.written.get(STATE_PATH) ?? '';
+  };
+
+  const again = async (carried: string, outcome: RenderThreadOutcome): Promise<Awaited<ReturnType<typeof run>>> =>
+    run({ files: { texts: { [STATE_PATH]: carried } }, reader: NOTHING_NEW, outcome: () => outcome });
+
+  it('a thread whose attachment could not be read is rendered again on the next run, although the delta reports nothing', async () => {
+    const first = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome: () => OWING });
+    const second = await again(first.files.written.get(STATE_PATH) ?? '', OWING);
+
+    expect(stateAfter(first.files).retry[THREAD]).toEqual({ attempts: 1, reason: 'threads/2026-05-12/thread.md: c.docx: locked' });
+    expect(second.asked).toEqual(['conv-1']);
+  });
+
+  it('a file a thread still owes is named under the heading promising another run, not the one that ends it', async () => {
+    const first = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome: () => OWING });
+    const report = first.files.written.get(REPORT_PATH) ?? '';
+
+    expect(report).toContain('Could not be read, and will be tried again on the next run:');
+    expect(report).toContain('- threads/2026-05-12/thread.md: c.docx: locked');
+    expect(report).not.toContain('will not be tried again');
+  });
+
+  it('a thread whose files all landed leaves nothing behind to render again', async () => {
+    const first = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(stateAfter(first.files).retry).toEqual({});
+  });
+
+  it('a thread that recovers its file on the second try leaves nothing behind to try a third time', async () => {
+    const second = await again(await swept(OWING), rendered());
+
+    expect(stateAfter(second.files).retry).toEqual({});
+  });
+
+  it('a thread still owing a file after three tries is left alone by the fourth', async () => {
+    const second = await again(await swept(OWING), OWING);
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', OWING);
+    const fourth = await again(third.files.written.get(STATE_PATH) ?? '', OWING);
+
+    expect(third.asked).toEqual(['conv-1']);
+    expect(fourth.asked).toEqual([]);
+    expect(stateAfter(fourth.files).retry).toEqual({});
+  });
+
+  it('the file a thread gave up on is named in the report, not the thread that carried it', async () => {
+    const second = await again(await swept(OWING), OWING);
+    const third = await again(second.files.written.get(STATE_PATH) ?? '', OWING);
+    const report = third.files.written.get(REPORT_PATH) ?? '';
+
+    expect(report).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
+    expect(report).toContain('- threads/2026-05-12/thread.md: c.docx: locked');
+    expect(report).not.toContain(`- thread ${THREAD}`);
   });
 });

@@ -355,6 +355,13 @@ three tries a SharePoint document gets, and named under the same two headings: t
 another run, then the one that says there will not be another. A reply arriving on a thread that had
 run out of tries starts it over.
 
+A thread that lands while one of the files it carried does not is remembered the same way, and the
+whole thread is written again on the next run to fetch that one file. It costs the conversions of
+the files that already worked, which land on the same paths they landed on before, and there is no
+narrower way back: the folder cursors moved on when the messages were swept. After the third try the
+file is named once as given up and the thread is left alone; the card in the thread's own
+`_attachments` folder goes on saying what happened to it.
+
 A first mailbox run is slow: Outlook hands back changes ten messages at a time and there is no way
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
 are cheap, reading only what changed. `--since` narrows what gets *written*, not what gets swept.
