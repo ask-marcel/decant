@@ -12,7 +12,9 @@ import type { Logger } from './ports/logger.ts';
 import type { Prompt } from './ports/prompt.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { GroupReader, GroupSummary } from './ports/group-reader.ts';
+import type { TodoList, TodoReader } from './ports/todo-reader.ts';
 import type { SyncGroup } from './sync-group.ts';
+import type { SyncTodo } from './sync-todo.ts';
 import type { SourceRun, SyncSite } from './sync-site.ts';
 import type { SiteCache } from '../domain/site-cache.ts';
 import type { SyncMailbox } from './sync-mailbox.ts';
@@ -31,9 +33,13 @@ export type RunSyncDeps = {
   readonly rememberSites: (sites: ReadonlyArray<SiteSummary>) => Promise<void>;
   readonly syncMailbox: SyncMailbox;
   readonly syncGroup: SyncGroup;
+  readonly syncTodo: SyncTodo;
   // Only the listing half of the group reader: choosing a source needs to know which groups can be
   // read, and reading one is the use-case's business, not the picker's.
   readonly groups: Pick<GroupReader, 'listGroups'>;
+  // The listing half of the To Do reader, for the same reason: which lists exist is the picker's
+  // business, and reading one is the use-case's.
+  readonly todo: Pick<TodoReader, 'taskLists'>;
   // One file naming what the whole run left behind, written once every source is done.
   readonly writeGlobalReport: WriteGlobalReport;
 };
@@ -48,6 +54,7 @@ export type RunSyncInput = {
   readonly dryRun: boolean;
   readonly mailbox?: boolean;
   readonly groupId?: string;
+  readonly todoListId?: string;
   readonly since?: string;
   // Ignore what was stored and list for real, for when a site is known to be new.
   readonly refresh?: boolean;
@@ -123,6 +130,11 @@ const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
+  for (const source of known.value.filter((candidate) => candidate.kind === 'todo')) {
+    const summary = await syncTheTodoList(deps, input, { id: source.id, name: source.name });
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
+    summaries.push(summary.value);
+  }
   return ok(summaries);
 };
 
@@ -144,6 +156,17 @@ const groupFromOptions = async (deps: RunSyncDeps, input: RunSyncInput): Promise
   return found === undefined ? failed('findGroup', 'bad-choice', `no group you belong to is ${input.groupId}`) : ok(found);
 };
 
+// A list named outright is looked up in the listing rather than fetched by id, the way a group is:
+// one call answers both whether the list exists and what it is called, and a name is what a person
+// has to hand where a Graph list id is thirty opaque characters.
+const todoFromOptions = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<TodoList, StepError> | undefined> => {
+  if (input.todoListId === undefined) return undefined;
+  const listed = await deps.todo.taskLists();
+  if (!listed.ok) return failed('listTaskLists', listed.error.kind, listed.error.message);
+  const found = listed.value.find((list) => list.id === input.todoListId || list.name === input.todoListId);
+  return found === undefined ? failed('findTodoList', 'bad-choice', `no To Do list of yours is ${input.todoListId}`) : ok(found);
+};
+
 const siteAt = async (deps: RunSyncDeps, url: string): Promise<Result<SiteRef, StepError>> => {
   const found = await deps.reader.siteByUrl(url);
   return found.ok ? ok(found.value) : failed('siteByUrl', found.error.kind, found.error.message);
@@ -151,11 +174,11 @@ const siteAt = async (deps: RunSyncDeps, url: string): Promise<Result<SiteRef, S
 
 // What a choice came to. Sites and groups travel together because one picker offers both and one
 // run can take either, and they are kept apart because syncing them is not the same call.
-type Sources = { readonly sites: ReadonlyArray<SiteRef>; readonly groups: ReadonlyArray<GroupSummary> };
+type Sources = { readonly sites: ReadonlyArray<SiteRef>; readonly groups: ReadonlyArray<GroupSummary>; readonly todoLists: ReadonlyArray<TodoList> };
 
 type Chosen = Sources | 'update-all' | 'quit' | 'mailbox';
 
-const NOTHING: Sources = { sites: [], groups: [] };
+const NOTHING: Sources = { sites: [], groups: [], todoLists: [] };
 
 const oneSite = (found: Result<SiteRef, StepError>): Result<Chosen, StepError> => (found.ok ? ok({ ...NOTHING, sites: [found.value] }) : found);
 
@@ -169,7 +192,8 @@ const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): 
   // groups are numbered after the sites, in the order the picker drew them.
   const sites = offered.sites.filter((_site, index) => choice.indices.includes(index));
   const groups = offered.groups.filter((_group, index) => choice.indices.includes(offered.sites.length + index));
-  return sites.length + groups.length === 0 ? failed('pickSite', 'bad-choice', 'choose at least one source') : ok({ sites, groups });
+  const todoLists = offered.todoLists.filter((_list, index) => choice.indices.includes(offered.sites.length + offered.groups.length + index));
+  return sites.length + groups.length + todoLists.length === 0 ? failed('pickSite', 'bad-choice', 'choose at least one source') : ok({ sites, groups, todoLists });
 };
 
 // What the picker is drawn from, and what to do about it afterwards. A stored list is shown at once
@@ -209,12 +233,13 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
   // there to choose from, and a picker that refused to draw because one listing failed would be
   // worse than one drawn short.
   const groups = await listedGroups(deps);
+  const todoLists = await listedTodoLists(deps);
   const marks = await syncedMarks(deps);
-  const rows = [...annotate(sites, marks), ...annotate(groups.map(asChoosable), marks)];
+  const rows = [...annotate(sites, marks), ...annotate(groups.map(asChoosable), marks), ...annotate(todoLists.map(asChoosableList), marks)];
   deps.prompt.show(renderSitePicker(rows, annotate([{ id: MAILBOX_ID, name: MAILBOX_NAME }], marks)[0] ?? { id: MAILBOX_ID, name: MAILBOX_NAME, webUrl: '' }));
   const chosen = parseSelection(await deps.prompt.ask('Source:'), rows.length);
   if (!chosen.ok) return failed('pickSite', chosen.error.kind, chosen.error.message);
-  const resolved = await resolve(deps, chosen.value, { sites, groups });
+  const resolved = await resolve(deps, chosen.value, { sites, groups, todoLists });
   return resolved.ok ? ok({ chosen: resolved.value, fromCache }) : resolved;
 };
 
@@ -225,6 +250,18 @@ const listedGroups = async (deps: RunSyncDeps): Promise<ReadonlyArray<GroupSumma
   const listed = await deps.groups.listGroups();
   if (listed.ok) return listed.value;
   deps.logger.warn('groups.unlisted', { cause: listed.error.kind });
+  return [];
+};
+
+// A To Do list has no address either, and it says so the same way a group inbox does.
+const asChoosableList = (list: TodoList): { id: string; name: string; kind: 'todo' } => ({ id: list.id, name: list.name, kind: 'todo' });
+
+// An account with To Do switched off costs the lists and not the run, exactly as a refused group
+// listing does: the sites are still there to choose from.
+const listedTodoLists = async (deps: RunSyncDeps): Promise<ReadonlyArray<TodoList>> => {
+  const listed = await deps.todo.taskLists();
+  if (listed.ok) return listed.value;
+  deps.logger.warn('todo.unlisted', { cause: listed.error.kind });
   return [];
 };
 
@@ -247,6 +284,11 @@ const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources):
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
+  for (const list of chosen.todoLists) {
+    const summary = await syncTheTodoList(deps, input, list);
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
+    summaries.push(summary.value);
+  }
   return ok(summaries);
 };
 
@@ -254,6 +296,13 @@ const syncTheGroup = async (deps: RunSyncDeps, input: RunSyncInput, group: Group
   deps.logger.info('group.started', { group: group.name });
   const summary = await deps.syncGroup({ group, maxBytes: input.maxBytes, dryRun: input.dryRun, concurrency: input.concurrency });
   if (summary.ok) deps.prompt.show(renderSummary(`${group.name} (group inbox)`, summary.value.summary, input.dryRun));
+  return summary;
+};
+
+const syncTheTodoList = async (deps: RunSyncDeps, input: RunSyncInput, list: TodoList): Promise<Result<SourceRun, StepError>> => {
+  deps.logger.info('todo.started', { list: list.name });
+  const summary = await deps.syncTodo({ list, dryRun: input.dryRun, concurrency: input.concurrency });
+  if (summary.ok) deps.prompt.show(renderSummary(list.name, summary.value.summary, input.dryRun));
   return summary;
 };
 
@@ -275,6 +324,8 @@ const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
   if (named !== undefined) return named.ok ? runMany(deps, input, { ...NOTHING, sites: [named.value] }) : named;
   const group = await groupFromOptions(deps, input);
   if (group !== undefined) return group.ok ? runMany(deps, input, { ...NOTHING, groups: [group.value] }) : group;
+  const list = await todoFromOptions(deps, input);
+  if (list !== undefined) return list.ok ? runMany(deps, input, { ...NOTHING, todoLists: [list.value] }) : list;
   const picked = await chooseSite(deps, input);
   if (!picked.ok) return picked;
   const { chosen, fromCache } = picked.value;

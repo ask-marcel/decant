@@ -6,6 +6,8 @@ import { createDriveReaderFromApi, createMarcelCall } from '../infra/drive-reade
 import { MAILBOX_NAME } from '../domain/mail-state.ts';
 import { createGroupReaderFromCall } from '../infra/group-reader-marcel.ts';
 import type { GroupReader } from '../use-cases/ports/group-reader.ts';
+import { createTodoReaderFromCall } from '../infra/todo-reader-marcel.ts';
+import type { TodoReader } from '../use-cases/ports/todo-reader.ts';
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
 import { createWinstonLogger } from '../infra/logger.ts';
@@ -27,6 +29,7 @@ import { createRunSync } from '../use-cases/run-sync.ts';
 import type { RunSync } from '../use-cases/run-sync.ts';
 import { createRenderThread } from '../use-cases/render-thread.ts';
 import { createSyncGroup } from '../use-cases/sync-group.ts';
+import { createSyncTodo } from '../use-cases/sync-todo.ts';
 import { createSyncMailbox } from '../use-cases/sync-mailbox.ts';
 import { createWriteGlobalReport } from '../use-cases/write-global-report.ts';
 import { createSyncSite, resolveSite } from '../use-cases/sync-site.ts';
@@ -45,6 +48,7 @@ export type DepOverrides = {
   readonly reader?: DriveReader;
   readonly mail?: MailReader;
   readonly group?: GroupReader;
+  readonly todo?: TodoReader;
   readonly ocr?: Ocr;
   readonly prompt?: Prompt;
   readonly clock?: Clock;
@@ -142,6 +146,10 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
       timezone: config.timezone,
     });
   const syncGroup = createSyncGroup({ reader: group, files, renderThreadFor: renderGroupThreadFor, clock, logger, progress, kbRoot: config.kbRoot });
+  // A task is text with nothing hanging off it, so it needs none of the conversion machinery the
+  // other sources are built out of: the reader, somewhere to write, and a clock to stamp it.
+  const todo = overrides.todo ?? createTodoReaderFromCall(createMarcelCall(api));
+  const syncTodo = createSyncTodo({ reader: todo, files, clock, logger, progress, kbRoot: config.kbRoot });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
@@ -157,7 +165,9 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     savedDrives,
     syncMailbox,
     syncGroup,
+    syncTodo,
     groups: group,
+    todo,
     cachedSites,
     rememberSites,
     writeGlobalReport,

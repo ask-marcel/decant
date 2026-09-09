@@ -37,12 +37,15 @@ const run = async (
     cached?: SiteCache;
     groups?: ReadonlyArray<{ id: string; name: string; mail: string }>;
     failGroups?: boolean;
+    todoLists?: ReadonlyArray<{ id: string; name: string }>;
+    failTodo?: boolean;
     reportPath?: string;
     summary?: RunSummary;
   } = {}
 ): Promise<{
   calls: SyncSiteInput[];
   groupRuns: string[];
+  todoRuns: string[];
   mailboxRuns: SyncMailboxInput[];
   reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }>;
   prompt: PromptFake;
@@ -57,6 +60,7 @@ const run = async (
 }> => {
   const calls: SyncSiteInput[] = [];
   const groupRuns: string[] = [];
+  const todoRuns: string[] = [];
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
   const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }> = [];
@@ -70,6 +74,11 @@ const run = async (
       return ok({ ...SOURCE_RUN, id: input.group.id, source: input.group.name });
     },
     groups: { listGroups: async () => (seeds.failGroups === true ? err({ kind: 'permanent' as const, message: 'ErrorAccessDenied' }) : ok(seeds.groups ?? [])) },
+    syncTodo: async (input) => {
+      todoRuns.push(input.list.name);
+      return ok({ ...SOURCE_RUN, id: input.list.id, source: input.list.name });
+    },
+    todo: { taskLists: async () => (seeds.failTodo === true ? err({ kind: 'permanent' as const, message: 'MailboxNotEnabledForRESTAPI' }) : ok(seeds.todoLists ?? [])) },
     cachedSites: async () => seeds.cached,
     rememberSites: async (listed) => {
       remembered.push(listed);
@@ -95,6 +104,7 @@ const run = async (
   return {
     calls,
     groupRuns,
+    todoRuns,
     mailboxRuns,
     reported,
     prompt,
@@ -230,6 +240,67 @@ describe('choosing what to sync', () => {
     );
 
     expect(groupRuns).toEqual(['MOOV Leadership Team']);
+  });
+
+  it('the To Do lists are offered under the group inboxes, and a number below them picks one', async () => {
+    const { todoRuns, prompt, logger } = await run(['3'], {}, { todoLists: [{ id: 'list-1', name: 'Tasks' }] });
+
+    expect(prompt.shown.join('\n')).toContain('To Do:\n  3) Tasks  (new)');
+    expect(todoRuns).toEqual(['Tasks']);
+    expect(prompt.shown.join('\n')).toContain('Tasks: 2 converted');
+    expect(logger.calls.some((entry) => entry.event === 'todo.started')).toBe(true);
+  });
+
+  it('a site, a group and a To Do list taken together are each synced, in the order the picker drew them', async () => {
+    const { calls, groupRuns, todoRuns } = await run(
+      ['1,3,4'],
+      {},
+      { groups: [{ id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' }], todoLists: [{ id: 'list-1', name: 'Tasks' }] }
+    );
+
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
+    expect(groupRuns).toEqual(['MOOV Leadership Team']);
+    expect(todoRuns).toEqual(['Tasks']);
+  });
+
+  it('a To Do list named outright is synced without drawing the picker, by its id or its name', async () => {
+    const todoLists = [{ id: 'list-1', name: 'Tasks' }];
+    const byId = await run([], { todoListId: 'list-1' }, { todoLists });
+    const byName = await run([], { todoListId: 'Tasks' }, { todoLists });
+
+    expect(byId.todoRuns).toEqual(['Tasks']);
+    expect(byName.todoRuns).toEqual(['Tasks']);
+    expect(byId.prompt.asked).toEqual([]);
+  });
+
+  it('a To Do list this account does not have is refused by name rather than syncing something else', async () => {
+    const { ok: succeeded, step, error } = await run([], { todoListId: 'Groceries' }, { todoLists: [] });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('findTodoList');
+    expect(error).toBe('no To Do list of yours is Groceries');
+  });
+
+  it('a named To Do list whose listing is refused stops the run and names the step', async () => {
+    const { ok: succeeded, step, error } = await run([], { todoListId: 'list-1' }, { failTodo: true });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('listTaskLists');
+    expect(error).toBe('MailboxNotEnabledForRESTAPI');
+  });
+
+  it('an update refreshes the To Do lists already in the knowledge base, alongside the rest', async () => {
+    const { todoRuns } = await run([], { command: 'update' }, { synced: [{ kind: 'todo', id: 'list-1', name: 'Tasks', lastRun: '2026-09-08T09:00:00Z', fileCount: 21 }] });
+
+    expect(todoRuns).toEqual(['Tasks']);
+  });
+
+  it('a To Do listing that fails costs the lists and not the picker', async () => {
+    const { calls, prompt, logger } = await run(['1', 'all'], {}, { failTodo: true });
+
+    expect(prompt.shown.join('\n')).not.toContain('To Do:');
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
+    expect(logger.calls.some((entry) => entry.event === 'todo.unlisted')).toBe(true);
   });
 
   it('a group listing that fails costs the group inboxes and not the picker', async () => {
@@ -429,6 +500,8 @@ describe('when the knowledge base itself cannot be read', () => {
       writeGlobalReport: async () => undefined,
       syncGroup: async () => ok(SOURCE_RUN),
       groups: { listGroups: async () => ok([]) },
+      syncTodo: async () => ok(SOURCE_RUN),
+      todo: { taskLists: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -454,6 +527,8 @@ describe('when the knowledge base itself cannot be read', () => {
       writeGlobalReport: async () => undefined,
       syncGroup: async () => ok(SOURCE_RUN),
       groups: { listGroups: async () => ok([]) },
+      syncTodo: async () => ok(SOURCE_RUN),
+      todo: { taskLists: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -501,6 +576,8 @@ describe('when one site in a refresh fails', () => {
     const runSync = createRunSync({
       syncGroup: async () => ok(SOURCE_RUN),
       groups: { listGroups: async () => ok([]) },
+      syncTodo: async () => ok(SOURCE_RUN),
+      todo: { taskLists: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -645,6 +722,8 @@ describe('when a source run fails after it began', () => {
     const runSync = createRunSync({
       syncGroup: async () => ok(SOURCE_RUN),
       groups: { listGroups: async () => ok([]) },
+      syncTodo: async () => ok(SOURCE_RUN),
+      todo: { taskLists: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -672,6 +751,8 @@ describe('when a source run fails after it began', () => {
     const runSync = createRunSync({
       syncGroup: async () => ok(SOURCE_RUN),
       groups: { listGroups: async () => ok([]) },
+      syncTodo: async () => ok(SOURCE_RUN),
+      todo: { taskLists: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -731,6 +812,8 @@ describe('pointing a reader at the report a run leaves behind', () => {
     const runSync = createRunSync({
       syncGroup: async () => ok(SOURCE_RUN),
       groups: { listGroups: async () => ok([]) },
+      syncTodo: async () => ok(SOURCE_RUN),
+      todo: { taskLists: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -762,6 +845,8 @@ describe('pointing a reader at the report a run leaves behind', () => {
     const runSync = createRunSync({
       syncGroup: async () => ok(SOURCE_RUN),
       groups: { listGroups: async () => ok([]) },
+      syncTodo: async () => ok(SOURCE_RUN),
+      todo: { taskLists: async () => ok([]) },
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),

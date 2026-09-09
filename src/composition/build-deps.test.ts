@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import { createGroupReaderFake } from '../test-helpers/group-reader-fake.ts';
+import { createTodoReaderFake } from '../test-helpers/todo-reader-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
@@ -47,6 +48,7 @@ describe('wiring the command together', () => {
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
       group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(['q']),
       clock: createClockFake(),
@@ -71,6 +73,7 @@ describe('wiring the command together', () => {
       logger: createLoggerFake(),
       reader: createDriveReaderFake({ pages: [{ items: [], skipped: 0, deltaLink: 'cursor-1' }] }),
       group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),
@@ -102,6 +105,7 @@ describe('wiring the command together', () => {
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
       group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),
@@ -119,6 +123,7 @@ describe('wiring the command together', () => {
       logger: createLoggerFake(),
       reader: createDriveReaderFake({ sites: [{ id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' }] }),
       group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(['q']),
       clock: createClockFake(),
@@ -154,6 +159,7 @@ describe('wiring the command together', () => {
       clock: createClockFake(),
       ocr: createOcrFake(),
       group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
     });
 
     expect(typeof deps.runSync).toBe('function');
@@ -174,6 +180,7 @@ describe('wiring the command together', () => {
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
       group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),

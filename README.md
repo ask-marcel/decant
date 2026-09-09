@@ -10,8 +10,9 @@ third of one vault by weight, a notification's icons are named by machine ids no
 a picture's words belong under the picture rather than in a file of their own. What lands in `kb/`
 is what a reader, or an agent, can actually use.
 
-It syncs **SharePoint document libraries** and your **Outlook mailbox**, the latter as one markdown
-file per conversation with its attachments and the SharePoint files it links to.
+It syncs **SharePoint document libraries**, your **Outlook mailbox** (one markdown file per
+conversation, with its attachments and the SharePoint files it links to) and your **Microsoft To Do
+lists** (one markdown file per task).
 
 Graph access goes through [`ask-marcel-office-cli`](https://www.npmjs.com/package/ask-marcel-office-cli)
 used as a library, which owns authentication, paging and document conversion. See
@@ -45,9 +46,9 @@ bun run sync
 ```
 
 Lists what you can read, grouped by what it is: the SharePoint sites, the Loop workspaces, your
-OneDrive, and the inboxes of the Microsoft 365 groups you belong to. Each is marked with when it
-last synced and how much it holds. Pick a number and one or more libraries, or press `m` for your
-mailbox, and it syncs.
+OneDrive, the inboxes of the Microsoft 365 groups you belong to, and your Microsoft To Do lists.
+Each is marked with when it last synced and how much it holds. Pick a number and one or more
+libraries, or press `m` for your mailbox, and it syncs.
 
 Your Loop workspaces are on that list too, shown as `Loop - <workspace>`. A workspace keeps its
 pages in a container no site listing returns, so they are found through the `.pod` manifest each one
@@ -77,6 +78,7 @@ clear message instead of waiting for input.
 | `--drive-id <id>` | Sync only this library; repeat for several |
 | `--mailbox` | Sync your Outlook mailbox without showing the picker |
 | `--group-id <id>` | Sync one group inbox without the picker, by its id or its address |
+| `--todo-list <name>` | Sync one To Do list without the picker, by its name or its id |
 | `--since <day>` | With `--mailbox`, only conversations touched since this day (`2026-01-31`) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
@@ -109,6 +111,10 @@ kb/
   OneDrive/<Owner>/                 the same shape, for a personal OneDrive
   Group inboxes/<Group>/            a group's conversations (see the mailbox layout below)
   Mailbox/                          your own Outlook mailbox
+  To Do/<List>/
+    .sync-state.json                which tasks are filed, and what each one last looked like
+    2026-09-08/                     the day each task last changed
+      Book the venue.md             the task, its notes, its steps and what it links to
 ```
 
 Sources are shelved under the same headings the picker offers them under, so a source is found again
@@ -282,6 +288,58 @@ kb/
     _meta/attachments.jsonl                          one line per stored file, by content address
     _meta/links.jsonl                                one line per document pointed at
 ```
+
+### What a To Do sync writes
+
+One markdown file per task, filed under the day the task last changed, the same way a document is:
+
+```yaml
+---
+source: To Do - Tasks
+list: Tasks
+status: completed
+importance: high
+due: "2026-09-12"
+completed: "2026-09-08"
+created: "2026-08-01T09:00:00Z"
+last_modified: "2026-09-08T16:20:11Z"
+categories:
+  - Work
+synced_at: "2026-09-09T14:00:00Z"
+---
+
+# Book the venue
+
+Ask for the September rate.
+
+## Steps
+
+- [x] Shortlist three
+- [ ] Call them
+
+## Links
+
+- [Contract draft](https://tenant.sharepoint.com/sites/X/Contract.docx)
+```
+
+Completed tasks land alongside the open ones, each marked with its status and the day it was
+finished. A knowledge base is for remembering what was decided, and most of that is in work already
+done; a sync that kept only the open tasks would delete a task from `kb/` at the moment it stopped
+being a plan and became a fact.
+
+An ordinary task says nothing about its importance, so the word only appears where it means
+something. A task with no notes, no steps and nothing linked carries none of those headings rather
+than empty ones.
+
+Editing a task files it afresh under its new day, and the copy under the old day moves into
+`_archive/` rather than being left behind as a duplicate. A task deleted in To Do goes to `_archive/`
+too, and is named in the list's `_sync-report.md`.
+
+Each list is read whole every run. To Do does have a delta endpoint, but it answers with a task's
+own fields and leaves out its steps and its linked resources, which are navigation properties and
+have to be expanded; one paged read that expands both costs less than a delta plus a fetch per
+changed task, and it is also what makes a deleted task visible, by its absence, on every run rather
+than on the single run a delta reports its removal.
 
 ### What a group inbox sync writes
 

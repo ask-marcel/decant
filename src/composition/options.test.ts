@@ -82,6 +82,14 @@ describe('reading what the operator asked for', () => {
     expect(parse('--site-id contoso,1,2')).toMatchObject({ value: { siteId: 'contoso,1,2' } });
   });
 
+  it('a To Do list can be named outright, by the name a person actually has to hand', () => {
+    expect(parse('--todo-list Tasks')).toMatchObject({ value: { todoListId: 'Tasks' } });
+  });
+
+  it('a To Do list named with no value is refused rather than syncing everything', () => {
+    expect(parse('--todo-list')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--todo-list expects a value' } });
+  });
+
   it('a site can be given by address, for the ones the search index does not list', () => {
     expect(parse('--site-url https://tenant.sharepoint.com/sites/X')).toMatchObject({ value: { siteUrl: 'https://tenant.sharepoint.com/sites/X' } });
   });
