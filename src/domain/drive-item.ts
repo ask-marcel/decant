@@ -1,5 +1,6 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
+import { canonicalCursor } from './utilities/graph-cursor.ts';
 
 export type DriveItemKind = 'file' | 'folder' | 'deleted';
 
@@ -33,8 +34,6 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
 
 // Graph hands cursors back with `$` percent-escaped; only that escape is decoded, because the rest
 // encode literal bytes inside the skiptoken. Same rule the CLI's presenter applies.
-const canonicalCursor = (link: string | undefined): string | undefined => link?.replace(/%24/gi, '$');
-
 // decodeURIComponent throws on a lone `%` or a bad escape. A pure-domain fallback (rule 17): a
 // path we cannot decode is used as it came rather than ending the sweep.
 const decodeOrKeep = (value: string): string => {

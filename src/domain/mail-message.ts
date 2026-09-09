@@ -1,5 +1,6 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
+import { canonicalCursor } from './utilities/graph-cursor.ts';
 
 export type Correspondent = { readonly name: string; readonly address: string };
 
@@ -29,8 +30,6 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
   const value = record[key];
   return typeof value === 'string' ? value : undefined;
 };
-
-const canonicalCursor = (link: string | undefined): string | undefined => link?.replace(/%24/gi, '$');
 
 const correspondentOf = (raw: unknown): Correspondent | undefined => {
   if (!isRecord(raw) || !isRecord(raw['emailAddress'])) return undefined;
