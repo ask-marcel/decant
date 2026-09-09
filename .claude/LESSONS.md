@@ -809,3 +809,12 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   would have duplicated a conversion the library owns and drifted from it within a release or two.
   The request is `docs/request-group-post-parity.md`; when the commands land, the change is confined
   to those three methods and nothing else moves, because the rendering path is already shared.
+
+- [gotcha] `expect(result).toEqual({ ok: true, value: [] })` does not prove a list is empty: Bun reads
+  `[undefined]` as equal to `[]`, so a `filter` that drops holes out of an array can be deleted
+  outright and every such assertion still passes. Two mutants survived on one line of
+  `listSyncedSources` for exactly that reason, both of them the filter that keeps an unreadable
+  source from leaking into the list as a hole, and the tests covering that line read as if they had
+  it pinned. `toHaveLength(0)` sees the difference and kills both. Where a test asserts that
+  something was filtered OUT, assert the length, or assert on a mapped projection
+  (`value.map((source) => source.name)`) where a hole shows up as `undefined` rather than vanishing.

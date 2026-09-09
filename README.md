@@ -91,8 +91,9 @@ clear message instead of waiting for input.
 ```
 kb/
   _sync-report.md                   what the last run left behind, every source in one file
-  _archive/<Site>/<Library>/...     files whose source was deleted, renamed, or changed away
-  <Site>/
+  _archive/SharePoint sites/<Site>/<Library>/...
+                                    files whose source was deleted, renamed, or changed away
+  SharePoint sites/<Site>/
     .sync-state.json                what has been synced, and where the next run resumes
     _sync-report.md                 what did not make it in, and why (only when there is something)
     <Library>/
@@ -104,7 +105,17 @@ kb/
           Contrat.pdf.md            its text layer
           Contrat.docx.md           the text, plus a section listing the pictures inside
           Contrat.docx.media/       those pictures, kept as files
+  Loop workspaces/<Workspace>/      the same shape, for a Loop workspace
+  OneDrive/<Owner>/                 the same shape, for a personal OneDrive
+  Group inboxes/<Group>/            a group's conversations (see the mailbox layout below)
+  Mailbox/                          your own Outlook mailbox
 ```
+
+Sources are shelved under the same headings the picker offers them under, so a source is found again
+under the heading it was chosen from. A Microsoft 365 group is a site and an inbox wearing one title,
+and the two halves land on different shelves: its documents under `SharePoint sites/`, its
+conversations under `Group inboxes/`. Reports and summaries still spell out `(group inbox)` after the
+name, where a bare name would leave a reader guessing which half they are reading.
 
 Every document is filed under the day it last changed at the source, not the day it was synced, with
 the folders it had in SharePoint underneath: the day is what you usually want to scan by, and the
