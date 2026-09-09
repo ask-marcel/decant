@@ -1,7 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 
-export type SourceKind = 'site' | 'mailbox' | 'group';
+export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo';
 
 export type SyncedSource = {
   readonly kind: SourceKind;
@@ -22,6 +22,8 @@ export const sourceLabel = (source: { readonly name: string; readonly kind: Sour
   source.kind === 'group' ? `${source.name}${GROUP_LABEL_SUFFIX}` : source.name;
 
 type SourceIdentity = { readonly kind: SourceKind; readonly id: string; readonly name: string };
+
+const isSourceKind = (value: string | undefined): value is SourceKind => value === 'site' || value === 'mailbox' || value === 'group' || value === 'todo';
 
 export const NEVER_RUN = 'never';
 
@@ -49,17 +51,16 @@ const parseIdentity = (source: Record<string, unknown>): Result<SourceIdentity, 
   const kind = readString(source, 'kind');
   const id = readString(source, 'id');
   const name = readString(source, 'name');
-  if (kind !== 'site' && kind !== 'mailbox' && kind !== 'group') return malformed(`unknown source kind: ${String(kind)}`);
+  if (!isSourceKind(kind)) return malformed(`unknown source kind: ${String(kind)}`);
   if (id === undefined || name === undefined) return malformed('source is missing id or name');
   return ok({ kind, id, name });
 };
 
-// A site counts the documents its libraries hold; a mailbox and a group inbox count their threads,
-// since one thread is one file in the knowledge base.
-const countFiles = (raw: Record<string, unknown>): number => {
-  const threads = raw['threads'];
-  return countItems(raw['drives']) + (isRecord(threads) ? Object.keys(threads).length : 0);
-};
+const countKeys = (raw: unknown): number => (isRecord(raw) ? Object.keys(raw).length : 0);
+
+// A site counts the documents its libraries hold; a mailbox and a group inbox count their threads and
+// a To Do list its tasks, since each of those is one file in the knowledge base.
+const countFiles = (raw: Record<string, unknown>): number => countItems(raw['drives']) + countKeys(raw['threads']) + countKeys(raw['tasks']);
 
 export const parseSyncedSource = (raw: unknown): Result<SyncedSource, SyncStateError> => {
   if (!isRecord(raw)) return malformed('sync state is not an object');

@@ -11,6 +11,7 @@ export const CATEGORY_FOLDER: Readonly<Record<AddressKind, string>> = {
   loop: 'Loop workspaces',
   onedrive: 'OneDrive',
   group: 'Group inboxes',
+  todo: 'To Do',
 };
 
 // The address is what settles the category, never the display name: a Loop workspace and a team site

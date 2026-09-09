@@ -25,8 +25,9 @@ describe('telling one kind of source from another by its address', () => {
     expect(kindOf({ webUrl: 'https://tenant.sharepoint.com/sites/Direction' })).toBe('site');
   });
 
-  it('sites come first, then Loop, then OneDrive, then the group inboxes, and the order inside each is left alone', () => {
+  it('sites come first, then Loop, then OneDrive, then the group inboxes, then the To Do lists, and the order inside each is left alone', () => {
     const listed = [
+      { webUrl: '', kind: 'todo' as const },
       { webUrl: '', kind: 'group' as const },
       { webUrl: 'https://tenant-my.sharepoint.com/personal/jane' },
       { webUrl: 'https://tenant.sharepoint.com/sites/Direction' },
@@ -35,12 +36,14 @@ describe('telling one kind of source from another by its address', () => {
       { webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_two' },
     ];
 
+    expect(orderByKind(listed).map(kindOf)).toEqual(['site', 'site', 'loop', 'loop', 'onedrive', 'group', 'todo']);
     expect(orderByKind(listed).map((source) => source.webUrl)).toEqual([
       'https://tenant.sharepoint.com/sites/Direction',
       'https://tenant.sharepoint.com/sites/Ventes',
       'https://tenant.sharepoint.com/contentstorage/CSP_one',
       'https://tenant.sharepoint.com/contentstorage/CSP_two',
       'https://tenant-my.sharepoint.com/personal/jane',
+      '',
       '',
     ]);
   });
