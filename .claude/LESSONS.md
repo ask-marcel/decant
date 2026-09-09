@@ -828,3 +828,28 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   earlier entry on the same adapter. The general form: when a dependency cannot do something, return
   the shape the real answer will have, say why in the error, and file the request. A local
   workaround would have had to be unpicked here instead.
+
+## 2026-09-09
+
+- [decision] A delta endpoint is not automatically the incremental answer, and the thing to check
+  before designing a state around one is what its response can actually carry. Microsoft To Do has
+  `list-todo-tasks-delta`, and the first shape for this sync was built on it, the way the mailbox is.
+  Its zod schema turned out to be `{ todoTaskListId }` and nothing else, so it takes no `expand`,
+  and a task's steps and linked resources are navigation properties Graph omits unless expanded. The
+  delta would therefore have discovered which tasks changed and then cost one `get-todo-task` per
+  task to learn what each one holds. The plain listing takes `expand` and pages normally, so reading
+  the list whole is fewer requests than a delta plus a fetch per changed task, needs no cursor in the
+  state at all, and reports a deletion by absence on every run rather than on the single run a delta
+  reports its removal. Cheaper, smaller, and more robust, by not using the endpoint built for the
+  job. The general form: a delta tells you WHAT changed, not what the thing now IS, and when those
+  differ the listing usually wins.
+
+- [gotcha] A `?? fallback` behind a lookup that cannot miss is dead code the coverage gate cannot see
+  and mutation testing can. `syncTodo` planned each task's path into a `Map` and then wrote
+  `files.get(task.id) ?? ''` in the loop over the very tasks that built it. Line and function
+  coverage read 100%, because the line runs every time; the fallback is simply unreachable, so a
+  mutant replacing it survives and the module scored 87 against a 90 break. The fix was not a test:
+  pairing each item with its computed value (`planTaskFiles` returning `{ task, file }[]` instead of
+  a map to look the file up in) removed the lookup, the fallback and the mutant together. Wherever a
+  plan is built from a collection and then consumed by iterating the same collection, hand back the
+  pairs rather than an index into them.
