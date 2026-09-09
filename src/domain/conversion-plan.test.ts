@@ -188,6 +188,20 @@ describe('deciding what to produce for a document found in SharePoint', () => {
     expect(planFile({ name: '.docx', size: 1000 }, CAP)).toEqual({ kind: 'skip', reason: 'unsupported-type' });
   });
 
+  // `~$Budget.xlsx` is not a copy of `Budget.xlsx`: Office writes it while the workbook is open, it
+  // holds the editor's name and not the document, and it is not a valid workbook at all.
+  it('the stub Office leaves beside an open workbook is known for what it is, not read as a workbook', () => {
+    expect(planFile({ name: '~$Tracking log.xlsx', size: 165 }, CAP)).toEqual({ kind: 'skip', reason: 'lock-file' });
+  });
+
+  it('a lock file is spotted by its prefix whatever it sits beside, including a document', () => {
+    expect(planFile({ name: '~$Contrat.docx', size: 165 }, CAP)).toEqual({ kind: 'skip', reason: 'lock-file' });
+  });
+
+  it('a document whose own name merely starts with a tilde is read as usual', () => {
+    expect(planFile({ name: '~Budget.xlsx', size: 1000 }, CAP).kind).toBe('process');
+  });
+
   it('a convertible file above the size cap is skipped so one document cannot stall the run', () => {
     expect(planFile({ name: 'Enorme.pptx', size: CAP + 1 }, CAP)).toEqual({ kind: 'skip', reason: 'too-large' });
   });

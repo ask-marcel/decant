@@ -7,7 +7,7 @@ export type OutputRole = 'markdown' | 'pdf' | 'raw' | 'archive-folder';
 export type PlannedOutput = { readonly relName: string; readonly role: OutputRole };
 
 export type FileDecision =
-  | { readonly kind: 'skip'; readonly reason: 'unsupported-type' | 'too-large' }
+  | { readonly kind: 'skip'; readonly reason: 'unsupported-type' | 'too-large' | 'lock-file' }
   | { readonly kind: 'process'; readonly route: ConversionRoute; readonly outputs: ReadonlyArray<PlannedOutput> };
 
 export type PlannedFile = { readonly name: string; readonly size: number };
@@ -123,7 +123,15 @@ const WORTH_READING = 10 * 1024;
 
 export const worthReading = (bytes: number): boolean => bytes > WORTH_READING;
 
+// Office writes `~$Name.xlsx` beside `Name.xlsx` for as long as the workbook is open, holding the
+// editor's name rather than the document. It carries the document's extension and none of its
+// content, so the prefix has to be read before the extension is: routed as a workbook it reaches the
+// converter, fails as a malformed zip, and comes back on every run thereafter through the retry
+// ledger, which is a permanent failure for a file that was never a document.
+const LOCK_PREFIX = '~$';
+
 export const planFile = (file: PlannedFile, maxBytes: number): FileDecision => {
+  if (file.name.startsWith(LOCK_PREFIX)) return { kind: 'skip', reason: 'lock-file' };
   const extension = extensionOf(file.name);
   if (extension === undefined) return { kind: 'skip', reason: 'unsupported-type' };
   const route = ROUTE_BY_EXTENSION[extension];

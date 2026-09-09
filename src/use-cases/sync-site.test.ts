@@ -81,6 +81,14 @@ describe('reporting what did not reach the knowledge base', () => {
     expect(files.written.get(REPORT_PATH)).toContain('- Films/Demo.mp4: a .mp4 file, which this tool does not read');
   });
 
+  it('the stub Office leaves beside an open workbook is named as one, rather than failing every run', async () => {
+    const lock = item({ name: '~$Tracking log.xlsx', path: 'Logs/~$Tracking log.xlsx', size: 165 });
+    const { files, summary } = await run({ reader: { pages: [{ items: [lock], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(files.written.get(REPORT_PATH)).toContain('- Logs/~$Tracking log.xlsx: a file Office leaves beside a document while it is open, holding no content of its own');
+    expect(summary).toMatchObject({ skipped: 1, failed: 0 });
+  });
+
   it('a document above the size cap is named with the cap it exceeded', async () => {
     const { files } = await run({ reader: { pages: [{ items: [item({ size: 60 * 1024 * 1024 })], skipped: 0, deltaLink: 'c1' }] } });
 

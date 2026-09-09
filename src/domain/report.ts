@@ -36,15 +36,23 @@ export const unsupportedReason = (name: string): string => {
 
 export const PROTECTED_REASON = 'locked with a password, so nothing could be read from it';
 
+export const LOCK_FILE_REASON = 'a file Office leaves beside a document while it is open, holding no content of its own';
+
 export const tooLargeReason = (maxBytes: number): string => `larger than the ${Math.round(maxBytes / 1024 / 1024)} MB cap`;
 
-// Why a file was left out. Two of these are decided before a byte is read, from the name and the
-// size; the third only once the source refused to open what it sent.
-export type SkipReason = 'unsupported-type' | 'too-large' | 'protected';
+// Why a file was left out. Three of these are decided before a byte is read, from the name and the
+// size; the last only once the source refused to open what it sent.
+export type SkipReason = 'unsupported-type' | 'too-large' | 'protected' | 'lock-file';
+
+const REASONS: Readonly<Record<Exclude<SkipReason, 'unsupported-type' | 'too-large'>, string>> = {
+  protected: PROTECTED_REASON,
+  'lock-file': LOCK_FILE_REASON,
+};
 
 export const skipReason = (reason: SkipReason, maxBytes: number, name: string): string => {
   if (reason === 'too-large') return tooLargeReason(maxBytes);
-  return reason === 'protected' ? PROTECTED_REASON : unsupportedReason(name);
+  if (reason === 'unsupported-type') return unsupportedReason(name);
+  return REASONS[reason];
 };
 
 export const reportHeading = (source: string): string => `# What did not reach the knowledge base: ${source}`;

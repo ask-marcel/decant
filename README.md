@@ -241,12 +241,15 @@ is nothing to add and the request changes nothing.
 
 Anything left behind is named in `_sync-report.md` beside the source it came from, newest run
 first: files of a kind this tool does not read, files above the size cap, files locked with a
-password, files that could not be read, and files moved aside because the source no longer has
-them. A file that could not be read is written down and converted again on the next run, up to
+password, the stubs Office leaves beside an open document, files that could not be read, and files
+moved aside because the source no longer has them. A file that could not be read is written down and converted again on the next run, up to
 three tries in all; after that it is named under a heading of its own saying it will not be tried
 again, and it keeps that line in every report until the file changes at the source. A password is
 the one refusal that never becomes readable by trying again, so such a file is left out the way an
-unsupported type is, rather than queued afresh on every run. A run that converted everything writes nothing there, so a nightly sync does not bury
+unsupported type is, rather than queued afresh on every run. A `~$Budget.xlsx` sitting beside
+`Budget.xlsx` is the same case decided earlier: Office writes it while the workbook is open and it
+holds the editor's name rather than the document, so it is named for what it is instead of reaching
+the converter, failing as a malformed workbook, and coming back on every run. A run that converted everything writes nothing there, so a nightly sync does not bury
 the runs that did leave something behind.
 
 `kb/_sync-report.md`, one level up, holds the same thing for the run as a whole, so twenty sources
