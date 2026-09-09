@@ -1,6 +1,7 @@
 import type { PickerRow } from '../domain/picker.ts';
 import type { AddressKind } from '../domain/address-kind.ts';
 import { kindOf } from '../domain/address-kind.ts';
+import { CATEGORY_FOLDER } from '../domain/kb-category.ts';
 import type { RunSummary } from '../use-cases/sync-site.ts';
 
 const files = (count: number): string => (count === 1 ? '1 file' : `${count} files`);
@@ -11,12 +12,9 @@ const hint = (row: PickerRow): string => (row.hint === undefined ? '' : `  [${ro
 
 const line = (row: PickerRow, index: number): string => `${String(index + 1).padStart(3)}) ${row.name}${hint(row)}  (${mark(row)})`;
 
-const HEADINGS: Readonly<Record<AddressKind, string>> = {
-  site: 'SharePoint sites:',
-  group: 'Group inboxes:',
-  loop: 'Loop workspaces:',
-  onedrive: 'OneDrive:',
-};
+// The heading and the folder a choice lands in are the same word, taken from the same table, so the
+// picker cannot promise one shelf and the vault deliver another.
+const headingOf = (kind: AddressKind): string => `${CATEGORY_FOLDER[kind]}:`;
 
 // A heading is opened whenever the kind changes, so a kind nobody has never gets an empty one. The
 // rows arrive already ordered by kind (`orderByKind`, applied where the picker and the choice share
@@ -28,7 +26,7 @@ const headed = (rows: ReadonlyArray<PickerRow>): ReadonlyArray<string> => {
     const kind = kindOf(row);
     if (kind !== open) {
       if (open !== undefined) lines.push('');
-      lines.push(HEADINGS[kind]);
+      lines.push(headingOf(kind));
       open = kind;
     }
     lines.push(line(row, index));

@@ -10,11 +10,18 @@ const siteState = JSON.stringify({
   drives: { 'b!one': { items: { a: {}, b: {} } } },
 });
 
+const mailboxState = JSON.stringify({
+  version: 1,
+  source: { kind: 'mailbox', id: 'me', name: 'Mailbox' },
+  lastRun: '2026-07-23T09:00:00Z',
+  threads: { one: {} },
+});
+
 describe('showing which sources have already been synced', () => {
   it('a knowledge base holding one synced site reports that site with its file count', async () => {
     const files = createFilesFake({
-      directories: { kb: ['Espace Contoso'] },
-      texts: { 'kb/Espace Contoso/.sync-state.json': siteState },
+      directories: { kb: ['SharePoint sites'], 'kb/SharePoint sites': ['Espace Contoso'] },
+      texts: { 'kb/SharePoint sites/Espace Contoso/.sync-state.json': siteState },
     });
 
     const sources = await createListSyncedSources({ files, logger: createLoggerFake(), kbRoot: 'kb' })();
@@ -40,13 +47,39 @@ describe('showing which sources have already been synced', () => {
 
   it('a corrupt folder alongside a healthy one leaves the healthy source in the list', async () => {
     const files = createFilesFake({
-      directories: { kb: ['Broken', 'Espace Contoso'] },
-      texts: { 'kb/Broken/.sync-state.json': 'not json at all', 'kb/Espace Contoso/.sync-state.json': siteState },
+      directories: { kb: ['Broken', 'SharePoint sites'], 'kb/SharePoint sites': ['Espace Contoso'] },
+      texts: { 'kb/Broken/.sync-state.json': 'not json at all', 'kb/SharePoint sites/Espace Contoso/.sync-state.json': siteState },
     });
 
     const sources = await createListSyncedSources({ files, logger: createLoggerFake(), kbRoot: 'kb' })();
 
     expect(sources.ok && sources.value.map((source) => source.name)).toEqual(['Espace Contoso']);
+  });
+
+  it('the mailbox at the vault root is listed alongside a site filed under its category', async () => {
+    const files = createFilesFake({
+      directories: { kb: ['Mailbox', 'SharePoint sites'], 'kb/SharePoint sites': ['Espace Contoso'] },
+      texts: { 'kb/Mailbox/.sync-state.json': mailboxState, 'kb/SharePoint sites/Espace Contoso/.sync-state.json': siteState },
+    });
+
+    const sources = await createListSyncedSources({ files, logger: createLoggerFake(), kbRoot: 'kb' })();
+
+    expect(sources.ok && sources.value.map((source) => source.name)).toEqual(['Mailbox', 'Espace Contoso']);
+  });
+
+  it('a corrupt state file inside a category folder is named by its path under the vault', async () => {
+    const files = createFilesFake({
+      directories: { kb: ['SharePoint sites'], 'kb/SharePoint sites': ['Broken'] },
+      texts: { 'kb/SharePoint sites/Broken/.sync-state.json': '{"source":' },
+    });
+    const logger = createLoggerFake();
+
+    const sources = await createListSyncedSources({ files, logger, kbRoot: 'kb' })();
+
+    // Length, not just `toEqual([])`: Bun reads `[undefined]` as equal to `[]`, so an unreadable
+    // source leaking through as a hole in the list would satisfy the comparison and be missed here.
+    expect(sources.ok && sources.value).toHaveLength(0);
+    expect(logger.calls).toEqual([{ level: 'warn', event: 'sync-state.unreadable', meta: { folder: 'SharePoint sites/Broken', cause: 'invalid-json' } }]);
   });
 
   it('a corrupt state file is skipped and warned about so the run can continue', async () => {

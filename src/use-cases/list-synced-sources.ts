@@ -32,11 +32,23 @@ const warnUnreadable = (deps: ListSyncedSourcesDeps, folder: string, cause: stri
   return undefined;
 };
 
+// A top-level folder is either a source itself, which the mailbox is, or a category holding them,
+// which every other one is. Trying the state file before listing the children tells the two apart
+// without naming the categories here, so a category added to the picker needs no change in this file.
+const sourcesUnder = async (deps: ListSyncedSourcesDeps, folder: string): Promise<ReadonlyArray<SyncedSource>> => {
+  const direct = await readOne(deps, folder);
+  if (direct !== undefined) return [direct];
+  const children = await deps.files.listDirectoryNames(`${deps.kbRoot}/${folder}`);
+  if (!children.ok) return [];
+  const found = await Promise.all(children.value.map((child) => readOne(deps, `${folder}/${child}`)));
+  return found.filter((source): source is SyncedSource => source !== undefined);
+};
+
 export const createListSyncedSources =
   (deps: ListSyncedSourcesDeps): ListSyncedSources =>
   async () => {
     const folders = await deps.files.listDirectoryNames(deps.kbRoot);
     if (!folders.ok) return ok([]);
-    const candidates = await Promise.all(folders.value.map((folder) => readOne(deps, folder)));
-    return ok(candidates.filter((source): source is SyncedSource => source !== undefined));
+    const found = await Promise.all(folders.value.map((folder) => sourcesUnder(deps, folder)));
+    return ok(found.flat());
   };

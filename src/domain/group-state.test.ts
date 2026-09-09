@@ -25,7 +25,7 @@ const record = (over: Partial<ThreadRecord> = {}): ThreadRecord => ({
 
 describe('remembering what a group inbox run already filed', () => {
   it('a group is filed apart from the SharePoint site that shares its name', () => {
-    expect(String(groupRootName('MOOV Leadership Team'))).toBe('MOOV Leadership Team (group inbox)');
+    expect(String(groupRootName('MOOV Leadership Team'))).toBe('Group inboxes/MOOV Leadership Team');
   });
 
   it('a fresh state knows which group it is for and holds nothing yet', () => {

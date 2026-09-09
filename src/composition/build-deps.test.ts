@@ -58,14 +58,14 @@ describe('wiring the command together', () => {
   });
 
   it('a refresh repeats the libraries the earlier run recorded for that site', async () => {
-    const statePath = 'kb/Espace Contoso/.sync-state.json';
+    const statePath = 'kb/SharePoint sites/Espace Contoso/.sync-state.json';
     const state = JSON.stringify({
       version: 1,
       source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://x' },
       lastRun: '2026-07-22T09:00:00Z',
       drives: { 'b!two': { name: 'Site Assets', pending: [], items: {} } },
     });
-    const files = createFilesFake({ directories: { kb: ['Espace Contoso'] }, texts: { [statePath]: state } });
+    const files = createFilesFake({ directories: { kb: ['SharePoint sites'], 'kb/SharePoint sites': ['Espace Contoso'] }, texts: { [statePath]: state } });
     const deps = buildDeps(configFor({}), {
       files,
       logger: createLoggerFake(),
@@ -84,8 +84,8 @@ describe('wiring the command together', () => {
 
   it('two sites sharing a name each refresh their own libraries, not the first one to be filed', async () => {
     // The second site's folder carries the suffix `disambiguateSegment` gives it: sha256 of its id, first 8.
-    const first = 'kb/Team Site/.sync-state.json';
-    const second = 'kb/Team Site-7b75821a/.sync-state.json';
+    const first = 'kb/SharePoint sites/Team Site/.sync-state.json';
+    const second = 'kb/SharePoint sites/Team Site-7b75821a/.sync-state.json';
     const stateFor = (id: string, driveId: string): string =>
       JSON.stringify({
         version: 1,

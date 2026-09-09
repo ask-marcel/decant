@@ -20,7 +20,7 @@ import type { StepError } from './ports/step-error.ts';
 
 const GROUP = { id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' };
 
-const STATE_PATH = 'kb/MOOV Leadership Team (group inbox)/.sync-state.json';
+const STATE_PATH = 'kb/Group inboxes/MOOV Leadership Team/.sync-state.json';
 
 const thread = (over: Partial<GroupThread> = {}): GroupThread => ({
   id: 'AAQkAD-thread',
@@ -122,7 +122,7 @@ describe('mirroring a group inbox into the knowledge base', () => {
     const { files, roots, names } = await run();
 
     expect(files.written.has(STATE_PATH)).toBe(true);
-    expect(roots).toEqual(['kb/MOOV Leadership Team (group inbox)']);
+    expect(roots).toEqual(['kb/Group inboxes/MOOV Leadership Team']);
     expect(names).toEqual(['MOOV Leadership Team']);
   });
 
@@ -259,7 +259,7 @@ describe('naming a group inbox in a report', () => {
     const outcome = (): RenderThreadOutcome => rendered({ filesFailed: [{ path: 'budget.xlsx', reason: 'locked' }] });
     const { files } = await run({ outcome });
 
-    expect(files.written.get('kb/MOOV Leadership Team (group inbox)/_sync-report.md')).toContain('# What did not reach the knowledge base: MOOV Leadership Team (group inbox)');
+    expect(files.written.get('kb/Group inboxes/MOOV Leadership Team/_sync-report.md')).toContain('# What did not reach the knowledge base: MOOV Leadership Team (group inbox)');
   });
 
   it('the run hands the same name back, so the report covering every source reads apart too', async () => {
@@ -270,7 +270,7 @@ describe('naming a group inbox in a report', () => {
 });
 
 describe('a group thread the run could not write', () => {
-  const REPORT_PATH = 'kb/MOOV Leadership Team (group inbox)/_sync-report.md';
+  const REPORT_PATH = 'kb/Group inboxes/MOOV Leadership Team/_sync-report.md';
   // The listing Graph hands back every run, newest first: it has no cursor, so the same two threads
   // arrive whatever happened last time. `late` lands and puts the watermark past `early`, which is
   // what used to make a failure on `early` unreachable for good.

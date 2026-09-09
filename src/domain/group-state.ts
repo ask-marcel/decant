@@ -1,18 +1,20 @@
-import { safeSegment } from './kb-path.ts';
-import type { SafeSegment } from './kb-path.ts';
+import { CATEGORY_FOLDER } from './kb-category.ts';
+import { safeRelPath } from './kb-path.ts';
+import type { SafeRelPath } from './kb-path.ts';
 import { attachmentOf, mapOf, retryOf, stringList, threadOf } from './mail-state.ts';
 import type { AttachmentRecord, LinkedRecord, RetryRecord, ThreadRecord } from './mail-state.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
-import { sourceLabel } from './sync-state.ts';
 
 export const GROUP_STATE_VERSION = 1;
 
 // A group's own folder, kept apart from the SharePoint site of the same name. A Microsoft 365 group
 // is a site, an inbox and a team wearing one title, and two of those three land in this vault: the
-// documents under `MOOV Leadership Team/` and the conversations under
-// `MOOV Leadership Team (group inbox)/`. Without the suffix they would be one folder and one state.
-export const groupRootName = (name: string): SafeSegment => safeSegment(sourceLabel({ name, kind: 'group' }));
+// documents under `SharePoint sites/MOOV Leadership Team/` and the conversations under
+// `Group inboxes/MOOV Leadership Team/`. The category is what holds them apart, so the name itself
+// no longer carries the ` (group inbox)` suffix; `sourceLabel` still spells it out wherever a
+// reader sees a bare name and needs telling which half of the group it is.
+export const groupRootName = (name: string): SafeRelPath => safeRelPath([CATEGORY_FOLDER.group, name]);
 
 // What a group inbox run leaves behind. Smaller than the mailbox's state, and deliberately: there
 // are no folders to hold a cursor for, and no conversation-to-thread map, because Graph hands out a
