@@ -128,17 +128,46 @@ describe('reading a group inbox through the ask-marcel library', () => {
     ]);
   });
 
-  it('the three things a group post cannot do say so, rather than answering with something wrong', async () => {
-    const { reader, recorded } = readerFor({});
-    const ref = '0d3b-group|AAQkAD-thread|AAMkAD-post';
+  // The three that 2.5.0 had no command for, and 2.6.0 does. A post's attachment now reaches the
+  // same three conversions a mail attachment does, addressed the way every other group command is.
+  const REF = '0d3b-group|AAQkAD-thread|AAMkAD-post';
+  const POST = { groupId: '0d3b-group', threadId: 'AAQkAD-thread', postId: 'AAMkAD-post' };
 
-    expect(await reader.attachmentPdf(ref, 'att-1')).toEqual({
-      ok: false,
-      error: { kind: 'unrenderable', message: 'a group post has no attachment-to-pdf command in ask-marcel-office-cli 2.5.0' },
+  it('a deck attached to a post is rendered to PDF, the way one attached to a mail is', async () => {
+    const { reader, recorded } = readerFor({ 'convert-group-post-attachment-to-pdf': [ok({ base64: 'AQID' })] });
+
+    expect(await reader.attachmentPdf(REF, 'att-1')).toEqual({ ok: true, value: new Uint8Array([1, 2, 3]) });
+    expect(recorded[0]).toEqual({ name: 'convert-group-post-attachment-to-pdf', params: { ...POST, attachmentId: 'att-1' } });
+  });
+
+  it('the pictures inside an attachment on a post come back as bytes, an unreadable one dropped', async () => {
+    const { reader, recorded } = readerFor({
+      'extract-group-post-attachment-images': [ok({ count: 1, media: [{ path: 'word/media/image1.png', base64: 'AQID' }, { path: 'no bytes' }] })],
     });
-    expect(await reader.attachmentImages(ref, 'att-1')).toEqual({ ok: true, value: [] });
-    expect(await reader.sharepointLinks(ref)).toEqual({ ok: true, value: [] });
-    expect(recorded).toHaveLength(0);
+
+    const found = await reader.attachmentImages(REF, 'att-1');
+
+    expect(found.ok && found.value).toEqual([{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }]);
+    expect(recorded[0]).toEqual({ name: 'extract-group-post-attachment-images', params: { ...POST, attachmentId: 'att-1' } });
+  });
+
+  it('a SharePoint link in a post body resolves to the document behind it, one that did not is dropped', async () => {
+    const links = {
+      links: [
+        { url: 'https://x', driveId: 'b!one', itemId: '01ABC', name: 'Rapport.docx' },
+        { url: 'https://y', error: 'not found' },
+      ],
+    };
+    const { reader, recorded } = readerFor({ 'extract-sharepoint-links-in-group-post': [ok(links)] });
+
+    expect(await reader.sharepointLinks(REF)).toEqual({ ok: true, value: [{ url: 'https://x', driveId: 'b!one', itemId: '01ABC', name: 'Rapport.docx' }] });
+    expect(recorded[0]).toEqual({ name: 'extract-sharepoint-links-in-group-post', params: POST });
+  });
+
+  it('a post pointing at nothing yields nothing, which is an answer and not a failure', async () => {
+    const { reader } = readerFor({ 'extract-sharepoint-links-in-group-post': [ok({ postId: 'AAMkAD-post' })] });
+
+    expect(await reader.sharepointLinks(REF)).toEqual({ ok: true, value: [] });
   });
 
   it('a refused listing is reported rather than read as an empty group', async () => {

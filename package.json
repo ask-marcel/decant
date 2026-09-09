@@ -66,7 +66,7 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "ask-marcel-office-cli": "^2.5.0",
+    "ask-marcel-office-cli": "^2.6.0",
     "winston": "^3.19.0"
   }
 }

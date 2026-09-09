@@ -1,5 +1,12 @@
 # Request: give a group post the same reach a mail message has
 
+> **Resolved in `ask-marcel-office-cli` 2.6.0.** All three commands landed, named as the mail
+> siblings: `convert-group-post-attachment-to-pdf`, `extract-group-post-attachment-images` and
+> `extract-sharepoint-links-in-group-post`, each taking `--group-id`, `--thread-id`, `--post-id`
+> and, for the first two, `--attachment-id`. `decant` took the dependency and wired all three on
+> 2026-09-09; the prediction below held exactly, three methods in one adapter and nothing else.
+> Kept as the record of what was asked for and why.
+
 **Package:** `ask-marcel-office-cli` 2.5.0
 **Category:** mail
 **Kind:** missing commands. Nothing is broken. A group post's text arrives in full; what it carries

@@ -818,3 +818,13 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   it pinned. `toHaveLength(0)` sees the difference and kills both. Where a test asserts that
   something was filtered OUT, assert the length, or assert on a mapped projection
   (`value.map((source) => source.name)`) where a hole shows up as `undefined` rather than vanishing.
+
+- [decision] Answering a missing upstream command honestly, and writing the gap up rather than
+  working around it, paid back exactly as predicted. 2.6.0 landed all three group-post commands as
+  siblings of the mail ones, sharing their pipeline and taking the same parameters every other group
+  command takes, and wiring them was three method bodies in `group-reader-marcel.ts` plus one test.
+  No use-case, no domain module, no rendering code moved, because the honest `unrenderable` and the
+  honest empty list had kept the shape of the real answer. Supersedes nothing: it confirms the
+  earlier entry on the same adapter. The general form: when a dependency cannot do something, return
+  the shape the real answer will have, say why in the error, and file the request. A local
+  workaround would have had to be unpicked here instead.

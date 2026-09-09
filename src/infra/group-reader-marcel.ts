@@ -5,15 +5,14 @@ import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { GroupReader, GroupSummary } from '../use-cases/ports/group-reader.ts';
 import type { MailReaderError } from '../use-cases/ports/mail-reader.ts';
+import { mediaOf } from './drive-reader-marcel.ts';
 import type { MarcelCall } from './drive-reader-marcel.ts';
-import { listOf, readString, toAttachment, toBytes } from './mail-reader-marcel.ts';
+import { listOf, readString, toAttachment, toBytes, toLinks } from './mail-reader-marcel.ts';
 
-// A group inbox reads through the same commands a person would run, with three parts of the mail
-// side deliberately absent because 2.5.0 has no group equivalent: an attachment cannot be rendered
-// to PDF, its embedded pictures cannot be extracted, and a post's SharePoint links cannot be
-// resolved. Each answers below with the honest empty rather than a wrong value, and the gap is
-// written up in `docs/request-group-post-parity.md` rather than worked around here.
-const NO_GROUP_COMMAND = (what: string): MailReaderError => ({ kind: 'unrenderable', message: `a group post has no ${what} command in ask-marcel-office-cli 2.5.0` });
+// A group inbox reads through the same commands a person would run. 2.5.0 had no group equivalent
+// for three of them, so a post's attachment reached its text and stopped there; 2.6.0 landed all
+// three as siblings of the mail commands, sharing their pipeline, and they are called below with the
+// same mapping the mail adapter uses. A post now carries what a message carries.
 
 const UNIFIED = 'Unified';
 
@@ -112,8 +111,17 @@ export const createGroupReaderFromCall = (call: MarcelCall): GroupReader => {
       forPost(ref, (parts) => textOf('convert-group-post-attachment-to-markdown', { groupId: parts.groupId, threadId: parts.threadId, postId: parts.postId, attachmentId })),
     attachmentBytes: async (ref, attachmentId) =>
       forPost(ref, (parts) => bytesOf('get-group-post-attachment', { groupId: parts.groupId, threadId: parts.threadId, postId: parts.postId, attachmentId })),
-    attachmentPdf: async () => err(NO_GROUP_COMMAND('attachment-to-pdf')),
-    attachmentImages: async () => ok([] as ReadonlyArray<never>),
-    sharepointLinks: async () => ok([]),
+    attachmentPdf: async (ref, attachmentId) =>
+      forPost(ref, (parts) => bytesOf('convert-group-post-attachment-to-pdf', { groupId: parts.groupId, threadId: parts.threadId, postId: parts.postId, attachmentId })),
+    attachmentImages: async (ref, attachmentId) =>
+      forPost(ref, async (parts) => {
+        const raw = await call('extract-group-post-attachment-images', { groupId: parts.groupId, threadId: parts.threadId, postId: parts.postId, attachmentId });
+        return raw.ok ? ok(mediaOf(raw.value)) : raw;
+      }),
+    sharepointLinks: async (ref) =>
+      forPost(ref, async (parts) => {
+        const raw = await call('extract-sharepoint-links-in-group-post', { groupId: parts.groupId, threadId: parts.threadId, postId: parts.postId });
+        return raw.ok ? ok(toLinks(raw.value)) : raw;
+      }),
   };
 };

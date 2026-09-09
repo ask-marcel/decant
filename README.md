@@ -300,10 +300,10 @@ Only the groups you belong to can be read. Access is decided by membership rathe
 permission this tool can ask for, so a group the directory lists but you have not joined refuses
 every read, and it is not offered.
 
-Three things a mail attachment gets and a post attachment does not, because the library has no
-command for them: a deck is not rendered to a PDF beside its text, a diagram inside an attached
-Word or Excel file is not extracted, and a SharePoint link in a post body is not pulled into
-`_linked/`. The gap is written up in `docs/request-group-post-parity.md`.
+A post attachment gets everything a mail attachment gets: a deck is rendered to a PDF beside its
+text, a diagram inside an attached Word or Excel file is extracted and read, and a SharePoint link
+in a post body is pulled into `_linked/`. The three commands this needs arrived in
+`ask-marcel-office-cli` 2.6.0; before it, each answered with an honest empty.
 
 Group threads are not tracked by a delta the way a mailbox folder is, because Graph offers none.
 Each run lists a group's threads newest first and stops at the newest post it already holds, so a

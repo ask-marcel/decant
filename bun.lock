@@ -5,7 +5,7 @@
     "": {
       "name": "decant",
       "dependencies": {
-        "ask-marcel-office-cli": "^2.5.0",
+        "ask-marcel-office-cli": "^2.6.0",
         "winston": "^3.19.0",
       },
       "devDependencies": {
@@ -252,7 +252,7 @@
 
     "argparse": ["argparse@1.0.10", "", { "dependencies": { "sprintf-js": "~1.0.2" } }, "sha512-o5Roy6tNG4SL/FOkCAN6RzjiakZS25RLYFrcMttJqbdd8BWrnA+fGz57iN5Pb06pvBGvl5gQ0B48dJlslXvoTg=="],
 
-    "ask-marcel-office-cli": ["ask-marcel-office-cli@2.5.0", "", { "dependencies": { "@kenjiuno/msgreader": "^1.28.0", "@modelcontextprotocol/sdk": "^1.29.0", "commander": "^14.0.3", "fast-xml-parser": "^5.8.0", "jszip": "^3.10.1", "mammoth": "^1.12.0", "playwright": "^1.59.1", "turndown": "^7.2.4", "turndown-plugin-gfm": "^1.0.2", "unpdf": "^1.6.2", "update-notifier": "^7.3.1", "winston": "^3.19.0", "word-extractor": "^1.0.4", "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz", "zod": "^4.3.6" }, "bin": { "ask-marcel-office": "dist/cli.js" } }, "sha512-mHB4O7tC9wL/ZSgiMNvOC/NtOTIYspCsu5dliAveLa93PQ/9ae9OYCW7rcsbZbKRIXaTsVUu2jQyFc1tayzE0A=="],
+    "ask-marcel-office-cli": ["ask-marcel-office-cli@2.6.0", "", { "dependencies": { "@kenjiuno/msgreader": "^1.28.0", "@modelcontextprotocol/sdk": "^1.29.0", "commander": "^14.0.3", "fast-xml-parser": "^5.8.0", "jszip": "^3.10.1", "mammoth": "^1.12.0", "playwright": "^1.59.1", "turndown": "^7.2.4", "turndown-plugin-gfm": "^1.0.2", "unpdf": "^1.6.2", "update-notifier": "^7.3.1", "winston": "^3.19.0", "word-extractor": "^1.0.4", "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz", "zod": "^4.3.6" }, "bin": { "ask-marcel-office": "dist/cli.js" } }, "sha512-hVV8oDO5mLSx/fhAYwFspq5Tn342lMi7x08EqmsO8uiX9f8sn3WCKOMsRiDuAbshCpLZ+57BZJMVfxL3nqfpdQ=="],
 
     "async": ["async@3.2.6", "", {}, "sha512-htCUDlxyyCLMgaM3xXg0C0LW2xqfuQ6p05pCEIsXuyQ+a1koYKTuBMzRNwmybfLgvJDMd0r1LTn4+E0Ti6C2AA=="],
 

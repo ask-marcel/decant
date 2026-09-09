@@ -70,7 +70,7 @@ const ATTACHMENT_FIELDS = 'id,name,contentType,size,isInline,microsoft.graph.fil
 
 // `extract-sharepoint-links-in-mail` reports a link it could not resolve with an `error` instead of
 // a driveItem; those are dropped rather than chased.
-const toLinks = (value: unknown): ReadonlyArray<LinkedFile> => {
+export const toLinks = (value: unknown): ReadonlyArray<LinkedFile> => {
   if (!isRecord(value) || !Array.isArray(value['links'])) return [];
   return value['links'].flatMap((entry) => {
     const driveId = readString(entry, 'driveId');
