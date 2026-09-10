@@ -143,7 +143,16 @@ describe('wiring the command together', () => {
     const files = createFilesFake({ directories: { kb: [] }, texts: { 'kb/.sites.json': stored } });
     const reader = createDriveReaderFake({ sites: [] });
     const prompt = createPromptFake(['q']);
-    const deps = buildDeps(configFor({}), { group: createGroupReaderFake(), files, logger: createLoggerFake(), reader, ocr: createOcrFake(), prompt, clock: createClockFake() });
+    const deps = buildDeps(configFor({}), {
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      files,
+      logger: createLoggerFake(),
+      reader,
+      ocr: createOcrFake(),
+      prompt,
+      clock: createClockFake(),
+    });
 
     await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
