@@ -853,3 +853,26 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   a map to look the file up in) removed the lookup, the fallback and the mutant together. Wherever a
   plan is built from a collection and then consumed by iterating the same collection, hand back the
   pairs rather than an index into them.
+
+## 2026-09-11
+
+- [gotcha] The pre-commit typecheck runs on the working tree, not on the commit, so a landing split
+  into "the consumer gains a dependency" and "the composition supplies it" passes the hook twice
+  and leaves a commit on `main` that does not compile. It happened here on the Teams picker: the
+  `run-sync` commit added `syncTeam`, `teams` and `savedChannels` to `RunSyncDeps`, `build-deps`
+  supplied them one commit later, and the hook was green on both because the tree had everything.
+  Found by the check the earlier `[mistake]` entry prescribes and this session made a habit: build
+  every commit of a multi-commit landing in a detached worktree (`git worktree add --detach`, a
+  symlinked `node_modules`, `tsc` and `bun test` per sha) BEFORE pushing, not only the last one.
+  The fix was to fold the two into one commit and take the size-gate bypass, with the reason in
+  the body: a commit that compiles beats two that meet a line count.
+
+- [decision] A source reachable only through an endpoint whose token expires without a browser
+  sign-in is not a source `update` can own. Teams chats were built to the use-case test on the
+  library's Microsoft-internal substrate commands, both of which answered on the day; the next
+  morning the substrate token had lapsed while the Graph token beside it was still good, and the
+  library refreshes the one and not the other. Every scheduled `update` would have failed on that
+  one category, forever, until a person logged in again. The work is parked on `teams-chats-wip`
+  and Teams channels, which 2.7.0 landed on Graph the same day, took the place. The general form:
+  before building a category, check not only that a read works but that it will still work
+  tomorrow without anyone at the keyboard, since `update` is the run that matters.
