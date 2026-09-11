@@ -73,6 +73,12 @@ describe('reading the sync state left by a previous run', () => {
     expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'people', id: 'people', name: 'People', lastRun: '2026-09-11T09:00:00Z', fileCount: 2 } });
   });
 
+  it('the calendar is a source like the mailbox, counting its events one file each', () => {
+    const state = { source: { kind: 'calendar', id: 'calendar', name: 'Calendar' }, lastRun: '2026-09-12T09:00:00Z', events: { a: {}, b: {}, c: {} } };
+
+    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'calendar', id: 'calendar', name: 'Calendar', lastRun: '2026-09-12T09:00:00Z', fileCount: 3 } });
+  });
+
   it('a source naming a kind this tool cannot sync is rejected as malformed', () => {
     const parsed = parseSyncedSource({ source: { kind: 'notebook', id: 'x', name: 'y' } });
 

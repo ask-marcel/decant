@@ -4,6 +4,7 @@ import { createGroupReaderFake } from '../test-helpers/group-reader-fake.ts';
 import { createTodoReaderFake } from '../test-helpers/todo-reader-fake.ts';
 import { createTeamReaderFake } from '../test-helpers/team-reader-fake.ts';
 import { createPeopleReaderFake } from '../test-helpers/people-reader-fake.ts';
+import { createCalendarReaderFake } from '../test-helpers/calendar-reader-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
@@ -53,6 +54,7 @@ describe('wiring the command together', () => {
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(['q']),
       clock: createClockFake(),
@@ -80,6 +82,7 @@ describe('wiring the command together', () => {
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),
@@ -131,6 +134,7 @@ describe('wiring the command together', () => {
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),
@@ -165,6 +169,7 @@ describe('wiring the command together', () => {
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),
@@ -185,6 +190,7 @@ describe('wiring the command together', () => {
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(['q']),
       clock: createClockFake(),
@@ -209,6 +215,7 @@ describe('wiring the command together', () => {
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
       files,
       logger: createLoggerFake(),
       reader,
@@ -234,6 +241,7 @@ describe('wiring the command together', () => {
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
     });
 
     expect(typeof deps.runSync).toBe('function');
@@ -257,6 +265,7 @@ describe('wiring the command together', () => {
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),

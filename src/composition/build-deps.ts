@@ -12,6 +12,9 @@ import { createTeamReaderFromCall } from '../infra/team-reader-marcel.ts';
 import { createPeopleReaderFromCall } from '../infra/people-reader-marcel.ts';
 import type { PeopleReader } from '../use-cases/ports/people-reader.ts';
 import { createSyncPeople } from '../use-cases/sync-people.ts';
+import { createCalendarReaderFromCall } from '../infra/calendar-reader-marcel.ts';
+import type { CalendarReader } from '../use-cases/ports/calendar-reader.ts';
+import { createSyncCalendar } from '../use-cases/sync-calendar.ts';
 import type { ChannelSummary, TeamReader, TeamSummary } from '../use-cases/ports/team-reader.ts';
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
@@ -59,6 +62,7 @@ export type DepOverrides = {
   readonly todo?: TodoReader;
   readonly team?: TeamReader;
   readonly people?: PeopleReader;
+  readonly calendar?: CalendarReader;
   readonly ocr?: Ocr;
   readonly prompt?: Prompt;
   readonly clock?: Clock;
@@ -180,6 +184,9 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // The directory is enumerated through the Teams, so it borrows the team reader's listing.
   const people = overrides.people ?? createPeopleReaderFromCall(createMarcelCall(api));
   const syncPeople = createSyncPeople({ reader: people, teams: team, files, clock, logger, progress, kbRoot: config.kbRoot });
+  // The calendar counts its days where the mailbox counts them.
+  const calendar = overrides.calendar ?? createCalendarReaderFromCall(createMarcelCall(api));
+  const syncCalendar = createSyncCalendar({ reader: calendar, files, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
@@ -198,6 +205,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     syncTodo,
     syncTeam,
     syncPeople,
+    syncCalendar,
     groups: group,
     todo,
     teams: team,

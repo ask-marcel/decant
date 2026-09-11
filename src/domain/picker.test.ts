@@ -57,6 +57,10 @@ describe('reading what the operator chose', () => {
     expect(parseSelection('p', 3)).toEqual({ ok: true, value: { kind: 'people' } });
   });
 
+  it('c chooses the calendar rather than a site', () => {
+    expect(parseSelection('c', 3)).toEqual({ ok: true, value: { kind: 'calendar' } });
+  });
+
   it('q leaves without touching anything', () => {
     expect(parseSelection('q', 3)).toEqual({ ok: true, value: { kind: 'quit' } });
   });

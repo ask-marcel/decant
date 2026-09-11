@@ -6,6 +6,7 @@ import { err, ok } from '../domain/result.ts';
 import type { SiteRef } from '../domain/site-state.ts';
 import { MAILBOX_ID, MAILBOX_NAME } from '../domain/mail-state.ts';
 import { PEOPLE_ID, PEOPLE_NAME } from '../domain/people-state.ts';
+import { CALENDAR_ID, CALENDAR_NAME } from '../domain/calendar-state.ts';
 import { renderChannelPicker, renderLibraryPicker, renderReportPointer, renderSitePicker, renderSummary } from '../presenter/render-picker.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
 import type { DriveReader, DriveSummary, SiteSummary } from './ports/drive-reader.ts';
@@ -17,6 +18,7 @@ import type { TodoList, TodoReader } from './ports/todo-reader.ts';
 import type { ChannelSummary, TeamReader, TeamSummary } from './ports/team-reader.ts';
 import type { SyncGroup } from './sync-group.ts';
 import type { SyncPeople } from './sync-people.ts';
+import type { SyncCalendar } from './sync-calendar.ts';
 import type { SyncTeam } from './sync-team.ts';
 import type { SyncTodo } from './sync-todo.ts';
 import type { SourceRun, SyncSite } from './sync-site.ts';
@@ -40,6 +42,7 @@ export type RunSyncDeps = {
   readonly syncTodo: SyncTodo;
   readonly syncTeam: SyncTeam;
   readonly syncPeople: SyncPeople;
+  readonly syncCalendar: SyncCalendar;
   // Only the listing half of the group reader: choosing a source needs to know which groups can be
   // read, and reading one is the use-case's business, not the picker's.
   readonly groups: Pick<GroupReader, 'listGroups'>;
@@ -65,6 +68,7 @@ export type RunSyncInput = {
   readonly dryRun: boolean;
   readonly mailbox?: boolean;
   readonly people?: boolean;
+  readonly calendar?: boolean;
   readonly groupId?: string;
   readonly todoListId?: string;
   readonly teamId?: string;
@@ -153,6 +157,13 @@ const syncThePeople = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
   return summary;
 };
 
+const syncTheCalendar = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
+  deps.logger.info('calendar.started', {});
+  const summary = await deps.syncCalendar({ concurrency: input.concurrency, dryRun: input.dryRun, since: input.since });
+  if (summary.ok) deps.prompt.show(renderSummary(CALENDAR_NAME, summary.value.summary, input.dryRun));
+  return summary;
+};
+
 const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   const known = await deps.listSyncedSources();
   if (!known.ok) return known;
@@ -161,6 +172,11 @@ const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise
     const mailbox = await syncTheMailbox(deps, input);
     if (!mailbox.ok) return stoppedAfter(summaries, mailbox.error);
     summaries.push(mailbox.value);
+  }
+  if (known.value.some((candidate) => candidate.kind === 'calendar')) {
+    const calendar = await syncTheCalendar(deps, input);
+    if (!calendar.ok) return stoppedAfter(summaries, calendar.error);
+    summaries.push(calendar.value);
   }
   if (known.value.some((candidate) => candidate.kind === 'people')) {
     const people = await syncThePeople(deps, input);
@@ -245,7 +261,7 @@ type Sources = {
   readonly teams: ReadonlyArray<TeamSummary>;
 };
 
-type Chosen = Sources | 'update-all' | 'quit' | 'mailbox' | 'people';
+type Chosen = Sources | 'update-all' | 'quit' | 'mailbox' | 'people' | 'calendar';
 
 const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [] };
 
@@ -259,6 +275,7 @@ const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): 
   if (choice.kind === 'quit') return ok('quit');
   if (choice.kind === 'mailbox') return ok('mailbox');
   if (choice.kind === 'people') return ok('people');
+  if (choice.kind === 'calendar') return ok('calendar');
   if (choice.kind === 'update-all') return ok('update-all');
   if (choice.kind === 'address') return oneSite(await siteAt(deps, choice.url));
   // Selecting by position rather than by index lookup: `parseSelection` has already refused any
@@ -318,7 +335,13 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
     ...annotate(todoLists.map(asChoosableList), marks),
     ...annotate(teams.map(asChoosableTeam), marks),
   ];
-  deps.prompt.show(renderSitePicker(rows, standingRow(MAILBOX_ID, MAILBOX_NAME, marks), standingRow(PEOPLE_ID, PEOPLE_NAME, marks)));
+  deps.prompt.show(
+    renderSitePicker(rows, {
+      mailbox: standingRow(MAILBOX_ID, MAILBOX_NAME, marks),
+      people: standingRow(PEOPLE_ID, PEOPLE_NAME, marks),
+      calendar: standingRow(CALENDAR_ID, CALENDAR_NAME, marks),
+    })
+  );
   const chosen = parseSelection(await deps.prompt.ask('Source:'), rows.length);
   if (!chosen.ok) return failed('pickSite', chosen.error.kind, chosen.error.message);
   const resolved = await resolve(deps, chosen.value, { sites, groups, todoLists, teams });
@@ -413,6 +436,7 @@ const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclud
   if (chosen === 'update-all') return updateEverything(deps, input);
   if (chosen === 'mailbox') return oneSummary(await syncTheMailbox(deps, input));
   if (chosen === 'people') return oneSummary(await syncThePeople(deps, input));
+  if (chosen === 'calendar') return oneSummary(await syncTheCalendar(deps, input));
   return runMany(deps, input, chosen);
 };
 
@@ -431,6 +455,7 @@ const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
   if (input.command === 'update') return updateEverything(deps, input);
   if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
   if (input.people === true) return oneSummary(await syncThePeople(deps, input));
+  if (input.calendar === true) return oneSummary(await syncTheCalendar(deps, input));
   const named = await siteFromOptions(deps, input);
   if (named !== undefined) return named.ok ? runMany(deps, input, { ...NOTHING, sites: [named.value] }) : named;
   const group = await groupFromOptions(deps, input);
