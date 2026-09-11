@@ -1,4 +1,4 @@
-export type FrontMatterValue = string | number | ReadonlyArray<string>;
+export type FrontMatterValue = string | number | boolean | ReadonlyArray<string>;
 
 export type FrontMatterField = readonly [key: string, value: FrontMatterValue | undefined];
 
@@ -19,8 +19,10 @@ const scalar = (raw: string): string => {
   return needsQuoting(raw, folded) ? quote(folded) : folded;
 };
 
+// A boolean is written bare, which is the one way the word `true` reaches a reader as a flag: the
+// same word arriving as a string is quoted, so a subject that happens to be "true" stays a subject.
 const renderField = (key: string, value: FrontMatterValue): ReadonlyArray<string> => {
-  if (typeof value === 'number') return [`${key}: ${value}`];
+  if (typeof value === 'number' || typeof value === 'boolean') return [`${key}: ${value}`];
   if (typeof value === 'string') return [`${key}: ${scalar(value)}`];
   return [`${key}:`, ...value.map((entry) => `  - ${scalar(entry)}`)];
 };

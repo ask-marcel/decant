@@ -83,6 +83,15 @@ describe('stamping a generated markdown file with where it came from', () => {
 
   it('a value that is only padding is quoted rather than written as nothing', () => {
     expect(renderFrontMatter([['name', '']])).toBe(['---', 'name: ""', '---'].join('\n'));
+  });
+
+  it('a flag is written bare where the same word as a string is quoted, so a reader can tell a boolean from a subject', () => {
+    expect(
+      renderFrontMatter([
+        ['all_day', true],
+        ['subject', 'true'],
+      ])
+    ).toBe(['---', 'all_day: true', 'subject: "true"', '---'].join('\n'));
     expect(renderFrontMatter([['name', '   ']])).toBe(['---', 'name: ""', '---'].join('\n'));
   });
 
