@@ -5,6 +5,7 @@ import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { SiteRef } from '../domain/site-state.ts';
 import { MAILBOX_ID, MAILBOX_NAME } from '../domain/mail-state.ts';
+import { PEOPLE_ID, PEOPLE_NAME } from '../domain/people-state.ts';
 import { renderChannelPicker, renderLibraryPicker, renderReportPointer, renderSitePicker, renderSummary } from '../presenter/render-picker.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
 import type { DriveReader, DriveSummary, SiteSummary } from './ports/drive-reader.ts';
@@ -15,6 +16,7 @@ import type { GroupReader, GroupSummary } from './ports/group-reader.ts';
 import type { TodoList, TodoReader } from './ports/todo-reader.ts';
 import type { ChannelSummary, TeamReader, TeamSummary } from './ports/team-reader.ts';
 import type { SyncGroup } from './sync-group.ts';
+import type { SyncPeople } from './sync-people.ts';
 import type { SyncTeam } from './sync-team.ts';
 import type { SyncTodo } from './sync-todo.ts';
 import type { SourceRun, SyncSite } from './sync-site.ts';
@@ -37,6 +39,7 @@ export type RunSyncDeps = {
   readonly syncGroup: SyncGroup;
   readonly syncTodo: SyncTodo;
   readonly syncTeam: SyncTeam;
+  readonly syncPeople: SyncPeople;
   // Only the listing half of the group reader: choosing a source needs to know which groups can be
   // read, and reading one is the use-case's business, not the picker's.
   readonly groups: Pick<GroupReader, 'listGroups'>;
@@ -61,6 +64,7 @@ export type RunSyncInput = {
   readonly concurrency: number;
   readonly dryRun: boolean;
   readonly mailbox?: boolean;
+  readonly people?: boolean;
   readonly groupId?: string;
   readonly todoListId?: string;
   readonly teamId?: string;
@@ -142,6 +146,13 @@ const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<R
   return summary;
 };
 
+const syncThePeople = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
+  deps.logger.info('people.started', {});
+  const summary = await deps.syncPeople({ concurrency: input.concurrency, dryRun: input.dryRun });
+  if (summary.ok) deps.prompt.show(renderSummary(PEOPLE_NAME, summary.value.summary, input.dryRun));
+  return summary;
+};
+
 const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   const known = await deps.listSyncedSources();
   if (!known.ok) return known;
@@ -150,6 +161,11 @@ const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise
     const mailbox = await syncTheMailbox(deps, input);
     if (!mailbox.ok) return stoppedAfter(summaries, mailbox.error);
     summaries.push(mailbox.value);
+  }
+  if (known.value.some((candidate) => candidate.kind === 'people')) {
+    const people = await syncThePeople(deps, input);
+    if (!people.ok) return stoppedAfter(summaries, people.error);
+    summaries.push(people.value);
   }
   for (const source of known.value.filter((candidate) => candidate.kind === 'site')) {
     const site = { id: source.id, name: source.name, webUrl: '' };
@@ -229,7 +245,7 @@ type Sources = {
   readonly teams: ReadonlyArray<TeamSummary>;
 };
 
-type Chosen = Sources | 'update-all' | 'quit' | 'mailbox';
+type Chosen = Sources | 'update-all' | 'quit' | 'mailbox' | 'people';
 
 const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [] };
 
@@ -242,6 +258,7 @@ const countOf = (sources: Sources): number => sources.sites.length + sources.gro
 const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): Promise<Result<Chosen, StepError>> => {
   if (choice.kind === 'quit') return ok('quit');
   if (choice.kind === 'mailbox') return ok('mailbox');
+  if (choice.kind === 'people') return ok('people');
   if (choice.kind === 'update-all') return ok('update-all');
   if (choice.kind === 'address') return oneSite(await siteAt(deps, choice.url));
   // Selecting by position rather than by index lookup: `parseSelection` has already refused any
@@ -301,12 +318,16 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
     ...annotate(todoLists.map(asChoosableList), marks),
     ...annotate(teams.map(asChoosableTeam), marks),
   ];
-  deps.prompt.show(renderSitePicker(rows, annotate([{ id: MAILBOX_ID, name: MAILBOX_NAME }], marks)[0] ?? { id: MAILBOX_ID, name: MAILBOX_NAME, webUrl: '' }));
+  deps.prompt.show(renderSitePicker(rows, standingRow(MAILBOX_ID, MAILBOX_NAME, marks), standingRow(PEOPLE_ID, PEOPLE_NAME, marks)));
   const chosen = parseSelection(await deps.prompt.ask('Source:'), rows.length);
   if (!chosen.ok) return failed('pickSite', chosen.error.kind, chosen.error.message);
   const resolved = await resolve(deps, chosen.value, { sites, groups, todoLists, teams });
   return resolved.ok ? ok({ chosen: resolved.value, fromCache }) : resolved;
 };
+
+// The one row a source that is the only one of its kind gets: marked if it has been synced, and
+// there either way.
+const standingRow = (id: string, name: string, marks: Readonly<Record<string, SyncedMark>>): PickerRow => annotate([{ id, name }], marks)[0] ?? { id, name, webUrl: '' };
 
 // A group inbox has no address of its own, so it says what it is instead of being read off one.
 const asChoosable = (group: GroupSummary): { id: string; name: string; kind: 'group' } => ({ id: group.id, name: group.name, kind: 'group' });
@@ -391,6 +412,7 @@ const syncTheTodoList = async (deps: RunSyncDeps, input: RunSyncInput, list: Tod
 const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclude<Chosen, 'quit'>): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   if (chosen === 'update-all') return updateEverything(deps, input);
   if (chosen === 'mailbox') return oneSummary(await syncTheMailbox(deps, input));
+  if (chosen === 'people') return oneSummary(await syncThePeople(deps, input));
   return runMany(deps, input, chosen);
 };
 
@@ -408,6 +430,7 @@ const runNamedTeam = async (deps: RunSyncDeps, input: RunSyncInput, team: TeamSu
 const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   if (input.command === 'update') return updateEverything(deps, input);
   if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
+  if (input.people === true) return oneSummary(await syncThePeople(deps, input));
   const named = await siteFromOptions(deps, input);
   if (named !== undefined) return named.ok ? runMany(deps, input, { ...NOTHING, sites: [named.value] }) : named;
   const group = await groupFromOptions(deps, input);

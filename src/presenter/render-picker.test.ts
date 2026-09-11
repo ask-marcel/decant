@@ -8,12 +8,14 @@ const rows = [
 
 const mailbox = { id: 'me', name: 'Mailbox', webUrl: '' };
 
+const people = { id: 'people', name: 'People', webUrl: '', synced: { lastRun: '2026-09-11T09:00:00Z', fileCount: 97 } };
+
 describe('showing the operator what there is to sync', () => {
   it('each site is numbered, and the ones already synced say when and how much', () => {
-    const rendered = renderSitePicker(rows, mailbox);
+    const rendered = renderSitePicker(rows, mailbox, people);
 
     expect(rendered).toContain('  1) Espace Contoso  (synced 2026-07-22, 143 files)');
-    expect(renderSitePicker([{ id: 'c', name: 'Solo', webUrl: '', synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 1 } }], mailbox)).toContain('1 file)');
+    expect(renderSitePicker([{ id: 'c', name: 'Solo', webUrl: '', synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 1 } }], mailbox, people)).toContain('1 file)');
     expect(rendered).toContain('  2) Direction  (new)');
   });
 
@@ -24,7 +26,7 @@ describe('showing the operator what there is to sync', () => {
       { id: 'c', name: 'jane.doe@example.com', webUrl: 'https://tenant-my.sharepoint.com/personal/jane' },
     ];
 
-    const rendered = renderSitePicker(mixed, mailbox);
+    const rendered = renderSitePicker(mixed, mailbox, people);
 
     expect(rendered).toContain('SharePoint sites:\n  1) Direction  (new)');
     expect(rendered).toContain('Loop workspaces:\n  2) Loop - Direction  (new)');
@@ -32,23 +34,25 @@ describe('showing the operator what there is to sync', () => {
   });
 
   it('a kind nobody has gets no heading of its own', () => {
-    const rendered = renderSitePicker([{ id: 'a', name: 'Direction', webUrl: 'https://tenant.sharepoint.com/sites/Direction' }], mailbox);
+    const rendered = renderSitePicker([{ id: 'a', name: 'Direction', webUrl: 'https://tenant.sharepoint.com/sites/Direction' }], mailbox, people);
 
     expect(rendered).not.toContain('Loop workspaces');
     expect(rendered).not.toContain('OneDrive');
   });
 
   it('the site picker says that every site can be taken at once', () => {
-    expect(renderSitePicker(rows, mailbox)).toContain('all');
+    expect(renderSitePicker(rows, mailbox, people)).toContain('all');
   });
 
   it('the ways out of the picker are spelled out', () => {
-    expect(renderSitePicker(rows, mailbox)).toContain('u = refresh everything already synced, q = quit.');
+    expect(renderSitePicker(rows, mailbox, people)).toContain('u = refresh everything already synced, q = quit.');
   });
 
   it('the mailbox is offered beside the sites, marked the same way', () => {
-    expect(renderSitePicker(rows, mailbox)).toContain('  m) My mailbox  (new)');
-    expect(renderSitePicker(rows, { ...mailbox, synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 42 } })).toContain('m) My mailbox  (synced 2026-07-22, 42 files)');
+    expect(renderSitePicker(rows, mailbox, people)).toContain('  m) My mailbox  (new)');
+    expect(renderSitePicker(rows, mailbox, people)).toContain('  p) People, everyone in your Teams  (synced 2026-09-11, 97 files)');
+    expect(renderSitePicker(rows, mailbox, { ...people, synced: undefined })).toContain('  p) People, everyone in your Teams  (new)');
+    expect(renderSitePicker(rows, { ...mailbox, synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 42 } }, people)).toContain('m) My mailbox  (synced 2026-07-22, 42 files)');
   });
 
   it('libraries are offered the same way, several at a time', () => {
@@ -66,11 +70,11 @@ describe('showing the operator what there is to sync', () => {
   it('a row hinted because its name collides with another shows its address, so the two can be told apart', () => {
     const hinted = [{ id: 'a', name: 'Team Site', webUrl: 'https://tenant.sharepoint.com', hint: 'https://tenant.sharepoint.com' }];
 
-    expect(renderSitePicker(hinted, mailbox)).toContain('  1) Team Site  [https://tenant.sharepoint.com]  (new)');
+    expect(renderSitePicker(hinted, mailbox, people)).toContain('  1) Team Site  [https://tenant.sharepoint.com]  (new)');
   });
 
   it('a row with no colliding name shows no address, same as today', () => {
-    expect(renderSitePicker(rows, mailbox)).toContain('  2) Direction  (new)');
+    expect(renderSitePicker(rows, mailbox, people)).toContain('  2) Direction  (new)');
   });
 });
 

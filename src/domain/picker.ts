@@ -33,6 +33,7 @@ export type Selection =
   | { readonly kind: 'rows'; readonly indices: ReadonlyArray<number> }
   | { readonly kind: 'address'; readonly url: string }
   | { readonly kind: 'mailbox' }
+  | { readonly kind: 'people' }
   | { readonly kind: 'update-all' }
   | { readonly kind: 'quit' };
 
@@ -82,6 +83,7 @@ export const parseSelection = (input: string, count: number): Result<Selection, 
   if (trimmed === 'q') return ok({ kind: 'quit' });
   if (trimmed === 'u') return ok({ kind: 'update-all' });
   if (trimmed === 'm') return ok({ kind: 'mailbox' });
+  if (trimmed === 'p') return ok({ kind: 'people' });
   if (trimmed === 'all') return ok({ kind: 'rows', indices: [...Array.from({ length: count }, (_unused, index) => index)] });
   if (trimmed.startsWith('http')) return ok({ kind: 'address', url: trimmed });
   return parseIndices(trimmed, count);

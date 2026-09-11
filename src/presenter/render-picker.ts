@@ -34,15 +34,18 @@ const headed = (rows: ReadonlyArray<PickerRow>): ReadonlyArray<string> => {
   return lines;
 };
 
-export const renderSitePicker = (rows: ReadonlyArray<PickerRow>, mailbox: PickerRow): string =>
+// The mailbox and the people directory stand beside the numbered rows rather than under a heading:
+// each is the only thing of its kind, and a heading over one row would say nothing.
+export const renderSitePicker = (rows: ReadonlyArray<PickerRow>, mailbox: PickerRow, people: PickerRow): string =>
   [
     'Sources you can read:',
     '',
     ...headed(rows),
     '',
     `  m) My mailbox  (${mark(mailbox)})`,
+    `  p) People, everyone in your Teams  (${mark(people)})`,
     '',
-    'Choose one or more numbers (1,3), all for every site, m for your mailbox, or paste a site address.',
+    'Choose one or more numbers (1,3), all for every site, m for your mailbox, p for the people, or paste a site address.',
     'Taking more than one site takes every library in each, without asking.',
     'u = refresh everything already synced, q = quit.',
   ].join('\n');

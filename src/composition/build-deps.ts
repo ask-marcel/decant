@@ -9,6 +9,9 @@ import type { GroupReader } from '../use-cases/ports/group-reader.ts';
 import { createTodoReaderFromCall } from '../infra/todo-reader-marcel.ts';
 import type { TodoReader } from '../use-cases/ports/todo-reader.ts';
 import { createTeamReaderFromCall } from '../infra/team-reader-marcel.ts';
+import { createPeopleReaderFromCall } from '../infra/people-reader-marcel.ts';
+import type { PeopleReader } from '../use-cases/ports/people-reader.ts';
+import { createSyncPeople } from '../use-cases/sync-people.ts';
 import type { ChannelSummary, TeamReader, TeamSummary } from '../use-cases/ports/team-reader.ts';
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
@@ -55,6 +58,7 @@ export type DepOverrides = {
   readonly group?: GroupReader;
   readonly todo?: TodoReader;
   readonly team?: TeamReader;
+  readonly people?: PeopleReader;
   readonly ocr?: Ocr;
   readonly prompt?: Prompt;
   readonly clock?: Clock;
@@ -173,6 +177,9 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // reader, somewhere to write, and a clock, and none of the conversion machinery.
   const team = overrides.team ?? createTeamReaderFromCall(createMarcelCall(api));
   const syncTeam = createSyncTeam({ reader: team, files, clock, logger, progress, kbRoot: config.kbRoot });
+  // The directory is enumerated through the Teams, so it borrows the team reader's listing.
+  const people = overrides.people ?? createPeopleReaderFromCall(createMarcelCall(api));
+  const syncPeople = createSyncPeople({ reader: people, teams: team, files, clock, logger, progress, kbRoot: config.kbRoot });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
@@ -190,6 +197,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     syncGroup,
     syncTodo,
     syncTeam,
+    syncPeople,
     groups: group,
     todo,
     teams: team,

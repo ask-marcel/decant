@@ -52,6 +52,7 @@ const run = async (
   groupRuns: string[];
   todoRuns: string[];
   teamRuns: Array<{ team: string; channels: string[] }>;
+  peopleRuns: number;
   mailboxRuns: SyncMailboxInput[];
   reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }>;
   prompt: PromptFake;
@@ -68,6 +69,7 @@ const run = async (
   const groupRuns: string[] = [];
   const todoRuns: string[] = [];
   const teamRuns: Array<{ team: string; channels: string[] }> = [];
+  let peopleRuns = 0;
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
   const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }> = [];
@@ -103,6 +105,10 @@ const run = async (
             ),
     },
     savedChannels: async () => seeds.savedChannels ?? [{ id: 'ch-general', name: 'General' }],
+    syncPeople: async () => {
+      peopleRuns += 1;
+      return ok({ ...SOURCE_RUN, id: 'people', source: 'People' });
+    },
     cachedSites: async () => seeds.cached,
     rememberSites: async (listed) => {
       remembered.push(listed);
@@ -130,6 +136,7 @@ const run = async (
     groupRuns,
     todoRuns,
     teamRuns,
+    peopleRuns,
     mailboxRuns,
     reported,
     prompt,
@@ -399,6 +406,30 @@ describe('choosing what to sync', () => {
     expect(step).toBe('listChannels');
   });
 
+  it('p syncs the people directory, offered beside the mailbox and marked when it has been synced', async () => {
+    const { peopleRuns, prompt, logger } = await run(['p'], {}, { synced: [{ kind: 'people', id: 'people', name: 'People', lastRun: '2026-09-11T09:00:00Z', fileCount: 97 }] });
+
+    expect(prompt.shown.join('\n')).toContain('  p) People, everyone in your Teams  (synced 2026-09-11, 97 files)');
+    expect(peopleRuns).toBe(1);
+    expect(prompt.shown.join('\n')).toContain('People: 2 converted');
+    expect(logger.calls.some((entry) => entry.event === 'people.started')).toBe(true);
+  });
+
+  it('--people syncs the directory without drawing the picker', async () => {
+    const { peopleRuns, prompt } = await run([], { people: true });
+
+    expect(peopleRuns).toBe(1);
+    expect(prompt.asked).toEqual([]);
+  });
+
+  it('an update refreshes the people directory when it is already in the knowledge base, and leaves it alone when it is not', async () => {
+    const refreshed = await run([], { command: 'update' }, { synced: [{ kind: 'people', id: 'people', name: 'People', lastRun: '2026-09-11T09:00:00Z', fileCount: 97 }] });
+    const untouched = await run([], { command: 'update' }, { synced: [] });
+
+    expect(refreshed.peopleRuns).toBe(1);
+    expect(untouched.peopleRuns).toBe(0);
+  });
+
   it('a group listing that fails costs the group inboxes and not the picker', async () => {
     const { calls, prompt, logger } = await run(['1', 'all'], {}, { groups: undefined });
 
@@ -601,6 +632,7 @@ describe('when the knowledge base itself cannot be read', () => {
       syncTeam: async () => ok(SOURCE_RUN),
       teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
       savedChannels: async () => [],
+      syncPeople: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -631,6 +663,7 @@ describe('when the knowledge base itself cannot be read', () => {
       syncTeam: async () => ok(SOURCE_RUN),
       teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
       savedChannels: async () => [],
+      syncPeople: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -683,6 +716,7 @@ describe('when one site in a refresh fails', () => {
       syncTeam: async () => ok(SOURCE_RUN),
       teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
       savedChannels: async () => [],
+      syncPeople: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -832,6 +866,7 @@ describe('when a source run fails after it began', () => {
       syncTeam: async () => ok(SOURCE_RUN),
       teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
       savedChannels: async () => [],
+      syncPeople: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -864,6 +899,7 @@ describe('when a source run fails after it began', () => {
       syncTeam: async () => ok(SOURCE_RUN),
       teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
       savedChannels: async () => [],
+      syncPeople: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -928,6 +964,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
       syncTeam: async () => ok(SOURCE_RUN),
       teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
       savedChannels: async () => [],
+      syncPeople: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -964,6 +1001,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
       syncTeam: async () => ok(SOURCE_RUN),
       teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
       savedChannels: async () => [],
+      syncPeople: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
