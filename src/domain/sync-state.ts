@@ -1,7 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 
-export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo';
+export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo' | 'team';
 
 export type SyncedSource = {
   readonly kind: SourceKind;
@@ -23,7 +23,7 @@ export const sourceLabel = (source: { readonly name: string; readonly kind: Sour
 
 type SourceIdentity = { readonly kind: SourceKind; readonly id: string; readonly name: string };
 
-const isSourceKind = (value: string | undefined): value is SourceKind => value === 'site' || value === 'mailbox' || value === 'group' || value === 'todo';
+const isSourceKind = (value: string | undefined): value is SourceKind => value === 'site' || value === 'mailbox' || value === 'group' || value === 'todo' || value === 'team';
 
 export const NEVER_RUN = 'never';
 
@@ -36,15 +36,13 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
   return typeof value === 'string' ? value : undefined;
 };
 
-const countDriveItems = (drive: unknown): number => {
-  if (!isRecord(drive)) return 0;
-  const items = drive['items'];
-  return isRecord(items) ? Object.keys(items).length : 0;
-};
+const countKeys = (raw: unknown): number => (isRecord(raw) ? Object.keys(raw).length : 0);
 
-const countItems = (drives: unknown): number => {
-  if (!isRecord(drives)) return 0;
-  return Object.values(drives).reduce<number>((total, drive) => total + countDriveItems(drive), 0);
+// What a container holds, summed over every container: a site's libraries each hold `items`, a
+// team's channels each hold `posts`.
+const countWithin = (containers: unknown, held: string): number => {
+  if (!isRecord(containers)) return 0;
+  return Object.values(containers).reduce<number>((total, container) => total + (isRecord(container) ? countKeys(container[held]) : 0), 0);
 };
 
 const parseIdentity = (source: Record<string, unknown>): Result<SourceIdentity, SyncStateError> => {
@@ -56,11 +54,11 @@ const parseIdentity = (source: Record<string, unknown>): Result<SourceIdentity, 
   return ok({ kind, id, name });
 };
 
-const countKeys = (raw: unknown): number => (isRecord(raw) ? Object.keys(raw).length : 0);
-
-// A site counts the documents its libraries hold; a mailbox and a group inbox count their threads and
-// a To Do list its tasks, since each of those is one file in the knowledge base.
-const countFiles = (raw: Record<string, unknown>): number => countItems(raw['drives']) + countKeys(raw['threads']) + countKeys(raw['tasks']);
+// A site counts the documents its libraries hold and a team the posts its channels hold; a mailbox
+// and a group inbox count their threads and a To Do list its tasks, each of those being one file in
+// the knowledge base.
+const countFiles = (raw: Record<string, unknown>): number =>
+  countWithin(raw['drives'], 'items') + countWithin(raw['channels'], 'posts') + countKeys(raw['threads']) + countKeys(raw['tasks']);
 
 export const parseSyncedSource = (raw: unknown): Result<SyncedSource, SyncStateError> => {
   if (!isRecord(raw)) return malformed('sync state is not an object');

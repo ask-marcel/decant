@@ -57,6 +57,16 @@ describe('reading the sync state left by a previous run', () => {
     expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'todo', id: 'list-1', name: 'Tasks', lastRun: '2026-09-09T09:00:00Z', fileCount: 3 } });
   });
 
+  it('a team is a source like a site, counting the posts its channels hold the way a site counts its libraries', () => {
+    const state = {
+      source: { kind: 'team', id: 'team-1', name: 'MOOV Leadership' },
+      lastRun: '2026-09-10T09:00:00Z',
+      channels: { c1: { posts: { a: {}, b: {} } }, c2: { posts: { c: {} } }, bad: 'x' },
+    };
+
+    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'team', id: 'team-1', name: 'MOOV Leadership', lastRun: '2026-09-10T09:00:00Z', fileCount: 3 } });
+  });
+
   it('a source naming a kind this tool cannot sync is rejected as malformed', () => {
     const parsed = parseSyncedSource({ source: { kind: 'notebook', id: 'x', name: 'y' } });
 
