@@ -1,0 +1,361 @@
+import { describe, expect, it } from 'bun:test';
+import type { CalendarEvent } from '../domain/calendar-event.ts';
+import { emptyCalendarState, serializeCalendarState, withCursor, withEvent } from '../domain/calendar-state.ts';
+import { createCalendarReaderFake } from '../test-helpers/calendar-reader-fake.ts';
+import type { CalendarReaderFake, CalendarReaderSeed } from '../test-helpers/calendar-reader-fake.ts';
+import { createClockFake } from '../test-helpers/clock-fake.ts';
+import { createFilesFake } from '../test-helpers/files-fake.ts';
+import type { FilesFake, FilesFakeSeed } from '../test-helpers/files-fake.ts';
+import { createLoggerFake } from '../test-helpers/logger-fake.ts';
+import type { LoggerFake } from '../test-helpers/logger-fake.ts';
+import { createProgressFake } from '../test-helpers/progress-fake.ts';
+import type { StepError } from './ports/step-error.ts';
+import { createSyncCalendar } from './sync-calendar.ts';
+import type { RunNotes, RunSummary } from './sync-site.ts';
+
+const ROOT = 'kb/Calendar';
+const STATE_PATH = `${ROOT}/.sync-state.json`;
+
+const event = (id: string, subject: string, start: string, over: Partial<CalendarEvent> = {}): CalendarEvent => ({
+  id,
+  subject,
+  kind: 'singleInstance',
+  start,
+  end: start,
+  allDay: false,
+  cancelled: false,
+  organizer: { name: 'Vincent', address: 'me@example.com' },
+  attendees: [{ name: 'Jane Doe', address: 'jane@example.com', response: 'accepted', required: true }],
+  location: '',
+  joinUrl: '',
+  webLink: `https://outlook.office365.com/owa/?itemid=${id}`,
+  recurrence: '',
+  response: 'organizer',
+  categories: [],
+  hasAttachments: false,
+  lastModified: start,
+  body: '<p>Agenda</p>',
+  ...over,
+});
+
+const OFFSITE = event('a', 'Offsite planning', '2026-09-12T07:00:00Z', { hasAttachments: true });
+const STANDUP = event('b', 'Standup', '2026-09-10T08:00:00Z');
+
+const run = async (
+  seeds: { reader?: CalendarReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; since?: string } = {}
+): Promise<{ summary: RunSummary; source: string; notes: RunNotes; files: FilesFake; logger: LoggerFake; reader: CalendarReaderFake; ok: boolean; error?: StepError }> => {
+  const files = createFilesFake(seeds.files);
+  const logger = createLoggerFake();
+  const reader = createCalendarReaderFake({
+    changes: [
+      { id: 'a', removed: false },
+      { id: 'b', removed: false },
+    ],
+    deltaLink: 'https://graph/delta?token=next',
+    events: { a: OFFSITE, b: STANDUP },
+    attachments: { a: [{ id: 'att-1', name: 'Venues.xlsx', contentType: 'application/vnd.ms-excel', size: 2048 }] },
+    markdown: { 'att-1': '---\nname: Venues.xlsx\n---\n\n| Venue | Cost |\n' },
+    ...seeds.reader,
+  });
+  const syncCalendar = createSyncCalendar({ reader, files, clock: createClockFake('2026-09-12T14:00:00Z'), logger, progress: createProgressFake(), kbRoot: 'kb', timezone: 'UTC' });
+  const outcome = await syncCalendar({ dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4, since: seeds.since });
+  const empty = {
+    summary: { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 },
+    source: 'Calendar',
+    notes: { skipped: [], failed: [], givenUp: [], archived: [] },
+  };
+  return outcome.ok ? { ...outcome.value, files, logger, reader, ok: true } : { ...empty, files, logger, reader, ok: false, error: outcome.error };
+};
+
+type StoredState = { lastRun: string; deltaLink?: string; events: Record<string, { file: string; lastModified: string; subject: string; outputs: string[] }> };
+
+const stateOf = (files: FilesFake): StoredState => JSON.parse(files.written.get(STATE_PATH) ?? '{}');
+
+describe('syncing the calendar', () => {
+  it('a first run reads the delta whole, fetches each event, writes it under the day it starts with what it carried beside it, and keeps the cursor', async () => {
+    const done = await run();
+
+    expect(done.summary.converted).toBe(2);
+    expect(done.reader.calls).toContain('eventsDelta:fresh');
+    expect(done.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([
+      `${ROOT}/2026-09-10/Standup.md`,
+      `${ROOT}/2026-09-12/Offsite planning.attachments/Venues.xlsx.md`,
+      `${ROOT}/2026-09-12/Offsite planning.md`,
+    ]);
+    expect(done.files.written.get(`${ROOT}/2026-09-12/Offsite planning.md`)).toContain('- [Venues.xlsx](<Offsite planning.attachments/Venues.xlsx.md>)');
+    expect(done.files.written.get(`${ROOT}/2026-09-12/Offsite planning.attachments/Venues.xlsx.md`)).toContain('event: Offsite planning\nname: Venues.xlsx');
+    expect(stateOf(done.files)).toMatchObject({
+      deltaLink: 'https://graph/delta?token=next',
+      events: {
+        a: {
+          file: `${ROOT}/2026-09-12/Offsite planning.md`,
+          subject: 'Offsite planning',
+          outputs: [`${ROOT}/2026-09-12/Offsite planning.md`, `${ROOT}/2026-09-12/Offsite planning.attachments/Venues.xlsx.md`],
+        },
+      },
+    });
+  });
+
+  it('a second run asks for what changed since the cursor, and fetches only what the delta named', async () => {
+    const state = withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'b', {
+      file: `${ROOT}/2026-09-10/Standup.md`,
+      lastModified: STANDUP.lastModified,
+      subject: 'Standup',
+      outputs: [`${ROOT}/2026-09-10/Standup.md`],
+    });
+    const done = await run({ reader: { changes: [{ id: 'a', removed: false }] }, files: { texts: { [STATE_PATH]: serializeCalendarState(state) } } });
+
+    expect(done.reader.calls).toContain('eventsDelta:https://graph/delta?token=1');
+    expect(done.reader.calls.filter((call) => call.startsWith('event:'))).toEqual(['event:a']);
+    expect(done.summary.converted).toBe(1);
+  });
+
+  it('an event the delta named that has not changed since it was written is fetched and left alone, which is what a re-read after a stopped run costs', async () => {
+    const state = withEvent(emptyCalendarState(), 'b', {
+      file: `${ROOT}/2026-09-10/Standup.md`,
+      lastModified: STANDUP.lastModified,
+      subject: 'Standup',
+      outputs: [`${ROOT}/2026-09-10/Standup.md`],
+    });
+    const done = await run({ reader: { changes: [{ id: 'b', removed: false }] }, files: { texts: { [STATE_PATH]: serializeCalendarState(state) } } });
+
+    expect(done.summary.converted).toBe(0);
+    expect(done.files.writeLog).toEqual([STATE_PATH]);
+  });
+
+  it('an event moved to another day is written under the new day, and the copy under the old day and what it carried go to the archive', async () => {
+    const state = withEvent(emptyCalendarState(), 'a', {
+      file: `${ROOT}/2026-09-05/Offsite planning.md`,
+      lastModified: '2026-09-01T00:00:00Z',
+      subject: 'Offsite planning',
+      outputs: [`${ROOT}/2026-09-05/Offsite planning.md`, `${ROOT}/2026-09-05/Offsite planning.attachments/Old.docx.md`],
+    });
+    const done = await run({ reader: { changes: [{ id: 'a', removed: false }] }, files: { texts: { [STATE_PATH]: serializeCalendarState(state) } } });
+
+    expect(done.summary.converted).toBe(1);
+    expect(done.files.moves.map((move) => move.to)).toEqual([
+      'kb/_archive/Calendar/2026-09-05/Offsite planning.md',
+      'kb/_archive/Calendar/2026-09-05/Offsite planning.attachments/Old.docx.md',
+    ]);
+  });
+
+  it('an event deleted at the source is put aside with what it carried, and named in the report', async () => {
+    const state = withEvent(emptyCalendarState(), 'gone', {
+      file: `${ROOT}/2026-09-01/Cancelled call.md`,
+      lastModified: 'x',
+      subject: 'Cancelled call',
+      outputs: [`${ROOT}/2026-09-01/Cancelled call.md`],
+    });
+    const done = await run({ reader: { changes: [{ id: 'gone', removed: true }] }, files: { texts: { [STATE_PATH]: serializeCalendarState(state) } } });
+
+    expect(done.summary.archived).toBe(1);
+    expect(done.notes.archived).toEqual([{ path: 'Cancelled call', reason: 'deleted from the calendar' }]);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/2026-09-01/Cancelled call.md`, to: 'kb/_archive/Calendar/2026-09-01/Cancelled call.md' }]);
+    expect(stateOf(done.files).events).toEqual({});
+    expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Cancelled call');
+  });
+
+  it('a removal the ledger never held is nothing, and a cancelled meeting stays, marked', async () => {
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'never', removed: true },
+          { id: 'b', removed: false },
+        ],
+        events: { b: { ...STANDUP, cancelled: true } },
+      },
+    });
+
+    expect(done.summary).toMatchObject({ converted: 1, archived: 0 });
+    expect(done.files.written.get(`${ROOT}/2026-09-10/Standup.md`)).toContain('cancelled: true');
+  });
+
+  it('an event that cannot be fetched is reported as failed, and the cursor is kept where it was so the next run asks for it again', async () => {
+    const done = await run({ reader: { failEvents: ['a'] } });
+
+    expect(done.summary).toMatchObject({ converted: 1, failed: 1 });
+    expect(done.notes.failed).toEqual([{ path: 'a', reason: 'no such event: a' }]);
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'event.unread', meta: { event: 'a', cause: 'permanent' } });
+    expect(stateOf(done.files).deltaLink).toBeUndefined();
+  });
+
+  it('an attachment the library will not render, a picture, is left out and said to be, and the event lands without it with its cursor kept', async () => {
+    const done = await run({ reader: { failAttachments: ['att-1'] } });
+
+    expect(done.summary).toMatchObject({ converted: 2, skipped: 1, failed: 0 });
+    expect(done.notes.skipped).toEqual([{ path: 'Offsite planning/Venues.xlsx', reason: 'cannot convert att-1' }]);
+    expect(done.files.written.get(`${ROOT}/2026-09-12/Offsite planning.md`)).not.toContain('## Attachments');
+    expect(stateOf(done.files).events['a']?.outputs).toEqual([`${ROOT}/2026-09-12/Offsite planning.md`]);
+    expect(stateOf(done.files).deltaLink).toBe('https://graph/delta?token=next');
+  });
+
+  it('an attachment that fails for any other reason is a failure to try again, and holds the cursor back', async () => {
+    const done = await run({ files: { failWritesMatching: 'Venues.xlsx' } });
+
+    expect(done.summary).toMatchObject({ converted: 2, skipped: 0, failed: 1 });
+    expect(done.notes.failed).toEqual([{ path: 'Offsite planning/Venues.xlsx', reason: `cannot write ${ROOT}/2026-09-12/Offsite planning.attachments/Venues.xlsx.md` }]);
+    expect(stateOf(done.files).deltaLink).toBeUndefined();
+  });
+
+  it('an event without attachments carries no attachment section and records only its own file', async () => {
+    const done = await run();
+
+    expect(done.files.written.get(`${ROOT}/2026-09-10/Standup.md`)).not.toContain('## Attachments');
+    expect(stateOf(done.files).events['b']?.outputs).toEqual([`${ROOT}/2026-09-10/Standup.md`]);
+  });
+
+  it('an event whose attachments cannot be listed lands without them, and the listing is named as failed', async () => {
+    const done = await run({ reader: { failListing: ['a'] } });
+
+    expect(done.summary).toMatchObject({ converted: 2, failed: 1 });
+    expect(done.notes.failed).toEqual([{ path: 'Offsite planning/attachments', reason: 'Graph is busy' }]);
+    expect(done.files.written.has(`${ROOT}/2026-09-12/Offsite planning.md`)).toBe(true);
+  });
+
+  it('an event whose file and attachment both fail to write counts both, and is logged by id', async () => {
+    const done = await run({ files: { failWritesMatching: 'Offsite planning' } });
+
+    expect(done.summary).toMatchObject({ converted: 1, failed: 2 });
+    expect(done.notes.failed.map((note) => note.path)).toEqual(['Offsite planning/Venues.xlsx', 'a']);
+  });
+
+  it('an event rewritten under the same day keeps its file where it is, with nothing moved aside', async () => {
+    const state = withEvent(emptyCalendarState(), 'b', {
+      file: `${ROOT}/2026-09-10/Standup.md`,
+      lastModified: 'older',
+      subject: 'Standup',
+      outputs: [`${ROOT}/2026-09-10/Standup.md`],
+    });
+    const done = await run({ reader: { changes: [{ id: 'b', removed: false }] }, files: { texts: { [STATE_PATH]: serializeCalendarState(state) } } });
+
+    expect(done.summary.converted).toBe(1);
+    expect(done.files.moves).toHaveLength(0);
+  });
+
+  it('a file that will not move aside is logged with its path and the run carries on, for a refile and for a deletion alike', async () => {
+    const refiled = withEvent(emptyCalendarState(), 'a', {
+      file: `${ROOT}/2026-09-05/Offsite planning.md`,
+      lastModified: 'older',
+      subject: 'Offsite planning',
+      outputs: [`${ROOT}/2026-09-05/Offsite planning.md`],
+    });
+    const state = withEvent(refiled, 'gone', {
+      file: `${ROOT}/2026-09-01/Cancelled call.md`,
+      lastModified: 'x',
+      subject: 'Cancelled call',
+      outputs: [`${ROOT}/2026-09-01/Cancelled call.md`],
+    });
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'a', removed: false },
+          { id: 'gone', removed: true },
+        ],
+      },
+      files: { texts: { [STATE_PATH]: serializeCalendarState(state) }, failMoveWith: { kind: 'write-failed', path: 'x', message: 'disk is read-only' } },
+    });
+
+    expect(done.ok).toBe(true);
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'supersede.failed', meta: { path: `${ROOT}/2026-09-05/Offsite planning.md`, cause: 'write-failed' } });
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'archive.failed', meta: { path: `${ROOT}/2026-09-01/Cancelled call.md`, cause: 'write-failed' } });
+  });
+
+  it('an event starting on the --since day itself is written, since the day is included', async () => {
+    const done = await run({ since: '2026-09-10' });
+
+    expect(done.summary.converted).toBe(2);
+  });
+
+  it('a new event sharing a subject and a day with one the ledger already holds takes a file of its own', async () => {
+    const state = withEvent(emptyCalendarState(), 'older', {
+      file: `${ROOT}/2026-09-10/Standup.md`,
+      lastModified: 'x',
+      subject: 'Standup',
+      outputs: [`${ROOT}/2026-09-10/Standup.md`],
+    });
+    const done = await run({ reader: { changes: [{ id: 'b', removed: false }] }, files: { texts: { [STATE_PATH]: serializeCalendarState(state) } } });
+
+    const file = stateOf(done.files).events['b']?.file ?? '';
+    expect(file).not.toBe(`${ROOT}/2026-09-10/Standup.md`);
+    expect(file).toContain(`${ROOT}/2026-09-10/Standup-`);
+  });
+
+  it('an event the delta named twice is fetched once', async () => {
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'a', removed: false },
+          { id: 'a', removed: false },
+        ],
+      },
+      dryRun: true,
+    });
+
+    expect(done.summary.queued).toBe(1);
+  });
+
+  it('an event whose file will not write is reported as failed with whatever it carried, and the cursor is kept', async () => {
+    const done = await run({ files: { failWritesMatching: 'Offsite planning.md' } });
+
+    expect(done.summary).toMatchObject({ converted: 1, failed: 1 });
+    expect(done.notes.failed).toEqual([{ path: 'a', reason: `cannot write ${ROOT}/2026-09-12/Offsite planning.md` }]);
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'event.failed', meta: { event: 'a', cause: 'write-failed' } });
+    expect(stateOf(done.files).events['a']).toBeUndefined();
+    expect(stateOf(done.files).deltaLink).toBeUndefined();
+  });
+
+  it('events starting before --since are listed and not written, and the cursor moves past them', async () => {
+    const done = await run({ since: '2026-09-11' });
+
+    expect(done.summary.converted).toBe(1);
+    expect(done.files.written.has(`${ROOT}/2026-09-10/Standup.md`)).toBe(false);
+    expect(stateOf(done.files).deltaLink).toBe('https://graph/delta?token=next');
+  });
+
+  it('a dry run reads the delta, says how many events it would write, and writes nothing at all', async () => {
+    const done = await run({ dryRun: true });
+
+    expect(done.summary).toEqual({ converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 2 });
+    expect(done.files.writeLog).toHaveLength(0);
+    expect(done.reader.calls.filter((call) => call.startsWith('event:'))).toHaveLength(0);
+  });
+
+  it('a delta that cannot be read ends the run naming the step', async () => {
+    const done = await run({ reader: { failDelta: { kind: 'auth', message: 'sign-in has lapsed' } } });
+
+    expect(done.ok).toBe(false);
+    expect(done.error).toEqual({ step: 'eventsDelta', cause: 'auth', message: 'sign-in has lapsed' });
+  });
+
+  it('a state file this version cannot read is started over, and a run that found nothing still stamps its own', async () => {
+    const restarted = await run({ files: { texts: { [STATE_PATH]: '{"version":99,"source":{"kind":"calendar","id":"calendar","name":"Calendar"}}' } } });
+    expect(restarted.summary.converted).toBe(2);
+    expect(restarted.logger.calls).toContainEqual({ level: 'warn', event: 'calendar-state.unreadable', meta: { cause: 'state is version 99, not 1' } });
+
+    const garbled = await run({ files: { texts: { [STATE_PATH]: 'not json at all' } } });
+    expect(garbled.summary.converted).toBe(2);
+
+    const idle = await run({ reader: { changes: [] } });
+    expect(idle.summary.converted).toBe(0);
+    expect(stateOf(idle.files).lastRun).toBe('2026-09-12T14:00:00Z');
+  });
+
+  it('a state file that cannot be saved stops the run, whether or not there was anything to write', async () => {
+    const busy = await run({ files: { failWritesMatching: '.sync-state.json' } });
+    expect(busy.ok).toBe(false);
+    expect(busy.error?.step).toBe('saveState');
+
+    const idle = await run({ reader: { changes: [] }, files: { failWritesMatching: '.sync-state.json' } });
+    expect(idle.ok).toBe(false);
+    expect(idle.error?.step).toBe('saveState');
+  });
+
+  it('the log names events by id and counts, never by subject, attendee or body', async () => {
+    const done = await run({ reader: { failEvents: ['a'] } });
+
+    const logged = JSON.stringify(done.logger.calls);
+    expect(logged).not.toContain('Offsite');
+    expect(logged).not.toContain('Jane');
+    expect(logged).not.toContain('example.com');
+  });
+});
