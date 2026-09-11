@@ -22,6 +22,7 @@ import '../src/infra/files-bun.ts';
 import '../src/infra/group-reader-marcel.ts';
 import '../src/infra/logger.ts';
 import '../src/infra/mail-reader-marcel.ts';
+import '../src/infra/notebook-reader-marcel.ts';
 import '../src/infra/ocr-rapid.ts';
 import '../src/infra/people-reader-marcel.ts';
 import '../src/infra/progress-bar.ts';

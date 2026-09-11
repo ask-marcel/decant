@@ -93,6 +93,10 @@ describe('reading what the operator asked for', () => {
     expect(parse('--calendar --since 2026-09-01')).toMatchObject({ value: { calendar: true, since: '2026-09-01' } });
   });
 
+  it('a notebook can be named outright', () => {
+    expect(parse('--notebook Ideas')).toMatchObject({ value: { notebookId: 'Ideas' } });
+  });
+
   it('a To Do list can be named outright, by the name a person actually has to hand', () => {
     expect(parse('--todo-list Tasks')).toMatchObject({ value: { todoListId: 'Tasks' } });
   });

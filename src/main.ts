@@ -35,6 +35,7 @@ const run = async (): Promise<number> => {
     groupId: options.value.groupId,
     todoListId: options.value.todoListId,
     teamId: options.value.teamId,
+    notebookId: options.value.notebookId,
     driveIds: options.value.driveIds,
     maxBytes: options.value.maxSizeMb * MB,
     concurrency: options.value.concurrency,

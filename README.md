@@ -14,8 +14,9 @@ It syncs **SharePoint document libraries**, your **Outlook mailbox** (one markdo
 conversation, with its attachments and the SharePoint files it links to), your **Microsoft To Do
 lists** (one markdown file per task), the **channels of the Teams you belong to** (one markdown
 file per post, with its replies beneath it), the **people directory** (one markdown file per
-colleague, plus the org chart) and your **Outlook calendar** (one markdown file per event, with
-what it carried beside it).
+colleague, plus the org chart), your **Outlook calendar** (one markdown file per event, with what
+it carried beside it) and the **OneNote notebooks** of your sites and your own (one markdown file
+per page).
 
 Graph access goes through [`ask-marcel-office-cli`](https://www.npmjs.com/package/ask-marcel-office-cli)
 used as a library, which owns authentication, paging and document conversion. See
@@ -49,8 +50,9 @@ bun run sync
 ```
 
 Lists what you can read, grouped by what it is: the SharePoint sites, the Loop workspaces, your
-OneDrive, the inboxes of the Microsoft 365 groups you belong to, your Microsoft To Do lists, and the
-Teams you are a member of. Each is marked with when it last synced and how much it holds. Pick a
+OneDrive, the inboxes of the Microsoft 365 groups you belong to, your Microsoft To Do lists, the
+Teams you are a member of, and the OneNote notebooks of those sites and your own. Each is marked
+with when it last synced and how much it holds. Pick a
 number and one or more libraries (or, for a Team, one or more channels), press `m` for your
 mailbox, `c` for your calendar or `p` for the people directory, and it syncs.
 
@@ -86,6 +88,7 @@ clear message instead of waiting for input.
 | `--group-id <id>` | Sync one group inbox without the picker, by its id or its address |
 | `--todo-list <name>` | Sync one To Do list without the picker, by its name or its id |
 | `--team <name>` | Sync every channel of one Team without the picker, by its name or its id |
+| `--notebook <name>` | Sync one OneNote notebook without the picker, by its name or its id |
 | `--since <day>` | With `--mailbox` or `--calendar`, only conversations arrived or events starting since this day (`2026-01-31`) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
@@ -131,6 +134,10 @@ kb/
     .sync-state.json                which tasks are filed, and what each one last looked like
     2026-09-08/                     the day each task last changed
       Book the venue.md             the task, its notes, its steps and what it links to
+  OneNote/<Notebook>/
+    .sync-state.json                every page filed, and what it last looked like
+    <Section group>/<Section>/      the notebook's own structure
+      Kick-off.md                   one page
   Teams/<Team>/
     .sync-state.json                one delta cursor per channel, and every post filed
     <Channel>/
@@ -452,6 +459,45 @@ profile, the Teams and the reports: an unchanged person costs a call and no writ
 or manager rewrites that one page, a newcomer is written, and someone whose account is disabled or
 who has left every Team is moved to `_archive/People/` and named in the report. The org chart is
 drawn again whenever any page was.
+
+### What a OneNote sync writes
+
+One file per page, under the notebook's own structure rather than under a day, since a page is a
+place and not a moment:
+
+```yaml
+---
+source: https://tenant.sharepoint.com/sites/lead/SiteAssets/Notebook#Kick-off
+notebook: MOOV Leadership Notebook
+section: Meetings
+group: "2026"
+title: Kick-off
+created: "2026-08-01T09:00:00Z"
+last_modified: "2026-09-01T10:00:00Z"
+synced_at: "2026-09-12T14:00:00Z"
+---
+
+# Kick-off
+
+Agenda ...
+```
+
+The notebooks offered are your own and those of every site the picker knows, one call per site
+made side by side; a site that refuses OneNote reads (a tenant past OneNote's item limit answers
+every read with a refusal) costs its own notebooks and not the listing. Two notebooks can carry one
+name, since every site's default notebook is named after the site, and the second to be synced
+takes an id-suffixed folder the way two sites sharing a name do.
+
+Pages have no delta, so every run lists every section and every page again and rewrites a page
+only when its `lastModifiedDateTime` moved; a page renamed or moved between sections is written
+afresh and the old copy goes to `_archive/`, and a page gone from the notebook goes there too and is
+named in the report. A section whose pages cannot be listed keeps its pages on disk as they are.
+
+A page of your own notebooks renders through the library, pictures embedded. A page of a site
+notebook is answered as HTML only, with no renderer in the library for it, so its text is read out
+here the way a calendar event's body is, and a picture in it reads as a link to a Graph resource
+that needs a sign-in to open. Section groups inside a site notebook are out of reach on the site
+route, so the pages inside one are not offered. Both are gaps in the library rather than here.
 
 ### What a Teams sync writes
 
