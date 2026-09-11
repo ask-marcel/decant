@@ -15,6 +15,11 @@ import { createSyncPeople } from '../use-cases/sync-people.ts';
 import { createCalendarReaderFromCall } from '../infra/calendar-reader-marcel.ts';
 import type { CalendarReader } from '../use-cases/ports/calendar-reader.ts';
 import { createSyncCalendar } from '../use-cases/sync-calendar.ts';
+import { createNotebookReaderFromCall } from '../infra/notebook-reader-marcel.ts';
+import type { NotebookReader } from '../use-cases/ports/notebook-reader.ts';
+import { createSyncNotebook } from '../use-cases/sync-notebook.ts';
+import { parseNotebookState, notebookRootName } from '../domain/notebook-state.ts';
+import type { Notebook } from '../domain/onenote.ts';
 import type { ChannelSummary, TeamReader, TeamSummary } from '../use-cases/ports/team-reader.ts';
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
@@ -63,6 +68,7 @@ export type DepOverrides = {
   readonly team?: TeamReader;
   readonly people?: PeopleReader;
   readonly calendar?: CalendarReader;
+  readonly notebook?: NotebookReader;
   readonly ocr?: Ocr;
   readonly prompt?: Prompt;
   readonly clock?: Clock;
@@ -97,6 +103,19 @@ const savedChannelsFrom =
     const parsed = parseJson(text.value);
     const state = parsed.ok ? parseTeamState(parsed.value) : parsed;
     return state.ok ? Object.entries(state.value.channels).map(([id, channel]) => ({ id, name: channel.name })) : [];
+  };
+
+// The notebook as its own state file recorded it, site and all. Read from the plain folder the name
+// gives; a notebook that took an id-suffixed folder because another held the name is found by the
+// id in the state, since two states cannot claim one folder.
+const savedNotebookFrom =
+  (files: Files, kbRoot: string) =>
+  async (source: { readonly id: string; readonly name: string }): Promise<Notebook | undefined> => {
+    const text = await files.readText(`${kbRoot}/${notebookRootName(source.name)}/.sync-state.json`);
+    if (!text.ok) return undefined;
+    const parsed = parseJson(text.value);
+    const state = parsed.ok ? parseNotebookState(parsed.value) : parsed;
+    return state.ok && state.value.notebook.id === source.id ? state.value.notebook : undefined;
   };
 
 // Kept beside the knowledge base it describes, so clearing `kb/` clears it too: a list of sites is
@@ -187,6 +206,8 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // The calendar counts its days where the mailbox counts them.
   const calendar = overrides.calendar ?? createCalendarReaderFromCall(createMarcelCall(api));
   const syncCalendar = createSyncCalendar({ reader: calendar, files, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone });
+  const notebook = overrides.notebook ?? createNotebookReaderFromCall(createMarcelCall(api));
+  const syncNotebook = createSyncNotebook({ reader: notebook, files, clock, logger, progress, kbRoot: config.kbRoot });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
@@ -206,6 +227,9 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     syncTeam,
     syncPeople,
     syncCalendar,
+    syncNotebook,
+    notebooks: notebook,
+    savedNotebook: savedNotebookFrom(files, config.kbRoot),
     groups: group,
     todo,
     teams: team,

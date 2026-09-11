@@ -44,6 +44,9 @@ const run = async (
     failTeams?: boolean;
     failChannels?: boolean;
     savedChannels?: ReadonlyArray<{ id: string; name: string }>;
+    notebooks?: ReadonlyArray<{ id: string; name: string; webUrl: string; site: { id: string; name: string } | undefined }>;
+    failNotebooks?: boolean;
+    savedNotebook?: { id: string; name: string; webUrl: string; site: { id: string; name: string } | undefined };
     reportPath?: string;
     summary?: RunSummary;
   } = {}
@@ -54,6 +57,7 @@ const run = async (
   teamRuns: Array<{ team: string; channels: string[] }>;
   peopleRuns: number;
   calendarRuns: Array<{ since?: string }>;
+  notebookRuns: string[];
   mailboxRuns: SyncMailboxInput[];
   reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }>;
   prompt: PromptFake;
@@ -72,6 +76,7 @@ const run = async (
   const teamRuns: Array<{ team: string; channels: string[] }> = [];
   let peopleRuns = 0;
   const calendarRuns: Array<{ since?: string }> = [];
+  const notebookRuns: string[] = [];
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
   const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }> = [];
@@ -115,6 +120,12 @@ const run = async (
       calendarRuns.push({ since: input.since });
       return ok({ ...SOURCE_RUN, id: 'calendar', source: 'Calendar' });
     },
+    syncNotebook: async (input) => {
+      notebookRuns.push(input.notebook.name);
+      return ok({ ...SOURCE_RUN, id: input.notebook.id, source: input.notebook.name });
+    },
+    notebooks: { listNotebooks: async () => (seeds.failNotebooks === true ? err({ kind: 'permanent' as const, message: 'OneNote read blocked' }) : ok(seeds.notebooks ?? [])) },
+    savedNotebook: async () => seeds.savedNotebook,
     cachedSites: async () => seeds.cached,
     rememberSites: async (listed) => {
       remembered.push(listed);
@@ -144,6 +155,7 @@ const run = async (
     teamRuns,
     peopleRuns,
     calendarRuns,
+    notebookRuns,
     mailboxRuns,
     reported,
     prompt,
@@ -461,6 +473,44 @@ describe('choosing what to sync', () => {
     expect(untouched.calendarRuns).toHaveLength(0);
   });
 
+  it('the notebooks are offered under the teams, found through the sites the picker knows, and a number below them syncs one', async () => {
+    const notebook = { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: '', site: { id: 'contoso,1,2', name: 'Espace Contoso' } };
+    const { notebookRuns, prompt, logger } = await run(['3'], {}, { notebooks: [notebook] });
+
+    expect(prompt.shown.join('\n')).toContain('OneNote:\n  3) MOOV Leadership Notebook  (new)');
+    expect(notebookRuns).toEqual(['MOOV Leadership Notebook']);
+    expect(logger.calls.some((entry) => entry.event === 'notebook.started')).toBe(true);
+  });
+
+  it('a notebook named outright is synced without the picker, and one nobody can read is refused by name', async () => {
+    const notebook = { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: '', site: undefined };
+    const byName = await run([], { notebookId: 'MOOV Leadership Notebook' }, { notebooks: [notebook] });
+    const missing = await run([], { notebookId: 'Ghost' }, { notebooks: [] });
+
+    expect(byName.notebookRuns).toEqual(['MOOV Leadership Notebook']);
+    expect(byName.prompt.asked).toEqual([]);
+    expect(missing.ok).toBe(false);
+    expect(missing.step).toBe('findNotebook');
+  });
+
+  it('an update refreshes a notebook from the record its earlier run left, and stops naming the step when the record is gone', async () => {
+    const synced = [{ kind: 'notebook' as const, id: '1-nb', name: 'MOOV Leadership Notebook', lastRun: '2026-09-12T09:00:00Z', fileCount: 12 }];
+    const found = await run([], { command: 'update' }, { synced, savedNotebook: { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: '', site: { id: 's', name: 'S' } } });
+    const lost = await run([], { command: 'update' }, { synced, savedNotebook: undefined });
+
+    expect(found.notebookRuns).toEqual(['MOOV Leadership Notebook']);
+    expect(lost.ok).toBe(false);
+    expect(lost.step).toBe('savedNotebook');
+  });
+
+  it('a notebook listing that fails costs the notebooks and not the picker', async () => {
+    const { calls, prompt, logger } = await run(['1', 'all'], {}, { failNotebooks: true });
+
+    expect(prompt.shown.join('\n')).not.toContain('OneNote:');
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
+    expect(logger.calls.some((entry) => entry.event === 'notebooks.unlisted')).toBe(true);
+  });
+
   it('a group listing that fails costs the group inboxes and not the picker', async () => {
     const { calls, prompt, logger } = await run(['1', 'all'], {}, { groups: undefined });
 
@@ -665,6 +715,9 @@ describe('when the knowledge base itself cannot be read', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncNotebook: async () => ok(SOURCE_RUN),
+      notebooks: { listNotebooks: async () => ok([]) },
+      savedNotebook: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -697,6 +750,9 @@ describe('when the knowledge base itself cannot be read', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncNotebook: async () => ok(SOURCE_RUN),
+      notebooks: { listNotebooks: async () => ok([]) },
+      savedNotebook: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -751,6 +807,9 @@ describe('when one site in a refresh fails', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncNotebook: async () => ok(SOURCE_RUN),
+      notebooks: { listNotebooks: async () => ok([]) },
+      savedNotebook: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -902,6 +961,9 @@ describe('when a source run fails after it began', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncNotebook: async () => ok(SOURCE_RUN),
+      notebooks: { listNotebooks: async () => ok([]) },
+      savedNotebook: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -936,6 +998,9 @@ describe('when a source run fails after it began', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncNotebook: async () => ok(SOURCE_RUN),
+      notebooks: { listNotebooks: async () => ok([]) },
+      savedNotebook: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -1002,6 +1067,9 @@ describe('pointing a reader at the report a run leaves behind', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncNotebook: async () => ok(SOURCE_RUN),
+      notebooks: { listNotebooks: async () => ok([]) },
+      savedNotebook: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -1040,6 +1108,9 @@ describe('pointing a reader at the report a run leaves behind', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncNotebook: async () => ok(SOURCE_RUN),
+      notebooks: { listNotebooks: async () => ok([]) },
+      savedNotebook: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),

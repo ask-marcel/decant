@@ -19,6 +19,9 @@ import type { ChannelSummary, TeamReader, TeamSummary } from './ports/team-reade
 import type { SyncGroup } from './sync-group.ts';
 import type { SyncPeople } from './sync-people.ts';
 import type { SyncCalendar } from './sync-calendar.ts';
+import type { SyncNotebook } from './sync-notebook.ts';
+import type { NotebookReader } from './ports/notebook-reader.ts';
+import type { Notebook } from '../domain/onenote.ts';
 import type { SyncTeam } from './sync-team.ts';
 import type { SyncTodo } from './sync-todo.ts';
 import type { SourceRun, SyncSite } from './sync-site.ts';
@@ -43,6 +46,7 @@ export type RunSyncDeps = {
   readonly syncTeam: SyncTeam;
   readonly syncPeople: SyncPeople;
   readonly syncCalendar: SyncCalendar;
+  readonly syncNotebook: SyncNotebook;
   // Only the listing half of the group reader: choosing a source needs to know which groups can be
   // read, and reading one is the use-case's business, not the picker's.
   readonly groups: Pick<GroupReader, 'listGroups'>;
@@ -54,6 +58,12 @@ export type RunSyncDeps = {
   readonly teams: Pick<TeamReader, 'listTeams' | 'listChannels'>;
   // The channels a previous run chose for this team, so `update` repeats them without asking.
   readonly savedChannels: (team: TeamSummary) => Promise<ReadonlyArray<ChannelSummary>>;
+  // The listing half of the notebook reader. A notebook is found through the sites the picker
+  // already knows, so the listing takes those and asks each in turn.
+  readonly notebooks: Pick<NotebookReader, 'listNotebooks'>;
+  // The notebook as an earlier run recorded it, site and all, so `update` can reach it without
+  // listing every site again.
+  readonly savedNotebook: (source: { readonly id: string; readonly name: string }) => Promise<Notebook | undefined>;
   // One file naming what the whole run left behind, written once every source is done.
   readonly writeGlobalReport: WriteGlobalReport;
 };
@@ -72,6 +82,7 @@ export type RunSyncInput = {
   readonly groupId?: string;
   readonly todoListId?: string;
   readonly teamId?: string;
+  readonly notebookId?: string;
   readonly since?: string;
   // Ignore what was stored and list for real, for when a site is known to be new.
   readonly refresh?: boolean;
@@ -205,6 +216,13 @@ const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
+  for (const source of known.value.filter((candidate) => candidate.kind === 'notebook')) {
+    const notebook = await deps.savedNotebook(source);
+    if (notebook === undefined) return stoppedAfter(summaries, { step: 'savedNotebook', cause: 'not-found', message: `no record of the notebook ${source.name}` });
+    const summary = await syncTheNotebook(deps, input, notebook);
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
+    summaries.push(summary.value);
+  }
   return ok(summaries);
 };
 
@@ -247,6 +265,23 @@ const teamFromOptions = async (deps: RunSyncDeps, input: RunSyncInput): Promise<
   return found === undefined ? failed('findTeam', 'bad-choice', `no team you belong to is ${input.teamId}`) : ok(found);
 };
 
+// A notebook named outright is looked up among the notebooks of the sites the picker knows and
+// the user's own, by name or by id.
+const notebookFromOptions = async (deps: RunSyncDeps, input: RunSyncInput, sites: ReadonlyArray<SiteSummary>): Promise<Result<Notebook, StepError> | undefined> => {
+  if (input.notebookId === undefined) return undefined;
+  const listed = await deps.notebooks.listNotebooks(sites);
+  if (!listed.ok) return failed('listNotebooks', listed.error.kind, listed.error.message);
+  const found = listed.value.find((notebook) => notebook.id === input.notebookId || notebook.name === input.notebookId);
+  return found === undefined ? failed('findNotebook', 'bad-choice', `no notebook you can read is ${input.notebookId}`) : ok(found);
+};
+
+const syncTheNotebook = async (deps: RunSyncDeps, input: RunSyncInput, notebook: Notebook): Promise<Result<SourceRun, StepError>> => {
+  deps.logger.info('notebook.started', { notebook: notebook.id });
+  const summary = await deps.syncNotebook({ notebook, concurrency: input.concurrency, dryRun: input.dryRun });
+  if (summary.ok) deps.prompt.show(renderSummary(notebook.name, summary.value.summary, input.dryRun));
+  return summary;
+};
+
 const siteAt = async (deps: RunSyncDeps, url: string): Promise<Result<SiteRef, StepError>> => {
   const found = await deps.reader.siteByUrl(url);
   return found.ok ? ok(found.value) : failed('siteByUrl', found.error.kind, found.error.message);
@@ -259,17 +294,18 @@ type Sources = {
   readonly groups: ReadonlyArray<GroupSummary>;
   readonly todoLists: ReadonlyArray<TodoList>;
   readonly teams: ReadonlyArray<TeamSummary>;
+  readonly notebooks: ReadonlyArray<Notebook>;
 };
 
 type Chosen = Sources | 'update-all' | 'quit' | 'mailbox' | 'people' | 'calendar';
 
-const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [] };
+const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [], notebooks: [] };
 
 const oneSite = (found: Result<SiteRef, StepError>): Result<Chosen, StepError> => (found.ok ? ok({ ...NOTHING, sites: [found.value] }) : found);
 
 // How many sources a choice came to, which is what decides whether a site is asked about its
 // libraries and a team about its channels: one source is asked, more than one is taken whole.
-const countOf = (sources: Sources): number => sources.sites.length + sources.groups.length + sources.todoLists.length + sources.teams.length;
+const countOf = (sources: Sources): number => sources.sites.length + sources.groups.length + sources.todoLists.length + sources.teams.length + sources.notebooks.length;
 
 const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): Promise<Result<Chosen, StepError>> => {
   if (choice.kind === 'quit') return ok('quit');
@@ -285,7 +321,9 @@ const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): 
   const groups = offered.groups.filter((_group, index) => choice.indices.includes(offered.sites.length + index));
   const todoLists = offered.todoLists.filter((_list, index) => choice.indices.includes(offered.sites.length + offered.groups.length + index));
   const teams = offered.teams.filter((_team, index) => choice.indices.includes(offered.sites.length + offered.groups.length + offered.todoLists.length + index));
-  const chosen = { sites, groups, todoLists, teams };
+  const before = offered.sites.length + offered.groups.length + offered.todoLists.length + offered.teams.length;
+  const notebooks = offered.notebooks.filter((_notebook, index) => choice.indices.includes(before + index));
+  const chosen = { sites, groups, todoLists, teams, notebooks };
   return countOf(chosen) === 0 ? failed('pickSite', 'bad-choice', 'choose at least one source') : ok(chosen);
 };
 
@@ -328,12 +366,14 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
   const groups = await listedGroups(deps);
   const todoLists = await listedTodoLists(deps);
   const teams = await listedTeams(deps);
+  const notebooks = await listedNotebooks(deps, listing.value.sites);
   const marks = await syncedMarks(deps);
   const rows = [
     ...annotate(sites, marks),
     ...annotate(groups.map(asChoosable), marks),
     ...annotate(todoLists.map(asChoosableList), marks),
     ...annotate(teams.map(asChoosableTeam), marks),
+    ...annotate(notebooks.map(asChoosableNotebook), marks),
   ];
   deps.prompt.show(
     renderSitePicker(rows, {
@@ -344,7 +384,7 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
   );
   const chosen = parseSelection(await deps.prompt.ask('Source:'), rows.length);
   if (!chosen.ok) return failed('pickSite', chosen.error.kind, chosen.error.message);
-  const resolved = await resolve(deps, chosen.value, { sites, groups, todoLists, teams });
+  const resolved = await resolve(deps, chosen.value, { sites, groups, todoLists, teams, notebooks });
   return resolved.ok ? ok({ chosen: resolved.value, fromCache }) : resolved;
 };
 
@@ -383,6 +423,15 @@ const listedTeams = async (deps: RunSyncDeps): Promise<ReadonlyArray<TeamSummary
   return [];
 };
 
+const asChoosableNotebook = (notebook: Notebook): { id: string; name: string; kind: 'notebook' } => ({ id: notebook.id, name: notebook.name, kind: 'notebook' });
+
+const listedNotebooks = async (deps: RunSyncDeps, sites: ReadonlyArray<SiteSummary>): Promise<ReadonlyArray<Notebook>> => {
+  const listed = await deps.notebooks.listNotebooks(sites);
+  if (listed.ok) return listed.value;
+  deps.logger.warn('notebooks.unlisted', { cause: listed.error.kind });
+  return [];
+};
+
 const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray<SourceRun>, StepError> => (summary.ok ? ok([summary.value]) : summary);
 
 // Each site is summarised as it lands, so a run over many of them reports along the way. A site that
@@ -412,6 +461,11 @@ const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources):
     const channels = await channelsFor(deps, team, alone);
     if (!channels.ok) return stoppedAfter(summaries, channels.error);
     const summary = await syncOneTeam(deps, input, team, channels.value);
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
+    summaries.push(summary.value);
+  }
+  for (const notebook of chosen.notebooks) {
+    const summary = await syncTheNotebook(deps, input, notebook);
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
@@ -445,6 +499,15 @@ const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclud
 const leftBehind = (ran: ReadonlyArray<SourceRun>): { readonly skipped: number; readonly failed: number } =>
   ran.reduce((carried, run) => ({ skipped: carried.skipped + run.summary.skipped, failed: carried.failed + run.summary.failed }), { skipped: 0, failed: 0 });
 
+// A notebook is found through the sites, so naming one costs the site listing the picker would
+// have paid for anyway, drawn from the stored list where there is one.
+const namedNotebook = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<Notebook, StepError> | undefined> => {
+  if (input.notebookId === undefined) return undefined;
+  const listing = await listedSites(deps, input);
+  if (!listing.ok) return listing;
+  return notebookFromOptions(deps, input, listing.value.sites);
+};
+
 const runNamedTeam = async (deps: RunSyncDeps, input: RunSyncInput, team: TeamSummary): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
   const channels = await channelsFor(deps, team, false);
   if (!channels.ok) return channels;
@@ -465,6 +528,8 @@ const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
   const team = await teamFromOptions(deps, input);
   // Every channel, without the picker: a team named on the command line is a team meant for a script.
   if (team !== undefined) return team.ok ? runNamedTeam(deps, input, team.value) : team;
+  const notebook = await namedNotebook(deps, input);
+  if (notebook !== undefined) return notebook.ok ? oneSummary(await syncTheNotebook(deps, input, notebook.value)) : notebook;
   const picked = await chooseSite(deps, input);
   if (!picked.ok) return picked;
   const { chosen, fromCache } = picked.value;
