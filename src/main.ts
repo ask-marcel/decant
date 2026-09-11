@@ -40,6 +40,7 @@ const run = async (): Promise<number> => {
     concurrency: options.value.concurrency,
     dryRun: options.value.dryRun,
     mailbox: options.value.mailbox,
+    people: options.value.people,
     since: options.value.since,
     refresh: options.value.refresh,
   });

@@ -20,6 +20,7 @@ export type Options = {
   readonly concurrency: number;
   readonly assumeYes: boolean;
   readonly mailbox: boolean;
+  readonly people: boolean;
   // Asked for the usage and nothing else. A flag rather than a command, because it can be asked
   // beside real work and has to win there: printing the usage and doing nothing is the safe reading
   // of `decant --mailbox --help`, where the alternative is a sync nobody meant to start.
@@ -43,6 +44,7 @@ const DEFAULTS: Options = {
   concurrency: 4,
   assumeYes: false,
   mailbox: false,
+  people: false,
   help: false,
   timezone: '',
 };
@@ -113,6 +115,7 @@ const withFlag = (options: Options, flag: string): Result<Options, OptionsError>
   if (flag === '--no-ocr') return ok({ ...options, ocr: false });
   if (flag === '--refresh') return ok({ ...options, refresh: true });
   if (flag === '--mailbox') return ok({ ...options, mailbox: true });
+  if (flag === '--people') return ok({ ...options, people: true });
   if (flag === '--yes' || flag === '-y') return ok({ ...options, assumeYes: true });
   if (flag === '--help' || flag === '-h') return ok({ ...options, help: true });
   return err({ kind: 'bad-option', message: `unknown option: ${flag}` });
@@ -145,6 +148,7 @@ export const USAGE = [
   '  --site-url <url>    sync the site at this address (for sites the search index misses)',
   '  --drive-id <id>     sync only this library; repeat for several',
   '  --mailbox           sync your Outlook mailbox without showing the picker',
+  '  --people            sync the people directory, everyone in your Teams, without the picker',
   '  --since <day>       with --mailbox, only conversations touched since this day',
   '  --dry-run           show what would be done, write nothing',
   '  --max-size-mb <n>   skip files larger than this (default 50)',

@@ -39,6 +39,7 @@ describe('reading what the operator asked for', () => {
         concurrency: 4,
         assumeYes: false,
         mailbox: false,
+        people: false,
         help: false,
         refresh: false,
         timezone: '',
@@ -80,6 +81,11 @@ describe('reading what the operator asked for', () => {
 
   it('a site can be named outright, so the picker is not shown', () => {
     expect(parse('--site-id contoso,1,2')).toMatchObject({ value: { siteId: 'contoso,1,2' } });
+  });
+
+  it('the people directory can be asked for outright, so the picker is not shown', () => {
+    expect(parse('--people')).toMatchObject({ value: { people: true } });
+    expect(parse('')).toMatchObject({ value: { people: false } });
   });
 
   it('a To Do list can be named outright, by the name a person actually has to hand', () => {

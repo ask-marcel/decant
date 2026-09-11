@@ -12,8 +12,9 @@ is what a reader, or an agent, can actually use.
 
 It syncs **SharePoint document libraries**, your **Outlook mailbox** (one markdown file per
 conversation, with its attachments and the SharePoint files it links to), your **Microsoft To Do
-lists** (one markdown file per task) and the **channels of the Teams you belong to** (one markdown
-file per post, with its replies beneath it).
+lists** (one markdown file per task), the **channels of the Teams you belong to** (one markdown
+file per post, with its replies beneath it) and the **people directory** (one markdown file per
+colleague, plus the org chart).
 
 Graph access goes through [`ask-marcel-office-cli`](https://www.npmjs.com/package/ask-marcel-office-cli)
 used as a library, which owns authentication, paging and document conversion. See
@@ -49,8 +50,8 @@ bun run sync
 Lists what you can read, grouped by what it is: the SharePoint sites, the Loop workspaces, your
 OneDrive, the inboxes of the Microsoft 365 groups you belong to, your Microsoft To Do lists, and the
 Teams you are a member of. Each is marked with when it last synced and how much it holds. Pick a
-number and one or more libraries (or, for a Team, one or more channels), or press `m` for your
-mailbox, and it syncs.
+number and one or more libraries (or, for a Team, one or more channels), press `m` for your
+mailbox or `p` for the people directory, and it syncs.
 
 Your Loop workspaces are on that list too, shown as `Loop - <workspace>`. A workspace keeps its
 pages in a container no site listing returns, so they are found through the `.pod` manifest each one
@@ -79,6 +80,7 @@ clear message instead of waiting for input.
 | `--site-url <url>` | Sync the site at this address, for sites the search index does not list |
 | `--drive-id <id>` | Sync only this library; repeat for several |
 | `--mailbox` | Sync your Outlook mailbox without showing the picker |
+| `--people` | Sync the people directory, everyone in your Teams, without the picker |
 | `--group-id <id>` | Sync one group inbox without the picker, by its id or its address |
 | `--todo-list <name>` | Sync one To Do list without the picker, by its name or its id |
 | `--team <name>` | Sync every channel of one Team without the picker, by its name or its id |
@@ -114,6 +116,10 @@ kb/
   OneDrive/<Owner>/                 the same shape, for a personal OneDrive
   Group inboxes/<Group>/            a group's conversations (see the mailbox layout below)
   Mailbox/                          your own Outlook mailbox
+  People/
+    .sync-state.json                who is filed, and a fingerprint of what each page was made of
+    _org-chart.md                   everyone under their manager, linked to their pages
+    Jane Doe.md                     one page per colleague
   To Do/<List>/
     .sync-state.json                which tasks are filed, and what each one last looked like
     2026-09-08/                     the day each task last changed
@@ -348,6 +354,49 @@ own fields and leaves out its steps and its linked resources, which are navigati
 have to be expanded; one paged read that expands both costs less than a delta plus a fetch per
 changed task, and it is also what makes a deleted task visible, by its absence, on every run rather
 than on the single run a delta reports its removal.
+
+### What a people sync writes
+
+One page per colleague, and one org chart:
+
+```yaml
+---
+source: Microsoft 365 directory
+name: Jane Doe
+title: Head of Operations
+department: Operations
+manager: Derek Bushaw
+email: jane@example.com
+phones:
+  - "+31 6 1234 5678"
+office: Rotterdam
+teams:
+  - Leadership
+  - MOOV EMPLOYEES
+synced_at: "2026-09-11T14:00:00Z"
+---
+
+# Jane Doe
+
+Head of Operations, Operations. Reports to [Derek Bushaw](<Derek Bushaw.md>).
+
+## Reports
+
+- [Ann Lee](<Ann Lee.md>)
+```
+
+There is no directory listing in the library (`/users` is not exposed), so the people are found
+through the Teams you belong to: the roster of every one of them, joined by user id, is the
+directory. With an all-employees Team that is everyone; without one it is everyone you work with.
+Each person then costs one call, `get-user` with the manager expanded into it. Guests and disabled
+accounts are read and left out, and count as nobody's report.
+
+Graph offers no delta on people the library exposes, so every run reads every profile again. What
+makes a run an update rather than a rewrite is a fingerprint per person in the state file, over the
+profile, the Teams and the reports: an unchanged person costs a call and no write, a changed title
+or manager rewrites that one page, a newcomer is written, and someone whose account is disabled or
+who has left every Team is moved to `_archive/People/` and named in the report. The org chart is
+drawn again whenever any page was.
 
 ### What a Teams sync writes
 
