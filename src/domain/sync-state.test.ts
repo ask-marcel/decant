@@ -67,6 +67,12 @@ describe('reading the sync state left by a previous run', () => {
     expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'team', id: 'team-1', name: 'MOOV Leadership', lastRun: '2026-09-10T09:00:00Z', fileCount: 3 } });
   });
 
+  it('the people directory is a source like the mailbox, counting its people one file each', () => {
+    const state = { source: { kind: 'people', id: 'people', name: 'People' }, lastRun: '2026-09-11T09:00:00Z', people: { a: {}, b: {} } };
+
+    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'people', id: 'people', name: 'People', lastRun: '2026-09-11T09:00:00Z', fileCount: 2 } });
+  });
+
   it('a source naming a kind this tool cannot sync is rejected as malformed', () => {
     const parsed = parseSyncedSource({ source: { kind: 'notebook', id: 'x', name: 'y' } });
 

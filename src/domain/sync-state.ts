@@ -1,7 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 
-export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo' | 'team';
+export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo' | 'team' | 'people';
 
 export type SyncedSource = {
   readonly kind: SourceKind;
@@ -23,7 +23,9 @@ export const sourceLabel = (source: { readonly name: string; readonly kind: Sour
 
 type SourceIdentity = { readonly kind: SourceKind; readonly id: string; readonly name: string };
 
-const isSourceKind = (value: string | undefined): value is SourceKind => value === 'site' || value === 'mailbox' || value === 'group' || value === 'todo' || value === 'team';
+const KINDS: ReadonlyArray<SourceKind> = ['site', 'mailbox', 'group', 'todo', 'team', 'people'];
+
+const isSourceKind = (value: string | undefined): value is SourceKind => KINDS.some((kind) => kind === value);
 
 export const NEVER_RUN = 'never';
 
@@ -55,10 +57,10 @@ const parseIdentity = (source: Record<string, unknown>): Result<SourceIdentity, 
 };
 
 // A site counts the documents its libraries hold and a team the posts its channels hold; a mailbox
-// and a group inbox count their threads and a To Do list its tasks, each of those being one file in
-// the knowledge base.
+// and a group inbox count their threads, a To Do list its tasks and the directory its people, each
+// of those being one file in the knowledge base.
 const countFiles = (raw: Record<string, unknown>): number =>
-  countWithin(raw['drives'], 'items') + countWithin(raw['channels'], 'posts') + countKeys(raw['threads']) + countKeys(raw['tasks']);
+  countWithin(raw['drives'], 'items') + countWithin(raw['channels'], 'posts') + countKeys(raw['threads']) + countKeys(raw['tasks']) + countKeys(raw['people']);
 
 export const parseSyncedSource = (raw: unknown): Result<SyncedSource, SyncStateError> => {
   if (!isRecord(raw)) return malformed('sync state is not an object');
