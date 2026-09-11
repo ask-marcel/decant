@@ -80,6 +80,16 @@ describe('writing one To Do task as a document', () => {
     expect(written.endsWith('# Water the plants\n')).toBe(true);
   });
 
+  it('a task with no due date, no completion and no dates at all carries none of those lines, rather than lines saying nothing', () => {
+    const written = rendered(bare);
+
+    expect(written).not.toContain('due:');
+    expect(written).not.toContain('completed:');
+    expect(written).not.toContain('created:');
+    expect(written).not.toContain('last_modified:');
+    expect(written).toContain('status: notStarted');
+  });
+
   it('an ordinary task says nothing about its importance, so the word only ever appears where it means something', () => {
     expect(rendered(bare)).not.toContain('importance:');
     expect(rendered({ ...bare, importance: 'low' })).toContain('importance: low');

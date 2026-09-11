@@ -13,15 +13,19 @@ const NORMAL = 'normal';
 // on every document in the vault. Stated only where it means something.
 const importanceOf = (task: TodoTask): string | undefined => (task.importance === NORMAL ? undefined : task.importance);
 
+// The front matter writes an empty string as `""`, a field deliberately left blank, where a task
+// with no due date has no due line at all.
+const stated = (value: string): string | undefined => (value.length > 0 ? value : undefined);
+
 const fieldsOf = (input: RenderTaskInput): ReadonlyArray<FrontMatterField> => [
   ['source', sourceOf(input.list)],
   ['list', input.list],
   ['status', input.task.status],
   ['importance', importanceOf(input.task)],
-  ['due', input.task.due],
-  ['completed', input.task.completed],
-  ['created', input.task.created],
-  ['last_modified', input.task.lastModified],
+  ['due', stated(input.task.due)],
+  ['completed', stated(input.task.completed)],
+  ['created', stated(input.task.created)],
+  ['last_modified', stated(input.task.lastModified)],
   ['categories', input.task.categories],
   ['synced_at', input.syncedAt],
 ];
