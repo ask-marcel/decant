@@ -13,6 +13,7 @@ export const CATEGORY_FOLDER: Readonly<Record<AddressKind, string>> = {
   group: 'Group inboxes',
   todo: 'To Do',
   team: 'Teams',
+  notebook: 'OneNote',
 };
 
 // The address is what settles the category, never the display name: a Loop workspace and a team site

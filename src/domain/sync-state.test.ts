@@ -79,10 +79,19 @@ describe('reading the sync state left by a previous run', () => {
     expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'calendar', id: 'calendar', name: 'Calendar', lastRun: '2026-09-12T09:00:00Z', fileCount: 3 } });
   });
 
-  it('a source naming a kind this tool cannot sync is rejected as malformed', () => {
-    const parsed = parseSyncedSource({ source: { kind: 'notebook', id: 'x', name: 'y' } });
+  it('a notebook is a source like the others, counting its pages one file each', () => {
+    const state = { source: { kind: 'notebook', id: '1-nb', name: 'MOOV Leadership Notebook' }, lastRun: '2026-09-12T09:00:00Z', pages: { a: {}, b: {} } };
 
-    expect(parsed).toEqual({ ok: false, error: { kind: 'malformed', message: 'unknown source kind: notebook' } });
+    expect(parseSyncedSource(state)).toEqual({
+      ok: true,
+      value: { kind: 'notebook', id: '1-nb', name: 'MOOV Leadership Notebook', lastRun: '2026-09-12T09:00:00Z', fileCount: 2 },
+    });
+  });
+
+  it('a source naming a kind this tool cannot sync is rejected as malformed', () => {
+    const parsed = parseSyncedSource({ source: { kind: 'whiteboard', id: 'x', name: 'y' } });
+
+    expect(parsed).toEqual({ ok: false, error: { kind: 'malformed', message: 'unknown source kind: whiteboard' } });
   });
 
   it('a source missing its id is rejected as malformed', () => {

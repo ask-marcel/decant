@@ -1,7 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 
-export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo' | 'team' | 'people' | 'calendar';
+export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo' | 'team' | 'people' | 'calendar' | 'notebook';
 
 export type SyncedSource = {
   readonly kind: SourceKind;
@@ -23,7 +23,7 @@ export const sourceLabel = (source: { readonly name: string; readonly kind: Sour
 
 type SourceIdentity = { readonly kind: SourceKind; readonly id: string; readonly name: string };
 
-const KINDS: ReadonlyArray<SourceKind> = ['site', 'mailbox', 'group', 'todo', 'team', 'people', 'calendar'];
+const KINDS: ReadonlyArray<SourceKind> = ['site', 'mailbox', 'group', 'todo', 'team', 'people', 'calendar', 'notebook'];
 
 const isSourceKind = (value: string | undefined): value is SourceKind => KINDS.some((kind) => kind === value);
 
@@ -57,10 +57,12 @@ const parseIdentity = (source: Record<string, unknown>): Result<SourceIdentity, 
 };
 
 // A site counts the documents its libraries hold and a team the posts its channels hold; a mailbox
-// and a group inbox count their threads, a To Do list its tasks, the directory its people and the
-// calendar its events, each of those being one file in the knowledge base.
+// and a group inbox count their threads, a To Do list its tasks, the directory its people, the
+// calendar its events and a notebook its pages, each of those being one file in the knowledge base.
 const countFiles = (raw: Record<string, unknown>): number =>
-  countWithin(raw['drives'], 'items') + countWithin(raw['channels'], 'posts') + ['threads', 'tasks', 'people', 'events'].reduce((total, held) => total + countKeys(raw[held]), 0);
+  countWithin(raw['drives'], 'items') +
+  countWithin(raw['channels'], 'posts') +
+  ['threads', 'tasks', 'people', 'events', 'pages'].reduce((total, held) => total + countKeys(raw[held]), 0);
 
 export const parseSyncedSource = (raw: unknown): Result<SyncedSource, SyncStateError> => {
   if (!isRecord(raw)) return malformed('sync state is not an object');

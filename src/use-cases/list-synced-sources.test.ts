@@ -93,7 +93,7 @@ describe('showing which sources have already been synced', () => {
   });
 
   it('a state file describing a source this tool cannot sync is skipped and warned about', async () => {
-    const files = createFilesFake({ directories: { kb: ['Odd'] }, texts: { 'kb/Odd/.sync-state.json': '{"source":{"kind":"notebook","id":"x","name":"y"}}' } });
+    const files = createFilesFake({ directories: { kb: ['Odd'] }, texts: { 'kb/Odd/.sync-state.json': '{"source":{"kind":"whiteboard","id":"x","name":"y"}}' } });
     const logger = createLoggerFake();
 
     const sources = await createListSyncedSources({ files, logger, kbRoot: 'kb' })();
