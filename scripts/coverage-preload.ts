@@ -24,6 +24,7 @@ import '../src/infra/mail-reader-marcel.ts';
 import '../src/infra/ocr-rapid.ts';
 import '../src/infra/progress-bar.ts';
 import '../src/infra/prompt-stdin.ts';
+import '../src/infra/team-reader-marcel.ts';
 import '../src/infra/todo-reader-marcel.ts';
 
 // --- src/composition/ ---

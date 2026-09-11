@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { renderLibraryPicker, renderSitePicker, renderSummary } from './render-picker.ts';
+import { renderChannelPicker, renderLibraryPicker, renderSitePicker, renderSummary } from './render-picker.ts';
 
 const rows = [
   { id: 'a', name: 'Espace Contoso', webUrl: 'https://x', synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 143 } },
@@ -53,6 +53,14 @@ describe('showing the operator what there is to sync', () => {
 
   it('libraries are offered the same way, several at a time', () => {
     expect(renderLibraryPicker([{ id: 'b!one', name: 'Documents', webUrl: '' }])).toContain('Choose one or more numbers (1,3), or all.');
+  });
+
+  it('the channels of a team are offered the way the libraries of a site are, numbered and marked', () => {
+    const shown = renderChannelPicker([{ id: 'ch-general', name: 'General', webUrl: '', synced: { lastRun: '2026-09-10T09:00:00Z', fileCount: 40 } }]);
+
+    expect(shown).toContain('Channels in this team:');
+    expect(shown).toContain('  1) General  (synced 2026-09-10, 40 files)');
+    expect(shown).toContain('Choose one or more numbers (1,3), or all.');
   });
 
   it('a row hinted because its name collides with another shows its address, so the two can be told apart', () => {

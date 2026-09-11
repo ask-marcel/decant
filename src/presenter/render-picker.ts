@@ -50,6 +50,10 @@ export const renderSitePicker = (rows: ReadonlyArray<PickerRow>, mailbox: Picker
 export const renderLibraryPicker = (rows: ReadonlyArray<PickerRow>): string =>
   ['Libraries in this site:', '', ...rows.map(line), '', 'Choose one or more numbers (1,3), or all.'].join('\n');
 
+// A team's channels are chosen the way a site's libraries are: one question, once, for one team.
+export const renderChannelPicker = (rows: ReadonlyArray<PickerRow>): string =>
+  ['Channels in this team:', '', ...rows.map(line), '', 'Choose one or more numbers (1,3), or all.'].join('\n');
+
 export const renderSummary = (name: string, summary: RunSummary, dryRun: boolean): string =>
   dryRun
     ? `${name}: ${summary.queued} to do (nothing written, this was a dry run).`

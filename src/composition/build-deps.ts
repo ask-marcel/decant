@@ -8,6 +8,8 @@ import { createGroupReaderFromCall } from '../infra/group-reader-marcel.ts';
 import type { GroupReader } from '../use-cases/ports/group-reader.ts';
 import { createTodoReaderFromCall } from '../infra/todo-reader-marcel.ts';
 import type { TodoReader } from '../use-cases/ports/todo-reader.ts';
+import { createTeamReaderFromCall } from '../infra/team-reader-marcel.ts';
+import type { ChannelSummary, TeamReader, TeamSummary } from '../use-cases/ports/team-reader.ts';
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
 import { createWinstonLogger } from '../infra/logger.ts';
@@ -30,6 +32,9 @@ import type { RunSync } from '../use-cases/run-sync.ts';
 import { createRenderThread } from '../use-cases/render-thread.ts';
 import { createSyncGroup } from '../use-cases/sync-group.ts';
 import { createSyncTodo } from '../use-cases/sync-todo.ts';
+import { createSyncTeam, teamRoot } from '../use-cases/sync-team.ts';
+import { parseTeamState } from '../domain/team-state.ts';
+import { parseJson } from '../domain/utilities/parse-json.ts';
 import { createSyncMailbox } from '../use-cases/sync-mailbox.ts';
 import { createWriteGlobalReport } from '../use-cases/write-global-report.ts';
 import { createSyncSite, resolveSite } from '../use-cases/sync-site.ts';
@@ -49,6 +54,7 @@ export type DepOverrides = {
   readonly mail?: MailReader;
   readonly group?: GroupReader;
   readonly todo?: TodoReader;
+  readonly team?: TeamReader;
   readonly ocr?: Ocr;
   readonly prompt?: Prompt;
   readonly clock?: Clock;
@@ -70,6 +76,19 @@ const savedDrivesFrom =
   async (site: SiteRef): Promise<ReadonlyArray<DriveSummary>> => {
     const { state } = await resolveSite({ files, logger, kbRoot }, site);
     return Object.entries(state.drives).map(([id, drive]) => ({ id, name: drive.name }));
+  };
+
+// The channels the earlier run recorded for this team, read off its own state file, the way a
+// site's libraries are. A state that cannot be read answers no channels, and `syncTeam` refuses to
+// run on none, which is the honest outcome for a team whose record is gone.
+const savedChannelsFrom =
+  (files: Files, kbRoot: string) =>
+  async (team: TeamSummary): Promise<ReadonlyArray<ChannelSummary>> => {
+    const text = await files.readText(`${teamRoot(kbRoot, team.name)}/.sync-state.json`);
+    if (!text.ok) return [];
+    const parsed = parseJson(text.value);
+    const state = parsed.ok ? parseTeamState(parsed.value) : parsed;
+    return state.ok ? Object.entries(state.value.channels).map(([id, channel]) => ({ id, name: channel.name })) : [];
   };
 
 // Kept beside the knowledge base it describes, so clearing `kb/` clears it too: a list of sites is
@@ -150,6 +169,10 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // other sources are built out of: the reader, somewhere to write, and a clock to stamp it.
   const todo = overrides.todo ?? createTodoReaderFromCall(createMarcelCall(api));
   const syncTodo = createSyncTodo({ reader: todo, files, clock, logger, progress, kbRoot: config.kbRoot });
+  // A channel post renders through the library, the way a mail message does, so a team needs the
+  // reader, somewhere to write, and a clock, and none of the conversion machinery.
+  const team = overrides.team ?? createTeamReaderFromCall(createMarcelCall(api));
+  const syncTeam = createSyncTeam({ reader: team, files, clock, logger, progress, kbRoot: config.kbRoot });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
@@ -166,8 +189,11 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     syncMailbox,
     syncGroup,
     syncTodo,
+    syncTeam,
     groups: group,
     todo,
+    teams: team,
+    savedChannels: savedChannelsFrom(files, config.kbRoot),
     cachedSites,
     rememberSites,
     writeGlobalReport,

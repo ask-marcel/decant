@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import { createGroupReaderFake } from '../test-helpers/group-reader-fake.ts';
 import { createTodoReaderFake } from '../test-helpers/todo-reader-fake.ts';
+import { createTeamReaderFake } from '../test-helpers/team-reader-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
@@ -49,6 +50,7 @@ describe('wiring the command together', () => {
       reader: createDriveReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(['q']),
       clock: createClockFake(),
@@ -74,6 +76,7 @@ describe('wiring the command together', () => {
       reader: createDriveReaderFake({ pages: [{ items: [], skipped: 0, deltaLink: 'cursor-1' }] }),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),
@@ -83,6 +86,56 @@ describe('wiring the command together', () => {
 
     expect(summaries.ok && summaries.value).toHaveLength(1);
     expect(JSON.parse(files.written.get(statePath) ?? '{}').drives['b!two'].deltaLink).toBe('cursor-1');
+  });
+
+  it('a refresh repeats the channels the earlier run recorded for that team, and a team whose record is unreadable refuses rather than guessing', async () => {
+    const statePath = 'kb/Teams/MOOV Leadership/.sync-state.json';
+    const state = JSON.stringify({
+      version: 1,
+      source: { kind: 'team', id: 'team-1', name: 'MOOV Leadership' },
+      lastRun: '2026-09-10T09:00:00Z',
+      channels: { 'ch-planning': { name: 'Planning', posts: {} } },
+    });
+    const files = createFilesFake({ directories: { kb: ['Teams'], 'kb/Teams': ['MOOV Leadership'] }, texts: { [statePath]: state } });
+    const team = createTeamReaderFake({ deltaLinks: { 'ch-planning': 'https://graph/delta?token=1' } });
+    const deps = buildDeps(configFor({}), {
+      files,
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake(),
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      team,
+      ocr: createOcrFake(),
+      prompt: createPromptFake(),
+      clock: createClockFake(),
+    });
+
+    const summaries = await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
+
+    expect(summaries.ok && summaries.value.map((source) => source.source)).toEqual(['MOOV Leadership']);
+    expect(team.calls).toContain('postsDelta:ch-planning:fresh');
+    expect(JSON.parse(files.written.get(statePath) ?? '{}').channels['ch-planning'].deltaLink).toBe('https://graph/delta?token=1');
+
+    const unreadable = createFilesFake({
+      directories: { kb: ['Teams'], 'kb/Teams': ['MOOV Leadership'] },
+      texts: { [statePath]: '{"version":99,"source":{"kind":"team","id":"team-1","name":"MOOV Leadership"}}' },
+    });
+    const refused = buildDeps(configFor({}), {
+      files: unreadable,
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake(),
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
+      ocr: createOcrFake(),
+      prompt: createPromptFake(),
+      clock: createClockFake(),
+    });
+
+    const outcome = await refused.runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
+
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.error.cause).toBe('no-channel');
   });
 
   it('two sites sharing a name each refresh their own libraries, not the first one to be filed', async () => {
@@ -106,6 +159,7 @@ describe('wiring the command together', () => {
       reader: createDriveReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),
@@ -124,6 +178,7 @@ describe('wiring the command together', () => {
       reader: createDriveReaderFake({ sites: [{ id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' }] }),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(['q']),
       clock: createClockFake(),
@@ -146,6 +201,7 @@ describe('wiring the command together', () => {
     const deps = buildDeps(configFor({}), {
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
       files,
       logger: createLoggerFake(),
       reader,
@@ -169,6 +225,7 @@ describe('wiring the command together', () => {
       ocr: createOcrFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
     });
 
     expect(typeof deps.runSync).toBe('function');
@@ -190,6 +247,7 @@ describe('wiring the command together', () => {
       reader: createDriveReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),

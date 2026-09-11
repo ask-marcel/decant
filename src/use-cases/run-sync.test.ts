@@ -39,6 +39,11 @@ const run = async (
     failGroups?: boolean;
     todoLists?: ReadonlyArray<{ id: string; name: string }>;
     failTodo?: boolean;
+    teams?: ReadonlyArray<{ id: string; name: string }>;
+    teamChannels?: ReadonlyArray<{ id: string; name: string }>;
+    failTeams?: boolean;
+    failChannels?: boolean;
+    savedChannels?: ReadonlyArray<{ id: string; name: string }>;
     reportPath?: string;
     summary?: RunSummary;
   } = {}
@@ -46,6 +51,7 @@ const run = async (
   calls: SyncSiteInput[];
   groupRuns: string[];
   todoRuns: string[];
+  teamRuns: Array<{ team: string; channels: string[] }>;
   mailboxRuns: SyncMailboxInput[];
   reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }>;
   prompt: PromptFake;
@@ -61,6 +67,7 @@ const run = async (
   const calls: SyncSiteInput[] = [];
   const groupRuns: string[] = [];
   const todoRuns: string[] = [];
+  const teamRuns: Array<{ team: string; channels: string[] }> = [];
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
   const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }> = [];
@@ -79,6 +86,23 @@ const run = async (
       return ok({ ...SOURCE_RUN, id: input.list.id, source: input.list.name });
     },
     todo: { taskLists: async () => (seeds.failTodo === true ? err({ kind: 'permanent' as const, message: 'MailboxNotEnabledForRESTAPI' }) : ok(seeds.todoLists ?? [])) },
+    syncTeam: async (input) => {
+      teamRuns.push({ team: input.team.name, channels: input.channels.map((channel) => channel.name) });
+      return ok({ ...SOURCE_RUN, id: input.team.id, source: input.team.name });
+    },
+    teams: {
+      listTeams: async () => (seeds.failTeams === true ? err({ kind: 'permanent' as const, message: 'Forbidden' }) : ok(seeds.teams ?? [])),
+      listChannels: async () =>
+        seeds.failChannels === true
+          ? err({ kind: 'permanent' as const, message: 'Forbidden' })
+          : ok(
+              seeds.teamChannels ?? [
+                { id: 'ch-general', name: 'General' },
+                { id: 'ch-planning', name: 'Planning' },
+              ]
+            ),
+    },
+    savedChannels: async () => seeds.savedChannels ?? [{ id: 'ch-general', name: 'General' }],
     cachedSites: async () => seeds.cached,
     rememberSites: async (listed) => {
       remembered.push(listed);
@@ -105,6 +129,7 @@ const run = async (
     calls,
     groupRuns,
     todoRuns,
+    teamRuns,
     mailboxRuns,
     reported,
     prompt,
@@ -301,6 +326,77 @@ describe('choosing what to sync', () => {
     expect(prompt.shown.join('\n')).not.toContain('To Do:');
     expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
     expect(logger.calls.some((entry) => entry.event === 'todo.unlisted')).toBe(true);
+  });
+
+  it('the teams are offered under the To Do lists, and picking one asks which of its channels to take', async () => {
+    const { teamRuns, prompt, logger } = await run(['3', '2'], {}, { teams: [{ id: 'team-1', name: 'MOOV Leadership' }] });
+
+    expect(prompt.shown.join('\n')).toContain('Teams:\n  3) MOOV Leadership  (new)');
+    expect(prompt.shown.join('\n')).toContain('Channels in this team:\n\n  1) General  (new)\n  2) Planning  (new)');
+    expect(prompt.asked).toEqual(['Source:', 'Channels:']);
+    expect(teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['Planning'] }]);
+    expect(logger.calls.some((entry) => entry.event === 'team.started')).toBe(true);
+  });
+
+  it('a team taken together with another source takes every channel without asking, since choosing them together was the point', async () => {
+    const { calls, teamRuns, prompt } = await run(['1,3'], {}, { teams: [{ id: 'team-1', name: 'MOOV Leadership' }] });
+
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
+    expect(teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['General', 'Planning'] }]);
+    expect(prompt.asked).toEqual(['Source:']);
+  });
+
+  it('a team named outright is synced with every channel and no picker, by its name or its id', async () => {
+    const teams = [{ id: 'team-1', name: 'MOOV Leadership' }];
+    const byId = await run([], { teamId: 'team-1' }, { teams });
+    const byName = await run([], { teamId: 'MOOV Leadership' }, { teams });
+
+    expect(byId.teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['General', 'Planning'] }]);
+    expect(byName.teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['General', 'Planning'] }]);
+    expect(byId.prompt.asked).toEqual([]);
+  });
+
+  it('a team you are not in is refused by name rather than syncing something else', async () => {
+    const { ok: succeeded, step, error } = await run([], { teamId: 'Ghost Team' }, { teams: [] });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('findTeam');
+    expect(error).toBe('no team you belong to is Ghost Team');
+  });
+
+  it('a named team whose listing is refused stops the run and names the step', async () => {
+    const { ok: succeeded, step } = await run([], { teamId: 'team-1' }, { failTeams: true });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('listTeams');
+  });
+
+  it('an update refreshes the teams already in the knowledge base, with the channels the earlier run recorded', async () => {
+    const { teamRuns } = await run(
+      [],
+      { command: 'update' },
+      {
+        synced: [{ kind: 'team', id: 'team-1', name: 'MOOV Leadership', lastRun: '2026-09-10T09:00:00Z', fileCount: 40 }],
+        savedChannels: [{ id: 'ch-planning', name: 'Planning' }],
+      }
+    );
+
+    expect(teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['Planning'] }]);
+  });
+
+  it('a team listing that fails costs the teams and not the picker', async () => {
+    const { calls, prompt, logger } = await run(['1', 'all'], {}, { failTeams: true });
+
+    expect(prompt.shown.join('\n')).not.toContain('Teams:');
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
+    expect(logger.calls.some((entry) => entry.event === 'teams.unlisted')).toBe(true);
+  });
+
+  it('a team whose channels cannot be listed stops the run naming the step, rather than syncing nothing and calling it done', async () => {
+    const { ok: succeeded, step } = await run(['3'], {}, { teams: [{ id: 'team-1', name: 'MOOV Leadership' }], failChannels: true });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('listChannels');
   });
 
   it('a group listing that fails costs the group inboxes and not the picker', async () => {
@@ -502,6 +598,9 @@ describe('when the knowledge base itself cannot be read', () => {
       groups: { listGroups: async () => ok([]) },
       syncTodo: async () => ok(SOURCE_RUN),
       todo: { taskLists: async () => ok([]) },
+      syncTeam: async () => ok(SOURCE_RUN),
+      teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
+      savedChannels: async () => [],
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -529,6 +628,9 @@ describe('when the knowledge base itself cannot be read', () => {
       groups: { listGroups: async () => ok([]) },
       syncTodo: async () => ok(SOURCE_RUN),
       todo: { taskLists: async () => ok([]) },
+      syncTeam: async () => ok(SOURCE_RUN),
+      teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
+      savedChannels: async () => [],
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -578,6 +680,9 @@ describe('when one site in a refresh fails', () => {
       groups: { listGroups: async () => ok([]) },
       syncTodo: async () => ok(SOURCE_RUN),
       todo: { taskLists: async () => ok([]) },
+      syncTeam: async () => ok(SOURCE_RUN),
+      teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
+      savedChannels: async () => [],
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -724,6 +829,9 @@ describe('when a source run fails after it began', () => {
       groups: { listGroups: async () => ok([]) },
       syncTodo: async () => ok(SOURCE_RUN),
       todo: { taskLists: async () => ok([]) },
+      syncTeam: async () => ok(SOURCE_RUN),
+      teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
+      savedChannels: async () => [],
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -753,6 +861,9 @@ describe('when a source run fails after it began', () => {
       groups: { listGroups: async () => ok([]) },
       syncTodo: async () => ok(SOURCE_RUN),
       todo: { taskLists: async () => ok([]) },
+      syncTeam: async () => ok(SOURCE_RUN),
+      teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
+      savedChannels: async () => [],
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -814,6 +925,9 @@ describe('pointing a reader at the report a run leaves behind', () => {
       groups: { listGroups: async () => ok([]) },
       syncTodo: async () => ok(SOURCE_RUN),
       todo: { taskLists: async () => ok([]) },
+      syncTeam: async () => ok(SOURCE_RUN),
+      teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
+      savedChannels: async () => [],
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -847,6 +961,9 @@ describe('pointing a reader at the report a run leaves behind', () => {
       groups: { listGroups: async () => ok([]) },
       syncTodo: async () => ok(SOURCE_RUN),
       todo: { taskLists: async () => ok([]) },
+      syncTeam: async () => ok(SOURCE_RUN),
+      teams: { listTeams: async () => ok([]), listChannels: async () => ok([]) },
+      savedChannels: async () => [],
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),

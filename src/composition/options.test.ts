@@ -86,6 +86,11 @@ describe('reading what the operator asked for', () => {
     expect(parse('--todo-list Tasks')).toMatchObject({ value: { todoListId: 'Tasks' } });
   });
 
+  it('a team can be named outright, and a team named with no value is refused', () => {
+    expect(parse('--team team-1')).toMatchObject({ value: { teamId: 'team-1' } });
+    expect(parse('--team')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--team expects a value' } });
+  });
+
   it('a To Do list named with no value is refused rather than syncing everything', () => {
     expect(parse('--todo-list')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--todo-list expects a value' } });
   });

@@ -10,6 +10,7 @@ export type Options = {
   readonly siteUrl?: string;
   readonly groupId?: string;
   readonly todoListId?: string;
+  readonly teamId?: string;
   readonly driveIds: ReadonlyArray<string>;
   readonly dryRun: boolean;
   readonly maxSizeMb: number;
@@ -51,13 +52,26 @@ const DEFAULTS: Options = {
 // and turns a whole sync into "no text" notes while still reporting itself as a success.
 const OCR_LANGUAGES = ['auto', 'ch', 'ch_doc', 'en', 'arabic', 'chinese_cht', 'cyrillic', 'devanagari', 'japan', 'korean', 'ka', 'latin', 'ta', 'te', 'eslav', 'th', 'el'];
 
-const FLAGS_WITH_VALUE = new Set(['--site-id', '--site-url', '--group-id', '--todo-list', '--drive-id', '--max-size-mb', '--ocr-lang', '--concurrency', '--since', '--timezone']);
+const FLAGS_WITH_VALUE = new Set([
+  '--site-id',
+  '--site-url',
+  '--group-id',
+  '--todo-list',
+  '--team',
+  '--drive-id',
+  '--max-size-mb',
+  '--ocr-lang',
+  '--concurrency',
+  '--since',
+  '--timezone',
+]);
 
 const withValue = (options: Options, flag: string, value: string): Result<Options, OptionsError> => {
   if (flag === '--site-id') return ok({ ...options, siteId: value });
   if (flag === '--site-url') return ok({ ...options, siteUrl: value });
   if (flag === '--group-id') return ok({ ...options, groupId: value });
   if (flag === '--todo-list') return ok({ ...options, todoListId: value });
+  if (flag === '--team') return ok({ ...options, teamId: value });
   if (flag === '--drive-id') return ok({ ...options, driveIds: [...options.driveIds, value] });
   if (flag === '--ocr-lang') return withOcrLang(options, value);
   if (flag === '--concurrency') return withConcurrency(options, value);
@@ -138,6 +152,7 @@ export const USAGE = [
   '  --no-ocr            do not read text out of images or scanned PDFs',
   '  --group-id <id>     sync one group inbox, by its id or its address, without the picker',
   '  --todo-list <name>  sync one To Do list, by its name or its id, without the picker',
+  '  --team <name>       sync every channel of one Team, by its name or its id, without the picker',
   '  --refresh           list the sites afresh instead of showing the ones last seen',
   '  --ocr-lang <code>   force one language for images and scanned PDFs (default auto, per image)',
   "  --timezone <zone>   IANA zone the mailbox counts its days in (default this machine's)",

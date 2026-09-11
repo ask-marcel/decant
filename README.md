@@ -11,8 +11,9 @@ a picture's words belong under the picture rather than in a file of their own. W
 is what a reader, or an agent, can actually use.
 
 It syncs **SharePoint document libraries**, your **Outlook mailbox** (one markdown file per
-conversation, with its attachments and the SharePoint files it links to) and your **Microsoft To Do
-lists** (one markdown file per task).
+conversation, with its attachments and the SharePoint files it links to), your **Microsoft To Do
+lists** (one markdown file per task) and the **channels of the Teams you belong to** (one markdown
+file per post, with its replies beneath it).
 
 Graph access goes through [`ask-marcel-office-cli`](https://www.npmjs.com/package/ask-marcel-office-cli)
 used as a library, which owns authentication, paging and document conversion. See
@@ -46,9 +47,10 @@ bun run sync
 ```
 
 Lists what you can read, grouped by what it is: the SharePoint sites, the Loop workspaces, your
-OneDrive, the inboxes of the Microsoft 365 groups you belong to, and your Microsoft To Do lists.
-Each is marked with when it last synced and how much it holds. Pick a number and one or more
-libraries, or press `m` for your mailbox, and it syncs.
+OneDrive, the inboxes of the Microsoft 365 groups you belong to, your Microsoft To Do lists, and the
+Teams you are a member of. Each is marked with when it last synced and how much it holds. Pick a
+number and one or more libraries (or, for a Team, one or more channels), or press `m` for your
+mailbox, and it syncs.
 
 Your Loop workspaces are on that list too, shown as `Loop - <workspace>`. A workspace keeps its
 pages in a container no site listing returns, so they are found through the `.pod` manifest each one
@@ -79,6 +81,7 @@ clear message instead of waiting for input.
 | `--mailbox` | Sync your Outlook mailbox without showing the picker |
 | `--group-id <id>` | Sync one group inbox without the picker, by its id or its address |
 | `--todo-list <name>` | Sync one To Do list without the picker, by its name or its id |
+| `--team <name>` | Sync every channel of one Team without the picker, by its name or its id |
 | `--since <day>` | With `--mailbox`, only conversations touched since this day (`2026-01-31`) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
@@ -115,6 +118,11 @@ kb/
     .sync-state.json                which tasks are filed, and what each one last looked like
     2026-09-08/                     the day each task last changed
       Book the venue.md             the task, its notes, its steps and what it links to
+  Teams/<Team>/
+    .sync-state.json                one delta cursor per channel, and every post filed
+    <Channel>/
+      2026-09-10/                   the day each post last changed, a reply counting as a change
+        Venue for the offsite.md    the post and its replies, as one thread
 ```
 
 Sources are shelved under the same headings the picker offers them under, so a source is found again
@@ -340,6 +348,55 @@ own fields and leaves out its steps and its linked resources, which are navigati
 have to be expanded; one paged read that expands both costs less than a delta plus a fetch per
 changed task, and it is also what makes a deleted task visible, by its absence, on every run rather
 than on the single run a delta reports its removal.
+
+### What a Teams sync writes
+
+A Team is chosen the way a site is, and then asked which of its channels to take the way a site is
+asked about its libraries. Each channel gets a folder, and each root post in it one markdown file:
+
+```yaml
+---
+source: https://teams.microsoft.com/l/message/19%3Aabc%40thread.tacv2/1757491200000
+team: MOOV Leadership
+channel: General
+subject: Venue for the offsite
+author: Jane Doe
+created: "2026-09-10T08:00:00Z"
+last_modified: "2026-09-10T09:30:00Z"
+synced_at: "2026-09-11T14:00:00Z"
+---
+
+### 2026-09-10 08:00 · Jane Doe
+
+**Venue for the offsite**
+
+Three options, see below.
+
+> **Derek Bushaw · 2026-09-10 09:30**
+> The second one.
+```
+
+The thread under the front matter is rendered by `ask-marcel-office-cli` itself, the way a mail
+message is: the Teams HTML converted, @mentions flattened to their names, attachment placeholders
+resolved to links, each reply quoted beneath the post oldest first, with `_(edited)_`,
+`_message deleted_` and `_reactions: 👍 2_` markers where they apply. A picture pasted into a post
+is a placeholder; the bytes live in Graph's hosted content and are not fetched.
+
+A post is filed under the day it last changed, and a reply counts as a change: Graph moves the root
+post's `lastModifiedDateTime` when a reply lands, so a thread that gains a reply is written again
+whole under its new day and the copy under the old day moves to `_archive/`. A post deleted in Teams
+goes to `_archive/` too, and is named in the team's `_sync-report.md`. A post is named by its
+subject when it has one, which most do not, and otherwise by its first line.
+
+Each channel keeps a delta cursor of its own, so a re-run asks Graph only for what changed. The
+cursor moves only once every post the delta reported has landed: a post that would not render is
+named in the report, and the channel re-reads its delta next run to try it again, skipping by
+`lastModifiedDateTime` everything that already landed.
+
+Only the channels of Teams you are a member of are offered, and only their standard, private and
+shared channels as Graph lists them. Teams chats (one-to-one and group chats) are a different thing
+and are not synced: the library can only reach them through Microsoft-internal endpoints whose token
+expires daily, which would fail every scheduled `update`.
 
 ### What a group inbox sync writes
 
