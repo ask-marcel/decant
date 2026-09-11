@@ -40,6 +40,7 @@ describe('reading what the operator asked for', () => {
         assumeYes: false,
         mailbox: false,
         people: false,
+        calendar: false,
         help: false,
         refresh: false,
         timezone: '',
@@ -86,6 +87,10 @@ describe('reading what the operator asked for', () => {
   it('the people directory can be asked for outright, so the picker is not shown', () => {
     expect(parse('--people')).toMatchObject({ value: { people: true } });
     expect(parse('')).toMatchObject({ value: { people: false } });
+  });
+
+  it('the calendar can be asked for outright, with a day to start from', () => {
+    expect(parse('--calendar --since 2026-09-01')).toMatchObject({ value: { calendar: true, since: '2026-09-01' } });
   });
 
   it('a To Do list can be named outright, by the name a person actually has to hand', () => {

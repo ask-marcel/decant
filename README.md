@@ -13,8 +13,9 @@ is what a reader, or an agent, can actually use.
 It syncs **SharePoint document libraries**, your **Outlook mailbox** (one markdown file per
 conversation, with its attachments and the SharePoint files it links to), your **Microsoft To Do
 lists** (one markdown file per task), the **channels of the Teams you belong to** (one markdown
-file per post, with its replies beneath it) and the **people directory** (one markdown file per
-colleague, plus the org chart).
+file per post, with its replies beneath it), the **people directory** (one markdown file per
+colleague, plus the org chart) and your **Outlook calendar** (one markdown file per event, with
+what it carried beside it).
 
 Graph access goes through [`ask-marcel-office-cli`](https://www.npmjs.com/package/ask-marcel-office-cli)
 used as a library, which owns authentication, paging and document conversion. See
@@ -51,7 +52,7 @@ Lists what you can read, grouped by what it is: the SharePoint sites, the Loop w
 OneDrive, the inboxes of the Microsoft 365 groups you belong to, your Microsoft To Do lists, and the
 Teams you are a member of. Each is marked with when it last synced and how much it holds. Pick a
 number and one or more libraries (or, for a Team, one or more channels), press `m` for your
-mailbox or `p` for the people directory, and it syncs.
+mailbox, `c` for your calendar or `p` for the people directory, and it syncs.
 
 Your Loop workspaces are on that list too, shown as `Loop - <workspace>`. A workspace keeps its
 pages in a container no site listing returns, so they are found through the `.pod` manifest each one
@@ -81,10 +82,11 @@ clear message instead of waiting for input.
 | `--drive-id <id>` | Sync only this library; repeat for several |
 | `--mailbox` | Sync your Outlook mailbox without showing the picker |
 | `--people` | Sync the people directory, everyone in your Teams, without the picker |
+| `--calendar` | Sync your Outlook calendar without showing the picker |
 | `--group-id <id>` | Sync one group inbox without the picker, by its id or its address |
 | `--todo-list <name>` | Sync one To Do list without the picker, by its name or its id |
 | `--team <name>` | Sync every channel of one Team without the picker, by its name or its id |
-| `--since <day>` | With `--mailbox`, only conversations touched since this day (`2026-01-31`) |
+| `--since <day>` | With `--mailbox` or `--calendar`, only conversations arrived or events starting since this day (`2026-01-31`) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
 | `--concurrency <n>` | How many items to convert at once (default 4); `1` is strictly sequential |
@@ -116,6 +118,11 @@ kb/
   OneDrive/<Owner>/                 the same shape, for a personal OneDrive
   Group inboxes/<Group>/            a group's conversations (see the mailbox layout below)
   Mailbox/                          your own Outlook mailbox
+  Calendar/
+    .sync-state.json                the delta cursor, and every event filed
+    2026-09-12/                     the day each event starts
+      Offsite planning.md           the event: when, where, who, how to join, what it is about
+      Offsite planning.attachments/ what the invitation carried, as markdown
   People/
     .sync-state.json                who is filed, and a fingerprint of what each page was made of
     _org-chart.md                   everyone under their manager, linked to their pages
@@ -354,6 +361,54 @@ own fields and leaves out its steps and its linked resources, which are navigati
 have to be expanded; one paged read that expands both costs less than a delta plus a fetch per
 changed task, and it is also what makes a deleted task visible, by its absence, on every run rather
 than on the single run a delta reports its removal.
+
+### What a calendar sync writes
+
+One file per event as the calendar holds it: a single meeting, a recurring series as one file
+carrying its rule in words, an exception to a series as its own file. Expanded occurrences would be
+fifty-two identical files for a weekly meeting.
+
+```yaml
+---
+source: https://outlook.office365.com/owa/?itemid=...
+subject: Offsite planning
+start: "2026-09-12 15:00"
+end: "2026-09-12 16:30"
+organizer: Vincent
+attendees:
+  - Jane Doe (accepted)
+  - Derek Bushaw (optional, no answer)
+location: Rotterdam, Room 3
+online_meeting: https://teams.microsoft.com/l/meetup-join/...
+recurrence: every week on Monday, from 2026-01-05 until 2026-12-31
+my_response: accepted
+synced_at: "2026-09-12T14:00:00Z"
+---
+
+# Offsite planning
+
+Agenda: ...
+
+## Attachments
+
+- [Venues.xlsx](<Offsite planning.attachments/Venues.xlsx.md>)
+```
+
+Times are given in the zone the calendar counts its days in, the same `--timezone` the mailbox
+uses; an all-day event is given as days. The body is the invitation's text with the markup gone, so
+the Teams boilerplate reads as a few lines rather than a page of HTML.
+
+The calendar delta reports what changed and no more, so each event it names is fetched in full. A
+reply, a reschedule or a new attendee moves the event's `lastModifiedDateTime`, the delta reports
+it, and it is written again, refiled under its new day if the start moved, the old copy going to
+`_archive/`. A deleted event goes to `_archive/` too and is named in the report; a cancelled one
+stays, marked `cancelled: true`, since a cancelled meeting is still a fact.
+
+What an invitation carries lands as markdown only, beside the event: the library converts an event
+attachment to text and nothing fetches its bytes, so there is no PDF and no original the way a mail
+attachment has. A picture pasted into an invitation is left out and named in the report as such.
+The first run walks the whole calendar; pass `--since` to leave earlier events unwritten, the way
+the mailbox takes it. The cursor moves only once every event the delta reported has landed.
 
 ### What a people sync writes
 

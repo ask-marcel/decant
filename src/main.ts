@@ -41,6 +41,7 @@ const run = async (): Promise<number> => {
     dryRun: options.value.dryRun,
     mailbox: options.value.mailbox,
     people: options.value.people,
+    calendar: options.value.calendar,
     since: options.value.since,
     refresh: options.value.refresh,
   });

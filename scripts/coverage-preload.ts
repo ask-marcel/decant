@@ -15,6 +15,7 @@
  */
 
 // --- src/infra/ ---
+import '../src/infra/calendar-reader-marcel.ts';
 import '../src/infra/clock-system.ts';
 import '../src/infra/drive-reader-marcel.ts';
 import '../src/infra/files-bun.ts';
