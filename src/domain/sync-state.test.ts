@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseSyncedSource, sourceLabel } from './sync-state.ts';
+import { parseSyncedSource, sourceKey, sourceLabel } from './sync-state.ts';
 
 describe('reading the sync state left by a previous run', () => {
   it('a site synced yesterday is reported with its name and how many files it holds', () => {
@@ -88,6 +88,12 @@ describe('reading the sync state left by a previous run', () => {
     });
   });
 
+  it('a site`s lists are a source of their own, counting the lists one table each', () => {
+    const state = { source: { kind: 'lists', id: 'site-1', name: 'Espace Contoso' }, lastRun: '2026-09-12T09:00:00Z', lists: { a: {}, b: {} } };
+
+    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'lists', id: 'site-1', name: 'Espace Contoso', lastRun: '2026-09-12T09:00:00Z', fileCount: 2 } });
+  });
+
   it('a source naming a kind this tool cannot sync is rejected as malformed', () => {
     const parsed = parseSyncedSource({ source: { kind: 'whiteboard', id: 'x', name: 'y' } });
 
@@ -127,5 +133,17 @@ describe('naming a source in a report', () => {
 
   it('the mailbox is named as it calls itself', () => {
     expect(sourceLabel({ name: 'Mailbox', kind: 'mailbox' })).toBe('Mailbox');
+  });
+
+  it('a site`s lists are named apart from the site`s libraries, which carry the same name', () => {
+    expect(sourceLabel({ name: 'MOOV Projects 2026', kind: 'lists' })).toBe('MOOV Projects 2026 (lists)');
+  });
+});
+
+describe('telling sources apart wherever every kind is held together', () => {
+  it('a source is known by its id, except a site`s lists, which carry the site`s own id and are told from its libraries by their kind', () => {
+    expect(sourceKey({ kind: 'site', id: 'contoso,1,2' })).toBe('contoso,1,2');
+    expect(sourceKey({ kind: 'lists', id: 'contoso,1,2' })).toBe('lists:contoso,1,2');
+    expect(sourceKey({ kind: 'group', id: 'g-1' })).toBe('g-1');
   });
 });
