@@ -12,6 +12,7 @@ export type Options = {
   readonly todoListId?: string;
   readonly teamId?: string;
   readonly notebookId?: string;
+  readonly listsSite?: string;
   readonly driveIds: ReadonlyArray<string>;
   readonly dryRun: boolean;
   readonly maxSizeMb: number;
@@ -64,6 +65,7 @@ const FLAGS_WITH_VALUE = new Set([
   '--todo-list',
   '--team',
   '--notebook',
+  '--lists',
   '--drive-id',
   '--max-size-mb',
   '--ocr-lang',
@@ -79,6 +81,7 @@ const withValue = (options: Options, flag: string, value: string): Result<Option
   if (flag === '--todo-list') return ok({ ...options, todoListId: value });
   if (flag === '--team') return ok({ ...options, teamId: value });
   if (flag === '--notebook') return ok({ ...options, notebookId: value });
+  if (flag === '--lists') return ok({ ...options, listsSite: value });
   if (flag === '--drive-id') return ok({ ...options, driveIds: [...options.driveIds, value] });
   if (flag === '--ocr-lang') return withOcrLang(options, value);
   if (flag === '--concurrency') return withConcurrency(options, value);
@@ -165,6 +168,7 @@ export const USAGE = [
   '  --todo-list <name>  sync one To Do list, by its name or its id, without the picker',
   '  --team <name>       sync every channel of one Team, by its name or its id, without the picker',
   '  --notebook <name>   sync one OneNote notebook, by its name or its id, without the picker',
+  '  --lists <site>      sync the lists of one SharePoint site, by its name, id or address, without the picker',
   '  --refresh           list the sites afresh instead of showing the ones last seen',
   '  --ocr-lang <code>   force one language for images and scanned PDFs (default auto, per image)',
   "  --timezone <zone>   IANA zone the mailbox counts its days in (default this machine's)",

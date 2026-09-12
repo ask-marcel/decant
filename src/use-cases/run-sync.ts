@@ -1,12 +1,13 @@
 import type { PickerRow, Selection, SyncedMark } from '../domain/picker.ts';
 import { annotate, parseSelection } from '../domain/picker.ts';
-import { orderByKind } from '../domain/address-kind.ts';
+import { kindOf, orderByKind } from '../domain/address-kind.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { SiteRef } from '../domain/site-state.ts';
 import { MAILBOX_ID, MAILBOX_NAME } from '../domain/mail-state.ts';
 import { PEOPLE_ID, PEOPLE_NAME } from '../domain/people-state.ts';
 import { CALENDAR_ID, CALENDAR_NAME } from '../domain/calendar-state.ts';
+import { sourceKey } from '../domain/sync-state.ts';
 import { renderChannelPicker, renderLibraryPicker, renderReportPointer, renderSitePicker, renderSummary } from '../presenter/render-picker.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
 import type { DriveReader, DriveSummary, SiteSummary } from './ports/drive-reader.ts';
@@ -20,6 +21,7 @@ import type { SyncGroup } from './sync-group.ts';
 import type { SyncPeople } from './sync-people.ts';
 import type { SyncCalendar } from './sync-calendar.ts';
 import type { SyncNotebook } from './sync-notebook.ts';
+import type { SyncLists } from './sync-lists.ts';
 import type { NotebookReader } from './ports/notebook-reader.ts';
 import type { Notebook } from '../domain/onenote.ts';
 import type { SyncTeam } from './sync-team.ts';
@@ -47,6 +49,7 @@ export type RunSyncDeps = {
   readonly syncPeople: SyncPeople;
   readonly syncCalendar: SyncCalendar;
   readonly syncNotebook: SyncNotebook;
+  readonly syncLists: SyncLists;
   // Only the listing half of the group reader: choosing a source needs to know which groups can be
   // read, and reading one is the use-case's business, not the picker's.
   readonly groups: Pick<GroupReader, 'listGroups'>;
@@ -83,6 +86,8 @@ export type RunSyncInput = {
   readonly todoListId?: string;
   readonly teamId?: string;
   readonly notebookId?: string;
+  // The site whose lists to sync, by name, id or address.
+  readonly listsSite?: string;
   readonly since?: string;
   // Ignore what was stored and list for real, for when a site is known to be new.
   readonly refresh?: boolean;
@@ -102,7 +107,7 @@ const failed = (step: string, cause: string, message: string): Result<never, Ste
 const syncedMarks = async (deps: RunSyncDeps): Promise<Readonly<Record<string, SyncedMark>>> => {
   const known = await deps.listSyncedSources();
   if (!known.ok) return {};
-  return Object.fromEntries(known.value.map((source) => [source.id, { lastRun: source.lastRun, fileCount: source.fileCount }]));
+  return Object.fromEntries(known.value.map((source) => [sourceKey(source), { lastRun: source.lastRun, fileCount: source.fileCount }]));
 };
 
 const chooseLibraries = async (deps: RunSyncDeps, drives: ReadonlyArray<DriveSummary>): Promise<Result<ReadonlyArray<DriveSummary>, StepError>> => {
@@ -223,6 +228,11 @@ const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
+  for (const source of known.value.filter((candidate) => candidate.kind === 'lists')) {
+    const summary = await syncTheLists(deps, input, { id: source.id, name: source.name, webUrl: '' });
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
+    summaries.push(summary.value);
+  }
   return ok(summaries);
 };
 
@@ -282,6 +292,24 @@ const syncTheNotebook = async (deps: RunSyncDeps, input: RunSyncInput, notebook:
   return summary;
 };
 
+const syncTheLists = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef): Promise<Result<SourceRun, StepError>> => {
+  deps.logger.info('lists.started', { site: site.id });
+  const summary = await deps.syncLists({ site, concurrency: input.concurrency, dryRun: input.dryRun });
+  if (summary.ok) deps.prompt.show(renderSummary(summary.value.source, summary.value.summary, input.dryRun));
+  return summary;
+};
+
+// A site named for its lists is looked up among the sites the picker knows, by name or by id, or
+// reached by its address the way a pasted one is.
+const listsSiteFromOptions = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SiteRef, StepError> | undefined> => {
+  if (input.listsSite === undefined) return undefined;
+  if (input.listsSite.startsWith('http')) return siteAt(deps, input.listsSite);
+  const listing = await listedSites(deps, input);
+  if (!listing.ok) return listing;
+  const found = listing.value.sites.find((site) => site.id === input.listsSite || site.name === input.listsSite);
+  return found === undefined ? failed('findListsSite', 'bad-choice', `no site you can read is ${input.listsSite}`) : ok(found);
+};
+
 const siteAt = async (deps: RunSyncDeps, url: string): Promise<Result<SiteRef, StepError>> => {
   const found = await deps.reader.siteByUrl(url);
   return found.ok ? ok(found.value) : failed('siteByUrl', found.error.kind, found.error.message);
@@ -295,17 +323,20 @@ type Sources = {
   readonly todoLists: ReadonlyArray<TodoList>;
   readonly teams: ReadonlyArray<TeamSummary>;
   readonly notebooks: ReadonlyArray<Notebook>;
+  // The sites whose lists were chosen, apart from the sites whose libraries were.
+  readonly lists: ReadonlyArray<SiteRef>;
 };
 
 type Chosen = Sources | 'update-all' | 'quit' | 'mailbox' | 'people' | 'calendar';
 
-const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [], notebooks: [] };
+const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [], notebooks: [], lists: [] };
 
 const oneSite = (found: Result<SiteRef, StepError>): Result<Chosen, StepError> => (found.ok ? ok({ ...NOTHING, sites: [found.value] }) : found);
 
 // How many sources a choice came to, which is what decides whether a site is asked about its
 // libraries and a team about its channels: one source is asked, more than one is taken whole.
-const countOf = (sources: Sources): number => sources.sites.length + sources.groups.length + sources.todoLists.length + sources.teams.length + sources.notebooks.length;
+const countOf = (sources: Sources): number =>
+  sources.sites.length + sources.groups.length + sources.todoLists.length + sources.teams.length + sources.notebooks.length + sources.lists.length;
 
 const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): Promise<Result<Chosen, StepError>> => {
   if (choice.kind === 'quit') return ok('quit');
@@ -323,7 +354,8 @@ const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): 
   const teams = offered.teams.filter((_team, index) => choice.indices.includes(offered.sites.length + offered.groups.length + offered.todoLists.length + index));
   const before = offered.sites.length + offered.groups.length + offered.todoLists.length + offered.teams.length;
   const notebooks = offered.notebooks.filter((_notebook, index) => choice.indices.includes(before + index));
-  const chosen = { sites, groups, todoLists, teams, notebooks };
+  const lists = offered.lists.filter((_site, index) => choice.indices.includes(before + offered.notebooks.length + index));
+  const chosen = { sites, groups, todoLists, teams, notebooks, lists };
   return countOf(chosen) === 0 ? failed('pickSite', 'bad-choice', 'choose at least one source') : ok(chosen);
 };
 
@@ -367,6 +399,7 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
   const todoLists = await listedTodoLists(deps);
   const teams = await listedTeams(deps);
   const notebooks = await listedNotebooks(deps, listing.value.sites);
+  const lists = sitesWithLists(sites);
   const marks = await syncedMarks(deps);
   const rows = [
     ...annotate(sites, marks),
@@ -374,6 +407,7 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
     ...annotate(todoLists.map(asChoosableList), marks),
     ...annotate(teams.map(asChoosableTeam), marks),
     ...annotate(notebooks.map(asChoosableNotebook), marks),
+    ...annotate(lists.map(asChoosableLists), marks),
   ];
   deps.prompt.show(
     renderSitePicker(rows, {
@@ -384,7 +418,7 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
   );
   const chosen = parseSelection(await deps.prompt.ask('Source:'), rows.length);
   if (!chosen.ok) return failed('pickSite', chosen.error.kind, chosen.error.message);
-  const resolved = await resolve(deps, chosen.value, { sites, groups, todoLists, teams, notebooks });
+  const resolved = await resolve(deps, chosen.value, { sites, groups, todoLists, teams, notebooks, lists });
   return resolved.ok ? ok({ chosen: resolved.value, fromCache }) : resolved;
 };
 
@@ -432,6 +466,20 @@ const listedNotebooks = async (deps: RunSyncDeps, sites: ReadonlyArray<SiteSumma
   return [];
 };
 
+// A site's lists are offered off the same listing as its libraries, without asking Graph which
+// sites hold any: a site is a site. A Loop workspace and a OneDrive are SharePoint underneath too,
+// but nobody keeps a tracker in either, so they are not offered twice.
+const sitesWithLists = (sites: ReadonlyArray<SiteSummary>): ReadonlyArray<SiteSummary> => sites.filter((site) => kindOf(site) === 'site');
+
+// Marked under the lists' own key, so a site synced for its libraries is not shown as synced for
+// its lists too.
+const asChoosableLists = (site: SiteSummary): { id: string; name: string; webUrl: string; kind: 'lists' } => ({
+  id: sourceKey({ kind: 'lists', id: site.id }),
+  name: site.name,
+  webUrl: site.webUrl,
+  kind: 'lists',
+});
+
 const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray<SourceRun>, StepError> => (summary.ok ? ok([summary.value]) : summary);
 
 // Each site is summarised as it lands, so a run over many of them reports along the way. A site that
@@ -466,6 +514,11 @@ const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources):
   }
   for (const notebook of chosen.notebooks) {
     const summary = await syncTheNotebook(deps, input, notebook);
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
+    summaries.push(summary.value);
+  }
+  for (const site of chosen.lists) {
+    const summary = await syncTheLists(deps, input, site);
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
@@ -530,6 +583,8 @@ const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
   if (team !== undefined) return team.ok ? runNamedTeam(deps, input, team.value) : team;
   const notebook = await namedNotebook(deps, input);
   if (notebook !== undefined) return notebook.ok ? oneSummary(await syncTheNotebook(deps, input, notebook.value)) : notebook;
+  const listsSite = await listsSiteFromOptions(deps, input);
+  if (listsSite !== undefined) return listsSite.ok ? oneSummary(await syncTheLists(deps, input, listsSite.value)) : listsSite;
   const picked = await chooseSite(deps, input);
   if (!picked.ok) return picked;
   const { chosen, fromCache } = picked.value;

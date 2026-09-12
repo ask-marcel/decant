@@ -15,8 +15,8 @@ conversation, with its attachments and the SharePoint files it links to), your *
 lists** (one markdown file per task), the **channels of the Teams you belong to** (one markdown
 file per post, with its replies beneath it), the **people directory** (one markdown file per
 colleague, plus the org chart), your **Outlook calendar** (one markdown file per event, with what
-it carried beside it) and the **OneNote notebooks** of your sites and your own (one markdown file
-per page).
+it carried beside it), the **OneNote notebooks** of your sites and your own (one markdown file
+per page) and the **lists of your SharePoint sites** (one markdown table per list).
 
 Graph access goes through [`ask-marcel-office-cli`](https://www.npmjs.com/package/ask-marcel-office-cli)
 used as a library, which owns authentication, paging and document conversion. See
@@ -51,8 +51,8 @@ bun run sync
 
 Lists what you can read, grouped by what it is: the SharePoint sites, the Loop workspaces, your
 OneDrive, the inboxes of the Microsoft 365 groups you belong to, your Microsoft To Do lists, the
-Teams you are a member of, and the OneNote notebooks of those sites and your own. Each is marked
-with when it last synced and how much it holds. Pick a
+Teams you are a member of, the OneNote notebooks of those sites and your own, and the lists of
+those sites. Each is marked with when it last synced and how much it holds. Pick a
 number and one or more libraries (or, for a Team, one or more channels), press `m` for your
 mailbox, `c` for your calendar or `p` for the people directory, and it syncs.
 
@@ -89,6 +89,7 @@ clear message instead of waiting for input.
 | `--todo-list <name>` | Sync one To Do list without the picker, by its name or its id |
 | `--team <name>` | Sync every channel of one Team without the picker, by its name or its id |
 | `--notebook <name>` | Sync one OneNote notebook without the picker, by its name or its id |
+| `--lists <site>` | Sync the lists of one SharePoint site without the picker, by its name, its id or its address |
 | `--since <day>` | With `--mailbox` or `--calendar`, only conversations arrived or events starting since this day (`2026-01-31`) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
@@ -138,6 +139,9 @@ kb/
     .sync-state.json                every page filed, and what it last looked like
     <Section group>/<Section>/      the notebook's own structure
       Kick-off.md                   one page
+  SharePoint lists/<Site>/
+    .sync-state.json                every list filed, and a fingerprint of what its table was made of
+    Projects.md                     one table per list
   Teams/<Team>/
     .sync-state.json                one delta cursor per channel, and every post filed
     <Channel>/
@@ -498,6 +502,49 @@ notebook is answered as HTML only, with no renderer in the library for it, so it
 here the way a calendar event's body is, and a picture in it reads as a link to a Graph resource
 that needs a sign-in to open. Section groups inside a site notebook are out of reach on the site
 route, so the pages inside one are not offered. Both are gaps in the library rather than here.
+
+### What a SharePoint lists sync writes
+
+One file per list, the whole list as one markdown table, since a tracker is read as a table and
+not one row at a time:
+
+```yaml
+---
+source: https://tenant.sharepoint.com/sites/contoso/Lists/Projects
+site: Espace Contoso
+list: Projects
+description: Every project we run
+rows: 2
+last_modified: "2026-09-11T10:00:00Z"
+synced_at: "2026-09-12T14:00:00Z"
+---
+
+# Projects
+
+Every project we run
+
+| Title | Status | Owners | Sponsor |
+|---|---|---|---|
+| Falcon | Open | Jane Doe | #12 |
+| Eagle | Done |  |  |
+```
+
+Every site in the picker is offered for its lists, under its own heading and apart from the same
+site's libraries, which are the drive sync's business: a document library is a list in Graph's
+eyes and is passed over here, as are the hidden lists SharePoint keeps for itself. What is taken
+is the kind a person makes and fills in (a custom list, a task or issue tracker, a calendar of
+events, contacts, links, announcements, a survey).
+
+The columns are the ones a person sees on the list: the title, and whatever is neither hidden nor
+read-only, so SharePoint's own bookkeeping (a colour tag, a compliance id, who edited last) stays
+out. A date reads as its day, a flag as yes or no, a person or a lookup by name, a link as a link.
+A column holding one person or one lookup is answered by Graph as an id alone, shown as `#12`,
+since the name is not in the row; a column holding several is answered by name.
+
+Lists have no delta, so every run reads every list again and rewrites a table only when a row's
+`lastModifiedDateTime` moved, a row came or went, or the columns changed. A list renamed is written
+afresh and the old table goes to `_archive/`, a list gone from the site goes there too and is named
+in the report, and a list whose rows cannot be read keeps its table on disk as it was.
 
 ### What a Teams sync writes
 

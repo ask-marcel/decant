@@ -876,3 +876,24 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   and Teams channels, which 2.7.0 landed on Graph the same day, took the place. The general form:
   before building a category, check not only that a read works but that it will still work
   tomorrow without anyone at the keyboard, since `update` is the run that matters.
+
+## 2026-09-12
+
+- [gotcha] A new source kind that borrows another kind's id collides everywhere ids are held
+  together, and nothing fails loudly. A site's lists are keyed by the site's own id, the same id
+  its libraries are keyed by, and two maps in the tree key by id alone: the picker's synced marks
+  (`syncedMarks`) and the global report's untouched tail (`touched.has(source.id)`). With the
+  lists wired in, a site synced for its libraries would have shown as synced for its lists, and a
+  lists run would have struck the site's libraries off the tail as if they had run. Neither is a
+  crash; both are a lie in the output. `sourceKey` in `sync-state.ts` (`lists:<siteId>` for the
+  lists, the id alone for everything else) is what every such map now keys by, and `sourceLabel`
+  names the run `<Site> (lists)` beside `<Group> (group inbox)`. When a kind shares an id with
+  another, grep for every `source.id` lookup before wiring it in.
+
+- [gotcha] Graph's `hidden` and `readOnly` column flags do not catch every column nobody filled
+  in. A live run over one real list showed `Content Type` and `Attachments` in the table beside
+  the project columns: `ContentType` is flagged neither hidden nor read-only and is filed under
+  the `_Hidden` column group instead, and `Attachments` is a plain editable flag the list keeps
+  for itself. The rule now hides the group and names the column. The general form: for a category
+  whose output is a projection of what Graph flags, render one real item and read the header
+  before trusting the flags, since the probe showed the flags and not what they missed.

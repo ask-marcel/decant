@@ -47,6 +47,7 @@ const run = async (
     notebooks?: ReadonlyArray<{ id: string; name: string; webUrl: string; site: { id: string; name: string } | undefined }>;
     failNotebooks?: boolean;
     savedNotebook?: { id: string; name: string; webUrl: string; site: { id: string; name: string } | undefined };
+    failLists?: boolean;
     reportPath?: string;
     summary?: RunSummary;
   } = {}
@@ -58,6 +59,7 @@ const run = async (
   peopleRuns: number;
   calendarRuns: Array<{ since?: string }>;
   notebookRuns: string[];
+  listsRuns: string[];
   mailboxRuns: SyncMailboxInput[];
   reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }>;
   prompt: PromptFake;
@@ -77,6 +79,7 @@ const run = async (
   let peopleRuns = 0;
   const calendarRuns: Array<{ since?: string }> = [];
   const notebookRuns: string[] = [];
+  const listsRuns: string[] = [];
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
   const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }> = [];
@@ -126,6 +129,11 @@ const run = async (
     },
     notebooks: { listNotebooks: async () => (seeds.failNotebooks === true ? err({ kind: 'permanent' as const, message: 'OneNote read blocked' }) : ok(seeds.notebooks ?? [])) },
     savedNotebook: async () => seeds.savedNotebook,
+    syncLists: async (input) => {
+      listsRuns.push(input.site.name);
+      if (seeds.failLists === true) return err({ step: 'listLists', cause: 'permanent', message: 'Forbidden' });
+      return ok({ ...SOURCE_RUN, id: `lists:${input.site.id}`, source: `${input.site.name} (lists)` });
+    },
     cachedSites: async () => seeds.cached,
     rememberSites: async (listed) => {
       remembered.push(listed);
@@ -156,6 +164,7 @@ const run = async (
     peopleRuns,
     calendarRuns,
     notebookRuns,
+    listsRuns,
     mailboxRuns,
     reported,
     prompt,
@@ -257,6 +266,7 @@ describe('choosing what to sync', () => {
     expect(byId.groupRuns).toEqual(['MOOV Leadership Team']);
     expect(byMail.groupRuns).toEqual(['MOOV Leadership Team']);
     expect(byId.prompt.asked).toEqual([]);
+    expect(byId.calls).toEqual([]);
   });
 
   it('a group you do not belong to is refused by name rather than syncing something else', async () => {
@@ -503,6 +513,88 @@ describe('choosing what to sync', () => {
     expect(lost.step).toBe('savedNotebook');
   });
 
+  it('the lists of every site are offered last, off the same listing as the libraries, and a number there syncs a site`s lists and not its libraries', async () => {
+    const { calls, listsRuns, prompt, logger } = await run(['4']);
+
+    expect(prompt.shown.join('\n')).toContain('SharePoint lists:\n  3) Espace Contoso  (new)\n  4) Direction  (new)');
+    expect(listsRuns).toEqual(['Direction']);
+    expect(calls).toEqual([]);
+    expect(prompt.shown.join('\n')).toContain('Direction (lists)');
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'lists.started', meta: { site: 'contoso,3,4' } });
+  });
+
+  it('a site synced for its libraries is not marked as synced for its lists, nor the other way round', async () => {
+    const synced = [
+      { kind: 'site' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-09-10T09:00:00Z', fileCount: 40 },
+      { kind: 'lists' as const, id: 'contoso,3,4', name: 'Direction', lastRun: '2026-09-11T09:00:00Z', fileCount: 3 },
+    ];
+    const { prompt } = await run(['q'], {}, { synced });
+
+    const shown = prompt.shown.join('\n');
+    expect(shown).toContain('  1) Espace Contoso  (synced 2026-09-10, 40 files)');
+    expect(shown).toContain('  2) Direction  (new)');
+    expect(shown).toContain('  3) Espace Contoso  (new)');
+    expect(shown).toContain('  4) Direction  (synced 2026-09-11, 3 files)');
+  });
+
+  it('a Loop workspace and a OneDrive are not offered for their lists', async () => {
+    const mixed = [
+      { id: 'loop,1,1', name: 'Planning', webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_1' },
+      { id: 'drive,1,1', name: 'My files', webUrl: 'https://tenant-my.sharepoint.com/personal/jane' },
+      { id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/contoso' },
+    ];
+    const { prompt } = await run(['q'], {}, { reader: { sites: mixed } });
+
+    expect(prompt.shown.join('\n')).toContain('SharePoint lists:\n  4) Espace Contoso  (new)');
+    expect(prompt.shown.join('\n')).not.toContain('5)');
+  });
+
+  it('a site named for its lists is synced without the picker, by name, by id or by address, and one unknown is refused by name', async () => {
+    const byName = await run([], { listsSite: 'Direction' });
+    const byId = await run([], { listsSite: 'contoso,1,2' });
+    const byAddress = await run([], { listsSite: 'https://tenant.sharepoint.com/sites/dir' });
+    const missing = await run([], { listsSite: 'Ghost' });
+    const unlisted = await run([], { listsSite: 'Ghost' }, { reader: { failWith: { kind: 'auth', message: 'not authenticated' } } });
+
+    expect(byName.listsRuns).toEqual(['Direction']);
+    expect(byName.prompt.asked).toEqual([]);
+    expect(byName.calls).toEqual([]);
+    expect(byId.listsRuns).toEqual(['Espace Contoso']);
+    expect(byAddress.listsRuns).toEqual(['Direction']);
+    expect(missing.ok).toBe(false);
+    expect({ step: missing.step, cause: missing.cause, error: missing.error }).toEqual({ step: 'findListsSite', cause: 'bad-choice', error: 'no site you can read is Ghost' });
+    expect(unlisted.step).toBe('listSites');
+  });
+
+  it('a site`s lists chosen beside its libraries and a notebook are each synced once, the lists last, and the run stops where the lists fail', async () => {
+    const notebook = { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: '', site: undefined };
+    const together = await run(['1,3,5'], {}, { notebooks: [notebook] });
+    const stopped = await run(['3,4'], {}, { failLists: true });
+
+    expect(together.calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
+    expect(together.notebookRuns).toEqual(['MOOV Leadership Notebook']);
+    expect(together.listsRuns).toEqual(['Direction']);
+    expect(together.prompt.asked).toEqual(['Source:']);
+    expect(stopped.ok).toBe(false);
+    expect(stopped.step).toBe('listLists');
+    expect(stopped.listsRuns).toEqual(['Espace Contoso']);
+  });
+
+  it('an update refreshes every site`s lists already synced, after the notebooks, and stops where one fails', async () => {
+    const synced = [
+      { kind: 'lists' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-09-11T09:00:00Z', fileCount: 3 },
+      { kind: 'lists' as const, id: 'contoso,3,4', name: 'Direction', lastRun: '2026-09-11T09:00:00Z', fileCount: 1 },
+    ];
+    const both = await run([], { command: 'update' }, { synced });
+    const stopped = await run([], { command: 'update' }, { synced, failLists: true });
+
+    expect(both.listsRuns).toEqual(['Espace Contoso', 'Direction']);
+    expect(both.summaries?.map((summary) => summary.id)).toEqual(['lists:contoso,1,2', 'lists:contoso,3,4']);
+    expect(stopped.ok).toBe(false);
+    expect(stopped.step).toBe('listLists');
+    expect(stopped.listsRuns).toEqual(['Espace Contoso']);
+  });
+
   it('a notebook listing that fails costs the notebooks and not the picker', async () => {
     const { calls, prompt, logger } = await run(['1', 'all'], {}, { failNotebooks: true });
 
@@ -548,7 +640,8 @@ describe('choosing what to sync', () => {
   it('every site is reported as it finishes, not only once the whole run is over', async () => {
     const { prompt } = await run(['all']);
 
-    expect(prompt.shown.filter((text) => text.includes('converted'))).toHaveLength(2);
+    // Two sites, each reported once for its libraries and once for its lists: `all` takes every row.
+    expect(prompt.shown.filter((text) => text.includes('converted'))).toHaveLength(4);
   });
 
   it('pasting a site address reaches a site the list does not show', async () => {
@@ -564,11 +657,12 @@ describe('choosing what to sync', () => {
     expect(calls).toEqual([]);
   });
 
-  it('naming a site and its library outright skips both questions', async () => {
-    const { calls, prompt } = await run([], { siteId: 'contoso,1,2', driveIds: ['b!two'] });
+  it('naming a site and its library outright skips both questions, and syncs nothing else', async () => {
+    const { calls, prompt, groupRuns, todoRuns, teamRuns, notebookRuns, listsRuns } = await run([], { siteId: 'contoso,1,2', driveIds: ['b!two'] });
 
     expect(prompt.asked).toEqual([]);
     expect(calls[0]?.drives).toEqual([{ id: 'b!two', name: 'Site Assets' }]);
+    expect([groupRuns, todoRuns, teamRuns, notebookRuns, listsRuns]).toEqual([[], [], [], [], []]);
   });
 
   it('a site named by id is filed under its real name, not under the id', async () => {
@@ -718,6 +812,7 @@ describe('when the knowledge base itself cannot be read', () => {
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
+      syncLists: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -753,6 +848,7 @@ describe('when the knowledge base itself cannot be read', () => {
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
+      syncLists: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -810,6 +906,7 @@ describe('when one site in a refresh fails', () => {
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
+      syncLists: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -964,6 +1061,7 @@ describe('when a source run fails after it began', () => {
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
+      syncLists: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -1001,6 +1099,7 @@ describe('when a source run fails after it began', () => {
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
+      syncLists: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -1070,6 +1169,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
+      syncLists: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -1111,6 +1211,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
+      syncLists: async () => ok(SOURCE_RUN),
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),

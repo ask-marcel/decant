@@ -18,6 +18,9 @@ import { createSyncCalendar } from '../use-cases/sync-calendar.ts';
 import { createNotebookReaderFromCall } from '../infra/notebook-reader-marcel.ts';
 import type { NotebookReader } from '../use-cases/ports/notebook-reader.ts';
 import { createSyncNotebook } from '../use-cases/sync-notebook.ts';
+import { createListReaderFromCall } from '../infra/list-reader-marcel.ts';
+import type { ListReader } from '../use-cases/ports/list-reader.ts';
+import { createSyncLists } from '../use-cases/sync-lists.ts';
 import { parseNotebookState, notebookRootName } from '../domain/notebook-state.ts';
 import type { Notebook } from '../domain/onenote.ts';
 import type { ChannelSummary, TeamReader, TeamSummary } from '../use-cases/ports/team-reader.ts';
@@ -69,6 +72,7 @@ export type DepOverrides = {
   readonly people?: PeopleReader;
   readonly calendar?: CalendarReader;
   readonly notebook?: NotebookReader;
+  readonly list?: ListReader;
   readonly ocr?: Ocr;
   readonly prompt?: Prompt;
   readonly clock?: Clock;
@@ -208,6 +212,8 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const syncCalendar = createSyncCalendar({ reader: calendar, files, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone });
   const notebook = overrides.notebook ?? createNotebookReaderFromCall(createMarcelCall(api));
   const syncNotebook = createSyncNotebook({ reader: notebook, files, clock, logger, progress, kbRoot: config.kbRoot });
+  const list = overrides.list ?? createListReaderFromCall(createMarcelCall(api));
+  const syncLists = createSyncLists({ reader: list, files, clock, logger, progress, kbRoot: config.kbRoot });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
@@ -228,6 +234,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     syncPeople,
     syncCalendar,
     syncNotebook,
+    syncLists,
     notebooks: notebook,
     savedNotebook: savedNotebookFrom(files, config.kbRoot),
     groups: group,
