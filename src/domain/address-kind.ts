@@ -3,7 +3,7 @@
 // flat listing shows twenty-one rows of three different things. The address tells them apart.
 // `group` is the one a caller declares rather than the address answering for it: a group inbox is
 // reached through Graph's group id and has no address of its own in the listing.
-export type AddressKind = 'site' | 'group' | 'loop' | 'onedrive' | 'todo' | 'team' | 'notebook';
+export type AddressKind = 'site' | 'group' | 'loop' | 'onedrive' | 'todo' | 'team' | 'notebook' | 'lists';
 
 // A Loop workspace is stored in SharePoint under `/contentstorage/`, and a personal site lives on
 // the tenant's `-my` host. Everything else is a site, including the tenant root (no path at all) and
@@ -31,15 +31,15 @@ export const addressKindOf = (webUrl: string): AddressKind => {
 };
 
 // Sites first because they are what a run is nearly always after, then Loop, then the one OneDrive,
-// then the group inboxes, the To Do lists, the teams and the notebooks, which is the order the picker
-// draws: those last four are listed separately and appended in that order, so ranking them anywhere
-// else would describe an order nothing produces.
-const RANK: Readonly<Record<AddressKind, number>> = { site: 0, loop: 1, onedrive: 2, group: 3, todo: 4, team: 5, notebook: 6 };
+// then the group inboxes, the To Do lists, the teams, the notebooks and the sites' lists, which is the
+// order the picker draws: those last five are listed separately and appended in that order, so
+// ranking them anywhere else would describe an order nothing produces.
+const RANK: Readonly<Record<AddressKind, number>> = { site: 0, loop: 1, onedrive: 2, group: 3, todo: 4, team: 5, notebook: 6, lists: 7 };
 
 // Sorting is stable in JavaScript, so the order the source listed its rows in survives inside each
 // group: a listing that put the sites you touched most recently first still does.
 // A source states its kind when its address cannot answer for it, which a group inbox, a To Do list,
-// a team and a notebook all do.
+// a team, a notebook and a site's lists all do.
 export const kindOf = (source: { readonly webUrl: string; readonly kind?: AddressKind }): AddressKind => source.kind ?? addressKindOf(source.webUrl);
 
 export const orderByKind = <T extends { readonly webUrl: string; readonly kind?: AddressKind }>(sources: ReadonlyArray<T>): ReadonlyArray<T> =>
