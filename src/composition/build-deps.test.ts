@@ -8,6 +8,7 @@ import { createCalendarReaderFake } from '../test-helpers/calendar-reader-fake.t
 import { createNotebookReaderFake } from '../test-helpers/notebook-reader-fake.ts';
 import { createListReaderFake } from '../test-helpers/list-reader-fake.ts';
 import { createPlanReaderFake } from '../test-helpers/plan-reader-fake.ts';
+import { createMailReaderFake } from '../test-helpers/mail-reader-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
@@ -16,12 +17,14 @@ import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { buildDeps } from './build-deps.ts';
 import { readConfig } from './config.ts';
 
+// Never interactive: a wired run that reached Microsoft through a reader left real would open a
+// browser to sign in, once per test that got there, and under mutation once per mutant.
 const configFor = (env: Readonly<Record<string, string | undefined>>): ReturnType<typeof readConfig> =>
-  readConfig({ env, ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'UTC' });
+  readConfig({ env, ocrLang: 'en', interactive: false, timezone: '', machineTimezone: 'UTC' });
 
 describe('reading the run configuration', () => {
   it('an empty environment writes to the default knowledge base folder and stays quiet', () => {
-    expect(configFor({})).toEqual({ logLevel: 'error', kbRoot: 'kb', ocrLang: 'en', ocr: true, interactive: true, timezone: 'UTC' });
+    expect(configFor({})).toEqual({ logLevel: 'error', kbRoot: 'kb', ocrLang: 'en', ocr: true, interactive: false, timezone: 'UTC' });
   });
 
   it('reading images can be turned off in the configuration', () => {
@@ -53,6 +56,7 @@ describe('wiring the command together', () => {
       files,
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
+      mail: createMailReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
@@ -84,6 +88,7 @@ describe('wiring the command together', () => {
       files,
       logger: createLoggerFake(),
       reader: createDriveReaderFake({ pages: [{ items: [], skipped: 0, deltaLink: 'cursor-1' }] }),
+      mail: createMailReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
@@ -117,9 +122,15 @@ describe('wiring the command together', () => {
       files,
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
+      mail: createMailReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
       team,
+      people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
+      notebook: createNotebookReaderFake(),
+      list: createListReaderFake(),
+      plan: createPlanReaderFake(),
       ocr: createOcrFake(),
       prompt: createPromptFake(),
       clock: createClockFake(),
@@ -139,6 +150,7 @@ describe('wiring the command together', () => {
       files: unreadable,
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
+      mail: createMailReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
@@ -177,6 +189,7 @@ describe('wiring the command together', () => {
       files,
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
+      mail: createMailReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
@@ -201,6 +214,7 @@ describe('wiring the command together', () => {
       files,
       logger: createLoggerFake(),
       reader: createDriveReaderFake({ sites: [{ id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' }] }),
+      mail: createMailReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
@@ -240,6 +254,7 @@ describe('wiring the command together', () => {
       files,
       logger: createLoggerFake(),
       reader,
+      mail: createMailReaderFake(),
       ocr: createOcrFake(),
       prompt,
       clock: createClockFake(),
@@ -258,6 +273,8 @@ describe('wiring the command together', () => {
       prompt: createPromptFake(),
       clock: createClockFake(),
       ocr: createOcrFake(),
+      reader: createDriveReaderFake(),
+      mail: createMailReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),
@@ -285,6 +302,7 @@ describe('wiring the command together', () => {
       files: createFilesFake(),
       logger: createLoggerFake(),
       reader: createDriveReaderFake(),
+      mail: createMailReaderFake(),
       group: createGroupReaderFake(),
       todo: createTodoReaderFake(),
       team: createTeamReaderFake(),

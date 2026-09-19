@@ -897,3 +897,18 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   for itself. The rule now hides the group and names the column. The general form: for a category
   whose output is a projection of what Graph flags, render one real item and read the header
   before trusting the flags, since the probe showed the flags and not what they missed.
+
+## 2026-09-19
+
+- [mistake] A mutation run opened the browser to sign in, over and over. The wired tests in
+  `build-deps.test.ts` faked every reader but the mail reader, which nothing in those tests
+  reached, and their config said `interactive: true`, which nothing in those tests needed. Under
+  Stryker every mutant of `run-sync.ts` runs the whole suite, and a mutant that flips `if
+  (known.value.some(kind === 'mailbox'))` to `if (true)` sends the `update` test into the real
+  mail reader, whose first Graph call opens a sign-in browser. One unfaked reader is one line
+  away from being reached, and mutation is what walks that line. Two fixes, both kept: every
+  `buildDeps` override site now fakes all ten readers (the earlier lesson on auditing every call
+  site, applied to readers this time), and the test config is `interactive: false`, so a reader
+  left real by a future test fails fast instead of asking a person to sign in. Rule: a test
+  that wires the real composition is interactive never, and fakes every port that touches the
+  network, not only the ones the scenario reaches.
