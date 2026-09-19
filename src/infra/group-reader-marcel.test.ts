@@ -73,7 +73,7 @@ describe('reading a group inbox through the ask-marcel library', () => {
     const { reader, recorded } = readerFor({
       'list-group-threads': [ok({ value: [THREAD] })],
       'list-group-thread-posts': [
-        ok({ value: [{ id: 'AAMkAD-post', receivedDateTime: '2026-07-20T10:45:14Z', sender: { emailAddress: { name: 'Derek Bushaw', address: 'd.bushaw@example.com' } } }] }),
+        ok({ value: [{ id: 'AAMkAD-post', receivedDateTime: '2026-07-20T10:45:14Z', sender: { emailAddress: { name: 'Dana Farrow', address: 'd.farrow@example.com' } } }] }),
       ],
     });
 
@@ -83,7 +83,7 @@ describe('reading a group inbox through the ask-marcel library', () => {
     expect(posts.ok && posts.value[0]).toMatchObject({
       id: '0d3b-group|AAQkAD-thread|AAMkAD-post',
       subject: 'Bi-Monthly Leadership Meeting',
-      from: { name: 'Derek Bushaw', address: 'd.bushaw@example.com' },
+      from: { name: 'Dana Farrow', address: 'd.farrow@example.com' },
     });
     expect(recorded[1]?.params).toEqual({ groupId: '0d3b-group', threadId: 'AAQkAD-thread' });
   });
@@ -112,13 +112,13 @@ describe('reading a group inbox through the ask-marcel library', () => {
 
   it('a post is rendered, listed and fetched by all three parts of its reference', async () => {
     const { reader, recorded } = readerFor({
-      'convert-group-post-to-markdown': [ok({ text: '**From:** Derek Bushaw' })],
+      'convert-group-post-to-markdown': [ok({ text: '**From:** Dana Farrow' })],
       'list-group-post-attachments': [ok({ value: [{ id: 'att-1', name: 'Pre-read.pdf', contentType: 'application/pdf', size: 4096, isInline: false }] })],
       'get-group-post-attachment': [ok({ base64: 'QUJD' })],
     });
     const ref = '0d3b-group|AAQkAD-thread|AAMkAD-post';
 
-    expect(await reader.messageMarkdown(ref)).toEqual({ ok: true, value: '**From:** Derek Bushaw' });
+    expect(await reader.messageMarkdown(ref)).toEqual({ ok: true, value: '**From:** Dana Farrow' });
     expect((await reader.attachments(ref)).ok).toBe(true);
     expect(await reader.attachmentBytes(ref, 'att-1')).toEqual({ ok: true, value: new Uint8Array([65, 66, 67]) });
     expect(recorded.map((call) => call.params)).toEqual([

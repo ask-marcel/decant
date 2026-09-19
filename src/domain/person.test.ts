@@ -15,7 +15,7 @@ const graphUser = {
   officeLocation: 'Rotterdam',
   accountEnabled: true,
   userType: 'Member',
-  manager: { '@odata.type': '#microsoft.graph.user', id: '0000-derek', displayName: 'Derek Bushaw' },
+  manager: { '@odata.type': '#microsoft.graph.user', id: '0000-dana', displayName: 'Dana Farrow' },
 };
 
 const person = (over: Partial<Person> = {}): Person => ({
@@ -28,7 +28,7 @@ const person = (over: Partial<Person> = {}): Person => ({
   office: 'Rotterdam',
   enabled: true,
   member: true,
-  manager: { id: '0000-derek', name: 'Derek Bushaw' },
+  manager: { id: '0000-dana', name: 'Dana Farrow' },
   ...over,
 });
 

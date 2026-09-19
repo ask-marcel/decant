@@ -27,7 +27,7 @@ const graphEvent = {
   recurrence: null,
   attendees: [
     { type: 'required', status: { response: 'accepted', time: '2026-08-21T08:00:00Z' }, emailAddress: { name: 'Jane Doe', address: 'jane@example.com' } },
-    { type: 'optional', status: { response: 'none', time: '0001-01-01T00:00:00Z' }, emailAddress: { name: 'Derek Bushaw', address: 'derek@example.com' } },
+    { type: 'optional', status: { response: 'none', time: '0001-01-01T00:00:00Z' }, emailAddress: { name: 'Dana Farrow', address: 'dana@example.com' } },
   ],
   organizer: { emailAddress: { name: 'Vincent', address: 'me@example.com' } },
   onlineMeeting: { joinUrl: 'https://teams.microsoft.com/l/meetup-join/abc' },
@@ -46,7 +46,7 @@ describe('reading a calendar event as Graph answers for it', () => {
       organizer: { name: 'Vincent', address: 'me@example.com' },
       attendees: [
         { name: 'Jane Doe', address: 'jane@example.com', response: 'accepted', required: true },
-        { name: 'Derek Bushaw', address: 'derek@example.com', response: 'none', required: false },
+        { name: 'Dana Farrow', address: 'dana@example.com', response: 'none', required: false },
       ],
       location: 'Rotterdam, Room 3',
       joinUrl: 'https://teams.microsoft.com/l/meetup-join/abc',

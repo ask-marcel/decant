@@ -396,7 +396,7 @@ end: "2026-09-12 16:30"
 organizer: Vincent
 attendees:
   - Jane Doe (accepted)
-  - Derek Bushaw (optional, no answer)
+  - Dana Farrow (optional, no answer)
 location: Rotterdam, Room 3
 online_meeting: https://teams.microsoft.com/l/meetup-join/...
 recurrence: every week on Monday, from 2026-01-05 until 2026-12-31
@@ -439,7 +439,7 @@ source: Microsoft 365 directory
 name: Jane Doe
 title: Head of Operations
 department: Operations
-manager: Derek Bushaw
+manager: Dana Farrow
 email: jane@example.com
 phones:
   - "+31 6 1234 5678"
@@ -452,7 +452,7 @@ synced_at: "2026-09-11T14:00:00Z"
 
 # Jane Doe
 
-Head of Operations, Operations. Reports to [Derek Bushaw](<Derek Bushaw.md>).
+Head of Operations, Operations. Reports to [Dana Farrow](<Dana Farrow.md>).
 
 ## Reports
 
@@ -630,7 +630,7 @@ synced_at: "2026-09-11T14:00:00Z"
 
 Three options, see below.
 
-> **Derek Bushaw · 2026-09-10 09:30**
+> **Dana Farrow · 2026-09-10 09:30**
 > The second one.
 ```
 

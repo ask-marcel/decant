@@ -17,27 +17,27 @@ const person = (id: string, name: string, over: Partial<Person> = {}): Person =>
   ...over,
 });
 
-const DEREK = person('derek', 'Derek Bushaw', { title: 'CEO' });
+const DANA = person('dana', 'Dana Farrow', { title: 'CEO' });
 const JANE = person('jane', 'Jane Doe', {
   title: 'Head of Operations',
   department: 'Operations',
   phones: ['+31 6 1234 5678'],
   office: 'Rotterdam',
-  manager: { id: 'derek', name: 'Derek Bushaw' },
+  manager: { id: 'dana', name: 'Dana Farrow' },
 });
 const ANN = person('ann', 'Ann Lee', { title: 'Analyst', manager: { id: 'jane', name: 'Jane Doe' } });
 const GUEST = person('guest', 'Outside Consultant', { member: false, manager: { id: 'jane', name: 'Jane Doe' } });
 const GONE = person('gone', 'Left Already', { enabled: false });
 
-const TEAMS = { derek: ['MOOV EMPLOYEES', 'Leadership'], jane: ['Leadership', 'MOOV EMPLOYEES'], ann: ['MOOV EMPLOYEES'], guest: ['MOOV EMPLOYEES'], gone: ['MOOV EMPLOYEES'] };
+const TEAMS = { dana: ['MOOV EMPLOYEES', 'Leadership'], jane: ['Leadership', 'MOOV EMPLOYEES'], ann: ['MOOV EMPLOYEES'], guest: ['MOOV EMPLOYEES'], gone: ['MOOV EMPLOYEES'] };
 
 describe('assembling the directory out of the profiles and the rosters', () => {
   it('a colleague carries the teams they are in and the people who report to them, each in a stable order', () => {
-    const directory = assembleDirectory([ANN, JANE, DEREK], TEAMS);
+    const directory = assembleDirectory([ANN, JANE, DANA], TEAMS);
 
-    expect(directory.map((entry) => entry.person.name)).toEqual(['Ann Lee', 'Derek Bushaw', 'Jane Doe']);
+    expect(directory.map((entry) => entry.person.name)).toEqual(['Ann Lee', 'Dana Farrow', 'Jane Doe']);
     expect(directory.find((entry) => entry.person.id === 'jane')).toMatchObject({ teams: ['Leadership', 'MOOV EMPLOYEES'], reports: [{ id: 'ann', name: 'Ann Lee' }] });
-    expect(directory.find((entry) => entry.person.id === 'derek')?.reports).toEqual([{ id: 'jane', name: 'Jane Doe' }]);
+    expect(directory.find((entry) => entry.person.id === 'dana')?.reports).toEqual([{ id: 'jane', name: 'Jane Doe' }]);
   });
 
   it('a guest and a disabled account are left out, and count as nobody`s report', () => {
@@ -59,7 +59,7 @@ describe('assembling the directory out of the profiles and the rosters', () => {
   });
 });
 
-const fileOf = (id: string): string | undefined => ({ derek: 'Derek Bushaw.md', jane: 'Jane Doe.md', ann: 'Ann Lee.md' })[id];
+const fileOf = (id: string): string | undefined => ({ dana: 'Dana Farrow.md', jane: 'Jane Doe.md', ann: 'Ann Lee.md' })[id];
 
 const colleague = (subject: Person, teams: ReadonlyArray<string>, reports: Colleague['reports']): Colleague => ({ person: subject, teams, reports, fingerprint: 'f' });
 
@@ -72,7 +72,7 @@ describe('writing one person as a document', () => {
         'name: Jane Doe',
         'title: Head of Operations',
         'department: Operations',
-        'manager: Derek Bushaw',
+        'manager: Dana Farrow',
         'email: jane@example.com',
         'phones:',
         '  - "+31 6 1234 5678"',
@@ -85,7 +85,7 @@ describe('writing one person as a document', () => {
         '',
         '# Jane Doe',
         '',
-        'Head of Operations, Operations. Reports to [Derek Bushaw](<Derek Bushaw.md>).',
+        'Head of Operations, Operations. Reports to [Dana Farrow](<Dana Farrow.md>).',
         '',
         '## Reports',
         '',
@@ -110,10 +110,10 @@ describe('writing one person as a document', () => {
 
 describe('drawing the org chart', () => {
   it('everyone hangs under their manager, the people at the top come first, and each name links to its page', () => {
-    const directory = assembleDirectory([ANN, JANE, DEREK], TEAMS);
+    const directory = assembleDirectory([ANN, JANE, DANA], TEAMS);
 
     expect(renderOrgChart(directory, fileOf)).toBe(
-      ['# Org chart', '', '- [Derek Bushaw](<Derek Bushaw.md>), CEO', '  - [Jane Doe](<Jane Doe.md>), Head of Operations', '    - [Ann Lee](<Ann Lee.md>), Analyst', ''].join('\n')
+      ['# Org chart', '', '- [Dana Farrow](<Dana Farrow.md>), CEO', '  - [Jane Doe](<Jane Doe.md>), Head of Operations', '    - [Ann Lee](<Ann Lee.md>), Analyst', ''].join('\n')
     );
   });
 

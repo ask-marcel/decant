@@ -34,8 +34,8 @@ const person = (id: string, name: string, over: Partial<Person> = {}): Person =>
   ...over,
 });
 
-const DEREK = person('derek', 'Derek Bushaw', { title: 'CEO' });
-const JANE = person('jane', 'Jane Doe', { title: 'Head of Operations', manager: { id: 'derek', name: 'Derek Bushaw' } });
+const DANA = person('dana', 'Dana Farrow', { title: 'CEO' });
+const JANE = person('jane', 'Jane Doe', { title: 'Head of Operations', manager: { id: 'dana', name: 'Dana Farrow' } });
 const GUEST = person('guest', 'Outside Consultant', { member: false });
 
 const ALL = { id: 'team-all', name: 'MOOV EMPLOYEES' };
@@ -43,17 +43,17 @@ const LEAD = { id: 'team-lead', name: 'Leadership' };
 
 const ROSTERS = {
   'team-all': [
-    { userId: 'derek', name: 'Derek Bushaw' },
+    { userId: 'dana', name: 'Dana Farrow' },
     { userId: 'jane', name: 'Jane Doe' },
     { userId: 'guest', name: 'Outside Consultant' },
   ],
   'team-lead': [
-    { userId: 'derek', name: 'Derek Bushaw' },
+    { userId: 'dana', name: 'Dana Farrow' },
     { userId: 'jane', name: 'Jane Doe' },
   ],
 };
 
-const PROFILES = { derek: DEREK, jane: JANE, guest: GUEST };
+const PROFILES = { dana: DANA, jane: JANE, guest: GUEST };
 
 const run = async (
   seeds: { reader?: PeopleReaderSeed; files?: FilesFakeSeed; teams?: ReadonlyArray<TeamSummary>; failTeams?: StepError; dryRun?: boolean; concurrency?: number } = {}
@@ -102,14 +102,14 @@ describe('syncing the people directory', () => {
 
     expect(done.summary.converted).toBe(2);
     expect(done.reader.calls.filter((call) => call.startsWith('profile:')).toSorted((left, right) => left.localeCompare(right))).toEqual([
-      'profile:derek',
+      'profile:dana',
       'profile:guest',
       'profile:jane',
     ]);
-    expect(new Set(done.files.written.keys())).toEqual(new Set([`${ROOT}/.sync-state.json`, `${ROOT}/Derek Bushaw.md`, `${ROOT}/Jane Doe.md`, `${ROOT}/_org-chart.md`]));
-    expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to [Derek Bushaw](<Derek Bushaw.md>)');
+    expect(new Set(done.files.written.keys())).toEqual(new Set([`${ROOT}/.sync-state.json`, `${ROOT}/Dana Farrow.md`, `${ROOT}/Jane Doe.md`, `${ROOT}/_org-chart.md`]));
+    expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to [Dana Farrow](<Dana Farrow.md>)');
     expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('teams:\n  - Leadership\n  - MOOV EMPLOYEES');
-    expect(done.files.written.get(`${ROOT}/_org-chart.md`)).toContain('- [Derek Bushaw](<Derek Bushaw.md>), CEO\n  - [Jane Doe](<Jane Doe.md>), Head of Operations');
+    expect(done.files.written.get(`${ROOT}/_org-chart.md`)).toContain('- [Dana Farrow](<Dana Farrow.md>), CEO\n  - [Jane Doe](<Jane Doe.md>), Head of Operations');
     expect(stateOf(done.files).people['jane']).toMatchObject({ file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe' });
   });
 
@@ -117,13 +117,13 @@ describe('syncing the people directory', () => {
     const done = await run();
 
     expect(done.files.written.has(`${ROOT}/Outside Consultant.md`)).toBe(false);
-    expect(done.files.written.get(`${ROOT}/Derek Bushaw.md`)).not.toContain('Outside Consultant');
+    expect(done.files.written.get(`${ROOT}/Dana Farrow.md`)).not.toContain('Outside Consultant');
   });
 
   it('a second run reads every profile again and writes only the people whose profile changed', async () => {
-    const teams = { derek: ['MOOV EMPLOYEES', 'Leadership'], jane: ['MOOV EMPLOYEES', 'Leadership'] };
+    const teams = { dana: ['MOOV EMPLOYEES', 'Leadership'], jane: ['MOOV EMPLOYEES', 'Leadership'] };
     const state = withPerson(
-      withPerson(emptyPeopleState(), 'derek', { file: `${ROOT}/Derek Bushaw.md`, name: 'Derek Bushaw', fingerprint: fingerprintOf('derek', [DEREK, JANE], teams) }),
+      withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: fingerprintOf('dana', [DANA, JANE], teams) }),
       'jane',
       { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: 'stale' }
     );
@@ -132,15 +132,15 @@ describe('syncing the people directory', () => {
     expect(done.reader.calls.filter((call) => call.startsWith('profile:'))).toHaveLength(3);
     expect(done.summary.converted).toBe(1);
     expect(done.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/Jane Doe.md`, `${ROOT}/_org-chart.md`]);
-    expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to [Derek Bushaw](<Derek Bushaw.md>)');
+    expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to [Dana Farrow](<Dana Farrow.md>)');
   });
 
   it('a run where nobody changed writes nothing but its own state file', async () => {
-    const teams = { derek: ['MOOV EMPLOYEES', 'Leadership'], jane: ['MOOV EMPLOYEES', 'Leadership'] };
+    const teams = { dana: ['MOOV EMPLOYEES', 'Leadership'], jane: ['MOOV EMPLOYEES', 'Leadership'] };
     const state = withPerson(
-      withPerson(emptyPeopleState(), 'derek', { file: `${ROOT}/Derek Bushaw.md`, name: 'Derek Bushaw', fingerprint: fingerprintOf('derek', [DEREK, JANE], teams) }),
+      withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: fingerprintOf('dana', [DANA, JANE], teams) }),
       'jane',
-      { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [DEREK, JANE], teams) }
+      { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [DANA, JANE], teams) }
     );
     const done = await run({ files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
 
@@ -167,7 +167,7 @@ describe('syncing the people directory', () => {
       { path: 'Switched Off', reason: 'no longer in the directory' },
     ]);
     expect(done.files.moves.map((move) => move.to)).toEqual(['kb/_archive/People/Left Already.md', 'kb/_archive/People/Switched Off.md']);
-    expect(Object.keys(stateOf(done.files).people).toSorted((left, right) => left.localeCompare(right))).toEqual(['derek', 'jane']);
+    expect(Object.keys(stateOf(done.files).people).toSorted((left, right) => left.localeCompare(right))).toEqual(['dana', 'jane']);
   });
 
   it('a person whose name changed is written under the new name, and the page under the old one is put aside', async () => {
@@ -201,7 +201,7 @@ describe('syncing the people directory', () => {
     const done = await run({ concurrency: 2 });
 
     expect(done.progress.started).toEqual([{ total: 3, what: 'People' }]);
-    expect(done.progress.steps.toSorted((left, right) => left.localeCompare(right))).toEqual(['Derek Bushaw', 'Jane Doe', 'Outside Consultant']);
+    expect(done.progress.steps.toSorted((left, right) => left.localeCompare(right))).toEqual(['Dana Farrow', 'Jane Doe', 'Outside Consultant']);
     expect(done.progress.dones).toHaveLength(1);
   });
 
@@ -225,11 +225,11 @@ describe('syncing the people directory', () => {
   });
 
   it('the org chart is drawn again when someone left even if nobody else changed, and a chart that will not write is logged rather than failing the run', async () => {
-    const teams = { derek: ['MOOV EMPLOYEES', 'Leadership'], jane: ['MOOV EMPLOYEES', 'Leadership'] };
+    const teams = { dana: ['MOOV EMPLOYEES', 'Leadership'], jane: ['MOOV EMPLOYEES', 'Leadership'] };
     const settled = withPerson(
-      withPerson(emptyPeopleState(), 'derek', { file: `${ROOT}/Derek Bushaw.md`, name: 'Derek Bushaw', fingerprint: fingerprintOf('derek', [DEREK, JANE], teams) }),
+      withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: fingerprintOf('dana', [DANA, JANE], teams) }),
       'jane',
-      { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [DEREK, JANE], teams) }
+      { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [DANA, JANE], teams) }
     );
     const withLeaver = withPerson(settled, 'gone', { file: `${ROOT}/Left Already.md`, name: 'Left Already', fingerprint: 'x' });
 

@@ -35,13 +35,13 @@ describe('reading a group inbox thread and the posts under it', () => {
         receivedDateTime: '2026-07-20T10:45:14Z',
         hasAttachments: true,
         from: { emailAddress: { name: 'MOOV Leadership Team', address: 'MOOVLeadershipTeam@example.com' } },
-        sender: { emailAddress: { name: 'Derek Bushaw', address: 'd.bushaw@example.com' } },
+        sender: { emailAddress: { name: 'Dana Farrow', address: 'd.farrow@example.com' } },
       },
       thread,
       GROUP
     );
 
-    expect(parsed?.from).toEqual({ name: 'Derek Bushaw', address: 'd.bushaw@example.com' });
+    expect(parsed?.from).toEqual({ name: 'Dana Farrow', address: 'd.farrow@example.com' });
     expect(parsed?.received).toBe('2026-07-20T10:45:14Z');
     expect(parsed?.hasAttachments).toBe(true);
   });

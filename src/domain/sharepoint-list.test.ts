@@ -107,9 +107,9 @@ describe('saying what a cell holds', () => {
     expect(
       cellText([
         { LookupId: 3, LookupValue: 'Jane Doe', Email: 'jane@example.com' },
-        { LookupId: 4, LookupValue: 'Derek Bushaw' },
+        { LookupId: 4, LookupValue: 'Dana Farrow' },
       ])
-    ).toBe('Jane Doe, Derek Bushaw');
+    ).toBe('Jane Doe, Dana Farrow');
     expect(cellText({ LookupId: 3, LookupValue: 'Jane Doe' })).toBe('Jane Doe');
     expect(cellText({ Description: 'Plan', Url: 'https://tasks.office.com/plan/1' })).toBe('[Plan](https://tasks.office.com/plan/1)');
     expect(cellText({ Url: 'https://example.com' })).toBe('[https://example.com](https://example.com)');

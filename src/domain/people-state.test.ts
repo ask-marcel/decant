@@ -8,10 +8,10 @@ const person = (id: string, name: string): Person => ({ id, name, title: '', dep
 const colleague = (id: string, name: string, fingerprint: string): Colleague => ({ person: person(id, name), teams: [], reports: [], fingerprint });
 
 const seeded = (): ReturnType<typeof emptyPeopleState> =>
-  withPerson(withPerson(emptyPeopleState(), 'jane', { file: 'kb/People/Jane Doe.md', name: 'Jane Doe', fingerprint: 'f-jane' }), 'derek', {
-    file: 'kb/People/Derek Bushaw.md',
-    name: 'Derek Bushaw',
-    fingerprint: 'f-derek',
+  withPerson(withPerson(emptyPeopleState(), 'jane', { file: 'kb/People/Jane Doe.md', name: 'Jane Doe', fingerprint: 'f-jane' }), 'dana', {
+    file: 'kb/People/Dana Farrow.md',
+    name: 'Dana Farrow',
+    fingerprint: 'f-dana',
   });
 
 describe('what a people run remembers between runs', () => {
@@ -21,7 +21,7 @@ describe('what a people run remembers between runs', () => {
 
   it('a person written once is found again by their id, with the file and the fingerprint they were written with', () => {
     expect(seeded().people['jane']).toEqual({ file: 'kb/People/Jane Doe.md', name: 'Jane Doe', fingerprint: 'f-jane' });
-    expect(Object.keys(withoutPerson(seeded(), 'jane').people)).toEqual(['derek']);
+    expect(Object.keys(withoutPerson(seeded(), 'jane').people)).toEqual(['dana']);
   });
 
   it('a state written and read back is the state that was written', () => {
@@ -50,20 +50,20 @@ describe('what a people run remembers between runs', () => {
 
 describe('deciding what a people run owes', () => {
   it('a newcomer is written, a person whose profile has not changed is left alone, and one whose profile changed is written again', () => {
-    const work = peopleWorklist(seeded(), [colleague('jane', 'Jane Doe', 'f-jane'), colleague('derek', 'Derek Bushaw', 'f-derek-promoted'), colleague('ann', 'Ann Lee', 'f-ann')]);
+    const work = peopleWorklist(seeded(), [colleague('jane', 'Jane Doe', 'f-jane'), colleague('dana', 'Dana Farrow', 'f-dana-promoted'), colleague('ann', 'Ann Lee', 'f-ann')]);
 
-    expect(work.write.map((entry) => entry.person.id)).toEqual(['derek', 'ann']);
+    expect(work.write.map((entry) => entry.person.id)).toEqual(['dana', 'ann']);
     expect(work.archive).toHaveLength(0);
   });
 
   it('a person no longer in the directory is put aside, named by the file they left behind', () => {
     const work = peopleWorklist(seeded(), [colleague('jane', 'Jane Doe', 'f-jane')]);
 
-    expect(work.archive).toEqual([{ id: 'derek', record: { file: 'kb/People/Derek Bushaw.md', name: 'Derek Bushaw', fingerprint: 'f-derek' } }]);
+    expect(work.archive).toEqual([{ id: 'dana', record: { file: 'kb/People/Dana Farrow.md', name: 'Dana Farrow', fingerprint: 'f-dana' } }]);
   });
 
   it('a person the rosters still name but whose profile could not be read is left where they are, not put aside', () => {
-    const work = peopleWorklist(seeded(), [colleague('jane', 'Jane Doe', 'f-jane')], ['derek']);
+    const work = peopleWorklist(seeded(), [colleague('jane', 'Jane Doe', 'f-jane')], ['dana']);
 
     expect(work.archive).toHaveLength(0);
   });

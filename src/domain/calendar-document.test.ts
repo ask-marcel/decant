@@ -13,7 +13,7 @@ const event: CalendarEvent = {
   organizer: { name: 'Vincent', address: 'me@example.com' },
   attendees: [
     { name: 'Jane Doe', address: 'jane@example.com', response: 'accepted', required: true },
-    { name: 'Derek Bushaw', address: 'derek@example.com', response: 'none', required: false },
+    { name: 'Dana Farrow', address: 'dana@example.com', response: 'none', required: false },
     { name: 'Ann Lee', address: 'ann@example.com', response: 'tentativelyAccepted', required: true },
   ],
   location: 'Rotterdam, Room 3',
@@ -42,7 +42,7 @@ describe('writing one calendar event as a document', () => {
         'organizer: Vincent',
         'attendees:',
         '  - Jane Doe (accepted)',
-        '  - Derek Bushaw (optional, no answer)',
+        '  - Dana Farrow (optional, no answer)',
         '  - Ann Lee (tentative)',
         'location: Rotterdam, Room 3',
         'online_meeting: https://teams.microsoft.com/l/meetup-join/abc',

@@ -20,7 +20,7 @@ const MARKDOWN = [
   '',
   'Three options, see below.',
   '',
-  '> **Derek Bushaw · 2026-09-10 09:30**',
+  '> **Dana Farrow · 2026-09-10 09:30**',
   '> The second one.',
   '',
 ].join('\n');
@@ -46,7 +46,7 @@ describe('writing one channel post and its replies as a document', () => {
         '',
         'Three options, see below.',
         '',
-        '> **Derek Bushaw · 2026-09-10 09:30**',
+        '> **Dana Farrow · 2026-09-10 09:30**',
         '> The second one.',
         '',
       ].join('\n')

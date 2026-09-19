@@ -27,7 +27,7 @@ describe('reading the directory through the ask-marcel library', () => {
   it('a roster answered a page at a time is followed to its end, and a membership with no user behind it is dropped', async () => {
     const { reader, recorded } = readerFor({
       'list-team-members': [ok({ value: [MEMBER, { id: 'bot', displayName: 'Some Bot' }], '@odata.nextLink': 'https://graph.microsoft.com/v1.0/teams/t/members?%24skiptoken=s' })],
-      'next-page': [ok({ value: [{ ...MEMBER, id: 'm2', userId: '0000-derek', displayName: 'Derek Bushaw' }] })],
+      'next-page': [ok({ value: [{ ...MEMBER, id: 'm2', userId: '0000-dana', displayName: 'Dana Farrow' }] })],
     });
 
     const members = await reader.teamMembers('team-1');
@@ -36,7 +36,7 @@ describe('reading the directory through the ask-marcel library', () => {
       ok: true,
       value: [
         { userId: '0000-jane', name: 'Jane Doe' },
-        { userId: '0000-derek', name: 'Derek Bushaw' },
+        { userId: '0000-dana', name: 'Dana Farrow' },
       ],
     });
     expect(recorded[0]).toEqual({ name: 'list-team-members', params: { teamId: 'team-1' } });
@@ -69,14 +69,14 @@ describe('reading the directory through the ask-marcel library', () => {
           jobTitle: 'Head of Operations',
           userType: 'Member',
           accountEnabled: true,
-          manager: { id: '0000-derek', displayName: 'Derek Bushaw' },
+          manager: { id: '0000-dana', displayName: 'Dana Farrow' },
         }),
       ],
     });
 
     const person = await reader.profile('0000-jane');
 
-    expect(person.ok && person.value).toMatchObject({ id: '0000-jane', name: 'Jane Doe', title: 'Head of Operations', manager: { id: '0000-derek', name: 'Derek Bushaw' } });
+    expect(person.ok && person.value).toMatchObject({ id: '0000-jane', name: 'Jane Doe', title: 'Head of Operations', manager: { id: '0000-dana', name: 'Dana Farrow' } });
     expect(recorded[0]).toEqual({
       name: 'get-user',
       params: {
