@@ -48,6 +48,13 @@ const run = async (
     failNotebooks?: boolean;
     savedNotebook?: { id: string; name: string; webUrl: string; site: { id: string; name: string } | undefined };
     failLists?: boolean;
+    plans?: ReadonlyArray<{ id: string; title: string; groupId: string }>;
+    failPlans?: boolean;
+    failPlanSync?: boolean;
+    unfetchablePlans?: boolean;
+    // Plans no listing answers for, readable by id all the same: a group's plans while the library lacks the group route.
+    hiddenPlans?: ReadonlyArray<{ id: string; title: string; groupId: string }>;
+    savedPlan?: { id: string; title: string; groupId: string };
     reportPath?: string;
     summary?: RunSummary;
   } = {}
@@ -60,6 +67,7 @@ const run = async (
   calendarRuns: Array<{ since?: string }>;
   notebookRuns: string[];
   listsRuns: string[];
+  planRuns: string[];
   mailboxRuns: SyncMailboxInput[];
   reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }>;
   prompt: PromptFake;
@@ -80,6 +88,7 @@ const run = async (
   const calendarRuns: Array<{ since?: string }> = [];
   const notebookRuns: string[] = [];
   const listsRuns: string[] = [];
+  const planRuns: string[] = [];
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
   const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }> = [];
@@ -134,6 +143,19 @@ const run = async (
       if (seeds.failLists === true) return err({ step: 'listLists', cause: 'permanent', message: 'Forbidden' });
       return ok({ ...SOURCE_RUN, id: `lists:${input.site.id}`, source: `${input.site.name} (lists)` });
     },
+    syncPlan: async (input) => {
+      planRuns.push(input.plan.title);
+      if (seeds.failPlanSync === true) return err({ step: 'listTasks', cause: 'transient', message: 'Graph is busy' });
+      return ok({ ...SOURCE_RUN, id: input.plan.id, source: input.plan.title });
+    },
+    plans: {
+      listPlans: async () => (seeds.failPlans === true ? err({ kind: 'permanent' as const, message: 'Forbidden' }) : ok(seeds.plans ?? [])),
+      plan: async (planId) => {
+        const found = seeds.unfetchablePlans === true ? undefined : [...(seeds.plans ?? []), ...(seeds.hiddenPlans ?? [])].find((plan) => plan.id === planId);
+        return found === undefined ? err({ kind: 'permanent' as const, status: 404, message: 'The requested item is not found.' }) : ok(found);
+      },
+    },
+    savedPlan: async () => seeds.savedPlan,
     cachedSites: async () => seeds.cached,
     rememberSites: async (listed) => {
       remembered.push(listed);
@@ -165,6 +187,7 @@ const run = async (
     calendarRuns,
     notebookRuns,
     listsRuns,
+    planRuns,
     mailboxRuns,
     reported,
     prompt,
@@ -595,6 +618,60 @@ describe('choosing what to sync', () => {
     expect(stopped.listsRuns).toEqual(['Espace Contoso']);
   });
 
+  it('the plans are offered last, found through the groups the picker lists, and a number there syncs one', async () => {
+    const plan = { id: 'plan-1', title: 'Offsite 2026', groupId: 'g-1' };
+    const { planRuns, prompt, logger } = await run(['5'], {}, { plans: [plan] });
+    const stopped = await run(['5,3'], {}, { plans: [plan], failPlanSync: true });
+
+    expect(prompt.shown.join('\n')).toContain('Planner:\n  5) Offsite 2026  (new)');
+    expect(planRuns).toEqual(['Offsite 2026']);
+    expect(prompt.shown.some((text) => text.startsWith('Offsite 2026:'))).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'plan.started', meta: { plan: 'plan-1' } });
+    expect(stopped.ok).toBe(false);
+    expect(stopped.step).toBe('listTasks');
+    expect(stopped.listsRuns).toEqual(['Espace Contoso']);
+    expect(stopped.prompt.shown.some((text) => text.startsWith('Offsite 2026:'))).toBe(false);
+  });
+
+  it('a plan named outright is synced without the picker, by title or by id among the plans listed, or by id fetched outright; one nobody can read is refused', async () => {
+    const plan = { id: 'plan-1', title: 'Offsite 2026', groupId: 'g-1' };
+    const byTitle = await run([], { planId: 'Offsite 2026' }, { plans: [plan] });
+    const byId = await run([], { planId: 'plan-1' }, { plans: [plan], unfetchablePlans: true });
+    const fetched = await run([], { planId: 'plan-1' }, { hiddenPlans: [plan] });
+    const missing = await run([], { planId: 'Ghost' }, { plans: [plan] });
+    const unlisted = await run([], { planId: 'plan-1' }, { plans: [plan], failPlans: true });
+
+    expect(byTitle.planRuns).toEqual(['Offsite 2026']);
+    expect(byTitle.prompt.asked).toEqual([]);
+    expect(byId.planRuns).toEqual(['Offsite 2026']);
+    expect(fetched.planRuns).toEqual(['Offsite 2026']);
+    expect(missing.ok).toBe(false);
+    expect({ step: missing.step, cause: missing.cause, error: missing.error }).toEqual({ step: 'findPlan', cause: 'bad-choice', error: 'no plan you can read is Ghost' });
+    expect(unlisted.step).toBe('listPlans');
+  });
+
+  it('an update refreshes a plan from the record its earlier run left, after the lists, and stops naming the step when the record is gone', async () => {
+    const synced = [
+      { kind: 'lists' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-09-11T09:00:00Z', fileCount: 3 },
+      { kind: 'plan' as const, id: 'plan-1', name: 'Offsite 2026', lastRun: '2026-09-11T09:00:00Z', fileCount: 4 },
+    ];
+    const found = await run([], { command: 'update' }, { synced, savedPlan: { id: 'plan-1', title: 'Offsite 2026', groupId: 'g-1' } });
+    const lost = await run([], { command: 'update' }, { synced, savedPlan: undefined });
+
+    expect(found.planRuns).toEqual(['Offsite 2026']);
+    expect(found.summaries?.map((summary) => summary.id)).toEqual(['lists:contoso,1,2', 'plan-1']);
+    expect(lost.ok).toBe(false);
+    expect({ step: lost.step, cause: lost.cause, error: lost.error }).toEqual({ step: 'savedPlan', cause: 'not-found', error: 'no record of the plan Offsite 2026' });
+  });
+
+  it('a plan listing that fails costs the plans and not the picker', async () => {
+    const { calls, prompt, logger } = await run(['1', 'all'], {}, { failPlans: true });
+
+    expect(prompt.shown.join('\n')).not.toContain('Planner:');
+    expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
+    expect(logger.calls.some((entry) => entry.event === 'plans.unlisted')).toBe(true);
+  });
+
   it('a notebook listing that fails costs the notebooks and not the picker', async () => {
     const { calls, prompt, logger } = await run(['1', 'all'], {}, { failNotebooks: true });
 
@@ -658,11 +735,12 @@ describe('choosing what to sync', () => {
   });
 
   it('naming a site and its library outright skips both questions, and syncs nothing else', async () => {
-    const { calls, prompt, groupRuns, todoRuns, teamRuns, notebookRuns, listsRuns } = await run([], { siteId: 'contoso,1,2', driveIds: ['b!two'] });
+    const { calls, prompt, groupRuns, todoRuns, teamRuns, notebookRuns, listsRuns, planRuns } = await run([], { siteId: 'contoso,1,2', driveIds: ['b!two'] });
 
     expect(prompt.asked).toEqual([]);
     expect(calls[0]?.drives).toEqual([{ id: 'b!two', name: 'Site Assets' }]);
-    expect([groupRuns, todoRuns, teamRuns, notebookRuns, listsRuns]).toEqual([[], [], [], [], []]);
+    // Strictly: `toEqual` would take a run recorded as `undefined` for no run at all.
+    expect([groupRuns, todoRuns, teamRuns, notebookRuns, listsRuns, planRuns]).toStrictEqual([[], [], [], [], [], []]);
   });
 
   it('a site named by id is filed under its real name, not under the id', async () => {
@@ -813,6 +891,9 @@ describe('when the knowledge base itself cannot be read', () => {
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
       syncLists: async () => ok(SOURCE_RUN),
+      syncPlan: async () => ok(SOURCE_RUN),
+      plans: { listPlans: async () => ok([]), plan: async () => err({ kind: 'permanent' as const, message: 'not found' }) },
+      savedPlan: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -849,6 +930,9 @@ describe('when the knowledge base itself cannot be read', () => {
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
       syncLists: async () => ok(SOURCE_RUN),
+      syncPlan: async () => ok(SOURCE_RUN),
+      plans: { listPlans: async () => ok([]), plan: async () => err({ kind: 'permanent' as const, message: 'not found' }) },
+      savedPlan: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -907,6 +991,9 @@ describe('when one site in a refresh fails', () => {
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
       syncLists: async () => ok(SOURCE_RUN),
+      syncPlan: async () => ok(SOURCE_RUN),
+      plans: { listPlans: async () => ok([]), plan: async () => err({ kind: 'permanent' as const, message: 'not found' }) },
+      savedPlan: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -1062,6 +1149,9 @@ describe('when a source run fails after it began', () => {
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
       syncLists: async () => ok(SOURCE_RUN),
+      syncPlan: async () => ok(SOURCE_RUN),
+      plans: { listPlans: async () => ok([]), plan: async () => err({ kind: 'permanent' as const, message: 'not found' }) },
+      savedPlan: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt,
       logger: createLoggerFake(),
@@ -1100,6 +1190,9 @@ describe('when a source run fails after it began', () => {
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
       syncLists: async () => ok(SOURCE_RUN),
+      syncPlan: async () => ok(SOURCE_RUN),
+      plans: { listPlans: async () => ok([]), plan: async () => err({ kind: 'permanent' as const, message: 'not found' }) },
+      savedPlan: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -1170,6 +1263,9 @@ describe('pointing a reader at the report a run leaves behind', () => {
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
       syncLists: async () => ok(SOURCE_RUN),
+      syncPlan: async () => ok(SOURCE_RUN),
+      plans: { listPlans: async () => ok([]), plan: async () => err({ kind: 'permanent' as const, message: 'not found' }) },
+      savedPlan: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),
@@ -1212,6 +1308,9 @@ describe('pointing a reader at the report a run leaves behind', () => {
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
       syncLists: async () => ok(SOURCE_RUN),
+      syncPlan: async () => ok(SOURCE_RUN),
+      plans: { listPlans: async () => ok([]), plan: async () => err({ kind: 'permanent' as const, message: 'not found' }) },
+      savedPlan: async () => undefined,
       reader: createDriveReaderFake({ sites, drives }),
       prompt: createPromptFake(),
       logger: createLoggerFake(),

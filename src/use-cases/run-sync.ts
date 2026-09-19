@@ -22,6 +22,9 @@ import type { SyncPeople } from './sync-people.ts';
 import type { SyncCalendar } from './sync-calendar.ts';
 import type { SyncNotebook } from './sync-notebook.ts';
 import type { SyncLists } from './sync-lists.ts';
+import type { SyncPlan } from './sync-plan.ts';
+import type { PlanReader } from './ports/plan-reader.ts';
+import type { Plan } from '../domain/planner.ts';
 import type { NotebookReader } from './ports/notebook-reader.ts';
 import type { Notebook } from '../domain/onenote.ts';
 import type { SyncTeam } from './sync-team.ts';
@@ -50,6 +53,7 @@ export type RunSyncDeps = {
   readonly syncCalendar: SyncCalendar;
   readonly syncNotebook: SyncNotebook;
   readonly syncLists: SyncLists;
+  readonly syncPlan: SyncPlan;
   // Only the listing half of the group reader: choosing a source needs to know which groups can be
   // read, and reading one is the use-case's business, not the picker's.
   readonly groups: Pick<GroupReader, 'listGroups'>;
@@ -67,6 +71,11 @@ export type RunSyncDeps = {
   // The notebook as an earlier run recorded it, site and all, so `update` can reach it without
   // listing every site again.
   readonly savedNotebook: (source: { readonly id: string; readonly name: string }) => Promise<Notebook | undefined>;
+  // The plans are found through the groups the picker already lists, and one named by id is
+  // fetched outright, which is what a plan no listing answers for needs.
+  readonly plans: Pick<PlanReader, 'listPlans' | 'plan'>;
+  // The plan as an earlier run recorded it, so `update` can reach it without listing again.
+  readonly savedPlan: (source: { readonly id: string; readonly name: string }) => Promise<Plan | undefined>;
   // One file naming what the whole run left behind, written once every source is done.
   readonly writeGlobalReport: WriteGlobalReport;
 };
@@ -88,6 +97,8 @@ export type RunSyncInput = {
   readonly notebookId?: string;
   // The site whose lists to sync, by name, id or address.
   readonly listsSite?: string;
+  // The plan to sync, by its title among the plans listed or by its id.
+  readonly planId?: string;
   readonly since?: string;
   // Ignore what was stored and list for real, for when a site is known to be new.
   readonly refresh?: boolean;
@@ -233,6 +244,13 @@ const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
+  for (const source of known.value.filter((candidate) => candidate.kind === 'plan')) {
+    const plan = await deps.savedPlan(source);
+    if (plan === undefined) return stoppedAfter(summaries, { step: 'savedPlan', cause: 'not-found', message: `no record of the plan ${source.name}` });
+    const summary = await syncThePlan(deps, input, plan);
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
+    summaries.push(summary.value);
+  }
   return ok(summaries);
 };
 
@@ -299,6 +317,26 @@ const syncTheLists = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRe
   return summary;
 };
 
+const syncThePlan = async (deps: RunSyncDeps, input: RunSyncInput, plan: Plan): Promise<Result<SourceRun, StepError>> => {
+  deps.logger.info('plan.started', { plan: plan.id });
+  const summary = await deps.syncPlan({ plan, concurrency: input.concurrency, dryRun: input.dryRun });
+  if (summary.ok) deps.prompt.show(renderSummary(plan.title, summary.value.summary, input.dryRun));
+  return summary;
+};
+
+// A plan named outright is looked up among the plans listed, by title or by id, and failing that
+// fetched by id: a plan of a group whose listing the library cannot answer is still readable once
+// named, and its id is what a person has, off the address bar.
+const planFromOptions = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<Plan, StepError> | undefined> => {
+  if (input.planId === undefined) return undefined;
+  const listed = await deps.plans.listPlans(await listedGroups(deps));
+  if (!listed.ok) return failed('listPlans', listed.error.kind, listed.error.message);
+  const found = listed.value.find((plan) => plan.id === input.planId || plan.title === input.planId);
+  if (found !== undefined) return ok(found);
+  const fetched = await deps.plans.plan(input.planId);
+  return fetched.ok ? ok(fetched.value) : failed('findPlan', 'bad-choice', `no plan you can read is ${input.planId}`);
+};
+
 // A site named for its lists is looked up among the sites the picker knows, by name or by id, or
 // reached by its address the way a pasted one is.
 const listsSiteFromOptions = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SiteRef, StepError> | undefined> => {
@@ -325,18 +363,19 @@ type Sources = {
   readonly notebooks: ReadonlyArray<Notebook>;
   // The sites whose lists were chosen, apart from the sites whose libraries were.
   readonly lists: ReadonlyArray<SiteRef>;
+  readonly plans: ReadonlyArray<Plan>;
 };
 
 type Chosen = Sources | 'update-all' | 'quit' | 'mailbox' | 'people' | 'calendar';
 
-const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [], notebooks: [], lists: [] };
+const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [], notebooks: [], lists: [], plans: [] };
 
 const oneSite = (found: Result<SiteRef, StepError>): Result<Chosen, StepError> => (found.ok ? ok({ ...NOTHING, sites: [found.value] }) : found);
 
 // How many sources a choice came to, which is what decides whether a site is asked about its
 // libraries and a team about its channels: one source is asked, more than one is taken whole.
 const countOf = (sources: Sources): number =>
-  sources.sites.length + sources.groups.length + sources.todoLists.length + sources.teams.length + sources.notebooks.length + sources.lists.length;
+  sources.sites.length + sources.groups.length + sources.todoLists.length + sources.teams.length + sources.notebooks.length + sources.lists.length + sources.plans.length;
 
 const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): Promise<Result<Chosen, StepError>> => {
   if (choice.kind === 'quit') return ok('quit');
@@ -355,7 +394,8 @@ const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): 
   const before = offered.sites.length + offered.groups.length + offered.todoLists.length + offered.teams.length;
   const notebooks = offered.notebooks.filter((_notebook, index) => choice.indices.includes(before + index));
   const lists = offered.lists.filter((_site, index) => choice.indices.includes(before + offered.notebooks.length + index));
-  const chosen = { sites, groups, todoLists, teams, notebooks, lists };
+  const plans = offered.plans.filter((_plan, index) => choice.indices.includes(before + offered.notebooks.length + offered.lists.length + index));
+  const chosen = { sites, groups, todoLists, teams, notebooks, lists, plans };
   return countOf(chosen) === 0 ? failed('pickSite', 'bad-choice', 'choose at least one source') : ok(chosen);
 };
 
@@ -400,6 +440,7 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
   const teams = await listedTeams(deps);
   const notebooks = await listedNotebooks(deps, listing.value.sites);
   const lists = sitesWithLists(sites);
+  const plans = await listedPlans(deps, groups);
   const marks = await syncedMarks(deps);
   const rows = [
     ...annotate(sites, marks),
@@ -408,6 +449,7 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
     ...annotate(teams.map(asChoosableTeam), marks),
     ...annotate(notebooks.map(asChoosableNotebook), marks),
     ...annotate(lists.map(asChoosableLists), marks),
+    ...annotate(plans.map(asChoosablePlan), marks),
   ];
   deps.prompt.show(
     renderSitePicker(rows, {
@@ -418,7 +460,7 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
   );
   const chosen = parseSelection(await deps.prompt.ask('Source:'), rows.length);
   if (!chosen.ok) return failed('pickSite', chosen.error.kind, chosen.error.message);
-  const resolved = await resolve(deps, chosen.value, { sites, groups, todoLists, teams, notebooks, lists });
+  const resolved = await resolve(deps, chosen.value, { sites, groups, todoLists, teams, notebooks, lists, plans });
   return resolved.ok ? ok({ chosen: resolved.value, fromCache }) : resolved;
 };
 
@@ -480,6 +522,17 @@ const asChoosableLists = (site: SiteSummary): { id: string; name: string; webUrl
   kind: 'lists',
 });
 
+const asChoosablePlan = (plan: Plan): { id: string; name: string; kind: 'plan' } => ({ id: plan.id, name: plan.title, kind: 'plan' });
+
+// The plans are found through the groups, so a group listing that failed already cost them; a
+// plan listing that fails costs the plans and not the picker.
+const listedPlans = async (deps: RunSyncDeps, groups: ReadonlyArray<GroupSummary>): Promise<ReadonlyArray<Plan>> => {
+  const listed = await deps.plans.listPlans(groups);
+  if (listed.ok) return listed.value;
+  deps.logger.warn('plans.unlisted', { cause: listed.error.kind });
+  return [];
+};
+
 const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray<SourceRun>, StepError> => (summary.ok ? ok([summary.value]) : summary);
 
 // Each site is summarised as it lands, so a run over many of them reports along the way. A site that
@@ -519,6 +572,11 @@ const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources):
   }
   for (const site of chosen.lists) {
     const summary = await syncTheLists(deps, input, site);
+    if (!summary.ok) return stoppedAfter(summaries, summary.error);
+    summaries.push(summary.value);
+  }
+  for (const plan of chosen.plans) {
+    const summary = await syncThePlan(deps, input, plan);
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
@@ -585,6 +643,8 @@ const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
   if (notebook !== undefined) return notebook.ok ? oneSummary(await syncTheNotebook(deps, input, notebook.value)) : notebook;
   const listsSite = await listsSiteFromOptions(deps, input);
   if (listsSite !== undefined) return listsSite.ok ? oneSummary(await syncTheLists(deps, input, listsSite.value)) : listsSite;
+  const plan = await planFromOptions(deps, input);
+  if (plan !== undefined) return plan.ok ? oneSummary(await syncThePlan(deps, input, plan.value)) : plan;
   const picked = await chooseSite(deps, input);
   if (!picked.ok) return picked;
   const { chosen, fromCache } = picked.value;

@@ -21,6 +21,11 @@ import { createSyncNotebook } from '../use-cases/sync-notebook.ts';
 import { createListReaderFromCall } from '../infra/list-reader-marcel.ts';
 import type { ListReader } from '../use-cases/ports/list-reader.ts';
 import { createSyncLists } from '../use-cases/sync-lists.ts';
+import { createPlanReaderFromCall } from '../infra/plan-reader-marcel.ts';
+import type { PlanReader } from '../use-cases/ports/plan-reader.ts';
+import { createSyncPlan } from '../use-cases/sync-plan.ts';
+import { parsePlanState, planRootName } from '../domain/plan-state.ts';
+import type { Plan } from '../domain/planner.ts';
 import { parseNotebookState, notebookRootName } from '../domain/notebook-state.ts';
 import type { Notebook } from '../domain/onenote.ts';
 import type { ChannelSummary, TeamReader, TeamSummary } from '../use-cases/ports/team-reader.ts';
@@ -73,6 +78,7 @@ export type DepOverrides = {
   readonly calendar?: CalendarReader;
   readonly notebook?: NotebookReader;
   readonly list?: ListReader;
+  readonly plan?: PlanReader;
   readonly ocr?: Ocr;
   readonly prompt?: Prompt;
   readonly clock?: Clock;
@@ -107,6 +113,17 @@ const savedChannelsFrom =
     const parsed = parseJson(text.value);
     const state = parsed.ok ? parseTeamState(parsed.value) : parsed;
     return state.ok ? Object.entries(state.value.channels).map(([id, channel]) => ({ id, name: channel.name })) : [];
+  };
+
+// The plan as its own state file recorded it, found the way a notebook is.
+const savedPlanFrom =
+  (files: Files, kbRoot: string) =>
+  async (source: { readonly id: string; readonly name: string }): Promise<Plan | undefined> => {
+    const text = await files.readText(`${kbRoot}/${planRootName(source.name)}/.sync-state.json`);
+    if (!text.ok) return undefined;
+    const parsed = parseJson(text.value);
+    const state = parsed.ok ? parsePlanState(parsed.value) : parsed;
+    return state.ok && state.value.plan.id === source.id ? state.value.plan : undefined;
   };
 
 // The notebook as its own state file recorded it, site and all. Read from the plain folder the name
@@ -214,6 +231,8 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const syncNotebook = createSyncNotebook({ reader: notebook, files, clock, logger, progress, kbRoot: config.kbRoot });
   const list = overrides.list ?? createListReaderFromCall(createMarcelCall(api));
   const syncLists = createSyncLists({ reader: list, files, clock, logger, progress, kbRoot: config.kbRoot });
+  const plan = overrides.plan ?? createPlanReaderFromCall(createMarcelCall(api));
+  const syncPlan = createSyncPlan({ reader: plan, files, clock, logger, progress, kbRoot: config.kbRoot });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
@@ -235,6 +254,9 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     syncCalendar,
     syncNotebook,
     syncLists,
+    syncPlan,
+    plans: plan,
+    savedPlan: savedPlanFrom(files, config.kbRoot),
     notebooks: notebook,
     savedNotebook: savedNotebookFrom(files, config.kbRoot),
     groups: group,
