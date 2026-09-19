@@ -88,6 +88,12 @@ describe('reading the sync state left by a previous run', () => {
     });
   });
 
+  it('a plan is a source like a To Do list, counting its tasks one file each', () => {
+    const state = { source: { kind: 'plan', id: 'plan-1', name: 'Offsite 2026' }, lastRun: '2026-09-12T09:00:00Z', tasks: { a: {}, b: {}, c: {} } };
+
+    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'plan', id: 'plan-1', name: 'Offsite 2026', lastRun: '2026-09-12T09:00:00Z', fileCount: 3 } });
+  });
+
   it('a site`s lists are a source of their own, counting the lists one table each', () => {
     const state = { source: { kind: 'lists', id: 'site-1', name: 'Espace Contoso' }, lastRun: '2026-09-12T09:00:00Z', lists: { a: {}, b: {} } };
 

@@ -1,7 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 
-export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo' | 'team' | 'people' | 'calendar' | 'notebook' | 'lists';
+export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo' | 'team' | 'people' | 'calendar' | 'notebook' | 'lists' | 'plan';
 
 export type SyncedSource = {
   readonly kind: SourceKind;
@@ -35,7 +35,7 @@ export const sourceKey = (source: { readonly kind: SourceKind; readonly id: stri
 
 type SourceIdentity = { readonly kind: SourceKind; readonly id: string; readonly name: string };
 
-const KINDS: ReadonlyArray<SourceKind> = ['site', 'mailbox', 'group', 'todo', 'team', 'people', 'calendar', 'notebook', 'lists'];
+const KINDS: ReadonlyArray<SourceKind> = ['site', 'mailbox', 'group', 'todo', 'team', 'people', 'calendar', 'notebook', 'lists', 'plan'];
 
 const isSourceKind = (value: string | undefined): value is SourceKind => KINDS.some((kind) => kind === value);
 

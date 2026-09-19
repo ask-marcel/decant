@@ -15,6 +15,7 @@ export const CATEGORY_FOLDER: Readonly<Record<AddressKind, string>> = {
   team: 'Teams',
   notebook: 'OneNote',
   lists: 'SharePoint lists',
+  plan: 'Planner',
 };
 
 // The address is what settles the category, never the display name: a Loop workspace and a team site
