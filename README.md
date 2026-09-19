@@ -16,7 +16,8 @@ lists** (one markdown file per task), the **channels of the Teams you belong to*
 file per post, with its replies beneath it), the **people directory** (one markdown file per
 colleague, plus the org chart), your **Outlook calendar** (one markdown file per event, with what
 it carried beside it), the **OneNote notebooks** of your sites and your own (one markdown file
-per page) and the **lists of your SharePoint sites** (one markdown table per list).
+per page), the **lists of your SharePoint sites** (one markdown table per list) and your
+**Planner plans** (one markdown file per task under its bucket, plus the board as one table).
 
 Graph access goes through [`ask-marcel-office-cli`](https://www.npmjs.com/package/ask-marcel-office-cli)
 used as a library, which owns authentication, paging and document conversion. See
@@ -51,8 +52,9 @@ bun run sync
 
 Lists what you can read, grouped by what it is: the SharePoint sites, the Loop workspaces, your
 OneDrive, the inboxes of the Microsoft 365 groups you belong to, your Microsoft To Do lists, the
-Teams you are a member of, the OneNote notebooks of those sites and your own, and the lists of
-those sites. Each is marked with when it last synced and how much it holds. Pick a
+Teams you are a member of, the OneNote notebooks of those sites and your own, the lists of those
+sites, and the Planner plans of the groups you belong to. Each is marked with when it last synced
+and how much it holds. Pick a
 number and one or more libraries (or, for a Team, one or more channels), press `m` for your
 mailbox, `c` for your calendar or `p` for the people directory, and it syncs.
 
@@ -90,6 +92,7 @@ clear message instead of waiting for input.
 | `--team <name>` | Sync every channel of one Team without the picker, by its name or its id |
 | `--notebook <name>` | Sync one OneNote notebook without the picker, by its name or its id |
 | `--lists <site>` | Sync the lists of one SharePoint site without the picker, by its name, its id or its address |
+| `--plan <title>` | Sync one Planner plan without the picker, by its title among the plans listed or by its id |
 | `--since <day>` | With `--mailbox` or `--calendar`, only conversations arrived or events starting since this day (`2026-01-31`) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
@@ -142,6 +145,11 @@ kb/
   SharePoint lists/<Site>/
     .sync-state.json                every list filed, and a fingerprint of what its table was made of
     Projects.md                     one table per list
+  Planner/<Plan>/
+    .sync-state.json                every task filed, and the etags its page was made from
+    _board.md                       the whole plan as one table, linking each task
+    <Bucket>/
+      Book the venue.md             one task, under the lane it sits in
   Teams/<Team>/
     .sync-state.json                one delta cursor per channel, and every post filed
     <Channel>/
@@ -545,6 +553,59 @@ Lists have no delta, so every run reads every list again and rewrites a table on
 `lastModifiedDateTime` moved, a row came or went, or the columns changed. A list renamed is written
 afresh and the old table goes to `_archive/`, a list gone from the site goes there too and is named
 in the report, and a list whose rows cannot be read keeps its table on disk as it was.
+
+### What a Planner sync writes
+
+One file per task under the bucket it sits in, since a plan is a board and the lanes are how a
+person reads it, plus `_board.md`, the whole plan as one table:
+
+```yaml
+---
+source: https://planner.cloud.microsoft/webui/plan/<plan>/view/board/task/<task>
+plan: Offsite 2026
+bucket: To do
+progress: in progress
+priority: urgent
+assigned_to:
+  - Jane Doe
+  - Sam Lee
+start: "2026-09-01"
+due: "2026-09-30"
+created: "2026-08-20T09:12:00Z"
+created_by: Jane Doe
+synced_at: "2026-09-12T14:00:00Z"
+---
+
+# Book the venue
+
+Three rooms, one with a projector.
+
+## Checklist
+
+- [x] Ask for a quote
+- [ ] Sign the contract
+
+## References
+
+- [venues.xlsx](<https://contoso.sharepoint.com/sites/x/Shared Documents/venues.xlsx>)
+```
+
+Progress is Planner's three words, priority its four bands (`medium` left unsaid, being the
+default), dates are days, and assignees are named through one directory read per person per run.
+Labels are left out: their names live in the plan's details, which the library does not reach yet.
+
+The plans offered are the ones Graph lists for you and those of every group you belong to, one
+call per group. On the tenant this was built against your own listing answers nothing and the
+groups hold the plans, and the group route is a command the library does not have yet
+([docs/request-group-planner-plans.md](docs/request-group-planner-plans.md)); until it lands the
+picker shows no plans, and `--plan <id>` reaches one all the same, the id being what the address
+bar shows.
+
+Tasks have no delta, so every run lists the buckets and the tasks again and reads every task's
+details, the description having an etag of its own that the card does not carry; a task is
+rewritten when either etag moved or its page belongs under another lane now, put aside when it
+left the plan, and the board is drawn again whenever any page was. A plan with hundreds of tasks
+costs hundreds of calls a run.
 
 ### What a Teams sync writes
 
