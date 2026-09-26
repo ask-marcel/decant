@@ -59,6 +59,9 @@ import { createWriteGlobalReport } from '../use-cases/write-global-report.ts';
 import { createSyncSite, resolveSite } from '../use-cases/sync-site.ts';
 import type { SiteCache } from '../domain/site-cache.ts';
 import { parseSiteCache, serializeSiteCache } from '../domain/site-cache.ts';
+import { SINCE_SHAPE, parseSettings, serializeSettings } from '../domain/sync-window.ts';
+import { err, ok } from '../domain/result.ts';
+import type { RunSyncDeps } from '../use-cases/run-sync.ts';
 import type { Config } from './config.ts';
 
 export type BuiltDeps = {
@@ -157,6 +160,28 @@ const siteCacheAt = (files: Files, kbRoot: string, clock: Clock): SiteCacheStore
     await files.writeText(`${kbRoot}/${SITE_CACHE_FILE}`, serializeSiteCache(sites, clock.nowIso()));
   },
 });
+
+// Kept beside the knowledge base, like the list of sites: clearing `kb/` starts over, and the next run
+// asks again how far back to reach. Unlike that list it is read strictly, since a day mistyped by
+// hand must stop a run rather than let it sync everything.
+const SINCE_FILE = '.decant.json';
+
+const sinceAt = (files: Files, logger: Logger, kbRoot: string): Pick<RunSyncDeps, 'storedSince' | 'rememberSince'> => {
+  const path = `${kbRoot}/${SINCE_FILE}`;
+  return {
+    storedSince: async () => {
+      const text = await files.readText(path);
+      if (!text.ok) return text.error.kind === 'not-found' ? ok(undefined) : err({ step: 'readSince', cause: text.error.kind, message: text.error.message });
+      const since = parseSettings(text.value);
+      return since.ok ? since : err({ step: 'readSince', cause: since.error.kind, message: `${path} does not say ${SINCE_SHAPE}; run with --since to set it again` });
+    },
+    // A reach that cannot be kept is asked for again next run, so the run itself goes on.
+    rememberSince: async (since) => {
+      const written = await files.writeText(path, serializeSettings(since));
+      if (!written.ok) logger.warn('since.unkept', { cause: written.error.kind });
+    },
+  };
+};
 
 export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDeps => {
   const logger = overrides.logger ?? createWinstonLogger(config.logLevel);
@@ -265,6 +290,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     savedChannels: savedChannelsFrom(files, config.kbRoot),
     cachedSites,
     rememberSites,
+    ...sinceAt(files, logger, config.kbRoot),
     writeGlobalReport,
   });
   return { logger, runSync };

@@ -68,6 +68,12 @@ const run = async (
     failing?: ReadonlyArray<FailingKind>;
     // A report that could not be written, so there is no file to point the operator at.
     unreported?: boolean;
+    // The reach an earlier run kept, all unless a test says otherwise, so no other test is asked for one.
+    stored?: string;
+    // No reach was ever kept: the first run.
+    firstRun?: boolean;
+    // The file keeping the reach says something that is not one.
+    unreadableSince?: boolean;
   } = {}
 ): Promise<{
   calls: SyncSiteInput[];
@@ -89,6 +95,7 @@ const run = async (
   cause?: string;
   summaries?: ReadonlyArray<SourceRun>;
   remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>>;
+  rememberedSince: string[];
   reader: ReturnType<typeof createDriveReaderFake>;
 }> => {
   const calls: SyncSiteInput[] = [];
@@ -102,6 +109,7 @@ const run = async (
   const planRuns: string[] = [];
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
+  const rememberedSince: string[] = [];
   const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }> = [];
   const prompt = createPromptFake(answers);
   const logger = createLoggerFake();
@@ -175,6 +183,13 @@ const run = async (
     },
     savedPlan: async () => seeds.savedPlan,
     cachedSites: async () => seeds.cached,
+    storedSince: async () => {
+      if (seeds.unreadableSince === true) return err({ step: 'readSince', cause: 'bad-since', message: 'kb/.decant.json does not say a day like 2026-01-31, or all' });
+      return ok(seeds.firstRun === true ? undefined : (seeds.stored ?? 'all'));
+    },
+    rememberSince: async (since) => {
+      rememberedSince.push(since);
+    },
     rememberSites: async (listed) => {
       remembered.push(listed);
     },
@@ -216,6 +231,7 @@ const run = async (
     cause: result.ok ? undefined : result.error.cause,
     summaries: result.ok ? result.value : undefined,
     remembered,
+    rememberedSince,
     reader,
   };
 };
@@ -1012,6 +1028,8 @@ describe('when the knowledge base itself cannot be read', () => {
       savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
+      storedSince: async () => ok('all'),
+      rememberSince: async () => undefined,
       syncMailbox: async () => ok(SOURCE_RUN),
     });
 
@@ -1049,6 +1067,8 @@ describe('when the knowledge base itself cannot be read', () => {
       syncMailbox: async () => ok(SOURCE_RUN),
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
+      storedSince: async () => ok('all'),
+      rememberSince: async () => undefined,
     });
 
     expect((await runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false })).ok).toBe(false);
@@ -1113,6 +1133,8 @@ describe('when one site in a refresh fails', () => {
       savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
+      storedSince: async () => ok('all'),
+      rememberSince: async () => undefined,
       syncMailbox: async () => ok(SOURCE_RUN),
     });
 
@@ -1268,6 +1290,8 @@ describe('when a source run fails after it began', () => {
       savedDrives: async () => [],
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
+      storedSince: async () => ok('all'),
+      rememberSince: async () => undefined,
       syncMailbox: async () => ({ ok: false, error: { step: 'mailbox', cause: 'auth', message: 'token expired' } }),
     });
 
@@ -1312,6 +1336,8 @@ describe('when a source run fails after it began', () => {
       savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
+      storedSince: async () => ok('all'),
+      rememberSince: async () => undefined,
       syncMailbox: async () => ({ ok: false, error: { step: 'mailbox', cause: 'auth', message: 'token expired' } }),
     });
 
@@ -1392,6 +1418,8 @@ describe('pointing a reader at the report a run leaves behind', () => {
       savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
+      storedSince: async () => ok('all'),
+      rememberSince: async () => undefined,
       syncMailbox: async () => ok(SOURCE_RUN),
       writeGlobalReport: async ({ ran, stopped }) => {
         reported.push({ ran, stopped });
@@ -1434,6 +1462,8 @@ describe('pointing a reader at the report a run leaves behind', () => {
       savedDrives: async () => [{ id: 'b!one', name: 'Documents' }],
       cachedSites: async () => undefined,
       rememberSites: async () => undefined,
+      storedSince: async () => ok('all'),
+      rememberSince: async () => undefined,
       syncMailbox: async () => ok(SOURCE_RUN),
       writeGlobalReport: async ({ ran }) => {
         reported.push({ ran });
@@ -1510,4 +1540,116 @@ describe('stopping where a source fails, and nowhere else', () => {
       expect(planRuns).toEqual([]);
     });
   }
+});
+
+describe('reaching back as far as the first run was told to', () => {
+  const ASKED = 'Since (a day like 2026-01-31, or all):';
+  const CALENDAR_SYNCED = { kind: 'calendar' as const, id: 'calendar', name: 'Calendar', lastRun: '2026-09-12T09:00:00Z', fileCount: 300 };
+
+  it('a first run asks how far back to reach once a source is chosen, keeps the answer, and hands it to the source', async () => {
+    const { prompt, mailboxRuns, rememberedSince } = await run(['m', '2025-01-01'], {}, { firstRun: true });
+
+    expect(prompt.asked).toEqual(['Source:', ASKED]);
+    expect(prompt.shown).toContain(
+      [
+        '',
+        'How far back should decant reach? From this day on it syncs mail, group inboxes, Teams posts,',
+        'the calendar, library files and OneNote pages; To Do, Planner, lists and people always come whole.',
+        'The answer is kept for every later run; run with --since <day|all> to change it.',
+      ].join('\n')
+    );
+    expect(mailboxRuns).toHaveLength(1);
+    expect(mailboxRuns[0]?.since).toBe('2025-01-01');
+    expect(rememberedSince).toEqual(['2025-01-01']);
+  });
+
+  it('answering all keeps all, and the source is handed no day', async () => {
+    const { mailboxRuns, rememberedSince } = await run(['m', 'all'], {}, { firstRun: true });
+
+    expect(mailboxRuns).toHaveLength(1);
+    expect(mailboxRuns[0]?.since).toBeUndefined();
+    expect(rememberedSince).toEqual(['all']);
+  });
+
+  it('an answer that is not a day is asked again, and an answer of nothing stops the run and keeps nothing', async () => {
+    const again = await run(['m', 'last week', '2025-01-01'], {}, { firstRun: true });
+
+    expect(again.prompt.asked).toEqual(['Source:', ASKED, ASKED]);
+    expect(again.prompt.shown).toContain('Not a day: last week. Answer with a day like 2026-01-31, or all.');
+    expect(again.mailboxRuns[0]?.since).toBe('2025-01-01');
+
+    const stopped = await run(['m', ''], {}, { firstRun: true });
+
+    expect(stopped).toMatchObject({ ok: false, step: 'pickSince', cause: 'bad-choice', error: 'answer with a day like 2026-01-31, or all' });
+    expect(stopped.mailboxRuns).toHaveLength(0);
+    expect(stopped.rememberedSince).toEqual([]);
+  });
+
+  it('quitting the picker asks nothing more and keeps nothing', async () => {
+    const { prompt, rememberedSince } = await run(['q'], {}, { firstRun: true });
+
+    expect(prompt.asked).toEqual(['Source:']);
+    expect(rememberedSince).toEqual([]);
+  });
+
+  it('a kept reach is used without asking', async () => {
+    const { prompt, calendarRuns, rememberedSince } = await run(['c'], {}, { stored: '2024-06-01' });
+
+    expect(prompt.asked).toEqual(['Source:']);
+    expect(calendarRuns).toEqual([{ since: '2024-06-01' }]);
+    expect(rememberedSince).toEqual([]);
+  });
+
+  it('--since replaces the kept reach and is kept for the runs after; a dry run uses a reach, named or answered, and keeps nothing', async () => {
+    const moved = await run([], { mailbox: true, since: '2023-01-01' }, { stored: '2024-06-01' });
+
+    expect(moved.mailboxRuns[0]?.since).toBe('2023-01-01');
+    expect(moved.rememberedSince).toEqual(['2023-01-01']);
+
+    const dry = await run([], { mailbox: true, since: 'all', dryRun: true }, { stored: '2024-06-01' });
+
+    expect(dry.mailboxRuns).toHaveLength(1);
+    expect(dry.mailboxRuns[0]?.since).toBeUndefined();
+    expect(dry.rememberedSince).toEqual([]);
+
+    const asked = await run(['m', '2025-01-01'], { dryRun: true }, { firstRun: true });
+
+    expect(asked.mailboxRuns[0]?.since).toBe('2025-01-01');
+    expect(asked.rememberedSince).toEqual([]);
+  });
+
+  it('a first run that uses --since in the picker is not asked again', async () => {
+    const { prompt, calendarRuns } = await run(['c'], { since: '2025-03-01' }, { firstRun: true });
+
+    expect(prompt.asked).toEqual(['Source:']);
+    expect(calendarRuns).toEqual([{ since: '2025-03-01' }]);
+  });
+
+  it('update, and a source named on the command line, never ask: they take the kept reach, or everything when none was kept', async () => {
+    const updated = await run([], { command: 'update' }, { firstRun: true, synced: [CALENDAR_SYNCED] });
+
+    expect(updated.prompt.asked).toEqual([]);
+    expect(updated.calendarRuns).toHaveLength(1);
+    expect(updated.calendarRuns[0]?.since).toBeUndefined();
+
+    const named = await run([], { calendar: true }, { stored: '2024-06-01' });
+
+    expect(named.prompt.asked).toEqual([]);
+    expect(named.calendarRuns).toEqual([{ since: '2024-06-01' }]);
+  });
+
+  it('a kept reach that cannot be read stops the run before anything is synced, rather than syncing everything', async () => {
+    const stopped = await run([], { command: 'update' }, { unreadableSince: true, synced: [CALENDAR_SYNCED] });
+
+    expect(stopped).toMatchObject({ ok: false, step: 'readSince', cause: 'bad-since' });
+    expect(stopped.calendarRuns).toHaveLength(0);
+  });
+
+  it('--since mends a kept reach that cannot be read, without reading it', async () => {
+    const mended = await run([], { calendar: true, since: '2025-01-01' }, { unreadableSince: true });
+
+    expect(mended.ok).toBe(true);
+    expect(mended.calendarRuns).toEqual([{ since: '2025-01-01' }]);
+    expect(mended.rememberedSince).toEqual(['2025-01-01']);
+  });
 });

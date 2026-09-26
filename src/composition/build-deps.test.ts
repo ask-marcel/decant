@@ -319,3 +319,65 @@ describe('wiring the command together', () => {
     expect(await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false })).toEqual({ ok: true, value: [] });
   });
 });
+
+describe('keeping how far back the runs reach', () => {
+  const RUN = { command: 'sync' as const, driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false };
+
+  const wired = (files: ReturnType<typeof createFilesFake>, prompt: ReturnType<typeof createPromptFake>, logger = createLoggerFake()): ReturnType<typeof buildDeps> =>
+    buildDeps(configFor({}), {
+      files,
+      prompt,
+      logger,
+      reader: createDriveReaderFake(),
+      mail: createMailReaderFake(),
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
+      people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
+      notebook: createNotebookReaderFake(),
+      list: createListReaderFake(),
+      plan: createPlanReaderFake(),
+      ocr: createOcrFake(),
+      clock: createClockFake(),
+    });
+
+  it('the answer a first run is given is kept beside the knowledge base, and the next run reads it without asking', async () => {
+    const files = createFilesFake({ directories: { kb: [] } });
+
+    await wired(files, createPromptFake(['m', '2025-01-01'])).runSync(RUN);
+
+    expect(files.written.get('kb/.decant.json')).toBe('{\n  "since": "2025-01-01"\n}\n');
+
+    const next = createPromptFake(['m']);
+    await wired(files, next).runSync(RUN);
+
+    expect(next.asked).toEqual(['Source:']);
+  });
+
+  it('a kept reach that cannot be read stops the run and names the file to mend, and a file that cannot be opened says why', async () => {
+    const mistyped = createFilesFake({ directories: { kb: [] }, texts: { 'kb/.decant.json': '{ "since": "2025/01/01" }' } });
+
+    expect(await wired(mistyped, createPromptFake()).runSync({ ...RUN, command: 'update' })).toEqual({
+      ok: false,
+      error: { step: 'readSince', cause: 'bad-since', message: 'kb/.decant.json does not say a day like 2026-01-31, or all; run with --since to set it again' },
+    });
+
+    const locked = createFilesFake({ failReadWith: { kind: 'read-failed', path: 'kb/.decant.json', message: 'permission denied' } });
+
+    expect(await wired(locked, createPromptFake()).runSync({ ...RUN, command: 'update' })).toMatchObject({
+      ok: false,
+      error: { step: 'readSince', cause: 'read-failed', message: 'permission denied' },
+    });
+  });
+
+  it('a reach that cannot be kept is logged and the run goes on with it', async () => {
+    const files = createFilesFake({ directories: { kb: [] }, failWritesMatching: '.decant.json' });
+    const logger = createLoggerFake();
+
+    const outcome = await wired(files, createPromptFake(), logger).runSync({ ...RUN, command: 'update', since: '2025-01-01' });
+
+    expect(outcome.ok).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'since.unkept', meta: { cause: 'write-failed' } });
+  });
+});

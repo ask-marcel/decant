@@ -2,6 +2,7 @@ import type { PickerRow } from '../domain/picker.ts';
 import type { AddressKind } from '../domain/address-kind.ts';
 import { kindOf } from '../domain/address-kind.ts';
 import { CATEGORY_FOLDER } from '../domain/kb-category.ts';
+import { SINCE_SHAPE } from '../domain/sync-window.ts';
 import type { RunSummary } from '../use-cases/sync-site.ts';
 
 const files = (count: number): string => (count === 1 ? '1 file' : `${count} files`);
@@ -70,3 +71,15 @@ export const renderSummary = (name: string, summary: RunSummary, dryRun: boolean
 // already said so, and a line pointing at an empty report wastes the last thing on screen.
 export const renderReportPointer = (left: { readonly skipped: number; readonly failed: number }, path: string): string =>
   `${left.failed} could not be read, ${left.skipped} left out. See ${path}`;
+
+// Asked once, by the first run that has work to do, and kept for every run after it: the text says
+// what the day leaves out and how to move it, since nothing will ask again.
+export const renderSinceQuestion = (): string =>
+  [
+    '',
+    'How far back should decant reach? From this day on it syncs mail, group inboxes, Teams posts,',
+    'the calendar, library files and OneNote pages; To Do, Planner, lists and people always come whole.',
+    'The answer is kept for every later run; run with --since <day|all> to change it.',
+  ].join('\n');
+
+export const renderSinceRefused = (answer: string): string => `Not a day: ${answer}. Answer with ${SINCE_SHAPE}.`;

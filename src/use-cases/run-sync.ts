@@ -8,7 +8,16 @@ import { MAILBOX_ID, MAILBOX_NAME } from '../domain/mail-state.ts';
 import { PEOPLE_ID, PEOPLE_NAME } from '../domain/people-state.ts';
 import { CALENDAR_ID, CALENDAR_NAME } from '../domain/calendar-state.ts';
 import { sourceKey } from '../domain/sync-state.ts';
-import { renderChannelPicker, renderLibraryPicker, renderReportPointer, renderSitePicker, renderSummary } from '../presenter/render-picker.ts';
+import { SINCE_SHAPE, dayOf, parseSince } from '../domain/sync-window.ts';
+import {
+  renderChannelPicker,
+  renderLibraryPicker,
+  renderReportPointer,
+  renderSinceQuestion,
+  renderSinceRefused,
+  renderSitePicker,
+  renderSummary,
+} from '../presenter/render-picker.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
 import type { DriveReader, DriveSummary, SiteSummary } from './ports/drive-reader.ts';
 import type { Logger } from './ports/logger.ts';
@@ -45,6 +54,11 @@ export type RunSyncDeps = {
   // What the last run listed, so this one draws its picker at once instead of waiting on Graph.
   readonly cachedSites: () => Promise<SiteCache | undefined>;
   readonly rememberSites: (sites: ReadonlyArray<SiteSummary>) => Promise<void>;
+  // How far back the runs reach, as an earlier run kept it: undefined when none ever was, refused
+  // when the file keeping it says something that is not a reach.
+  readonly storedSince: () => Promise<Result<string | undefined, StepError>>;
+  // Kept for every run after this one. One that cannot be kept is asked for again on the next run.
+  readonly rememberSince: (since: string) => Promise<void>;
   readonly syncMailbox: SyncMailbox;
   readonly syncGroup: SyncGroup;
   readonly syncTodo: SyncTodo;
@@ -99,6 +113,8 @@ export type RunSyncInput = {
   readonly listsSite?: string;
   // The plan to sync, by its title among the plans listed or by its id.
   readonly planId?: string;
+  // How far back to reach, a day or all, as `--since` named it. Kept for every run after this one,
+  // in place of whatever an earlier run kept.
   readonly since?: string;
   // Ignore what was stored and list for real, for when a site is known to be new.
   readonly refresh?: boolean;
@@ -172,7 +188,7 @@ const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, dr
 
 const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('mailbox.started', {});
-  const summary = await deps.syncMailbox({ maxBytes: input.maxBytes, concurrency: input.concurrency, dryRun: input.dryRun, since: input.since });
+  const summary = await deps.syncMailbox({ maxBytes: input.maxBytes, concurrency: input.concurrency, dryRun: input.dryRun, since: dayOf(input.since) });
   if (summary.ok) deps.prompt.show(renderSummary(MAILBOX_NAME, summary.value.summary, input.dryRun));
   return summary;
 };
@@ -186,7 +202,7 @@ const syncThePeople = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
 
 const syncTheCalendar = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('calendar.started', {});
-  const summary = await deps.syncCalendar({ concurrency: input.concurrency, dryRun: input.dryRun, since: input.since });
+  const summary = await deps.syncCalendar({ concurrency: input.concurrency, dryRun: input.dryRun, since: dayOf(input.since) });
   if (summary.ok) deps.prompt.show(renderSummary(CALENDAR_NAME, summary.value.summary, input.dryRun));
   return summary;
 };
@@ -651,10 +667,38 @@ const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
   // Quitting asks for nothing, so it pays for nothing: the stored list stands until a run that
   // actually works, where the listing rides alongside a sync that takes far longer than it does.
   if (chosen === 'quit') return ok([]);
+  const since = input.since === undefined ? await askSince(deps, input) : ok(input.since);
+  if (!since.ok) return since;
   const refreshing = fromCache ? refreshInBackground(deps) : Promise.resolve();
-  const chosenSummaries = await syncChosen(deps, input, chosen);
+  const chosenSummaries = await syncChosen(deps, { ...input, since: since.value }, chosen);
   await refreshing;
   return chosenSummaries;
+};
+
+// `--since` first, kept for the runs after it unless this is a dry run, which keeps nothing; then
+// whatever an earlier run kept. Neither leaves the reach undefined: the picker answers that by
+// asking, and every other way of running with everything, since `update` runs unattended and a
+// source named on the command line is named for a script.
+const knownSince = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<string | undefined, StepError>> => {
+  if (input.since === undefined) return deps.storedSince();
+  if (!input.dryRun) await deps.rememberSince(input.since);
+  return ok(input.since);
+};
+
+// Asked once a source is chosen, so a run that quits at the picker asks and keeps nothing. An answer
+// that is not a reach is asked again; nothing at all stops the run, the way the picker refuses it.
+const askSince = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<string, StepError>> => {
+  deps.prompt.show(renderSinceQuestion());
+  for (;;) {
+    const answer = await deps.prompt.ask(`Since (${SINCE_SHAPE}):`);
+    if (answer === '') return failed('pickSince', 'bad-choice', `answer with ${SINCE_SHAPE}`);
+    const since = parseSince(answer);
+    if (since.ok) {
+      if (!input.dryRun) await deps.rememberSince(since.value);
+      return since;
+    }
+    deps.prompt.show(renderSinceRefused(answer));
+  }
 };
 
 // Every way of choosing sources funnels through here, so the report is written once at the end of a
@@ -662,7 +706,8 @@ const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
 export const createRunSync =
   (deps: RunSyncDeps): RunSync =>
   async (input) => {
-    const summaries = await chooseAndSync(deps, input);
+    const known = await knownSince(deps, input);
+    const summaries: Result<ReadonlyArray<SourceRun>, RunFailure> = known.ok ? await chooseAndSync(deps, { ...input, since: known.value }) : known;
     // A stopped run still reports: the sources it got through wrote their documents, and the file
     // says where it stopped so a short report is not read as a complete one.
     const ran = summaries.ok ? summaries.value : (summaries.error.ran ?? []);
