@@ -22,6 +22,9 @@ export type CalendarState = {
   readonly source: { readonly kind: 'calendar'; readonly id: typeof CALENDAR_ID; readonly name: typeof CALENDAR_NAME };
   readonly lastRun: string;
   readonly deltaLink?: string;
+  // The day the cursor was taken reaching back to, absent when it reached everything. A run reaching
+  // further back than this reads the delta whole again. A file written before this reached everything.
+  readonly since?: string;
   readonly events: Readonly<Record<string, EventRecord>>;
 };
 
@@ -61,7 +64,13 @@ export const parseCalendarState = (raw: unknown): Result<CalendarState, Calendar
   if (!isRecord(source) || readString(source, 'kind') !== 'calendar') return err({ kind: 'malformed', message: 'state is not the calendar' });
   if (raw['version'] !== CALENDAR_STATE_VERSION) return err({ kind: 'malformed', message: `state is version ${String(raw['version'])}, not ${CALENDAR_STATE_VERSION}` });
   const deltaLink = readString(raw, 'deltaLink');
-  return ok({ ...emptyCalendarState(), lastRun: readString(raw, 'lastRun') ?? '', ...(deltaLink === undefined ? {} : { deltaLink }), events: eventsOf(raw['events']) });
+  return ok({
+    ...emptyCalendarState(),
+    lastRun: readString(raw, 'lastRun') ?? '',
+    ...(deltaLink === undefined ? {} : { deltaLink }),
+    since: readString(raw, 'since'),
+    events: eventsOf(raw['events']),
+  });
 };
 
 export const withCursor = (state: CalendarState, deltaLink: string | undefined): CalendarState => ({ ...state, ...(deltaLink === undefined ? {} : { deltaLink }) });

@@ -312,6 +312,62 @@ describe('syncing the calendar', () => {
     expect(stateOf(done.files).deltaLink).toBe('https://graph/delta?token=next');
   });
 
+  // A cursor reports only what changed after it, so a day moved earlier would otherwise never see
+  // the events the narrower read passed over.
+  it('a day moved earlier than the one the cursor was taken under reads the delta whole again, and writes only what it had left out', async () => {
+    const filed = {
+      file: `${ROOT}/2026-09-12/Offsite planning.md`,
+      lastModified: OFFSITE.lastModified,
+      subject: 'Offsite planning',
+      outputs: [`${ROOT}/2026-09-12/Offsite planning.md`],
+    };
+    const state = withEvent({ ...withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), since: '2026-09-11' }, 'a', filed);
+
+    const done = await run({ since: '2026-09-01', files: { texts: { [STATE_PATH]: serializeCalendarState(state) } } });
+
+    expect(done.reader.calls).toContain('eventsDelta:fresh');
+    expect(done.summary.converted).toBe(1);
+    expect(done.files.written.has(`${ROOT}/2026-09-10/Standup.md`)).toBe(true);
+    expect(stateOf(done.files)).toMatchObject({ since: '2026-09-01', deltaLink: 'https://graph/delta?token=next' });
+  });
+
+  it('moving the day earlier reads the old cursor out first, so an event removed since the last run is still put aside', async () => {
+    const gone = {
+      file: `${ROOT}/2026-09-11/Cancelled call.md`,
+      lastModified: '2026-09-01T00:00:00Z',
+      subject: 'Cancelled call',
+      outputs: [`${ROOT}/2026-09-11/Cancelled call.md`],
+    };
+    const state = withEvent({ ...withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), since: '2026-09-11' }, 'gone', gone);
+
+    const done = await run({
+      since: '2026-09-01',
+      reader: { changesFrom: { 'https://graph/delta?token=1': [{ id: 'gone', removed: true }] } },
+      files: { texts: { [STATE_PATH]: serializeCalendarState(state) } },
+    });
+
+    expect(done.reader.calls.filter((call) => call.startsWith('eventsDelta'))).toEqual(['eventsDelta:https://graph/delta?token=1', 'eventsDelta:fresh']);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/2026-09-11/Cancelled call.md`, to: 'kb/_archive/Calendar/2026-09-11/Cancelled call.md' }]);
+    expect(done.summary).toMatchObject({ converted: 2, archived: 1 });
+  });
+
+  it('the same day, or a later one, keeps following the cursor; all widens it, and keeps no day', async () => {
+    const texts = { [STATE_PATH]: serializeCalendarState({ ...withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), since: '2026-09-11' }) };
+
+    for (const since of ['2026-09-11', '2026-09-12']) {
+      const kept = await run({ since, files: { texts } });
+
+      expect(kept.reader.calls).toContain('eventsDelta:https://graph/delta?token=1');
+      expect(kept.reader.calls).not.toContain('eventsDelta:fresh');
+      expect(stateOf(kept.files)).toMatchObject({ since });
+    }
+
+    const everything = await run({ files: { texts } });
+
+    expect(everything.reader.calls).toContain('eventsDelta:fresh');
+    expect('since' in stateOf(everything.files)).toBe(false);
+  });
+
   it('a dry run reads the delta, says how many events it would write, and writes nothing at all', async () => {
     const done = await run({ dryRun: true });
 

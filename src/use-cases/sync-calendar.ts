@@ -20,7 +20,8 @@ import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import { dayIn } from '../domain/zoned-day.ts';
-import type { CalendarReader, EventAttachment } from './ports/calendar-reader.ts';
+import { widens } from '../domain/sync-window.ts';
+import type { CalendarReader, CalendarReaderError, EventAttachment, EventsDelta } from './ports/calendar-reader.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
@@ -261,14 +262,27 @@ const writeChanged = async (deps: SyncCalendarDeps, input: SyncCalendarInput, ca
 };
 
 // The cursor moves only once everything the delta reported has landed: an event that could not be
-// fetched or written is not in the ledger, and a cursor past it would never ask for it again.
-const cursorAfter = (done: Progressing, deltaLink: string | undefined): CalendarState => (done.summary.failed > 0 ? done.state : withCursor(done.state, deltaLink));
+// fetched or written is not in the ledger, and a cursor past it would never ask for it again. The day
+// it was taken reaching back to moves with it, and stays behind with it.
+const cursorAfter = (done: Progressing, deltaLink: string | undefined, since: string | undefined): CalendarState =>
+  done.summary.failed > 0 ? done.state : withCursor({ ...done.state, since }, deltaLink);
 
 const finish = async (deps: SyncCalendarDeps, input: SyncCalendarInput, done: Progressing, deltaLink: string | undefined): Promise<Result<SourceRun, StepError>> => {
-  const saved = await save(deps, cursorAfter(done, deltaLink));
+  const saved = await save(deps, cursorAfter(done, deltaLink, input.since));
   if (!saved.ok) return saved;
   await writeReport(deps, input, calendarRoot(deps.kbRoot), CALENDAR_NAME, done.summary, done.notes);
   return ok({ id: CALENDAR_ID, source: CALENDAR_NAME, summary: done.summary, notes: done.notes });
+};
+
+// A day earlier than the one the cursor was taken under: what the cursor passed over never comes back
+// through it. It is read out first all the same, so what was removed since the last run is still put
+// aside, then the delta is read whole for what the narrower reach passed over; an event already filed
+// is fetched and left be.
+const deltaFor = async (deps: SyncCalendarDeps, state: CalendarState, since: string | undefined): Promise<Result<EventsDelta, CalendarReaderError>> => {
+  const drained = await deps.reader.eventsDelta(state.deltaLink);
+  if (!drained.ok || !widens(state.since, since)) return drained;
+  const whole = await deps.reader.eventsDelta(undefined);
+  return whole.ok ? ok({ ...whole.value, changes: [...drained.value.changes, ...whole.value.changes] }) : whole;
 };
 
 // Once each: a delta can name an event twice when it changed twice while the pages were read, and
@@ -279,7 +293,7 @@ export const createSyncCalendar =
   (deps: SyncCalendarDeps): SyncCalendar =>
   async (input) => {
     const state: CalendarState = { ...(await loadState(deps, `${calendarRoot(deps.kbRoot)}/${CALENDAR_STATE_FILE}`)), version: CALENDAR_STATE_VERSION };
-    const delta = await deps.reader.eventsDelta(state.deltaLink);
+    const delta = await deltaFor(deps, state, input.since);
     if (!delta.ok) return failed('eventsDelta', delta.error.kind, delta.error.message);
     const ids = changedIds(delta.value.changes);
     if (input.dryRun) return ok({ id: CALENDAR_ID, source: CALENDAR_NAME, summary: { ...EMPTY, queued: ids.length }, notes: NO_NOTES });

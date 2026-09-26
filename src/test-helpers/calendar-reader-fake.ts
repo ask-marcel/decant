@@ -6,6 +6,8 @@ export type CalendarReaderSeed = {
   // What the delta answers, and the cursor it hands back.
   readonly changes?: ReadonlyArray<EventChange>;
   readonly deltaLink?: string;
+  // What the delta answers when read on from one cursor, in place of `changes`.
+  readonly changesFrom?: Readonly<Record<string, ReadonlyArray<EventChange>>>;
   // Events keyed by id; one the delta names that is not here fails to read, the way one deleted
   // between the delta and the fetch does.
   readonly events?: Readonly<Record<string, CalendarEvent>>;
@@ -28,7 +30,8 @@ export const createCalendarReaderFake = (seed: CalendarReaderSeed = {}): Calenda
     eventsDelta: async (cursor) => {
       calls.push(`eventsDelta:${cursor ?? 'fresh'}`);
       if (seed.failDelta !== undefined) return err(seed.failDelta);
-      return ok(seed.deltaLink === undefined ? { changes: seed.changes ?? [] } : { changes: seed.changes ?? [], deltaLink: seed.deltaLink });
+      const changes = (cursor === undefined ? undefined : seed.changesFrom?.[cursor]) ?? seed.changes ?? [];
+      return ok(seed.deltaLink === undefined ? { changes } : { changes, deltaLink: seed.deltaLink });
     },
     event: async (eventId) => {
       calls.push(`event:${eventId}`);
