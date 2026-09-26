@@ -164,6 +164,7 @@ const run = async (
     },
     syncNotebook: async (input) => {
       notebookRuns.push(input.notebook.name);
+      reached.push({ kind: 'notebook', since: input.since });
       if (fails('notebook')) return busy('notebook');
       return ok({ ...SOURCE_RUN, id: input.notebook.id, source: input.notebook.name });
     },
@@ -1677,5 +1678,13 @@ describe('handing the reach to every source that keeps a history', () => {
     const { calls } = await run([], { siteId: 'contoso,1,2', driveIds: ['b!one'] }, { stored: '2025-01-01' });
 
     expect(calls.map((call) => call.since)).toEqual(['2025-01-01']);
+  });
+
+  it('a notebook is handed the kept day', async () => {
+    const notebook = { id: 'nb1', name: 'Leadership Notebook', webUrl: 'https://tenant.sharepoint.com/nb', site: undefined };
+
+    const { reached } = await run([], { notebookId: 'nb1' }, { stored: '2025-01-01', notebooks: [notebook] });
+
+    expect(reached).toEqual([{ kind: 'notebook', since: '2025-01-01' }]);
   });
 });

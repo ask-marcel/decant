@@ -35,13 +35,13 @@ const SECTIONS = {
 const PAGES = { 'sec-m': [page('a', 'Kick-off', '2026-09-01T10:00:00Z'), page('b', 'Retro', '2026-09-02T10:00:00Z')], 'sec-b': [page('c', 'Q3', '2026-09-03T10:00:00Z')] };
 
 const run = async (
-  seeds: { reader?: NotebookReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number } = {}
+  seeds: { reader?: NotebookReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; since?: string } = {}
 ): Promise<{ summary: RunSummary; source: string; notes: RunNotes; files: FilesFake; logger: LoggerFake; reader: NotebookReaderFake; ok: boolean; error?: StepError }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
   const reader = createNotebookReaderFake({ sections: SECTIONS, pages: PAGES, ...seeds.reader });
   const syncNotebook = createSyncNotebook({ reader, files, clock: createClockFake('2026-09-12T14:00:00Z'), logger, progress: createProgressFake(), kbRoot: 'kb' });
-  const outcome = await syncNotebook({ notebook: NOTEBOOK, dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4 });
+  const outcome = await syncNotebook({ notebook: NOTEBOOK, dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4, since: seeds.since });
   const empty = {
     summary: { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 },
     source: NOTEBOOK.name,
@@ -236,5 +236,19 @@ describe('syncing a OneNote notebook', () => {
     const logged = JSON.stringify(done.logger.calls);
     expect(logged).not.toContain('Retro');
     expect(logged).not.toContain('Kick-off');
+  });
+});
+
+describe('reaching back only as far as the day', () => {
+  const DATED = { 'sec-m': [page('a', 'Kick-off', '2024-05-01T10:00:00Z'), page('b', 'Retro', '2026-09-02T10:00:00Z')], 'sec-b': [] };
+
+  it('pages last changed before the day are left out, and come in once the day moves earlier, without writing the rest again', async () => {
+    const narrow = await run({ reader: { pages: DATED }, since: '2025-01-01' });
+
+    expect(narrow.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/Meetings/Retro.md`]);
+
+    const wider = await run({ reader: { pages: DATED }, files: { texts: { [STATE_PATH]: narrow.files.written.get(STATE_PATH) ?? '' } }, since: '2024-01-01' });
+
+    expect(wider.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/Meetings/Kick-off.md`]);
   });
 });

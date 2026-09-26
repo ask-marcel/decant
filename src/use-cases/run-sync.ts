@@ -321,7 +321,7 @@ const notebookFromOptions = async (deps: RunSyncDeps, input: RunSyncInput, sites
 
 const syncTheNotebook = async (deps: RunSyncDeps, input: RunSyncInput, notebook: Notebook): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('notebook.started', { notebook: notebook.id });
-  const summary = await deps.syncNotebook({ notebook, concurrency: input.concurrency, dryRun: input.dryRun });
+  const summary = await deps.syncNotebook({ notebook, concurrency: input.concurrency, dryRun: input.dryRun, since: dayOf(input.since) });
   if (summary.ok) deps.prompt.show(renderSummary(notebook.name, summary.value.summary, input.dryRun));
   return summary;
 };

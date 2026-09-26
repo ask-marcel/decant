@@ -38,7 +38,8 @@ export type SyncNotebookDeps = {
   readonly kbRoot: string;
 };
 
-export type SyncNotebookInput = { readonly notebook: Notebook; readonly dryRun: boolean; readonly concurrency: number };
+// Only pages last changed on or after `since` are written; absent, every page is.
+export type SyncNotebookInput = { readonly notebook: Notebook; readonly dryRun: boolean; readonly concurrency: number; readonly since?: string };
 
 export type SyncNotebook = (input: SyncNotebookInput) => Promise<Result<SourceRun, StepError>>;
 
@@ -189,7 +190,7 @@ export const createSyncNotebook =
     const sections = await deps.reader.sections(input.notebook);
     if (!sections.ok) return failed('listSections', sections.error.kind, sections.error.message);
     const listing = await listPages(deps, input.notebook, sections.value);
-    const work = notebookWorklist({ ...state, version: NOTEBOOK_STATE_VERSION }, listing.pages, listing.unreadSections);
+    const work = notebookWorklist({ ...state, version: NOTEBOOK_STATE_VERSION }, listing.pages, listing.unreadSections, input.since);
     deps.logger.info('notebook.listed', { notebook: input.notebook.id, sections: sections.value.length, pages: listing.pages.length, changed: work.write.length });
     if (input.dryRun) return ok({ id: input.notebook.id, source: input.notebook.name, summary: { ...EMPTY, queued: work.write.length }, notes: NO_NOTES });
     deps.progress.start(work.write.length, input.notebook.name);

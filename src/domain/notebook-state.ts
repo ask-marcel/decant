@@ -4,6 +4,7 @@ import type { SafeRelPath } from './kb-path.ts';
 import type { Notebook, NotebookPage, NotebookSection } from './onenote.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
+import { isBefore } from './sync-window.ts';
 
 export const NOTEBOOK_STATE_VERSION = 1;
 
@@ -99,13 +100,14 @@ export type NotebookWork = { readonly write: ReadonlyArray<ListedPage>; readonly
 // What the run owes, from the whole listing against the ledger: a new page and a changed one are
 // written, oldest change first so a stopped run leaves a prefix; an unchanged one is left alone;
 // a page the notebook no longer lists is put aside, unless its section is one that could not be
-// listed this run, in which case nothing says the page has gone.
-export const notebookWorklist = (state: NotebookState, listed: ReadonlyArray<ListedPage>, unreadSections: ReadonlyArray<string> = []): NotebookWork => {
+// listed this run, in which case nothing says the page has gone. A page last changed before the day
+// is left out; the listing is whole every run, so a day moved earlier brings it in with nothing else.
+export const notebookWorklist = (state: NotebookState, listed: ReadonlyArray<ListedPage>, unreadSections: ReadonlyArray<string> = [], since?: string): NotebookWork => {
   const present = new Set(listed.map((entry) => entry.page.id));
   const unread = new Set(unreadSections);
   return {
     write: listed
-      .filter((entry) => state.pages[entry.page.id]?.lastModified !== entry.page.lastModified)
+      .filter((entry) => state.pages[entry.page.id]?.lastModified !== entry.page.lastModified && !isBefore(entry.page.lastModified, since))
       .sort((left, right) => left.page.lastModified.localeCompare(right.page.lastModified)),
     archive: Object.entries(state.pages).flatMap(([id, record]) => (present.has(id) || unread.has(record.section) ? [] : [{ id, record }])),
   };
