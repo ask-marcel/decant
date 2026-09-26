@@ -925,3 +925,14 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
 - [gotcha] `toEqual([])` passes on `[undefined]`: `toEqual` ignores undefined array items and
   properties. A test asserting that nothing was remembered let a mutant through that remembered
   `undefined`; `toHaveLength(0)` (or `toStrictEqual`) is the emptiness check that can fail.
+
+- [gotcha] Moving a delta source's reach earlier cannot just drop its cursor: a fresh delta lists
+  only what exists now, so anything deleted since the last run is never reported, never archived,
+  and its document stays in `kb/` for good. Read the old cursor out first (its deletions and its
+  changes), then read the source whole, and merge the two by id with the whole read winning
+  (`latestById` in `sync-window.ts`). The mailbox needs no read-out: it never archives on deletion.
+
+- [gotcha] Outlook's events delta returns a recurring series as one `seriesMaster` event whose
+  `start` is the series' first occurrence, not its next. A filter on the day an event starts drops
+  a weekly meeting that began before the day while it is still running, so series masters are
+  exempt (`inReach` in `sync-calendar.ts`).
