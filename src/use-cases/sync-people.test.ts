@@ -38,7 +38,7 @@ const DANA = person('dana', 'Dana Farrow', { title: 'CEO' });
 const JANE = person('jane', 'Jane Doe', { title: 'Head of Operations', manager: { id: 'dana', name: 'Dana Farrow' } });
 const GUEST = person('guest', 'Outside Consultant', { member: false });
 
-const ALL = { id: 'team-all', name: 'MOOV EMPLOYEES' };
+const ALL = { id: 'team-all', name: 'NORTHWIND EMPLOYEES' };
 const LEAD = { id: 'team-lead', name: 'Leadership' };
 
 const ROSTERS = {
@@ -108,7 +108,7 @@ describe('syncing the people directory', () => {
     ]);
     expect(new Set(done.files.written.keys())).toEqual(new Set([`${ROOT}/.sync-state.json`, `${ROOT}/Dana Farrow.md`, `${ROOT}/Jane Doe.md`, `${ROOT}/_org-chart.md`]));
     expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to [Dana Farrow](<Dana Farrow.md>)');
-    expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('teams:\n  - Leadership\n  - MOOV EMPLOYEES');
+    expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('teams:\n  - Leadership\n  - NORTHWIND EMPLOYEES');
     expect(done.files.written.get(`${ROOT}/_org-chart.md`)).toContain('- [Dana Farrow](<Dana Farrow.md>), CEO\n  - [Jane Doe](<Jane Doe.md>), Head of Operations');
     expect(stateOf(done.files).people['jane']).toMatchObject({ file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe' });
   });
@@ -121,7 +121,7 @@ describe('syncing the people directory', () => {
   });
 
   it('a second run reads every profile again and writes only the people whose profile changed', async () => {
-    const teams = { dana: ['MOOV EMPLOYEES', 'Leadership'], jane: ['MOOV EMPLOYEES', 'Leadership'] };
+    const teams = { dana: ['NORTHWIND EMPLOYEES', 'Leadership'], jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
     const state = withPerson(
       withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: fingerprintOf('dana', [DANA, JANE], teams) }),
       'jane',
@@ -136,7 +136,7 @@ describe('syncing the people directory', () => {
   });
 
   it('a run where nobody changed writes nothing but its own state file', async () => {
-    const teams = { dana: ['MOOV EMPLOYEES', 'Leadership'], jane: ['MOOV EMPLOYEES', 'Leadership'] };
+    const teams = { dana: ['NORTHWIND EMPLOYEES', 'Leadership'], jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
     const state = withPerson(
       withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: fingerprintOf('dana', [DANA, JANE], teams) }),
       'jane',
@@ -225,7 +225,7 @@ describe('syncing the people directory', () => {
   });
 
   it('the org chart is drawn again when someone left even if nobody else changed, and a chart that will not write is logged rather than failing the run', async () => {
-    const teams = { dana: ['MOOV EMPLOYEES', 'Leadership'], jane: ['MOOV EMPLOYEES', 'Leadership'] };
+    const teams = { dana: ['NORTHWIND EMPLOYEES', 'Leadership'], jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
     const settled = withPerson(
       withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: fingerprintOf('dana', [DANA, JANE], teams) }),
       'jane',

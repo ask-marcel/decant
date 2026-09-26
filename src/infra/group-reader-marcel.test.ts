@@ -29,7 +29,7 @@ describe('reading a group inbox through the ask-marcel library', () => {
       'list-my-memberships': [
         ok({
           value: [
-            { id: '0d3b-group', displayName: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com', groupTypes: ['Unified'] },
+            { id: '0d3b-group', displayName: 'Northwind Leadership Team', mail: 'NorthwindLeadershipTeam@example.com', groupTypes: ['Unified'] },
             { id: 'sec-group', displayName: 'external file sharing security group', mail: null, groupTypes: [] },
             { id: 'dist-group', displayName: 'A distribution list', mail: 'dist@example.com', groupTypes: [] },
           ],
@@ -37,13 +37,16 @@ describe('reading a group inbox through the ask-marcel library', () => {
       ],
     });
 
-    expect(await reader.listGroups()).toEqual({ ok: true, value: [{ id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' }] });
+    expect(await reader.listGroups()).toEqual({ ok: true, value: [{ id: '0d3b-group', name: 'Northwind Leadership Team', mail: 'NorthwindLeadershipTeam@example.com' }] });
   });
 
   it('a group whose name Graph withheld is offered under its address, so it is still choosable', async () => {
-    const { reader } = readerFor({ 'list-my-memberships': [ok({ value: [{ id: '0d3b-group', mail: 'MOOVLeadershipTeam@example.com', groupTypes: ['Unified'] }] })] });
+    const { reader } = readerFor({ 'list-my-memberships': [ok({ value: [{ id: '0d3b-group', mail: 'NorthwindLeadershipTeam@example.com', groupTypes: ['Unified'] }] })] });
 
-    expect(await reader.listGroups()).toEqual({ ok: true, value: [{ id: '0d3b-group', name: 'MOOVLeadershipTeam@example.com', mail: 'MOOVLeadershipTeam@example.com' }] });
+    expect(await reader.listGroups()).toEqual({
+      ok: true,
+      value: [{ id: '0d3b-group', name: 'NorthwindLeadershipTeam@example.com', mail: 'NorthwindLeadershipTeam@example.com' }],
+    });
   });
 
   it('threads are asked for newest first, which is the only ordering an incremental sweep can use', async () => {

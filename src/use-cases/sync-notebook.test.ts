@@ -13,9 +13,9 @@ import type { StepError } from './ports/step-error.ts';
 import { createSyncNotebook } from './sync-notebook.ts';
 import type { RunNotes, RunSummary } from './sync-site.ts';
 
-const NOTEBOOK: Notebook = { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: 'https://tenant.sharepoint.com/nb', site: { id: 'site-1', name: 'MOOV Leadership' } };
+const NOTEBOOK: Notebook = { id: '1-nb', name: 'Northwind Leadership Notebook', webUrl: 'https://tenant.sharepoint.com/nb', site: { id: 'site-1', name: 'Northwind Leadership' } };
 
-const ROOT = 'kb/OneNote/MOOV Leadership Notebook';
+const ROOT = 'kb/OneNote/Northwind Leadership Notebook';
 const STATE_PATH = `${ROOT}/.sync-state.json`;
 
 const page = (id: string, title: string, lastModified: string): NotebookPage => ({
@@ -126,8 +126,8 @@ describe('syncing a OneNote notebook', () => {
 
     expect(done.summary).toMatchObject({ converted: 3, archived: 1 });
     expect(done.files.moves.map((move) => move.to)).toEqual([
-      'kb/_archive/OneNote/MOOV Leadership Notebook/Old section/Kick-off.md',
-      'kb/_archive/OneNote/MOOV Leadership Notebook/Meetings/Deleted.md',
+      'kb/_archive/OneNote/Northwind Leadership Notebook/Old section/Kick-off.md',
+      'kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Deleted.md',
     ]);
     expect(done.notes.archived).toEqual([{ path: 'Deleted', reason: 'no longer in the notebook' }]);
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Deleted');
@@ -182,7 +182,7 @@ describe('syncing a OneNote notebook', () => {
     expect(done.summary.converted).toBe(3);
     expect(done.files.written.has(STATE_PATH)).toBe(true);
     expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').source.id).toBe('other-nb');
-    expect([...done.files.written.keys()].some((path) => path.startsWith('kb/OneNote/MOOV Leadership Notebook-') && path.endsWith('.sync-state.json'))).toBe(true);
+    expect([...done.files.written.keys()].some((path) => path.startsWith('kb/OneNote/Northwind Leadership Notebook-') && path.endsWith('.sync-state.json'))).toBe(true);
   });
 
   it('a page rewritten under the same file keeps it where it is, a file that will not move aside is logged, and the ledger drops a page whose file is gone', async () => {
@@ -222,7 +222,7 @@ describe('syncing a OneNote notebook', () => {
   it('a notebook whose twin holds the plain folder reads its own suffixed state back on the next run', async () => {
     const twin = serializeNotebookState(emptyNotebookState({ ...NOTEBOOK, id: 'other-nb' }));
     const first = await run({ files: { texts: { [STATE_PATH]: twin } } });
-    const own = [...first.files.written.keys()].find((path) => path.startsWith('kb/OneNote/MOOV Leadership Notebook-') && path.endsWith('.sync-state.json')) ?? '';
+    const own = [...first.files.written.keys()].find((path) => path.startsWith('kb/OneNote/Northwind Leadership Notebook-') && path.endsWith('.sync-state.json')) ?? '';
 
     const second = await run({ files: { texts: { [STATE_PATH]: twin, [own]: first.files.written.get(own) ?? '' } } });
 

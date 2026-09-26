@@ -109,14 +109,14 @@ describe('wiring the command together', () => {
   });
 
   it('a refresh repeats the channels the earlier run recorded for that team, and a team whose record is unreadable refuses rather than guessing', async () => {
-    const statePath = 'kb/Teams/MOOV Leadership/.sync-state.json';
+    const statePath = 'kb/Teams/Northwind Leadership/.sync-state.json';
     const state = JSON.stringify({
       version: 1,
-      source: { kind: 'team', id: 'team-1', name: 'MOOV Leadership' },
+      source: { kind: 'team', id: 'team-1', name: 'Northwind Leadership' },
       lastRun: '2026-09-10T09:00:00Z',
       channels: { 'ch-planning': { name: 'Planning', posts: {} } },
     });
-    const files = createFilesFake({ directories: { kb: ['Teams'], 'kb/Teams': ['MOOV Leadership'] }, texts: { [statePath]: state } });
+    const files = createFilesFake({ directories: { kb: ['Teams'], 'kb/Teams': ['Northwind Leadership'] }, texts: { [statePath]: state } });
     const team = createTeamReaderFake({ deltaLinks: { 'ch-planning': 'https://graph/delta?token=1' } });
     const deps = buildDeps(configFor({}), {
       files,
@@ -138,13 +138,13 @@ describe('wiring the command together', () => {
 
     const summaries = await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
-    expect(summaries.ok && summaries.value.map((source) => source.source)).toEqual(['MOOV Leadership']);
+    expect(summaries.ok && summaries.value.map((source) => source.source)).toEqual(['Northwind Leadership']);
     expect(team.calls).toContain('postsDelta:ch-planning:fresh');
     expect(JSON.parse(files.written.get(statePath) ?? '{}').channels['ch-planning'].deltaLink).toBe('https://graph/delta?token=1');
 
     const unreadable = createFilesFake({
-      directories: { kb: ['Teams'], 'kb/Teams': ['MOOV Leadership'] },
-      texts: { [statePath]: '{"version":99,"source":{"kind":"team","id":"team-1","name":"MOOV Leadership"}}' },
+      directories: { kb: ['Teams'], 'kb/Teams': ['Northwind Leadership'] },
+      texts: { [statePath]: '{"version":99,"source":{"kind":"team","id":"team-1","name":"Northwind Leadership"}}' },
     });
     const refused = buildDeps(configFor({}), {
       files: unreadable,

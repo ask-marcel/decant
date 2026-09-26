@@ -294,43 +294,43 @@ describe('choosing what to sync', () => {
   });
 
   it('the group inboxes are offered under the sites, and a number below them picks one', async () => {
-    const { groupRuns, prompt, logger } = await run(['3'], {}, { groups: [{ id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' }] });
+    const { groupRuns, prompt, logger } = await run(['3'], {}, { groups: [{ id: '0d3b-group', name: 'Northwind Leadership Team', mail: 'NorthwindLeadershipTeam@example.com' }] });
 
-    expect(prompt.shown.join('\n')).toContain('Group inboxes:\n  3) MOOV Leadership Team  (new)');
-    expect(groupRuns).toEqual(['MOOV Leadership Team']);
-    expect(prompt.shown.join('\n')).toContain('MOOV Leadership Team (group inbox): 2 converted');
+    expect(prompt.shown.join('\n')).toContain('Group inboxes:\n  3) Northwind Leadership Team  (new)');
+    expect(groupRuns).toEqual(['Northwind Leadership Team']);
+    expect(prompt.shown.join('\n')).toContain('Northwind Leadership Team (group inbox): 2 converted');
     expect(logger.calls).toContainEqual({ level: 'info', event: 'group.started', meta: { group: '0d3b-group' } });
   });
 
   it('a site and a group taken together are both synced, and the site is not asked about its libraries', async () => {
-    const { calls, groupRuns, prompt } = await run(['1,3'], {}, { groups: [{ id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' }] });
+    const { calls, groupRuns, prompt } = await run(['1,3'], {}, { groups: [{ id: '0d3b-group', name: 'Northwind Leadership Team', mail: 'NorthwindLeadershipTeam@example.com' }] });
 
     expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
-    expect(groupRuns).toEqual(['MOOV Leadership Team']);
+    expect(groupRuns).toEqual(['Northwind Leadership Team']);
     expect(prompt.asked).toEqual(['Source:']);
   });
 
   it('a group named outright is synced without drawing the picker, by its id or its address', async () => {
     const groups = [
       { id: '7a1c-group', name: 'Finance Team', mail: 'FinanceTeam@example.com' },
-      { id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' },
+      { id: '0d3b-group', name: 'Northwind Leadership Team', mail: 'NorthwindLeadershipTeam@example.com' },
     ];
     const byId = await run([], { groupId: '0d3b-group' }, { groups });
-    const byMail = await run([], { groupId: 'MOOVLeadershipTeam@example.com' }, { groups });
+    const byMail = await run([], { groupId: 'NorthwindLeadershipTeam@example.com' }, { groups });
 
-    expect(byId.groupRuns).toEqual(['MOOV Leadership Team']);
-    expect(byMail.groupRuns).toEqual(['MOOV Leadership Team']);
+    expect(byId.groupRuns).toEqual(['Northwind Leadership Team']);
+    expect(byMail.groupRuns).toEqual(['Northwind Leadership Team']);
     expect(byId.prompt.asked).toEqual([]);
     expect(byId.calls).toEqual([]);
   });
 
   it('a group you do not belong to is refused by name rather than syncing something else', async () => {
-    const { ok: succeeded, step, cause, error } = await run([], { groupId: 'support@moovlogistics.com' }, { groups: [] });
+    const { ok: succeeded, step, cause, error } = await run([], { groupId: 'support@example.com' }, { groups: [] });
 
     expect(succeeded).toBe(false);
     expect(step).toBe('findGroup');
     expect(cause).toBe('bad-choice');
-    expect(error).toBe('no group you belong to is support@moovlogistics.com');
+    expect(error).toBe('no group you belong to is support@example.com');
   });
 
   it('a named group whose listing is refused stops the run and names the step, rather than syncing nothing', async () => {
@@ -353,10 +353,10 @@ describe('choosing what to sync', () => {
     const { groupRuns } = await run(
       [],
       { command: 'update' },
-      { synced: [{ kind: 'group', id: '0d3b-group', name: 'MOOV Leadership Team', lastRun: '2026-09-06T09:00:00Z', fileCount: 13 }] }
+      { synced: [{ kind: 'group', id: '0d3b-group', name: 'Northwind Leadership Team', lastRun: '2026-09-06T09:00:00Z', fileCount: 13 }] }
     );
 
-    expect(groupRuns).toEqual(['MOOV Leadership Team']);
+    expect(groupRuns).toEqual(['Northwind Leadership Team']);
   });
 
   it('the To Do lists are offered under the group inboxes, and a number below them picks one', async () => {
@@ -372,11 +372,11 @@ describe('choosing what to sync', () => {
     const { calls, groupRuns, todoRuns } = await run(
       ['1,3,4'],
       {},
-      { groups: [{ id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' }], todoLists: [{ id: 'list-1', name: 'Tasks' }] }
+      { groups: [{ id: '0d3b-group', name: 'Northwind Leadership Team', mail: 'NorthwindLeadershipTeam@example.com' }], todoLists: [{ id: 'list-1', name: 'Tasks' }] }
     );
 
     expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
-    expect(groupRuns).toEqual(['MOOV Leadership Team']);
+    expect(groupRuns).toEqual(['Northwind Leadership Team']);
     expect(todoRuns).toEqual(['Tasks']);
   });
 
@@ -425,34 +425,34 @@ describe('choosing what to sync', () => {
   });
 
   it('the teams are offered under the To Do lists, and picking one asks which of its channels to take', async () => {
-    const { teamRuns, prompt, logger } = await run(['3', '2'], {}, { teams: [{ id: 'team-1', name: 'MOOV Leadership' }] });
+    const { teamRuns, prompt, logger } = await run(['3', '2'], {}, { teams: [{ id: 'team-1', name: 'Northwind Leadership' }] });
 
-    expect(prompt.shown.join('\n')).toContain('Teams:\n  3) MOOV Leadership  (new)');
+    expect(prompt.shown.join('\n')).toContain('Teams:\n  3) Northwind Leadership  (new)');
     expect(prompt.shown.join('\n')).toContain('Channels in this team:\n\n  1) General  (new)\n  2) Planning  (new)');
     expect(prompt.asked).toEqual(['Source:', 'Channels:']);
-    expect(teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['Planning'] }]);
-    expect(prompt.shown).toContain('MOOV Leadership: 2 converted, 0 moved, 0 archived, 0 skipped, 0 failed.');
+    expect(teamRuns).toEqual([{ team: 'Northwind Leadership', channels: ['Planning'] }]);
+    expect(prompt.shown).toContain('Northwind Leadership: 2 converted, 0 moved, 0 archived, 0 skipped, 0 failed.');
     expect(logger.calls).toContainEqual({ level: 'info', event: 'team.started', meta: { teamId: 'team-1', channels: 1 } });
   });
 
   it('a team taken together with another source takes every channel without asking, since choosing them together was the point', async () => {
-    const { calls, teamRuns, prompt } = await run(['1,3'], {}, { teams: [{ id: 'team-1', name: 'MOOV Leadership' }] });
+    const { calls, teamRuns, prompt } = await run(['1,3'], {}, { teams: [{ id: 'team-1', name: 'Northwind Leadership' }] });
 
     expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
-    expect(teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['General', 'Planning'] }]);
+    expect(teamRuns).toEqual([{ team: 'Northwind Leadership', channels: ['General', 'Planning'] }]);
     expect(prompt.asked).toEqual(['Source:']);
   });
 
   it('a team named outright is synced with every channel and no picker, by its name or its id', async () => {
     const teams = [
       { id: 'team-0', name: 'Finance' },
-      { id: 'team-1', name: 'MOOV Leadership' },
+      { id: 'team-1', name: 'Northwind Leadership' },
     ];
     const byId = await run([], { teamId: 'team-1' }, { teams });
-    const byName = await run([], { teamId: 'MOOV Leadership' }, { teams });
+    const byName = await run([], { teamId: 'Northwind Leadership' }, { teams });
 
-    expect(byId.teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['General', 'Planning'] }]);
-    expect(byName.teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['General', 'Planning'] }]);
+    expect(byId.teamRuns).toEqual([{ team: 'Northwind Leadership', channels: ['General', 'Planning'] }]);
+    expect(byName.teamRuns).toEqual([{ team: 'Northwind Leadership', channels: ['General', 'Planning'] }]);
     expect(byId.prompt.asked).toEqual([]);
   });
 
@@ -478,12 +478,12 @@ describe('choosing what to sync', () => {
       [],
       { command: 'update' },
       {
-        synced: [{ kind: 'team', id: 'team-1', name: 'MOOV Leadership', lastRun: '2026-09-10T09:00:00Z', fileCount: 40 }],
+        synced: [{ kind: 'team', id: 'team-1', name: 'Northwind Leadership', lastRun: '2026-09-10T09:00:00Z', fileCount: 40 }],
         savedChannels: [{ id: 'ch-planning', name: 'Planning' }],
       }
     );
 
-    expect(teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['Planning'] }]);
+    expect(teamRuns).toEqual([{ team: 'Northwind Leadership', channels: ['Planning'] }]);
   });
 
   it('a team listing that fails costs the teams and not the picker', async () => {
@@ -495,7 +495,7 @@ describe('choosing what to sync', () => {
   });
 
   it('a team whose channels cannot be listed stops the run naming the step, rather than syncing nothing and calling it done', async () => {
-    const { ok: succeeded, step } = await run(['3'], {}, { teams: [{ id: 'team-1', name: 'MOOV Leadership' }], failChannels: true });
+    const { ok: succeeded, step } = await run(['3'], {}, { teams: [{ id: 'team-1', name: 'Northwind Leadership' }], failChannels: true });
 
     expect(succeeded).toBe(false);
     expect(step).toBe('listChannels');
@@ -560,27 +560,27 @@ describe('choosing what to sync', () => {
   });
 
   it('the notebooks are offered under the teams, found through the sites the picker knows, and a number below them syncs one', async () => {
-    const notebook = { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: '', site: { id: 'contoso,1,2', name: 'Espace Contoso' } };
+    const notebook = { id: '1-nb', name: 'Northwind Leadership Notebook', webUrl: '', site: { id: 'contoso,1,2', name: 'Espace Contoso' } };
     const { notebookRuns, prompt, logger } = await run(['3'], {}, { notebooks: [notebook] });
 
-    expect(prompt.shown.join('\n')).toContain('OneNote:\n  3) MOOV Leadership Notebook  (new)');
-    expect(notebookRuns).toEqual(['MOOV Leadership Notebook']);
-    expect(prompt.shown).toContain('MOOV Leadership Notebook: 2 converted, 0 moved, 0 archived, 0 skipped, 0 failed.');
+    expect(prompt.shown.join('\n')).toContain('OneNote:\n  3) Northwind Leadership Notebook  (new)');
+    expect(notebookRuns).toEqual(['Northwind Leadership Notebook']);
+    expect(prompt.shown).toContain('Northwind Leadership Notebook: 2 converted, 0 moved, 0 archived, 0 skipped, 0 failed.');
     expect(logger.calls).toContainEqual({ level: 'info', event: 'notebook.started', meta: { notebook: '1-nb' } });
   });
 
   it('a notebook named outright is synced without the picker, by its name or its id, and one nobody can read is refused by name', async () => {
     const notebooks = [
       { id: '0-nb', name: 'Finance Notebook', webUrl: '', site: undefined },
-      { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: '', site: undefined },
+      { id: '1-nb', name: 'Northwind Leadership Notebook', webUrl: '', site: undefined },
     ];
-    const byName = await run([], { notebookId: 'MOOV Leadership Notebook' }, { notebooks });
+    const byName = await run([], { notebookId: 'Northwind Leadership Notebook' }, { notebooks });
     const byId = await run([], { notebookId: '1-nb' }, { notebooks });
     const missing = await run([], { notebookId: 'Ghost' }, { notebooks: [] });
 
-    expect(byName.notebookRuns).toEqual(['MOOV Leadership Notebook']);
+    expect(byName.notebookRuns).toEqual(['Northwind Leadership Notebook']);
     expect(byName.prompt.asked).toEqual([]);
-    expect(byId.notebookRuns).toEqual(['MOOV Leadership Notebook']);
+    expect(byId.notebookRuns).toEqual(['Northwind Leadership Notebook']);
     expect(missing.ok).toBe(false);
     expect({ step: missing.step, cause: missing.cause, error: missing.error }).toEqual({ step: 'findNotebook', cause: 'bad-choice', error: 'no notebook you can read is Ghost' });
   });
@@ -594,16 +594,16 @@ describe('choosing what to sync', () => {
   });
 
   it('an update refreshes a notebook from the record its earlier run left, and stops naming the step when the record is gone', async () => {
-    const synced = [{ kind: 'notebook' as const, id: '1-nb', name: 'MOOV Leadership Notebook', lastRun: '2026-09-12T09:00:00Z', fileCount: 12 }];
-    const found = await run([], { command: 'update' }, { synced, savedNotebook: { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: '', site: { id: 's', name: 'S' } } });
+    const synced = [{ kind: 'notebook' as const, id: '1-nb', name: 'Northwind Leadership Notebook', lastRun: '2026-09-12T09:00:00Z', fileCount: 12 }];
+    const found = await run([], { command: 'update' }, { synced, savedNotebook: { id: '1-nb', name: 'Northwind Leadership Notebook', webUrl: '', site: { id: 's', name: 'S' } } });
     const lost = await run([], { command: 'update' }, { synced, savedNotebook: undefined });
 
-    expect(found.notebookRuns).toEqual(['MOOV Leadership Notebook']);
+    expect(found.notebookRuns).toEqual(['Northwind Leadership Notebook']);
     expect(lost.ok).toBe(false);
     expect({ step: lost.step, cause: lost.cause, error: lost.error }).toEqual({
       step: 'savedNotebook',
       cause: 'not-found',
-      error: 'no record of the notebook MOOV Leadership Notebook',
+      error: 'no record of the notebook Northwind Leadership Notebook',
     });
   });
 
@@ -661,12 +661,12 @@ describe('choosing what to sync', () => {
   });
 
   it('a site`s lists chosen beside its libraries and a notebook are each synced once, the lists last, and the run stops where the lists fail', async () => {
-    const notebook = { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: '', site: undefined };
+    const notebook = { id: '1-nb', name: 'Northwind Leadership Notebook', webUrl: '', site: undefined };
     const together = await run(['1,3,5'], {}, { notebooks: [notebook] });
     const stopped = await run(['3,4'], {}, { failLists: true });
 
     expect(together.calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
-    expect(together.notebookRuns).toEqual(['MOOV Leadership Notebook']);
+    expect(together.notebookRuns).toEqual(['Northwind Leadership Notebook']);
     expect(together.listsRuns).toEqual(['Direction']);
     expect(together.prompt.asked).toEqual(['Source:']);
     expect(stopped.ok).toBe(false);

@@ -22,9 +22,9 @@ const readerFor = (
   return { reader, recorded };
 };
 
-const NB = { id: '1-nb', displayName: 'MOOV Leadership Notebook', links: { oneNoteWebUrl: { href: 'https://tenant.sharepoint.com/nb' } } };
+const NB = { id: '1-nb', displayName: 'Northwind Leadership Notebook', links: { oneNoteWebUrl: { href: 'https://tenant.sharepoint.com/nb' } } };
 const MINE: Notebook = { id: 'me-nb', name: 'My notes', webUrl: '', site: undefined };
-const ON_SITE: Notebook = { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: 'https://tenant.sharepoint.com/nb', site: { id: 'site-1', name: 'MOOV Leadership' } };
+const ON_SITE: Notebook = { id: '1-nb', name: 'Northwind Leadership Notebook', webUrl: 'https://tenant.sharepoint.com/nb', site: { id: 'site-1', name: 'Northwind Leadership' } };
 
 describe('reading OneNote through the ask-marcel library', () => {
   it('the notebooks are the signed-in user`s own and every site`s, each site asked in turn, and a site that refuses costs its own notebooks and not the listing', async () => {
@@ -34,7 +34,7 @@ describe('reading OneNote through the ask-marcel library', () => {
     });
 
     const listed = await reader.listNotebooks([
-      { id: 'site-1', name: 'MOOV Leadership' },
+      { id: 'site-1', name: 'Northwind Leadership' },
       { id: 'site-2', name: 'Blocked' },
     ]);
 
@@ -42,7 +42,7 @@ describe('reading OneNote through the ask-marcel library', () => {
       ok: true,
       value: [
         { id: 'me-nb', name: 'My notes', webUrl: '', site: undefined },
-        { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: 'https://tenant.sharepoint.com/nb', site: { id: 'site-1', name: 'MOOV Leadership' } },
+        { id: '1-nb', name: 'Northwind Leadership Notebook', webUrl: 'https://tenant.sharepoint.com/nb', site: { id: 'site-1', name: 'Northwind Leadership' } },
       ],
     });
     expect(recorded.filter((entry) => entry.name === 'list-sharepoint-site-onenote-notebooks').map((entry) => entry.params['siteId'])).toEqual(['site-1', 'site-2']);

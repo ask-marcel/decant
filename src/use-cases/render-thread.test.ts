@@ -63,10 +63,10 @@ describe('writing one conversation as one file', () => {
 
   it('a thread from a group inbox names that group, not the mailbox, so a reader knows where it came from', async () => {
     const conversations = { [CONV]: [message()] };
-    const { files } = await run({ reader: { conversations, bodies: { m1: 'One.' } }, sourceName: 'MOOV Leadership Team' });
+    const { files } = await run({ reader: { conversations, bodies: { m1: 'One.' } }, sourceName: 'Northwind Leadership Team' });
     const written = files.written.get(THREAD_FILE) ?? '';
 
-    expect(written).toContain('site: MOOV Leadership Team');
+    expect(written).toContain('site: Northwind Leadership Team');
     expect(written).not.toContain('site: Mailbox');
   });
 

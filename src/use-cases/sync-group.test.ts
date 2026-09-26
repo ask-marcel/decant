@@ -18,9 +18,9 @@ import { createSyncGroup } from './sync-group.ts';
 import type { RunNotes, RunSummary } from './sync-site.ts';
 import type { StepError } from './ports/step-error.ts';
 
-const GROUP = { id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' };
+const GROUP = { id: '0d3b-group', name: 'Northwind Leadership Team', mail: 'NorthwindLeadershipTeam@example.com' };
 
-const STATE_PATH = 'kb/Group inboxes/MOOV Leadership Team/.sync-state.json';
+const STATE_PATH = 'kb/Group inboxes/Northwind Leadership Team/.sync-state.json';
 
 const thread = (over: Partial<GroupThread> = {}): GroupThread => ({
   id: 'AAQkAD-thread',
@@ -122,8 +122,8 @@ describe('mirroring a group inbox into the knowledge base', () => {
     const { files, roots, names } = await run();
 
     expect(files.written.has(STATE_PATH)).toBe(true);
-    expect(roots).toEqual(['kb/Group inboxes/MOOV Leadership Team']);
-    expect(names).toEqual(['MOOV Leadership Team']);
+    expect(roots).toEqual(['kb/Group inboxes/Northwind Leadership Team']);
+    expect(names).toEqual(['Northwind Leadership Team']);
   });
 
   it('a second run over an unchanged group writes nothing, since every thread is already held', async () => {
@@ -209,7 +209,7 @@ describe('mirroring a group inbox into the knowledge base', () => {
   it('the operator is told which group is being read and which thread is being written', async () => {
     const { progress } = await run();
 
-    expect(progress.started).toEqual([{ total: 1, what: 'MOOV Leadership Team (group inbox)' }]);
+    expect(progress.started).toEqual([{ total: 1, what: 'Northwind Leadership Team (group inbox)' }]);
     expect(progress.begins).toEqual(['Bi-Monthly Leadership Meeting']);
     expect(progress.steps).toEqual(['Bi-Monthly Leadership Meeting']);
   });
@@ -259,18 +259,20 @@ describe('naming a group inbox in a report', () => {
     const outcome = (): RenderThreadOutcome => rendered({ filesFailed: [{ path: 'budget.xlsx', reason: 'locked' }] });
     const { files } = await run({ outcome });
 
-    expect(files.written.get('kb/Group inboxes/MOOV Leadership Team/_sync-report.md')).toContain('# What did not reach the knowledge base: MOOV Leadership Team (group inbox)');
+    expect(files.written.get('kb/Group inboxes/Northwind Leadership Team/_sync-report.md')).toContain(
+      '# What did not reach the knowledge base: Northwind Leadership Team (group inbox)'
+    );
   });
 
   it('the run hands the same name back, so the report covering every source reads apart too', async () => {
     const { source } = await run();
 
-    expect(source).toBe('MOOV Leadership Team (group inbox)');
+    expect(source).toBe('Northwind Leadership Team (group inbox)');
   });
 });
 
 describe('a group thread the run could not write', () => {
-  const REPORT_PATH = 'kb/Group inboxes/MOOV Leadership Team/_sync-report.md';
+  const REPORT_PATH = 'kb/Group inboxes/Northwind Leadership Team/_sync-report.md';
   // The listing Graph hands back every run, newest first: it has no cursor, so the same two threads
   // arrive whatever happened last time. `late` lands and puts the watermark past `early`, which is
   // what used to make a failure on `early` unreachable for good.

@@ -14,11 +14,11 @@ import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary } from './sync-site.ts';
 import { createSyncTeam } from './sync-team.ts';
 
-const TEAM = { id: 'team-1', name: 'MOOV Leadership' };
+const TEAM = { id: 'team-1', name: 'Northwind Leadership' };
 const GENERAL = { id: '19:gen@thread.tacv2', name: 'General' };
 const PLANNING = { id: '19:plan@thread.tacv2', name: 'Planning' };
 
-const ROOT = 'kb/Teams/MOOV Leadership';
+const ROOT = 'kb/Teams/Northwind Leadership';
 const STATE_PATH = `${ROOT}/.sync-state.json`;
 
 const post = (id: string, lastModified: string, over: Partial<ChannelPost> = {}): ChannelPost => ({
@@ -105,7 +105,7 @@ describe('syncing the channels of a Microsoft Team', () => {
     const done = await run({ reader: { posts: { [GENERAL.id]: [post('a', '2026-09-08T09:00:00Z')] } }, files: { texts: { [STATE_PATH]: serializeTeamState(state) } } });
 
     expect(done.summary.converted).toBe(1);
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-01/Post a.md`, to: 'kb/_archive/Teams/MOOV Leadership/General/2026-09-01/Post a.md' }]);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-01/Post a.md`, to: 'kb/_archive/Teams/Northwind Leadership/General/2026-09-01/Post a.md' }]);
   });
 
   it('a post deleted in Teams is put aside in the archive and named in the report', async () => {
@@ -121,7 +121,7 @@ describe('syncing the channels of a Microsoft Team', () => {
 
     expect(done.summary.archived).toBe(1);
     expect(done.notes.archived).toEqual([{ path: 'General/Post a', reason: 'deleted in Teams' }]);
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-01/Post a.md`, to: 'kb/_archive/Teams/MOOV Leadership/General/2026-09-01/Post a.md' }]);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-01/Post a.md`, to: 'kb/_archive/Teams/Northwind Leadership/General/2026-09-01/Post a.md' }]);
     expect(stateOf(done.files).channels[GENERAL.id]?.posts).toEqual({});
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('General/Post a');
   });
@@ -192,6 +192,6 @@ describe('syncing the channels of a Microsoft Team', () => {
     const done = await run({ channels: [] });
 
     expect(done.ok).toBe(false);
-    expect(done.error).toEqual({ step: 'sync', cause: 'no-channel', message: 'no channel chosen for MOOV Leadership' });
+    expect(done.error).toEqual({ step: 'sync', cause: 'no-channel', message: 'no channel chosen for Northwind Leadership' });
   });
 });

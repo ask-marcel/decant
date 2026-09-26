@@ -36,13 +36,13 @@ const POST = {
 describe('reading a Microsoft Team through the ask-marcel library', () => {
   it('the teams Graph answers with become the teams the picker can offer, one named with nothing going under its id', async () => {
     const { reader } = readerFor({
-      'list-joined-teams': [ok({ value: [{ id: 'team-1', displayName: 'MOOV Leadership', isArchived: false }, { id: 'team-2' }, { displayName: 'no id' }] })],
+      'list-joined-teams': [ok({ value: [{ id: 'team-1', displayName: 'Northwind Leadership', isArchived: false }, { id: 'team-2' }, { displayName: 'no id' }] })],
     });
 
     expect(await reader.listTeams()).toEqual({
       ok: true,
       value: [
-        { id: 'team-1', name: 'MOOV Leadership' },
+        { id: 'team-1', name: 'Northwind Leadership' },
         { id: 'team-2', name: 'team-2' },
       ],
     });
