@@ -302,7 +302,7 @@ the runs that did leave something behind.
 do not mean twenty files to open. It is rewritten on every run rather than appended to, and always
 covers every source: the ones the run touched get their counts and their lists, and every other
 source already in `kb/` is named with the date it last ran, so a source that was not rechecked is
-never mistaken for one with nothing wrong. A group inbox is named as one, `MOOV Projects 2026
+never mistaken for one with nothing wrong. A group inbox is named as one, `Northwind Projects 2026
 (group inbox)`, because the site of the same name is a separate source with its own section, and
 two identical headings would leave a reader guessing which held the documents. A run that left something behind ends with a line on the
 terminal saying so and naming the file. Its history is the per-source files; this one is the current
@@ -446,7 +446,7 @@ phones:
 office: Rotterdam
 teams:
   - Leadership
-  - MOOV EMPLOYEES
+  - NORTHWIND EMPLOYEES
 synced_at: "2026-09-11T14:00:00Z"
 ---
 
@@ -480,7 +480,7 @@ place and not a moment:
 ```yaml
 ---
 source: https://tenant.sharepoint.com/sites/lead/SiteAssets/Notebook#Kick-off
-notebook: MOOV Leadership Notebook
+notebook: Northwind Leadership Notebook
 section: Meetings
 group: "2026"
 title: Kick-off
@@ -615,7 +615,7 @@ asked about its libraries. Each channel gets a folder, and each root post in it 
 ```yaml
 ---
 source: https://teams.microsoft.com/l/message/19%3Aabc%40thread.tacv2/1757491200000
-team: MOOV Leadership
+team: Northwind Leadership
 channel: General
 subject: Venue for the offsite
 author: Jane Doe
