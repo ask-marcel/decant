@@ -34,7 +34,7 @@ const post = (id: string, lastModified: string, over: Partial<ChannelPost> = {})
 });
 
 const run = async (
-  seeds: { reader?: TeamReaderSeed; files?: FilesFakeSeed; channels?: ReadonlyArray<{ id: string; name: string }>; dryRun?: boolean; concurrency?: number } = {}
+  seeds: { reader?: TeamReaderSeed; files?: FilesFakeSeed; channels?: ReadonlyArray<{ id: string; name: string }>; dryRun?: boolean; concurrency?: number; since?: string } = {}
 ): Promise<{
   summary: RunSummary;
   source: string;
@@ -55,7 +55,7 @@ const run = async (
     ...seeds.reader,
   });
   const syncTeam = createSyncTeam({ reader, files, clock: createClockFake('2026-09-11T14:00:00Z'), logger, progress, kbRoot: 'kb' });
-  const outcome = await syncTeam({ team: TEAM, channels: seeds.channels ?? [GENERAL], dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4 });
+  const outcome = await syncTeam({ team: TEAM, channels: seeds.channels ?? [GENERAL], dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4, since: seeds.since });
   const empty = {
     summary: { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 },
     source: TEAM.name,
@@ -193,5 +193,68 @@ describe('syncing the channels of a Microsoft Team', () => {
 
     expect(done.ok).toBe(false);
     expect(done.error).toEqual({ step: 'sync', cause: 'no-channel', message: 'no channel chosen for Northwind Leadership' });
+  });
+});
+
+describe('reaching back only as far as the day', () => {
+  const OLD = post('old', '2024-03-01T09:00:00Z');
+  const MID = post('mid', '2025-03-01T09:00:00Z');
+  const NEW = post('new', '2026-09-08T09:00:00Z');
+  const POSTS = { posts: { [GENERAL.id]: [OLD, MID, NEW] } };
+  const cursoredUnder = (since: string): string =>
+    serializeTeamState(
+      withPost(withChannelCursor(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'https://graph/delta?token=1', since), GENERAL.id, GENERAL.name, 'new', {
+        file: `${ROOT}/General/2026-09-08/Post new.md`,
+        lastModified: NEW.lastModified,
+        title: 'Post new',
+      })
+    );
+
+  it('posts last changed before the day are left out', async () => {
+    const done = await run({ reader: POSTS, since: '2025-01-01' });
+
+    expect(done.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/General/2025-03-01/Post mid.md`, `${ROOT}/General/2026-09-08/Post new.md`]);
+  });
+
+  it('moving the day earlier reads the channel from the start again, and writes only the posts it had left out', async () => {
+    const done = await run({ files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } }, reader: POSTS, since: '2025-01-01' });
+
+    expect(done.reader.calls).toContain(`postsDelta:${GENERAL.id}:fresh`);
+    expect(done.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/General/2025-03-01/Post mid.md`]);
+    expect(stateOf(done.files).channels[GENERAL.id]).toMatchObject({ deltaLink: 'https://graph/delta?token=next', since: '2025-01-01' });
+  });
+
+  it('moving the day earlier reads the old cursor out first, so a post deleted since the last run is still put aside', async () => {
+    const done = await run({
+      files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } },
+      reader: { posts: { [GENERAL.id]: [OLD, MID] }, postsFrom: { 'https://graph/delta?token=1': [{ ...NEW, deleted: true }] } },
+      since: '2025-01-01',
+    });
+
+    expect(done.reader.calls).toEqual([`postsDelta:${GENERAL.id}:https://graph/delta?token=1`, `postsDelta:${GENERAL.id}:fresh`, 'postMarkdown:mid']);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-08/Post new.md`, to: 'kb/_archive/Teams/Northwind Leadership/General/2026-09-08/Post new.md' }]);
+    expect(done.summary).toMatchObject({ converted: 1, archived: 1 });
+  });
+
+  it('the same day, or a later one, keeps following the cursor; all reads the channel again, and keeps no day', async () => {
+    for (const since of ['2025-06-01', '2025-09-01']) {
+      const kept = await run({ files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } }, reader: POSTS, since });
+
+      expect(kept.reader.calls).toContain(`postsDelta:${GENERAL.id}:https://graph/delta?token=1`);
+      expect(kept.reader.calls).not.toContain(`postsDelta:${GENERAL.id}:fresh`);
+      expect(stateOf(kept.files).channels[GENERAL.id]).toMatchObject({ since });
+    }
+
+    const everything = await run({ files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } }, reader: POSTS });
+
+    expect(everything.reader.calls).toContain(`postsDelta:${GENERAL.id}:fresh`);
+    expect('since' in (stateOf(everything.files).channels[GENERAL.id] ?? {})).toBe(false);
+  });
+
+  it('a read that could not write every post keeps the cursor and the day it was taken under, so the next run reads again', async () => {
+    const done = await run({ files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') }, failWritesMatching: 'Post mid' }, reader: POSTS, since: '2025-01-01' });
+
+    expect(done.summary.failed).toBe(1);
+    expect(stateOf(done.files).channels[GENERAL.id]).toMatchObject({ deltaLink: 'https://graph/delta?token=1', since: '2025-06-01' });
   });
 });

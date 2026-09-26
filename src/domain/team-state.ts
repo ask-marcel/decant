@@ -6,6 +6,7 @@ import type { SafeRelPath } from './kb-path.ts';
 import { datedRoot } from './output-paths.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
+import { isBefore } from './sync-window.ts';
 
 export const TEAM_STATE_VERSION = 1;
 
@@ -18,8 +19,9 @@ export type PostRecord = { readonly file: string; readonly lastModified: string;
 
 // A channel is to a team what a library is to a site: it holds its own cursor and its own posts,
 // and a team's state is the set of them. The name is kept so `update` can refresh a channel without
-// listing the team's channels again.
-export type ChannelState = { readonly name: string; readonly deltaLink?: string; readonly posts: Readonly<Record<string, PostRecord>> };
+// listing the team's channels again. `since` is the day the cursor was taken reaching back to,
+// absent when it reached everything: a run reaching further back reads the channel from the start.
+export type ChannelState = { readonly name: string; readonly deltaLink?: string; readonly since?: string; readonly posts: Readonly<Record<string, PostRecord>> };
 
 export type TeamState = {
   readonly version: typeof TEAM_STATE_VERSION;
@@ -54,7 +56,7 @@ const postOf = (entry: Record<string, unknown>): PostRecord => ({
 
 const channelOf = (entry: Record<string, unknown>): ChannelState => {
   const deltaLink = readString(entry, 'deltaLink');
-  return { name: readString(entry, 'name') ?? '', ...(deltaLink === undefined ? {} : { deltaLink }), posts: recordsOf(entry['posts'], postOf) };
+  return { name: readString(entry, 'name') ?? '', ...(deltaLink === undefined ? {} : { deltaLink }), since: readString(entry, 'since'), posts: recordsOf(entry['posts'], postOf) };
 };
 
 export const parseTeamState = (raw: unknown): Result<TeamState, TeamStateError> => {
@@ -74,8 +76,10 @@ const channelIn = (state: TeamState, channelId: string, name: string): ChannelSt
 
 const withChannel = (state: TeamState, channelId: string, channel: ChannelState): TeamState => ({ ...state, channels: { ...state.channels, [channelId]: channel } });
 
-export const withChannelCursor = (state: TeamState, channelId: string, name: string, deltaLink: string | undefined): TeamState =>
-  withChannel(state, channelId, { ...channelIn(state, channelId, name), name, ...(deltaLink === undefined ? {} : { deltaLink }) });
+// The day a cursor was taken reaching back to moves with it, and stays behind with it: no day means
+// it reached everything.
+export const withChannelCursor = (state: TeamState, channelId: string, name: string, deltaLink: string | undefined, since?: string): TeamState =>
+  withChannel(state, channelId, { ...channelIn(state, channelId, name), name, ...(deltaLink === undefined ? {} : { deltaLink, since }) });
 
 export const withPost = (state: TeamState, channelId: string, name: string, postId: string, record: PostRecord): TeamState => {
   const channel = channelIn(state, channelId, name);
@@ -93,15 +97,15 @@ export type ChannelWork = { readonly write: ReadonlyArray<ChannelPost>; readonly
 // What a channel's delta page owes. A deleted post is put aside if it was ever written and is
 // nothing otherwise; a post the ledger holds at the same `lastModified` is skipped, which is what
 // makes re-reading a delta after a stopped run cost nothing; the rest is written, oldest change
-// first so a stopped run leaves a prefix.
-export const channelWork = (state: TeamState, channelId: string, posts: ReadonlyArray<ChannelPost>): ChannelWork => {
+// first so a stopped run leaves a prefix. A post last changed before the day is left out.
+export const channelWork = (state: TeamState, channelId: string, posts: ReadonlyArray<ChannelPost>, since?: string): ChannelWork => {
   const known = state.channels[channelId]?.posts ?? {};
   const archive = posts.flatMap((post) => {
     const record = known[post.id];
     return post.deleted && record !== undefined ? [{ id: post.id, record }] : [];
   });
   const write = posts
-    .filter((post) => !post.deleted && known[post.id]?.lastModified !== post.lastModified)
+    .filter((post) => !post.deleted && known[post.id]?.lastModified !== post.lastModified && !isBefore(post.lastModified, since))
     .sort((left, right) => left.lastModified.localeCompare(right.lastModified));
   return { write, archive };
 };

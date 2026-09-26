@@ -135,6 +135,7 @@ const run = async (
     todo: { taskLists: async () => (seeds.failTodo === true ? err({ kind: 'permanent' as const, message: 'MailboxNotEnabledForRESTAPI' }) : ok(seeds.todoLists ?? [])) },
     syncTeam: async (input) => {
       teamRuns.push({ team: input.team.name, channels: input.channels.map((channel) => channel.name) });
+      reached.push({ kind: 'team', since: input.since });
       if (fails('team')) return busy('team');
       return ok({ ...SOURCE_RUN, id: input.team.id, source: input.team.name });
     },
@@ -1664,5 +1665,11 @@ describe('handing the reach to every source that keeps a history', () => {
     const { reached } = await run([], { groupId: 'g1' }, { stored: '2025-01-01', groups: [{ id: 'g1', name: 'Leadership', mail: 'lead@example.com' }] });
 
     expect(reached).toEqual([{ kind: 'group', since: '2025-01-01' }]);
+  });
+
+  it('a team is handed the kept day', async () => {
+    const { reached } = await run([], { teamId: 't1' }, { stored: '2025-01-01', teams: [{ id: 't1', name: 'Leadership' }] });
+
+    expect(reached).toEqual([{ kind: 'team', since: '2025-01-01' }]);
   });
 });

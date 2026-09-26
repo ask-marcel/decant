@@ -8,6 +8,8 @@ export type TeamReaderSeed = {
   // What a channel's delta answers with, keyed by channel id, plus the cursor it hands back.
   readonly posts?: Readonly<Record<string, ReadonlyArray<ChannelPost>>>;
   readonly deltaLinks?: Readonly<Record<string, string>>;
+  // What a channel's delta answers when read on from one cursor, in place of `posts`.
+  readonly postsFrom?: Readonly<Record<string, ReadonlyArray<ChannelPost>>>;
   // The rendering of each post, keyed by post id; a post with no rendering here renders as its id.
   readonly markdown?: Readonly<Record<string, string>>;
   readonly failTeams?: TeamReaderError;
@@ -35,7 +37,8 @@ export const createTeamReaderFake = (seed: TeamReaderSeed = {}): TeamReaderFake 
       calls.push(`postsDelta:${channelId}:${cursor ?? 'fresh'}`);
       if (seed.failDelta !== undefined) return err(seed.failDelta);
       const deltaLink = seed.deltaLinks?.[channelId];
-      return ok({ posts: seed.posts?.[channelId] ?? [], ...(deltaLink === undefined ? {} : { deltaLink }) });
+      const posts = (cursor === undefined ? undefined : seed.postsFrom?.[cursor]) ?? seed.posts?.[channelId] ?? [];
+      return ok({ posts, ...(deltaLink === undefined ? {} : { deltaLink }) });
     },
     postMarkdown: async (teamId, channelId, postId) => {
       calls.push(`postMarkdown:${postId}`);

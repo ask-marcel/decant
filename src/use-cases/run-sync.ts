@@ -164,7 +164,7 @@ const channelsFor = async (deps: RunSyncDeps, team: TeamSummary, ask: boolean): 
 
 const syncOneTeam = async (deps: RunSyncDeps, input: RunSyncInput, team: TeamSummary, channels: ReadonlyArray<ChannelSummary>): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('team.started', { teamId: team.id, channels: channels.length });
-  const summary = await deps.syncTeam({ team, channels, concurrency: input.concurrency, dryRun: input.dryRun });
+  const summary = await deps.syncTeam({ team, channels, concurrency: input.concurrency, dryRun: input.dryRun, since: dayOf(input.since) });
   if (summary.ok) deps.prompt.show(renderSummary(team.name, summary.value.summary, input.dryRun));
   return summary;
 };

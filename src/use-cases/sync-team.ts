@@ -15,14 +15,15 @@ import {
   withPost,
   withoutPost,
 } from '../domain/team-state.ts';
-import type { PlannedPost, PostRecord, TeamState } from '../domain/team-state.ts';
+import type { ChannelState, PlannedPost, PostRecord, TeamState } from '../domain/team-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
+import { latestById, widens } from '../domain/sync-window.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
-import type { ChannelSummary, TeamReader, TeamSummary } from './ports/team-reader.ts';
+import type { ChannelSummary, PostsDelta, TeamReader, TeamReaderError, TeamSummary } from './ports/team-reader.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 
@@ -39,7 +40,14 @@ export type SyncTeamDeps = {
 
 // A team is synced channel by channel, the way a site is synced library by library, and for the
 // same reason: each channel keeps its own cursor, so one that fails costs itself and not the rest.
-export type SyncTeamInput = { readonly team: TeamSummary; readonly channels: ReadonlyArray<ChannelSummary>; readonly dryRun: boolean; readonly concurrency: number };
+// Only posts last changed on or after `since` are written; absent, every post is.
+export type SyncTeamInput = {
+  readonly team: TeamSummary;
+  readonly channels: ReadonlyArray<ChannelSummary>;
+  readonly dryRun: boolean;
+  readonly concurrency: number;
+  readonly since?: string;
+};
 
 export type SyncTeam = (input: SyncTeamInput) => Promise<Result<SourceRun, StepError>>;
 
@@ -177,11 +185,22 @@ const writePosts = async (context: ChannelContext, carried: Progressing, planned
 const cursorAfter = (before: Progressing, after: Progressing, deltaLink: string | undefined): string | undefined =>
   after.summary.failed > before.summary.failed ? undefined : deltaLink;
 
+// A day earlier than the one the cursor was taken under: what the cursor passed over never comes back
+// through it. It is read out first all the same, so a post deleted since the last run is still put
+// aside, then the channel is read whole for what the narrower reach passed over; a post already
+// filed is left as it is.
+const postsFor = async (deps: SyncTeamDeps, input: SyncTeamInput, channel: ChannelSummary, known: ChannelState | undefined): Promise<Result<PostsDelta, TeamReaderError>> => {
+  const drained = await deps.reader.postsDelta(input.team.id, channel.id, known?.deltaLink);
+  if (!drained.ok || !widens(known?.since, input.since)) return drained;
+  const whole = await deps.reader.postsDelta(input.team.id, channel.id, undefined);
+  return whole.ok ? ok({ ...whole.value, posts: latestById([...drained.value.posts, ...whole.value.posts]) }) : whole;
+};
+
 const syncChannel = async (deps: SyncTeamDeps, input: SyncTeamInput, carried: Progressing, channel: ChannelSummary): Promise<Result<Progressing, StepError>> => {
   const context: ChannelContext = { deps, input, channel, roots: channelRoots(deps, input.team, channel) };
-  const delta = await deps.reader.postsDelta(input.team.id, channel.id, carried.state.channels[channel.id]?.deltaLink);
+  const delta = await postsFor(deps, input, channel, carried.state.channels[channel.id]);
   if (!delta.ok) return failed('postsDelta', delta.error.kind, delta.error.message);
-  const work = channelWork(carried.state, channel.id, delta.value.posts);
+  const work = channelWork(carried.state, channel.id, delta.value.posts, input.since);
   if (input.dryRun) return ok({ ...carried, summary: { ...carried.summary, queued: carried.summary.queued + work.write.length } });
   deps.progress.start(work.write.length, `${input.team.name} / ${channel.name}`);
   const written = await writePosts(context, carried, planPostFiles(context.roots.root, work.write, carried.state, channel.id));
@@ -189,7 +208,7 @@ const syncChannel = async (deps: SyncTeamDeps, input: SyncTeamInput, carried: Pr
   if (!written.ok) return written;
   const gone = await Promise.all(work.archive.map((entry) => archiveGone(context, entry)));
   const done = fold(written.value, gone);
-  return ok({ ...done, state: withChannelCursor(done.state, channel.id, channel.name, cursorAfter(carried, done, delta.value.deltaLink)) });
+  return ok({ ...done, state: withChannelCursor(done.state, channel.id, channel.name, cursorAfter(carried, done, delta.value.deltaLink), input.since) });
 };
 
 const syncChannels = async (deps: SyncTeamDeps, input: SyncTeamInput, state: TeamState): Promise<Result<Progressing, StepError>> => {
