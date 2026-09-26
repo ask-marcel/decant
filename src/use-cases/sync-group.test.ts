@@ -226,7 +226,7 @@ describe('mirroring a group inbox into the knowledge base', () => {
     const { summary, logger } = await run({ files: { texts: { [STATE_PATH]: '{ "version": 99, "source": { "kind": "group" } }' } } });
 
     expect(summary.converted).toBe(1);
-    expect(logger.calls.some((entry) => entry.event === 'group-state.unreadable')).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'group-state.unreadable', meta: { group: '0d3b-group', cause: 'state is version 99, not 1' } });
   });
 
   it('a run that cannot record what it did stops there, rather than carrying on and losing the record', async () => {

@@ -161,7 +161,7 @@ describe('syncing a Microsoft To Do list', () => {
     });
 
     expect(done.summary.converted).toBe(1);
-    expect(done.logger.calls.map((entry) => entry.event)).toContain('todo-state.unreadable');
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'todo-state.unreadable', meta: { list: 'list-1', cause: 'state is version 99, not 1' } });
   });
 
   it('a run that found nothing to write still stamps its own state file, so the picker does not call it stale forever', async () => {

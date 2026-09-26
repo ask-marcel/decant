@@ -53,7 +53,7 @@ const loadState = async (deps: SyncTodoDeps, path: string, list: TodoList): Prom
   // A state this code cannot read is left where it is and started over in memory, never written back
   // over: the documents on disk are the valuable half, and a run that cannot read its own notes
   // should re-file them rather than delete what it cannot account for.
-  deps.logger.warn('todo-state.unreadable', { list: list.name, cause: state.error.message });
+  deps.logger.warn('todo-state.unreadable', { list: list.id, cause: state.error.message });
   return emptyTodoState(list.id, list.name);
 };
 
