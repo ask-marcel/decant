@@ -912,3 +912,16 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   left real by a future test fails fast instead of asking a person to sign in. Rule: a test
   that wires the real composition is interactive never, and fakes every port that touches the
   network, not only the ones the scenario reaches.
+
+## 2026-09-26
+
+- [gotcha] Format with `bunx eslint --fix`, never `bunx prettier --write`. The Prettier options
+  (single quotes, 180 columns) live in `eslint.config.js` as the `prettier/prettier` rule, and the
+  repo has no `.prettierrc`, so bare Prettier formats with its defaults: double quotes, 80
+  columns. Re-running ESLint puts the quotes back but not the layout, because Prettier keeps an
+  object literal multi-line once it breaks after the opening brace; one stray run turned a
+  250-line test diff into 1,200 lines and the file had to be restored and re-patched.
+
+- [gotcha] `toEqual([])` passes on `[undefined]`: `toEqual` ignores undefined array items and
+  properties. A test asserting that nothing was remembered let a mutant through that remembered
+  `undefined`; `toHaveLength(0)` (or `toStrictEqual`) is the emptiness check that can fail.
