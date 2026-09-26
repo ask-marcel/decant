@@ -106,15 +106,15 @@ describe('reading a Team roster entry', () => {
 
 describe('telling whether a person has changed since they were written', () => {
   it('the same person with the same teams and reports fingerprints the same, whatever order the lists came in', () => {
-    expect(personFingerprint(person(), ['MOOV EMPLOYEES', 'Leadership'], ['r2', 'r1'])).toBe(personFingerprint(person(), ['Leadership', 'MOOV EMPLOYEES'], ['r1', 'r2']));
+    expect(personFingerprint(person(), ['NORTHWIND EMPLOYEES', 'Leadership'], ['r2', 'r1'])).toBe(personFingerprint(person(), ['Leadership', 'NORTHWIND EMPLOYEES'], ['r1', 'r2']));
   });
 
   it('a new title, a new manager, a new team or a new report each change the fingerprint', () => {
-    const base = personFingerprint(person(), ['MOOV EMPLOYEES'], []);
+    const base = personFingerprint(person(), ['NORTHWIND EMPLOYEES'], []);
 
-    expect(personFingerprint(person({ title: 'COO' }), ['MOOV EMPLOYEES'], [])).not.toBe(base);
-    expect(personFingerprint(person({ manager: undefined }), ['MOOV EMPLOYEES'], [])).not.toBe(base);
-    expect(personFingerprint(person(), ['MOOV EMPLOYEES', 'Leadership'], [])).not.toBe(base);
-    expect(personFingerprint(person(), ['MOOV EMPLOYEES'], ['r1'])).not.toBe(base);
+    expect(personFingerprint(person({ title: 'COO' }), ['NORTHWIND EMPLOYEES'], [])).not.toBe(base);
+    expect(personFingerprint(person({ manager: undefined }), ['NORTHWIND EMPLOYEES'], [])).not.toBe(base);
+    expect(personFingerprint(person(), ['NORTHWIND EMPLOYEES', 'Leadership'], [])).not.toBe(base);
+    expect(personFingerprint(person(), ['NORTHWIND EMPLOYEES'], ['r1'])).not.toBe(base);
   });
 });

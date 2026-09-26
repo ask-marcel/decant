@@ -34,7 +34,7 @@ describe('reading a group inbox thread and the posts under it', () => {
         id: 'AAMkAD-post',
         receivedDateTime: '2026-07-20T10:45:14Z',
         hasAttachments: true,
-        from: { emailAddress: { name: 'MOOV Leadership Team', address: 'MOOVLeadershipTeam@example.com' } },
+        from: { emailAddress: { name: 'Northwind Leadership Team', address: 'NorthwindLeadershipTeam@example.com' } },
         sender: { emailAddress: { name: 'Dana Farrow', address: 'd.farrow@example.com' } },
       },
       thread,
@@ -47,9 +47,9 @@ describe('reading a group inbox thread and the posts under it', () => {
   });
 
   it('a post with no sender falls back to the address it came from, rather than losing the author', () => {
-    const parsed = parseGroupPost({ id: 'AAMkAD-post', from: { emailAddress: { address: 'MOOVLeadershipTeam@example.com' } } }, thread, GROUP);
+    const parsed = parseGroupPost({ id: 'AAMkAD-post', from: { emailAddress: { address: 'NorthwindLeadershipTeam@example.com' } } }, thread, GROUP);
 
-    expect(parsed?.from).toEqual({ name: 'MOOVLeadershipTeam@example.com', address: 'MOOVLeadershipTeam@example.com' });
+    expect(parsed?.from).toEqual({ name: 'NorthwindLeadershipTeam@example.com', address: 'NorthwindLeadershipTeam@example.com' });
   });
 
   it('a post takes its subject from the thread, because a post has none of its own', () => {

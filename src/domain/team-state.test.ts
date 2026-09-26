@@ -18,8 +18,8 @@ const CHANNEL = '19:gen@thread.tacv2';
 
 const seeded = (): ReturnType<typeof emptyTeamState> =>
   withPost(
-    withPost(withChannelCursor(emptyTeamState('team-1', 'MOOV Leadership'), CHANNEL, 'General', 'https://graph/delta?token=1'), CHANNEL, 'General', 'a', {
-      file: 'kb/Teams/MOOV Leadership/General/2026-09-01/Post a.md',
+    withPost(withChannelCursor(emptyTeamState('team-1', 'Northwind Leadership'), CHANNEL, 'General', 'https://graph/delta?token=1'), CHANNEL, 'General', 'a', {
+      file: 'kb/Teams/Northwind Leadership/General/2026-09-01/Post a.md',
       lastModified: '2026-09-01T09:00:00Z',
       title: 'Post a',
     }),
@@ -27,7 +27,7 @@ const seeded = (): ReturnType<typeof emptyTeamState> =>
     'General',
     'b',
     {
-      file: 'kb/Teams/MOOV Leadership/General/2026-09-02/Post b.md',
+      file: 'kb/Teams/Northwind Leadership/General/2026-09-02/Post b.md',
       lastModified: '2026-09-02T09:00:00Z',
       title: 'Post b',
     }
@@ -35,11 +35,16 @@ const seeded = (): ReturnType<typeof emptyTeamState> =>
 
 describe('what a team run remembers between runs', () => {
   it('a team is shelved under the same heading the picker offered it under', () => {
-    expect(String(teamRootName('MOOV Leadership'))).toBe('Teams/MOOV Leadership');
+    expect(String(teamRootName('Northwind Leadership'))).toBe('Teams/Northwind Leadership');
   });
 
   it('an empty state names the team and holds no channel yet', () => {
-    expect(emptyTeamState('team-1', 'MOOV Leadership')).toEqual({ version: 1, source: { kind: 'team', id: 'team-1', name: 'MOOV Leadership' }, lastRun: '', channels: {} });
+    expect(emptyTeamState('team-1', 'Northwind Leadership')).toEqual({
+      version: 1,
+      source: { kind: 'team', id: 'team-1', name: 'Northwind Leadership' },
+      lastRun: '',
+      channels: {},
+    });
   });
 
   it('a channel remembers its name, where its delta stands, and every post it wrote', () => {
@@ -47,8 +52,8 @@ describe('what a team run remembers between runs', () => {
       name: 'General',
       deltaLink: 'https://graph/delta?token=1',
       posts: {
-        a: { file: 'kb/Teams/MOOV Leadership/General/2026-09-01/Post a.md', lastModified: '2026-09-01T09:00:00Z', title: 'Post a' },
-        b: { file: 'kb/Teams/MOOV Leadership/General/2026-09-02/Post b.md', lastModified: '2026-09-02T09:00:00Z', title: 'Post b' },
+        a: { file: 'kb/Teams/Northwind Leadership/General/2026-09-01/Post a.md', lastModified: '2026-09-01T09:00:00Z', title: 'Post a' },
+        b: { file: 'kb/Teams/Northwind Leadership/General/2026-09-02/Post b.md', lastModified: '2026-09-02T09:00:00Z', title: 'Post b' },
       },
     });
   });
@@ -99,7 +104,9 @@ describe('deciding what a channel run owes', () => {
     const work = channelWork(seeded(), CHANNEL, [post('a', '2026-09-06T09:00:00Z', { deleted: true }), post('zzz', '2026-09-06T09:00:00Z', { deleted: true })]);
 
     expect(work.write).toHaveLength(0);
-    expect(work.archive).toEqual([{ id: 'a', record: { file: 'kb/Teams/MOOV Leadership/General/2026-09-01/Post a.md', lastModified: '2026-09-01T09:00:00Z', title: 'Post a' } }]);
+    expect(work.archive).toEqual([
+      { id: 'a', record: { file: 'kb/Teams/Northwind Leadership/General/2026-09-01/Post a.md', lastModified: '2026-09-01T09:00:00Z', title: 'Post a' } },
+    ]);
   });
 
   it('a channel the ledger has never seen owes every post', () => {
@@ -109,9 +116,9 @@ describe('deciding what a channel run owes', () => {
 
 describe('deciding where each post about to be written goes', () => {
   it('a post is filed under its channel and the day it last changed, named by its title', () => {
-    const [planned] = planPostFiles('kb/Teams/MOOV Leadership/General', [post('a', '2026-09-08T16:20:11Z', { subject: 'Venue' })], emptyTeamState('t', 'n'), CHANNEL);
+    const [planned] = planPostFiles('kb/Teams/Northwind Leadership/General', [post('a', '2026-09-08T16:20:11Z', { subject: 'Venue' })], emptyTeamState('t', 'n'), CHANNEL);
 
-    expect(planned?.file).toBe('kb/Teams/MOOV Leadership/General/2026-09-08/Venue.md');
+    expect(planned?.file).toBe('kb/Teams/Northwind Leadership/General/2026-09-08/Venue.md');
   });
 
   it('two posts sharing a title and a day take different files, and a path a post nobody is rewriting holds is not handed out', () => {

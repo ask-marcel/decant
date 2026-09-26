@@ -27,11 +27,11 @@ const MARKDOWN = [
 
 describe('writing one channel post and its replies as a document', () => {
   it('a post opens with where it came from, then carries the thread exactly as the library rendered it', () => {
-    expect(renderPostDocument({ post, team: 'MOOV Leadership', channel: 'General', markdown: MARKDOWN, syncedAt: '2026-09-11T14:00:00Z' })).toBe(
+    expect(renderPostDocument({ post, team: 'Northwind Leadership', channel: 'General', markdown: MARKDOWN, syncedAt: '2026-09-11T14:00:00Z' })).toBe(
       [
         '---',
         'source: https://teams.microsoft.com/l/message/19%3Aabc%40thread.tacv2/1757491200000',
-        'team: MOOV Leadership',
+        'team: Northwind Leadership',
         'channel: General',
         'subject: Venue for the offsite',
         'author: Jane Doe',

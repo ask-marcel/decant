@@ -29,14 +29,20 @@ const ANN = person('ann', 'Ann Lee', { title: 'Analyst', manager: { id: 'jane', 
 const GUEST = person('guest', 'Outside Consultant', { member: false, manager: { id: 'jane', name: 'Jane Doe' } });
 const GONE = person('gone', 'Left Already', { enabled: false });
 
-const TEAMS = { dana: ['MOOV EMPLOYEES', 'Leadership'], jane: ['Leadership', 'MOOV EMPLOYEES'], ann: ['MOOV EMPLOYEES'], guest: ['MOOV EMPLOYEES'], gone: ['MOOV EMPLOYEES'] };
+const TEAMS = {
+  dana: ['NORTHWIND EMPLOYEES', 'Leadership'],
+  jane: ['Leadership', 'NORTHWIND EMPLOYEES'],
+  ann: ['NORTHWIND EMPLOYEES'],
+  guest: ['NORTHWIND EMPLOYEES'],
+  gone: ['NORTHWIND EMPLOYEES'],
+};
 
 describe('assembling the directory out of the profiles and the rosters', () => {
   it('a colleague carries the teams they are in and the people who report to them, each in a stable order', () => {
     const directory = assembleDirectory([ANN, JANE, DANA], TEAMS);
 
     expect(directory.map((entry) => entry.person.name)).toEqual(['Ann Lee', 'Dana Farrow', 'Jane Doe']);
-    expect(directory.find((entry) => entry.person.id === 'jane')).toMatchObject({ teams: ['Leadership', 'MOOV EMPLOYEES'], reports: [{ id: 'ann', name: 'Ann Lee' }] });
+    expect(directory.find((entry) => entry.person.id === 'jane')).toMatchObject({ teams: ['Leadership', 'NORTHWIND EMPLOYEES'], reports: [{ id: 'ann', name: 'Ann Lee' }] });
     expect(directory.find((entry) => entry.person.id === 'dana')?.reports).toEqual([{ id: 'jane', name: 'Jane Doe' }]);
   });
 
@@ -65,7 +71,9 @@ const colleague = (subject: Person, teams: ReadonlyArray<string>, reports: Colle
 
 describe('writing one person as a document', () => {
   it('a person opens with what a colleague wants to know, then says where they sit and who reports to them, linked to their own pages', () => {
-    expect(renderPersonDocument({ colleague: colleague(JANE, ['Leadership', 'MOOV EMPLOYEES'], [{ id: 'ann', name: 'Ann Lee' }]), fileOf, syncedAt: '2026-09-11T14:00:00Z' })).toBe(
+    expect(
+      renderPersonDocument({ colleague: colleague(JANE, ['Leadership', 'NORTHWIND EMPLOYEES'], [{ id: 'ann', name: 'Ann Lee' }]), fileOf, syncedAt: '2026-09-11T14:00:00Z' })
+    ).toBe(
       [
         '---',
         'source: Microsoft 365 directory',
@@ -79,7 +87,7 @@ describe('writing one person as a document', () => {
         'office: Rotterdam',
         'teams:',
         '  - Leadership',
-        '  - MOOV EMPLOYEES',
+        '  - NORTHWIND EMPLOYEES',
         'synced_at: "2026-09-11T14:00:00Z"',
         '---',
         '',

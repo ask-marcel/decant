@@ -10,8 +10,8 @@ export const GROUP_STATE_VERSION = 1;
 
 // A group's own folder, kept apart from the SharePoint site of the same name. A Microsoft 365 group
 // is a site, an inbox and a team wearing one title, and two of those three land in this vault: the
-// documents under `SharePoint sites/MOOV Leadership Team/` and the conversations under
-// `Group inboxes/MOOV Leadership Team/`. The category is what holds them apart, so the name itself
+// documents under `SharePoint sites/Northwind Leadership Team/` and the conversations under
+// `Group inboxes/Northwind Leadership Team/`. The category is what holds them apart, so the name itself
 // no longer carries the ` (group inbox)` suffix; `sourceLabel` still spells it out wherever a
 // reader sees a bare name and needs telling which half of the group it is.
 export const groupRootName = (name: string): SafeRelPath => safeRelPath([CATEGORY_FOLDER.group, name]);

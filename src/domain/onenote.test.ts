@@ -5,17 +5,17 @@ describe('reading a OneNote notebook, a section and a page as Graph answers for 
   it('a notebook carries what names it and where it opens, and says which site it came from when it came from one', () => {
     const raw = {
       id: '1-nb',
-      displayName: 'MOOV Leadership Notebook',
+      displayName: 'Northwind Leadership Notebook',
       isDefault: false,
       lastModifiedDateTime: '2026-09-01T10:00:00Z',
       links: { oneNoteWebUrl: { href: 'https://tenant.sharepoint.com/sites/lead/SiteAssets/Notebook' } },
     };
 
-    expect(parseNotebook(raw, { id: 'site-1', name: 'MOOV Leadership' })).toEqual({
+    expect(parseNotebook(raw, { id: 'site-1', name: 'Northwind Leadership' })).toEqual({
       id: '1-nb',
-      name: 'MOOV Leadership Notebook',
+      name: 'Northwind Leadership Notebook',
       webUrl: 'https://tenant.sharepoint.com/sites/lead/SiteAssets/Notebook',
-      site: { id: 'site-1', name: 'MOOV Leadership' },
+      site: { id: 'site-1', name: 'Northwind Leadership' },
     });
     expect(parseNotebook(raw, undefined)).toMatchObject({ id: '1-nb', site: undefined });
   });

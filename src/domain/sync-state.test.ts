@@ -46,9 +46,12 @@ describe('reading the sync state left by a previous run', () => {
   });
 
   it('a group inbox is a source like the others, and its threads are counted the same way', () => {
-    const state = { source: { kind: 'group', id: '0d3b-group', name: 'MOOV Leadership Team' }, lastRun: '2026-09-06T09:00:00Z', threads: { 'thread-1': {}, 'thread-2': {} } };
+    const state = { source: { kind: 'group', id: '0d3b-group', name: 'Northwind Leadership Team' }, lastRun: '2026-09-06T09:00:00Z', threads: { 'thread-1': {}, 'thread-2': {} } };
 
-    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'group', id: '0d3b-group', name: 'MOOV Leadership Team', lastRun: '2026-09-06T09:00:00Z', fileCount: 2 } });
+    expect(parseSyncedSource(state)).toEqual({
+      ok: true,
+      value: { kind: 'group', id: '0d3b-group', name: 'Northwind Leadership Team', lastRun: '2026-09-06T09:00:00Z', fileCount: 2 },
+    });
   });
 
   it('a To Do list is a source like the others, and its tasks are counted one file each', () => {
@@ -59,12 +62,12 @@ describe('reading the sync state left by a previous run', () => {
 
   it('a team is a source like a site, counting the posts its channels hold the way a site counts its libraries', () => {
     const state = {
-      source: { kind: 'team', id: 'team-1', name: 'MOOV Leadership' },
+      source: { kind: 'team', id: 'team-1', name: 'Northwind Leadership' },
       lastRun: '2026-09-10T09:00:00Z',
       channels: { c1: { posts: { a: {}, b: {} } }, c2: { posts: { c: {} } }, bad: 'x' },
     };
 
-    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'team', id: 'team-1', name: 'MOOV Leadership', lastRun: '2026-09-10T09:00:00Z', fileCount: 3 } });
+    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'team', id: 'team-1', name: 'Northwind Leadership', lastRun: '2026-09-10T09:00:00Z', fileCount: 3 } });
   });
 
   it('the people directory is a source like the mailbox, counting its people one file each', () => {
@@ -80,11 +83,11 @@ describe('reading the sync state left by a previous run', () => {
   });
 
   it('a notebook is a source like the others, counting its pages one file each', () => {
-    const state = { source: { kind: 'notebook', id: '1-nb', name: 'MOOV Leadership Notebook' }, lastRun: '2026-09-12T09:00:00Z', pages: { a: {}, b: {} } };
+    const state = { source: { kind: 'notebook', id: '1-nb', name: 'Northwind Leadership Notebook' }, lastRun: '2026-09-12T09:00:00Z', pages: { a: {}, b: {} } };
 
     expect(parseSyncedSource(state)).toEqual({
       ok: true,
-      value: { kind: 'notebook', id: '1-nb', name: 'MOOV Leadership Notebook', lastRun: '2026-09-12T09:00:00Z', fileCount: 2 },
+      value: { kind: 'notebook', id: '1-nb', name: 'Northwind Leadership Notebook', lastRun: '2026-09-12T09:00:00Z', fileCount: 2 },
     });
   });
 
@@ -133,8 +136,8 @@ describe('reading the sync state left by a previous run', () => {
 
 describe('naming a source in a report', () => {
   it('a group inbox is named apart from the site that shares its name', () => {
-    expect(sourceLabel({ name: 'MOOV Projects 2026', kind: 'group' })).toBe('MOOV Projects 2026 (group inbox)');
-    expect(sourceLabel({ name: 'MOOV Projects 2026', kind: 'site' })).toBe('MOOV Projects 2026');
+    expect(sourceLabel({ name: 'Northwind Projects 2026', kind: 'group' })).toBe('Northwind Projects 2026 (group inbox)');
+    expect(sourceLabel({ name: 'Northwind Projects 2026', kind: 'site' })).toBe('Northwind Projects 2026');
   });
 
   it('the mailbox is named as it calls itself', () => {
@@ -142,7 +145,7 @@ describe('naming a source in a report', () => {
   });
 
   it('a site`s lists are named apart from the site`s libraries, which carry the same name', () => {
-    expect(sourceLabel({ name: 'MOOV Projects 2026', kind: 'lists' })).toBe('MOOV Projects 2026 (lists)');
+    expect(sourceLabel({ name: 'Northwind Projects 2026', kind: 'lists' })).toBe('Northwind Projects 2026 (lists)');
   });
 });
 

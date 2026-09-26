@@ -4,7 +4,7 @@ import type { ListedPage } from './notebook-state.ts';
 import { renderNotebookPage } from './notebook-document.ts';
 import type { Notebook } from './onenote.ts';
 
-const NOTEBOOK: Notebook = { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: 'https://tenant.sharepoint.com/nb', site: { id: 'site-1', name: 'MOOV Leadership' } };
+const NOTEBOOK: Notebook = { id: '1-nb', name: 'Northwind Leadership Notebook', webUrl: 'https://tenant.sharepoint.com/nb', site: { id: 'site-1', name: 'Northwind Leadership' } };
 
 const OTHER: Notebook = { id: '1-nb', name: 'N', webUrl: '', site: undefined };
 
@@ -16,14 +16,14 @@ const listed = (id: string, title: string, lastModified: string, section = 'Meet
 const seeded = (): ReturnType<typeof emptyNotebookState> =>
   withPage(
     withPage(emptyNotebookState(NOTEBOOK), 'a', {
-      file: 'kb/OneNote/MOOV Leadership Notebook/Meetings/Kick-off.md',
+      file: 'kb/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md',
       lastModified: '2026-09-01T10:00:00Z',
       title: 'Kick-off',
       section: 'sec-Meetings',
     }),
     'b',
     {
-      file: 'kb/OneNote/MOOV Leadership Notebook/Meetings/Retro.md',
+      file: 'kb/OneNote/Northwind Leadership Notebook/Meetings/Retro.md',
       lastModified: '2026-09-02T10:00:00Z',
       title: 'Retro',
       section: 'sec-Meetings',
@@ -32,13 +32,13 @@ const seeded = (): ReturnType<typeof emptyNotebookState> =>
 
 describe('what a notebook run remembers between runs', () => {
   it('a notebook is shelved under the same heading the picker offered it under', () => {
-    expect(String(notebookRootName('MOOV Leadership Notebook'))).toBe('OneNote/MOOV Leadership Notebook');
+    expect(String(notebookRootName('Northwind Leadership Notebook'))).toBe('OneNote/Northwind Leadership Notebook');
   });
 
   it('an empty state names the notebook and holds no page; a page written once is found again by its id and can be forgotten', () => {
     expect(emptyNotebookState(OTHER)).toEqual({ version: 1, source: { kind: 'notebook', id: '1-nb', name: 'N' }, notebook: OTHER, lastRun: '', pages: {} });
     expect(seeded().pages['a']).toEqual({
-      file: 'kb/OneNote/MOOV Leadership Notebook/Meetings/Kick-off.md',
+      file: 'kb/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md',
       lastModified: '2026-09-01T10:00:00Z',
       title: 'Kick-off',
       section: 'sec-Meetings',
@@ -85,7 +85,7 @@ describe('deciding what a notebook run owes', () => {
     expect(work.write.map((entry) => entry.page.id)).toEqual(['c', 'b']);
     expect(work.archive).toHaveLength(0);
     expect(notebookWorklist(seeded(), [listed('a', 'Kick-off', '2026-09-01T10:00:00Z')]).archive).toEqual([
-      { id: 'b', record: { file: 'kb/OneNote/MOOV Leadership Notebook/Meetings/Retro.md', lastModified: '2026-09-02T10:00:00Z', title: 'Retro', section: 'sec-Meetings' } },
+      { id: 'b', record: { file: 'kb/OneNote/Northwind Leadership Notebook/Meetings/Retro.md', lastModified: '2026-09-02T10:00:00Z', title: 'Retro', section: 'sec-Meetings' } },
     ]);
   });
 
@@ -117,7 +117,7 @@ describe('writing one notebook page as a document', () => {
   it('a page opens with where it came from and where it sits, then carries the text the page holds', () => {
     const written = renderNotebookPage({
       entry: listed('a', 'Kick-off', '2026-09-01T10:00:00Z', 'Meetings', '2026'),
-      notebook: 'MOOV Leadership Notebook',
+      notebook: 'Northwind Leadership Notebook',
       markdown: 'Agenda\n- one\n',
       syncedAt: '2026-09-12T14:00:00Z',
     });
@@ -126,7 +126,7 @@ describe('writing one notebook page as a document', () => {
       [
         '---',
         'source: https://tenant.sharepoint.com/a',
-        'notebook: MOOV Leadership Notebook',
+        'notebook: Northwind Leadership Notebook',
         'section: Meetings',
         'group: "2026"',
         'title: Kick-off',
