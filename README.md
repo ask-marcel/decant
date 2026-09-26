@@ -77,6 +77,32 @@ bun run sync update
 That form is safe to schedule: it never opens a browser, and a lapsed sign-in ends the run with a
 clear message instead of waiting for input.
 
+### How far back
+
+The first run that has something to sync asks how far back to reach: a day such as `2025-01-01`, or
+`all`. The answer is kept in `kb/.decant.json`, and every later run reaches back to the same day
+without asking, `update` included. From that day on, decant syncs mail, group inboxes, Teams posts,
+the calendar, library files and OneNote pages, each by its own date: a message by the day it
+arrived, a group thread by its last post, a post or a page by its last change, a file by its last
+edit, an event by the day it starts (a recurring series is kept whatever day it began, since it may
+be running still). To Do lists, Planner plans, SharePoint lists and the people directory always
+come whole: they say how things stand now, and a board missing its old open tasks would mislead.
+Days are counted in UTC, the calendar's in the mailbox's zone.
+
+To move the day, run once with `--since`, which keeps the new day for every run after it:
+
+```bash
+bun run sync update --since 2024-06-01
+```
+
+Moving the day earlier fetches what the narrower reach left out, on each source's next run: a source
+that keeps a cursor reads it out first, so nothing deleted since the last run goes unnoticed, then
+reads the whole source once and writes only what it had left out. Moving the day later deletes
+nothing: what is already in `kb/` stays. `update` and a run that names a source by flag never ask;
+with no day kept yet, they reach everything. Clearing `kb/` clears the day with it, and the next run
+asks again. A day that cannot be read, mistyped by hand in `kb/.decant.json`, stops the run rather
+than syncing everything; `--since` sets it again.
+
 ### Options
 
 | Option | Meaning |
@@ -93,7 +119,7 @@ clear message instead of waiting for input.
 | `--notebook <name>` | Sync one OneNote notebook without the picker, by its name or its id |
 | `--lists <site>` | Sync the lists of one SharePoint site without the picker, by its name, its id or its address |
 | `--plan <title>` | Sync one Planner plan without the picker, by its title among the plans listed or by its id |
-| `--since <day>` | With `--mailbox` or `--calendar`, only conversations arrived or events starting since this day (`2026-01-31`) |
+| `--since <day\|all>` | Reach back to this day (`2026-01-31`), or through everything, and keep it for every later run (see How far back) |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
 | `--concurrency <n>` | How many items to convert at once (default 4); `1` is strictly sequential |
@@ -106,6 +132,7 @@ clear message instead of waiting for input.
 
 ```
 kb/
+  .decant.json                      how far back the runs reach: a day, or all
   _sync-report.md                   what the last run left behind, every source in one file
   _archive/SharePoint sites/<Site>/<Library>/...
                                     files whose source was deleted, renamed, or changed away
@@ -426,8 +453,9 @@ stays, marked `cancelled: true`, since a cancelled meeting is still a fact.
 What an invitation carries lands as markdown only, beside the event: the library converts an event
 attachment to text and nothing fetches its bytes, so there is no PDF and no original the way a mail
 attachment has. A picture pasted into an invitation is left out and named in the report as such.
-The first run walks the whole calendar; pass `--since` to leave earlier events unwritten, the way
-the mailbox takes it. The cursor moves only once every event the delta reported has landed.
+The first run walks the whole calendar and writes the events starting on or after the kept day, and
+every recurring series whatever day it began (see How far back). The cursor moves only once every
+event the delta reported has landed.
 
 ### What a people sync writes
 
@@ -797,7 +825,7 @@ file is named once as given up and the thread is left alone; the card in the thr
 
 A first mailbox run is slow: Outlook hands back changes ten messages at a time and there is no way
 to ask for more, so a mailbox with thousands of messages takes thousands of round trips. Later runs
-are cheap, reading only what changed. `--since` narrows what gets *written*, not what gets swept.
+are cheap, reading only what changed. The kept day narrows what gets *written*, not what gets swept.
 
 While it works, a counter on the terminal shows how far it has got, so a long run is never silent. A
 header row carries the count, and every item still being read from the source gets a row of its own
