@@ -584,14 +584,14 @@ const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources):
 };
 
 const syncTheGroup = async (deps: RunSyncDeps, input: RunSyncInput, group: GroupSummary): Promise<Result<SourceRun, StepError>> => {
-  deps.logger.info('group.started', { group: group.name });
+  deps.logger.info('group.started', { group: group.id });
   const summary = await deps.syncGroup({ group, maxBytes: input.maxBytes, dryRun: input.dryRun, concurrency: input.concurrency });
   if (summary.ok) deps.prompt.show(renderSummary(`${group.name} (group inbox)`, summary.value.summary, input.dryRun));
   return summary;
 };
 
 const syncTheTodoList = async (deps: RunSyncDeps, input: RunSyncInput, list: TodoList): Promise<Result<SourceRun, StepError>> => {
-  deps.logger.info('todo.started', { list: list.name });
+  deps.logger.info('todo.started', { list: list.id });
   const summary = await deps.syncTodo({ list, dryRun: input.dryRun, concurrency: input.concurrency });
   if (summary.ok) deps.prompt.show(renderSummary(list.name, summary.value.summary, input.dryRun));
   return summary;

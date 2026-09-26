@@ -299,7 +299,7 @@ describe('choosing what to sync', () => {
     expect(prompt.shown.join('\n')).toContain('Group inboxes:\n  3) MOOV Leadership Team  (new)');
     expect(groupRuns).toEqual(['MOOV Leadership Team']);
     expect(prompt.shown.join('\n')).toContain('MOOV Leadership Team (group inbox): 2 converted');
-    expect(logger.calls.some((entry) => entry.event === 'group.started')).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'group.started', meta: { group: '0d3b-group' } });
   });
 
   it('a site and a group taken together are both synced, and the site is not asked about its libraries', async () => {
@@ -365,7 +365,7 @@ describe('choosing what to sync', () => {
     expect(prompt.shown.join('\n')).toContain('To Do:\n  3) Tasks  (new)');
     expect(todoRuns).toEqual(['Tasks']);
     expect(prompt.shown.join('\n')).toContain('Tasks: 2 converted');
-    expect(logger.calls.some((entry) => entry.event === 'todo.started')).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'todo.started', meta: { list: 'list-1' } });
   });
 
   it('a site, a group and a To Do list taken together are each synced, in the order the picker drew them', async () => {
