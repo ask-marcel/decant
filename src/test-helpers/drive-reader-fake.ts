@@ -55,7 +55,10 @@ export const createDriveReaderFake = (seed: DriveReaderSeed = {}): DriveReaderFa
   };
   return {
     calls,
-    listSites: async () => (seed.failWith ? err(seed.failWith) : ok(seed.sites ?? [])),
+    listSites: async () => {
+      calls.push('listSites');
+      return seed.failWith ? err(seed.failWith) : ok(seed.sites ?? []);
+    },
     siteByUrl: async (url) => {
       const site = seed.sites?.find((candidate) => candidate.webUrl === url);
       return site === undefined ? missing(`site at ${url}`) : ok(site);
