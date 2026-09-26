@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
+import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import { NO_TEXT_NOTE } from '../domain/kb-document.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import type { FilesFake, FilesFakeSeed } from '../test-helpers/files-fake.ts';
@@ -68,14 +69,15 @@ const EML = [
 const run = async (
   over: Partial<MailAttachment> = {},
   seeds: { reader?: MailReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed; drive?: DriveReaderSeed; maxBytes?: number; rendered?: string } = {}
-): Promise<{ outcome: AttachmentOutcome; files: FilesFake }> => {
+): Promise<{ outcome: AttachmentOutcome; files: FilesFake; logger: LoggerFake }> => {
   const files = createFilesFake(seeds.files);
+  const logger = createLoggerFake();
   const drive = createDriveReaderFake(seeds.drive);
   const convert = createConvertAttachment({
     reader: createMailReaderFake(seeds.reader),
     files,
     ocr: createOcrFake(seeds.ocr),
-    logger: createLoggerFake(),
+    logger,
     unpackArchive: drive.localArchive,
     convertLocal: drive.localMarkdown,
   });
@@ -87,7 +89,7 @@ const run = async (
     maxBytes: seeds.maxBytes ?? 50 * 1024 * 1024,
     rendered: seeds.rendered,
   });
-  return { outcome, files };
+  return { outcome, files, logger };
 };
 
 describe('keeping what was attached to a mail', () => {
@@ -249,6 +251,12 @@ describe('keeping what was attached to a mail', () => {
 
     expect(outcome.kind).toBe('converted');
     expect(files.written.get(`${FOLDER}/Contrat.docx.md`)).toContain('converted att1');
+  });
+
+  it('a picture read that fails is logged by the attachment id, its file name under the key the logger redacts', async () => {
+    const { logger } = await run({}, { reader: { failCalls: { attachmentImages: { kind: 'transient', message: 'timed out' } } } });
+
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'images.failed', meta: { attachmentId: 'att1', filename: 'Contrat.docx', cause: 'transient' } });
   });
 
   it('a saved email is unpacked: the message it held, and the file it carried as a file', async () => {

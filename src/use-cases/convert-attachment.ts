@@ -77,7 +77,7 @@ const withImages = async (context: Context, body: string): Promise<Result<{ read
   if (!embedsImages(context.name)) return ok({ body, paths: [] });
   const found = await context.deps.reader.attachmentImages(context.input.messageId, context.input.attachment.id);
   if (!found.ok) {
-    context.deps.logger.warn('images.failed', { attachmentId: context.input.attachment.id, name: context.input.attachment.name, cause: found.error.kind });
+    context.deps.logger.warn('images.failed', { attachmentId: context.input.attachment.id, filename: context.input.attachment.name, cause: found.error.kind });
     return ok({ body, paths: [] });
   }
   if (found.value.length === 0) return ok({ body, paths: [] });
