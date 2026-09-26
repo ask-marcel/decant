@@ -86,6 +86,8 @@ const run = async (
   listsRuns: string[];
   planRuns: string[];
   mailboxRuns: SyncMailboxInput[];
+  // The day each source that keeps a history was handed, in the order they ran.
+  reached: Array<{ kind: string; since?: string }>;
   reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }>;
   prompt: PromptFake;
   logger: LoggerFake;
@@ -110,6 +112,7 @@ const run = async (
   const remembered: Array<ReadonlyArray<{ id: string; name: string; webUrl: string }>> = [];
   const mailboxRuns: SyncMailboxInput[] = [];
   const rememberedSince: string[] = [];
+  const reached: Array<{ kind: string; since?: string }> = [];
   const reported: Array<{ ran: ReadonlyArray<SourceRun>; dryRun: boolean; stopped?: string }> = [];
   const prompt = createPromptFake(answers);
   const logger = createLoggerFake();
@@ -119,6 +122,7 @@ const run = async (
     reader,
     syncGroup: async (input) => {
       groupRuns.push(input.group.name);
+      reached.push({ kind: 'group', since: input.since });
       if (fails('group')) return busy('group');
       return ok({ ...SOURCE_RUN, id: input.group.id, source: input.group.name });
     },
@@ -222,6 +226,7 @@ const run = async (
     listsRuns,
     planRuns,
     mailboxRuns,
+    reached,
     reported,
     prompt,
     logger,
@@ -1651,5 +1656,13 @@ describe('reaching back as far as the first run was told to', () => {
     expect(mended.ok).toBe(true);
     expect(mended.calendarRuns).toEqual([{ since: '2025-01-01' }]);
     expect(mended.rememberedSince).toEqual(['2025-01-01']);
+  });
+});
+
+describe('handing the reach to every source that keeps a history', () => {
+  it('a group inbox is handed the kept day', async () => {
+    const { reached } = await run([], { groupId: 'g1' }, { stored: '2025-01-01', groups: [{ id: 'g1', name: 'Leadership', mail: 'lead@example.com' }] });
+
+    expect(reached).toEqual([{ kind: 'group', since: '2025-01-01' }]);
   });
 });

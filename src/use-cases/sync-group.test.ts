@@ -54,6 +54,7 @@ const run = async (
     outcome?: (input: RenderThreadInput) => RenderThreadOutcome;
     // The thread whose render refuses, by id, so one thread can fail while another lands beside it.
     failThread?: string;
+    since?: string;
   } = {}
 ): Promise<{
   summary: RunSummary;
@@ -90,7 +91,7 @@ const run = async (
       return ok(seeds.outcome === undefined ? rendered() : seeds.outcome(input));
     },
   });
-  const result = await syncGroup({ group: GROUP, maxBytes: 50 * 1024 * 1024, dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 1 });
+  const result = await syncGroup({ group: GROUP, maxBytes: 50 * 1024 * 1024, dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 1, since: seeds.since });
   return {
     summary: result.ok ? result.value.summary : ({} as RunSummary),
     source: result.ok ? result.value.source : '',
@@ -364,5 +365,55 @@ describe('a group thread the run could not write', () => {
     expect(report).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
     expect(report).toContain('- thread Budget review: thread refused');
     expect(report).not.toContain('will be tried again on the next run');
+  });
+});
+
+describe('reaching back only as far as the day', () => {
+  const NEW = thread();
+  const MID = thread({ id: 'mid', topic: 'Spring plans', lastDelivered: '2025-03-01T09:00:00Z' });
+  const OLD = thread({ id: 'old', topic: 'Old news', lastDelivered: '2024-01-10T09:00:00Z' });
+  const LISTING = { threads: { '0d3b-group': [NEW, MID, OLD] } };
+  const filedUnder = (since: string): string => serializeGroupState({ ...withGroupThread(emptyGroupState(GROUP.id, GROUP.name), NEW.id, RECORD), since });
+
+  it('threads last written to before the day are left out', async () => {
+    const { asked } = await run({ reader: LISTING, since: '2025-01-01' });
+
+    expect(asked.map((input) => input.root)).toEqual(['mid', 'AAQkAD-thread']);
+  });
+
+  it('moving the day earlier files the threads it had left out, and nothing already filed again', async () => {
+    const { asked, files } = await run({ files: { texts: { [STATE_PATH]: filedUnder('2025-06-01') } }, reader: LISTING, since: '2025-01-01' });
+
+    expect(asked.map((input) => input.root)).toEqual(['mid']);
+    expect(JSON.parse(files.written.get(STATE_PATH) ?? '{}')).toMatchObject({ since: '2025-01-01' });
+  });
+
+  // Nothing widened, so the dates are read as always: a thread below the newest one filed was
+  // filed already, or had nothing in it to file.
+  it('the same day again, or a later one, stops at the newest thread filed', async () => {
+    for (const since of ['2025-06-01', '2025-09-01']) {
+      const { asked } = await run({ files: { texts: { [STATE_PATH]: filedUnder('2025-06-01') } }, reader: LISTING, since });
+
+      expect(asked).toEqual([]);
+    }
+  });
+
+  it('reaching everything again files every thread it had left out, and keeps no day', async () => {
+    const { asked, files } = await run({ files: { texts: { [STATE_PATH]: filedUnder('2025-06-01') } }, reader: LISTING });
+
+    expect(asked.map((input) => input.root)).toEqual(['old', 'mid']);
+    expect('since' in JSON.parse(files.written.get(STATE_PATH) ?? '{}')).toBe(false);
+  });
+
+  it('a thread given up on stays given up, even when the day moves earlier', async () => {
+    const given = serializeGroupState({
+      ...withGroupThread(emptyGroupState(GROUP.id, GROUP.name), NEW.id, RECORD),
+      since: '2025-06-01',
+      retry: { mid: { attempts: 3, reason: 'thread refused' } },
+    });
+
+    const { asked } = await run({ files: { texts: { [STATE_PATH]: given } }, reader: LISTING, since: '2025-01-01' });
+
+    expect(asked.map((input) => input.root)).toEqual([]);
   });
 });

@@ -33,6 +33,9 @@ export type GroupState = {
   // Additive, so `GROUP_STATE_VERSION` stays where it is: a file written before this loads with an
   // empty ledger, which is what it means.
   readonly retry: Readonly<Record<string, RetryRecord>>;
+  // The day the threads were filed reaching back to, absent when they reached everything. A run
+  // reaching further back than this looks below the watermark too. Additive, like the ledger.
+  readonly since?: string;
 };
 
 export type GroupStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -69,6 +72,7 @@ export const parseGroupState = (raw: unknown): Result<GroupState, GroupStateErro
     linked: mapOf(raw['linked'], (entry) => ({ paths: stringList(entry['paths']) })),
     attachments: mapOf(raw['attachments'], attachmentOf),
     retry: mapOf(raw['retry'], retryOf),
+    since: readString(raw, 'since'),
   });
 };
 

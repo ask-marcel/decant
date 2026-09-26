@@ -20,6 +20,7 @@ import { ok } from '../domain/result.ts';
 import { sourceLabel } from '../domain/sync-state.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
+import { isBefore, widens } from '../domain/sync-window.ts';
 import type { GroupReader, GroupSummary } from './ports/group-reader.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Files } from './ports/files.ts';
@@ -49,6 +50,8 @@ export type SyncGroupInput = {
   readonly maxBytes: number;
   readonly dryRun: boolean;
   readonly concurrency: number;
+  // Only threads last written to on or after this day are filed; absent, every thread is.
+  readonly since?: string;
 };
 
 export type SyncGroup = (input: SyncGroupInput) => Promise<Result<SourceRun, StepError>>;
@@ -83,8 +86,17 @@ const loadState = async (deps: SyncGroupDeps, path: string, group: GroupSummary)
 // that failed recorded nothing, so the watermark climbed past it on the strength of a newer thread
 // that did land, and no reading of the dates alone would ever reach it again. The listing is whole
 // every run, there being no cursor, so the thread itself is already in hand.
-const freshThreads = (threads: ReadonlyArray<GroupThread>, watermark: string, retry: GroupState['retry']): ReadonlyArray<GroupThread> =>
-  [...threads.filter((thread) => thread.lastDelivered > watermark || stillOwed(retry[thread.id]))].reverse();
+//
+// A day moved earlier than the one the threads were filed under reaches below the watermark, which
+// no reading of the dates would: every thread in reach that was neither filed nor given up on.
+const freshThreads = (threads: ReadonlyArray<GroupThread>, state: GroupState, since: string | undefined): ReadonlyArray<GroupThread> => {
+  const watermark = watermarkOf(state);
+  const widened = widens(state.since, since);
+  const inReach = (thread: GroupThread): boolean => !isBefore(thread.lastDelivered, since) && (thread.lastDelivered > watermark || (widened && unfiled(state, thread.id)));
+  return [...threads.filter((thread) => stillOwed(state.retry[thread.id]) || inReach(thread))].reverse();
+};
+
+const unfiled = (state: GroupState, threadId: string): boolean => state.threads[threadId] === undefined && state.retry[threadId] === undefined;
 
 const stillOwed = (record: RetryRecord | undefined): boolean => record !== undefined && record.attempts < MAX_CONVERSION_ATTEMPTS;
 
@@ -221,7 +233,9 @@ const render = async (
   // that gained nothing renders nothing, so the window loop never runs and never saved: its state
   // then carried the date of the last run that happened to find work, and the run report called it
   // stale on the strength of that.
-  const finished = await save(deps, `${root}/${GROUP_STATE_FILE}`, current);
+  // The day is kept only here, once every thread in reach has been tried: kept any earlier, a run
+  // stopped halfway would leave the rest of a widened reach below the watermark for good.
+  const finished = await save(deps, `${root}/${GROUP_STATE_FILE}`, { ...current, since: input.since });
   if (!finished.ok) return finished;
   // Added to, never replacing: a run reports the files a rendered thread has stopped owing as well
   // as the threads the ledger still holds, and the two lists are filled from different places.
@@ -237,7 +251,7 @@ export const createSyncGroup =
     const state = await loadState(deps, `${root}/${GROUP_STATE_FILE}`, input.group);
     const listed = await deps.reader.threads(input.group.id);
     if (!listed.ok) return failed('listThreads', listed.error.kind, listed.error.message);
-    const fresh = freshThreads(listed.value, watermarkOf(state), state.retry);
+    const fresh = freshThreads(listed.value, state, input.since);
     if (input.dryRun) return ok({ id: input.group.id, source: labelOf(input), summary: { ...EMPTY, queued: fresh.length }, notes: NO_NOTES });
     return render(deps, input, { ...state, version: GROUP_STATE_VERSION }, root, fresh, listed.value);
   };

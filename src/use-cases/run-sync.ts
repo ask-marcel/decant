@@ -601,7 +601,7 @@ const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources):
 
 const syncTheGroup = async (deps: RunSyncDeps, input: RunSyncInput, group: GroupSummary): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('group.started', { group: group.id });
-  const summary = await deps.syncGroup({ group, maxBytes: input.maxBytes, dryRun: input.dryRun, concurrency: input.concurrency });
+  const summary = await deps.syncGroup({ group, maxBytes: input.maxBytes, dryRun: input.dryRun, concurrency: input.concurrency, since: dayOf(input.since) });
   if (summary.ok) deps.prompt.show(renderSummary(`${group.name} (group inbox)`, summary.value.summary, input.dryRun));
   return summary;
 };
