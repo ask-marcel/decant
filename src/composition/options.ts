@@ -1,5 +1,6 @@
 import type { Result } from '../domain/result.ts';
 import { isKnownZone } from '../domain/zoned-day.ts';
+import { SINCE_SHAPE, parseSince } from '../domain/sync-window.ts';
 import { err, ok } from '../domain/result.ts';
 
 export type Command = 'sync' | 'update';
@@ -115,11 +116,11 @@ const withConcurrency = (options: Options, value: string): Result<Options, Optio
   return ok({ ...options, concurrency: count });
 };
 
-// A day, not a moment: mail is filtered on the date it arrived.
-const SINCE_DAY = /^\d{4}-\d{2}-\d{2}$/;
-
-const withSince = (options: Options, value: string): Result<Options, OptionsError> =>
-  SINCE_DAY.test(value) ? ok({ ...options, since: value }) : err({ kind: 'bad-option', message: `--since expects a day like 2026-01-31, got: ${value}` });
+// A day, not a moment, or all: what the run reaches back to, kept for every run after it.
+const withSince = (options: Options, value: string): Result<Options, OptionsError> => {
+  const since = parseSince(value);
+  return since.ok ? ok({ ...options, since: since.value }) : err({ kind: 'bad-option', message: `--since expects ${SINCE_SHAPE}, got: ${value}` });
+};
 
 const withFlag = (options: Options, flag: string): Result<Options, OptionsError> => {
   if (flag === '--dry-run') return ok({ ...options, dryRun: true });
@@ -162,7 +163,7 @@ export const USAGE = [
   '  --mailbox           sync your Outlook mailbox without showing the picker',
   '  --people            sync the people directory, everyone in your Teams, without the picker',
   '  --calendar          sync your Outlook calendar without showing the picker',
-  '  --since <day>       with --mailbox or --calendar, only what starts or arrives since this day',
+  '  --since <day|all>   reach back to this day, or through everything, and keep it for every later run',
   '  --dry-run           show what would be done, write nothing',
   '  --max-size-mb <n>   skip files larger than this (default 50)',
   '  --concurrency <n>   how many items to convert at once (default 4)',

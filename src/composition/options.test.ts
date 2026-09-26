@@ -72,8 +72,12 @@ describe('reading what the operator asked for', () => {
   });
 
   it('a day that is not a day is refused rather than silently syncing everything', () => {
-    expect(parse('--since last-week')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--since expects a day like 2026-01-31, got: last-week' } });
+    expect(parse('--since last-week')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--since expects a day like 2026-01-31, or all, got: last-week' } });
     expect(parse('--since 2026-01-31T00:00:00Z').ok).toBe(false);
+  });
+
+  it('--since all reaches back through everything', () => {
+    expect(parse('--since all')).toMatchObject({ value: { since: 'all' } });
   });
 
   it('the update command asks nothing and refreshes what is already there', () => {
