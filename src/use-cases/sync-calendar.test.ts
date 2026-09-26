@@ -368,6 +368,23 @@ describe('syncing the calendar', () => {
     expect('since' in stateOf(everything.files)).toBe(false);
   });
 
+  it('a recurring series that began before the day is kept, since it may be running still; a single event before it is not', async () => {
+    const series = event('s', 'Weekly sync', '2024-01-08T09:00:00Z', { kind: 'seriesMaster', recurrence: 'every week on Monday' });
+
+    const done = await run({
+      since: '2026-09-11',
+      reader: {
+        changes: [
+          { id: 's', removed: false },
+          { id: 'b', removed: false },
+        ],
+        events: { s: series, b: STANDUP },
+      },
+    });
+
+    expect(done.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/2024-01-08/Weekly sync.md`]);
+  });
+
   it('a dry run reads the delta, says how many events it would write, and writes nothing at all', async () => {
     const done = await run({ dryRun: true });
 

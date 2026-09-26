@@ -187,7 +187,12 @@ const fetchOne = async (deps: SyncCalendarDeps, id: string): Promise<Fetched> =>
 // ledger already holds it at the same `lastModifiedDateTime`, which is what a delta re-read after
 // a stopped run answers for everything that already landed.
 const wanted = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: CalendarState, event: CalendarEvent): boolean =>
-  (input.since === undefined || dayIn(event.start, deps.timezone) >= input.since) && state.events[event.id]?.lastModified !== event.lastModified;
+  inReach(deps, input, event) && state.events[event.id]?.lastModified !== event.lastModified;
+
+// A recurring series is kept whatever day it began: Outlook holds it as one event starting on its
+// first occurrence, and a meeting that began before the day may be running still.
+const inReach = (deps: SyncCalendarDeps, input: SyncCalendarInput, event: CalendarEvent): boolean =>
+  input.since === undefined || event.kind === 'seriesMaster' || dayIn(event.start, deps.timezone) >= input.since;
 
 // Paths settled one event at a time, in order, before the window's writes run side by side: two
 // events sharing a subject and a day must not both be handed the same file.
