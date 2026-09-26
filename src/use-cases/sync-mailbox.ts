@@ -24,8 +24,10 @@ import {
   withPending,
   withRetry,
   withThread,
+  withoutCursors,
   withoutRetry,
 } from '../domain/mail-state.ts';
+import { widens } from '../domain/sync-window.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -213,7 +215,7 @@ const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
   }
   const folders = await folderTree(deps);
   if (!folders.ok) return stepFailure('listFolders', folders.error);
-  let current = state;
+  let current = sweptFrom(deps, state, input.since);
   const messages: MailMessage[] = [];
   for (const folder of folders.value) {
     const swept = await sweepFolder(deps, current, folder);
@@ -221,7 +223,16 @@ const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
     current = swept.value.state;
     messages.push(...swept.value.messages);
   }
-  return finishQueue(deps, input, current, statePath, messages);
+  return finishQueue(deps, input, { ...current, since: input.since }, statePath, messages);
+};
+
+// A day earlier than the one the cursors were taken under: what they passed over never comes back
+// through them, so every folder is swept from the start. What is already filed stays as it is, since
+// a conversation is written again only when it holds a message the state has not seen.
+const sweptFrom = (deps: SyncMailboxDeps, state: MailboxState, since: string | undefined): MailboxState => {
+  if (!widens(state.since, since)) return state;
+  deps.logger.info('mail.widened', { from: state.since, to: since ?? 'all' });
+  return withoutCursors(state);
 };
 
 const finishQueue = async (

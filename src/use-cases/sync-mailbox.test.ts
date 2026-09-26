@@ -380,6 +380,55 @@ describe('narrowing a mailbox sync to recent mail', () => {
     expect(asked).toEqual(['conv-new']);
   });
 
+  // A cursor reports only what changed after it, so a day moved earlier would otherwise never see
+  // the conversations the narrower sweep passed over.
+  it('a day moved earlier than the one the cursors were taken under sweeps every folder from the start, and writes only what it had left out', async () => {
+    const held = withConversation(emptyMailboxState(), 'conv-new', { threadId: 'thread-new', root: '<new@example.com>' });
+    const filed = withThread(held, 'thread-new', {
+      folder: '2026-05-12-thread-new',
+      conversationIds: ['conv-new'],
+      file: 'threads/2026-05-12-thread-new/x.md',
+      messageIds: ['new'],
+      lastMessage: '2026-05-12T09:31:00Z',
+      attachments: [],
+      inlineImages: [],
+    });
+    const known = serializeMailboxState({ ...filed, since: '2026-01-01', folders: { 'AAMk-inbox': { name: 'Inbox', deltaLink: 'cursor-1' } } });
+    const messages = [
+      message({ id: 'old', conversationId: 'conv-old', received: '2025-03-01T00:00:00Z' }),
+      message({ id: 'new', conversationId: 'conv-new', received: '2026-05-12T09:31:00Z' }),
+    ];
+
+    const { reader, asked, files, logger } = await run({
+      files: { texts: { [STATE_PATH]: known } },
+      reader: { folders: [folder()], pages: [{ messages, skipped: 0, deltaLink: 'cursor-2' }] },
+      since: '2025-01-01',
+    });
+
+    expect(reader.calls).toContain('folderDelta:AAMk-inbox');
+    expect(reader.calls).not.toContain('deltaFrom:cursor-1');
+    expect(asked).toEqual(['conv-old']);
+    expect(JSON.parse(files.written.get(STATE_PATH) ?? '{}')).toMatchObject({ since: '2025-01-01', folders: { 'AAMk-inbox': { deltaLink: 'cursor-2' } } });
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'mail.widened', meta: { from: '2026-01-01', to: '2025-01-01' } });
+  });
+
+  it('the same day, or a later one, keeps following the cursors; all widens them, and keeps no day', async () => {
+    const texts = { [STATE_PATH]: serializeMailboxState({ ...emptyMailboxState(), since: '2026-01-01', folders: { 'AAMk-inbox': { name: 'Inbox', deltaLink: 'cursor-1' } } }) };
+
+    for (const since of ['2026-01-01', '2026-03-01']) {
+      const kept = await run({ files: { texts }, reader: { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'cursor-2' }] }, since });
+
+      expect(kept.reader.calls).toContain('deltaFrom:cursor-1');
+      expect(JSON.parse(kept.files.written.get(STATE_PATH) ?? '{}')).toMatchObject({ since });
+    }
+
+    const everything = await run({ files: { texts }, reader: { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'cursor-2' }] } });
+
+    expect(everything.reader.calls).toContain('folderDelta:AAMk-inbox');
+    expect('since' in JSON.parse(everything.files.written.get(STATE_PATH) ?? '{}')).toBe(false);
+    expect(everything.logger.calls).toContainEqual({ level: 'info', event: 'mail.widened', meta: { from: '2026-01-01', to: 'all' } });
+  });
+
   it('without a day asked for, everything the sweep returned is written', async () => {
     const messages = [message({ id: 'old', conversationId: 'conv-old', received: '2024-01-01T00:00:00Z' })];
     const { asked } = await run({ reader: { folders: [folder()], pages: [{ messages, skipped: 0, deltaLink: 'c1' }] } });

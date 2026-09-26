@@ -81,6 +81,10 @@ export type MailboxState = {
   // Additive, so `STATE_VERSION` stays where it is: a file written before this loads with an empty
   // ledger, which is what it means, and bumping would cost a full mailbox re-sweep for nothing.
   readonly retry: Readonly<Record<string, RetryRecord>>;
+  // The day the folder cursors were taken reaching back to, absent when they reached everything. A
+  // run reaching further back than this sweeps every folder from the start. Additive for the same
+  // reason as the ledger: a file written before this reached everything.
+  readonly since?: string;
 };
 
 export type MailStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -160,12 +164,19 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     attachments: mapOf(raw['attachments'], attachmentOf),
     pending: stringList(raw['pending']),
     retry: mapOf(raw['retry'], retryOf),
+    since: readString(raw, 'since'),
   });
 };
 
 export const withFolderCursor = (state: MailboxState, folderId: string, name: string, deltaLink: string | undefined): MailboxState => ({
   ...state,
   folders: { ...state.folders, [folderId]: { name, ...(deltaLink === undefined ? {} : { deltaLink }) } },
+});
+
+// Every folder read again from the start, each keeping its name.
+export const withoutCursors = (state: MailboxState): MailboxState => ({
+  ...state,
+  folders: Object.fromEntries(Object.entries(state.folders).map(([id, folder]) => [id, { name: folder.name }])),
 });
 
 export const withThread = (state: MailboxState, conversationId: string, record: ThreadRecord): MailboxState => ({
