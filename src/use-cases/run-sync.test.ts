@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { err, ok } from '../domain/result.ts';
+import type { Result } from '../domain/result.ts';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import type { DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
@@ -12,6 +13,7 @@ import { createRunSync } from './run-sync.ts';
 import type { RunSyncInput } from './run-sync.ts';
 import type { RunSummary, SourceRun, SyncSiteInput } from './sync-site.ts';
 import type { SyncMailboxInput } from './sync-mailbox.ts';
+import type { StepError } from './ports/step-error.ts';
 
 const sites = [
   { id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/contoso' },
@@ -26,6 +28,12 @@ const EMPTY_SUMMARY = { converted: 2, moved: 0, archived: 0, skipped: 0, failed:
 // Every fake source hands back the same run: these tests are about which sources get synced and in
 // what order, never about what any one of them left behind.
 const SOURCE_RUN = { id: 'site!one', source: 'Espace Contoso', summary: EMPTY_SUMMARY, notes: { skipped: [], failed: [], givenUp: [], archived: [] } };
+
+// The sources a test can make fail once begun. Each fails at a step named after it, so a test can
+// tell which one stopped the run.
+type FailingKind = 'calendar' | 'people' | 'group' | 'todo' | 'team' | 'notebook';
+
+const busy = (kind: FailingKind): Result<never, StepError> => err({ step: kind, cause: 'transient', message: 'Graph is busy' });
 
 const run = async (
   answers: ReadonlyArray<string>,
@@ -57,13 +65,16 @@ const run = async (
     savedPlan?: { id: string; title: string; groupId: string };
     reportPath?: string;
     summary?: RunSummary;
+    failing?: ReadonlyArray<FailingKind>;
+    // A report that could not be written, so there is no file to point the operator at.
+    unreported?: boolean;
   } = {}
 ): Promise<{
   calls: SyncSiteInput[];
   groupRuns: string[];
   todoRuns: string[];
   teamRuns: Array<{ team: string; channels: string[] }>;
-  peopleRuns: number;
+  peopleRuns: Array<{ concurrency: number; dryRun: boolean }>;
   calendarRuns: Array<{ since?: string }>;
   notebookRuns: string[];
   listsRuns: string[];
@@ -84,7 +95,7 @@ const run = async (
   const groupRuns: string[] = [];
   const todoRuns: string[] = [];
   const teamRuns: Array<{ team: string; channels: string[] }> = [];
-  let peopleRuns = 0;
+  const peopleRuns: Array<{ concurrency: number; dryRun: boolean }> = [];
   const calendarRuns: Array<{ since?: string }> = [];
   const notebookRuns: string[] = [];
   const listsRuns: string[] = [];
@@ -95,20 +106,24 @@ const run = async (
   const prompt = createPromptFake(answers);
   const logger = createLoggerFake();
   const reader = createDriveReaderFake({ sites, drives, ...seeds.reader });
+  const fails = (kind: FailingKind): boolean => seeds.failing?.includes(kind) === true;
   const runSync = createRunSync({
     reader,
     syncGroup: async (input) => {
       groupRuns.push(input.group.name);
+      if (fails('group')) return busy('group');
       return ok({ ...SOURCE_RUN, id: input.group.id, source: input.group.name });
     },
     groups: { listGroups: async () => (seeds.failGroups === true ? err({ kind: 'permanent' as const, message: 'ErrorAccessDenied' }) : ok(seeds.groups ?? [])) },
     syncTodo: async (input) => {
       todoRuns.push(input.list.name);
+      if (fails('todo')) return busy('todo');
       return ok({ ...SOURCE_RUN, id: input.list.id, source: input.list.name });
     },
     todo: { taskLists: async () => (seeds.failTodo === true ? err({ kind: 'permanent' as const, message: 'MailboxNotEnabledForRESTAPI' }) : ok(seeds.todoLists ?? [])) },
     syncTeam: async (input) => {
       teamRuns.push({ team: input.team.name, channels: input.channels.map((channel) => channel.name) });
+      if (fails('team')) return busy('team');
       return ok({ ...SOURCE_RUN, id: input.team.id, source: input.team.name });
     },
     teams: {
@@ -124,16 +139,19 @@ const run = async (
             ),
     },
     savedChannels: async () => seeds.savedChannels ?? [{ id: 'ch-general', name: 'General' }],
-    syncPeople: async () => {
-      peopleRuns += 1;
+    syncPeople: async (input) => {
+      peopleRuns.push({ concurrency: input.concurrency, dryRun: input.dryRun });
+      if (fails('people')) return busy('people');
       return ok({ ...SOURCE_RUN, id: 'people', source: 'People' });
     },
     syncCalendar: async (input) => {
       calendarRuns.push({ since: input.since });
+      if (fails('calendar')) return busy('calendar');
       return ok({ ...SOURCE_RUN, id: 'calendar', source: 'Calendar' });
     },
     syncNotebook: async (input) => {
       notebookRuns.push(input.notebook.name);
+      if (fails('notebook')) return busy('notebook');
       return ok({ ...SOURCE_RUN, id: input.notebook.id, source: input.notebook.name });
     },
     notebooks: { listNotebooks: async () => (seeds.failNotebooks === true ? err({ kind: 'permanent' as const, message: 'OneNote read blocked' }) : ok(seeds.notebooks ?? [])) },
@@ -170,11 +188,11 @@ const run = async (
     savedDrives: async () => seeds.savedDrives ?? [{ id: 'b!one', name: 'Documents' }],
     syncMailbox: async (input) => {
       mailboxRuns.push(input);
-      return ok(SOURCE_RUN);
+      return ok({ ...SOURCE_RUN, id: 'me', source: 'Mailbox' });
     },
     writeGlobalReport: async ({ ran, dryRun, stopped }) => {
       reported.push({ ran, dryRun, stopped });
-      return seeds.reportPath ?? 'kb/_sync-report.md';
+      return seeds.unreported === true ? undefined : (seeds.reportPath ?? 'kb/_sync-report.md');
     },
   });
   const result = await runSync({ command: 'sync', driveIds: [], maxBytes: 1000, concurrency: 4, dryRun: false, ...over });
@@ -233,21 +251,32 @@ describe('remembering the sites so the next run does not wait for them', () => {
     expect(remembered).toHaveLength(1);
   });
 
-  it('a first run with nothing stored lists for real and keeps what it found', async () => {
-    const { prompt, remembered } = await run(['q']);
+  it('a first run with nothing stored lists for real, once, and keeps what it found', async () => {
+    const { prompt, remembered } = await run(['1', '1']);
 
     expect(prompt.shown.join('\n')).toContain('Espace Contoso');
+    expect(remembered).toHaveLength(1);
     expect(remembered[0]?.map((site) => site.name)).toEqual(['Espace Contoso', 'Direction']);
+  });
+
+  it('a refresh that fails leaves the stored list as it was, and the run it rode alongside still finishes', async () => {
+    const { ok: succeeded, mailboxRuns, remembered } = await run(['m'], {}, { cached: CACHED, reader: { failWith: { kind: 'transient', message: 'Graph is busy' } } });
+
+    expect(succeeded).toBe(true);
+    expect(mailboxRuns).toHaveLength(1);
+    expect(remembered).toHaveLength(0);
   });
 });
 
 describe('choosing what to sync', () => {
   it('picking a site then a library syncs exactly that pair', async () => {
-    const { calls } = await run(['1', '1']);
+    const { calls, prompt } = await run(['1', '1']);
 
     expect(calls).toHaveLength(1);
     expect(calls[0]?.site.name).toBe('Espace Contoso');
     expect(calls[0]?.drives).toEqual([{ id: 'b!one', name: 'Documents' }]);
+    expect(prompt.shown).toContain('Libraries in this site:\n\n  1) Documents  (new)\n  2) Site Assets  (new)\n\nChoose one or more numbers (1,3), or all.');
+    expect(prompt.asked).toEqual(['Source:', 'Libraries:']);
   });
 
   it('the site list marks what is already synced, so the operator sees what is new', async () => {
@@ -282,7 +311,10 @@ describe('choosing what to sync', () => {
   });
 
   it('a group named outright is synced without drawing the picker, by its id or its address', async () => {
-    const groups = [{ id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' }];
+    const groups = [
+      { id: '7a1c-group', name: 'Finance Team', mail: 'FinanceTeam@example.com' },
+      { id: '0d3b-group', name: 'MOOV Leadership Team', mail: 'MOOVLeadershipTeam@example.com' },
+    ];
     const byId = await run([], { groupId: '0d3b-group' }, { groups });
     const byMail = await run([], { groupId: 'MOOVLeadershipTeam@example.com' }, { groups });
 
@@ -293,10 +325,11 @@ describe('choosing what to sync', () => {
   });
 
   it('a group you do not belong to is refused by name rather than syncing something else', async () => {
-    const { ok: succeeded, step, error } = await run([], { groupId: 'support@moovlogistics.com' }, { groups: [] });
+    const { ok: succeeded, step, cause, error } = await run([], { groupId: 'support@moovlogistics.com' }, { groups: [] });
 
     expect(succeeded).toBe(false);
     expect(step).toBe('findGroup');
+    expect(cause).toBe('bad-choice');
     expect(error).toBe('no group you belong to is support@moovlogistics.com');
   });
 
@@ -313,7 +346,7 @@ describe('choosing what to sync', () => {
 
     expect(prompt.shown.join('\n')).not.toContain('Group inboxes:');
     expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
-    expect(logger.calls.some((entry) => entry.event === 'groups.unlisted')).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'groups.unlisted', meta: { cause: 'permanent' } });
   });
 
   it('an update refreshes the group inboxes already in the knowledge base, alongside the sites', async () => {
@@ -348,7 +381,10 @@ describe('choosing what to sync', () => {
   });
 
   it('a To Do list named outright is synced without drawing the picker, by its id or its name', async () => {
-    const todoLists = [{ id: 'list-1', name: 'Tasks' }];
+    const todoLists = [
+      { id: 'list-0', name: 'Errands' },
+      { id: 'list-1', name: 'Tasks' },
+    ];
     const byId = await run([], { todoListId: 'list-1' }, { todoLists });
     const byName = await run([], { todoListId: 'Tasks' }, { todoLists });
 
@@ -358,10 +394,11 @@ describe('choosing what to sync', () => {
   });
 
   it('a To Do list this account does not have is refused by name rather than syncing something else', async () => {
-    const { ok: succeeded, step, error } = await run([], { todoListId: 'Groceries' }, { todoLists: [] });
+    const { ok: succeeded, step, cause, error } = await run([], { todoListId: 'Groceries' }, { todoLists: [] });
 
     expect(succeeded).toBe(false);
     expect(step).toBe('findTodoList');
+    expect(cause).toBe('bad-choice');
     expect(error).toBe('no To Do list of yours is Groceries');
   });
 
@@ -384,7 +421,7 @@ describe('choosing what to sync', () => {
 
     expect(prompt.shown.join('\n')).not.toContain('To Do:');
     expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
-    expect(logger.calls.some((entry) => entry.event === 'todo.unlisted')).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'todo.unlisted', meta: { cause: 'permanent' } });
   });
 
   it('the teams are offered under the To Do lists, and picking one asks which of its channels to take', async () => {
@@ -394,7 +431,8 @@ describe('choosing what to sync', () => {
     expect(prompt.shown.join('\n')).toContain('Channels in this team:\n\n  1) General  (new)\n  2) Planning  (new)');
     expect(prompt.asked).toEqual(['Source:', 'Channels:']);
     expect(teamRuns).toEqual([{ team: 'MOOV Leadership', channels: ['Planning'] }]);
-    expect(logger.calls.some((entry) => entry.event === 'team.started')).toBe(true);
+    expect(prompt.shown).toContain('MOOV Leadership: 2 converted, 0 moved, 0 archived, 0 skipped, 0 failed.');
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'team.started', meta: { teamId: 'team-1', channels: 1 } });
   });
 
   it('a team taken together with another source takes every channel without asking, since choosing them together was the point', async () => {
@@ -406,7 +444,10 @@ describe('choosing what to sync', () => {
   });
 
   it('a team named outright is synced with every channel and no picker, by its name or its id', async () => {
-    const teams = [{ id: 'team-1', name: 'MOOV Leadership' }];
+    const teams = [
+      { id: 'team-0', name: 'Finance' },
+      { id: 'team-1', name: 'MOOV Leadership' },
+    ];
     const byId = await run([], { teamId: 'team-1' }, { teams });
     const byName = await run([], { teamId: 'MOOV Leadership' }, { teams });
 
@@ -416,18 +457,20 @@ describe('choosing what to sync', () => {
   });
 
   it('a team you are not in is refused by name rather than syncing something else', async () => {
-    const { ok: succeeded, step, error } = await run([], { teamId: 'Ghost Team' }, { teams: [] });
+    const { ok: succeeded, step, cause, error } = await run([], { teamId: 'Ghost Team' }, { teams: [] });
 
     expect(succeeded).toBe(false);
     expect(step).toBe('findTeam');
+    expect(cause).toBe('bad-choice');
     expect(error).toBe('no team you belong to is Ghost Team');
   });
 
-  it('a named team whose listing is refused stops the run and names the step', async () => {
-    const { ok: succeeded, step } = await run([], { teamId: 'team-1' }, { failTeams: true });
+  it('a named team whose listing, or whose channel listing, is refused stops the run and names the step', async () => {
+    const unlisted = await run([], { teamId: 'team-1' }, { failTeams: true });
+    const noChannels = await run([], { teamId: 'team-1' }, { teams: [{ id: 'team-1', name: 'Leadership' }], failChannels: true });
 
-    expect(succeeded).toBe(false);
-    expect(step).toBe('listTeams');
+    expect({ ok: unlisted.ok, step: unlisted.step }).toEqual({ ok: false, step: 'listTeams' });
+    expect({ ok: noChannels.ok, step: noChannels.step, teamRuns: noChannels.teamRuns }).toEqual({ ok: false, step: 'listChannels', teamRuns: [] });
   });
 
   it('an update refreshes the teams already in the knowledge base, with the channels the earlier run recorded', async () => {
@@ -448,7 +491,7 @@ describe('choosing what to sync', () => {
 
     expect(prompt.shown.join('\n')).not.toContain('Teams:');
     expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
-    expect(logger.calls.some((entry) => entry.event === 'teams.unlisted')).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'teams.unlisted', meta: { cause: 'permanent' } });
   });
 
   it('a team whose channels cannot be listed stops the run naming the step, rather than syncing nothing and calling it done', async () => {
@@ -458,19 +501,29 @@ describe('choosing what to sync', () => {
     expect(step).toBe('listChannels');
   });
 
+  it('a channel answer nobody offered, or one that is not a number, stops the run at the pickChannels step with the reason', async () => {
+    const teams = [{ id: 'team-1', name: 'Leadership' }];
+    const unoffered = await run(['3', '9'], {}, { teams });
+    const letter = await run(['3', 'q'], {}, { teams });
+
+    expect({ step: unoffered.step, cause: unoffered.cause, error: unoffered.error }).toEqual({ step: 'pickChannels', cause: 'bad-choice', error: 'no such choice: 9' });
+    expect({ step: letter.step, cause: letter.cause, error: letter.error }).toEqual({ step: 'pickChannels', cause: 'bad-choice', error: 'choose channels by number, or all' });
+    expect([...unoffered.teamRuns, ...letter.teamRuns]).toEqual([]);
+  });
+
   it('p syncs the people directory, offered beside the mailbox and marked when it has been synced', async () => {
     const { peopleRuns, prompt, logger } = await run(['p'], {}, { synced: [{ kind: 'people', id: 'people', name: 'People', lastRun: '2026-09-11T09:00:00Z', fileCount: 97 }] });
 
     expect(prompt.shown.join('\n')).toContain('  p) People, everyone in your Teams  (synced 2026-09-11, 97 files)');
-    expect(peopleRuns).toBe(1);
+    expect(peopleRuns).toHaveLength(1);
     expect(prompt.shown.join('\n')).toContain('People: 2 converted');
     expect(logger.calls.some((entry) => entry.event === 'people.started')).toBe(true);
   });
 
-  it('--people syncs the directory without drawing the picker', async () => {
-    const { peopleRuns, prompt } = await run([], { people: true });
+  it('--people syncs the directory without drawing the picker, passing the dry run and the concurrency through', async () => {
+    const { peopleRuns, prompt } = await run([], { people: true, dryRun: true });
 
-    expect(peopleRuns).toBe(1);
+    expect(peopleRuns).toEqual([{ concurrency: 4, dryRun: true }]);
     expect(prompt.asked).toEqual([]);
   });
 
@@ -478,8 +531,8 @@ describe('choosing what to sync', () => {
     const refreshed = await run([], { command: 'update' }, { synced: [{ kind: 'people', id: 'people', name: 'People', lastRun: '2026-09-11T09:00:00Z', fileCount: 97 }] });
     const untouched = await run([], { command: 'update' }, { synced: [] });
 
-    expect(refreshed.peopleRuns).toBe(1);
-    expect(untouched.peopleRuns).toBe(0);
+    expect(refreshed.peopleRuns).toHaveLength(1);
+    expect(untouched.peopleRuns).toHaveLength(0);
   });
 
   it('c syncs the calendar, offered beside the mailbox and marked when it has been synced, and --since reaches it', async () => {
@@ -512,18 +565,32 @@ describe('choosing what to sync', () => {
 
     expect(prompt.shown.join('\n')).toContain('OneNote:\n  3) MOOV Leadership Notebook  (new)');
     expect(notebookRuns).toEqual(['MOOV Leadership Notebook']);
-    expect(logger.calls.some((entry) => entry.event === 'notebook.started')).toBe(true);
+    expect(prompt.shown).toContain('MOOV Leadership Notebook: 2 converted, 0 moved, 0 archived, 0 skipped, 0 failed.');
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'notebook.started', meta: { notebook: '1-nb' } });
   });
 
-  it('a notebook named outright is synced without the picker, and one nobody can read is refused by name', async () => {
-    const notebook = { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: '', site: undefined };
-    const byName = await run([], { notebookId: 'MOOV Leadership Notebook' }, { notebooks: [notebook] });
+  it('a notebook named outright is synced without the picker, by its name or its id, and one nobody can read is refused by name', async () => {
+    const notebooks = [
+      { id: '0-nb', name: 'Finance Notebook', webUrl: '', site: undefined },
+      { id: '1-nb', name: 'MOOV Leadership Notebook', webUrl: '', site: undefined },
+    ];
+    const byName = await run([], { notebookId: 'MOOV Leadership Notebook' }, { notebooks });
+    const byId = await run([], { notebookId: '1-nb' }, { notebooks });
     const missing = await run([], { notebookId: 'Ghost' }, { notebooks: [] });
 
     expect(byName.notebookRuns).toEqual(['MOOV Leadership Notebook']);
     expect(byName.prompt.asked).toEqual([]);
+    expect(byId.notebookRuns).toEqual(['MOOV Leadership Notebook']);
     expect(missing.ok).toBe(false);
-    expect(missing.step).toBe('findNotebook');
+    expect({ step: missing.step, cause: missing.cause, error: missing.error }).toEqual({ step: 'findNotebook', cause: 'bad-choice', error: 'no notebook you can read is Ghost' });
+  });
+
+  it('a named notebook stops the run naming the step when the notebooks, or the sites they are found through, cannot be listed', async () => {
+    const unlisted = await run([], { notebookId: '1-nb' }, { failNotebooks: true });
+    const noSites = await run([], { notebookId: '1-nb' }, { reader: { failWith: { kind: 'auth', message: 'not authenticated' } } });
+
+    expect({ ok: unlisted.ok, step: unlisted.step }).toEqual({ ok: false, step: 'listNotebooks' });
+    expect({ ok: noSites.ok, step: noSites.step }).toEqual({ ok: false, step: 'listSites' });
   });
 
   it('an update refreshes a notebook from the record its earlier run left, and stops naming the step when the record is gone', async () => {
@@ -533,7 +600,11 @@ describe('choosing what to sync', () => {
 
     expect(found.notebookRuns).toEqual(['MOOV Leadership Notebook']);
     expect(lost.ok).toBe(false);
-    expect(lost.step).toBe('savedNotebook');
+    expect({ step: lost.step, cause: lost.cause, error: lost.error }).toEqual({
+      step: 'savedNotebook',
+      cause: 'not-found',
+      error: 'no record of the notebook MOOV Leadership Notebook',
+    });
   });
 
   it('the lists of every site are offered last, off the same listing as the libraries, and a number there syncs a site`s lists and not its libraries', async () => {
@@ -650,15 +721,17 @@ describe('choosing what to sync', () => {
     expect(unlisted.step).toBe('listPlans');
   });
 
-  it('an update refreshes a plan from the record its earlier run left, after the lists, and stops naming the step when the record is gone', async () => {
+  it('an update refreshes a plan from the record its earlier run left, after the lists, and stops naming the step when the record is gone or the plan fails', async () => {
     const synced = [
       { kind: 'lists' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-09-11T09:00:00Z', fileCount: 3 },
       { kind: 'plan' as const, id: 'plan-1', name: 'Offsite 2026', lastRun: '2026-09-11T09:00:00Z', fileCount: 4 },
     ];
     const found = await run([], { command: 'update' }, { synced, savedPlan: { id: 'plan-1', title: 'Offsite 2026', groupId: 'g-1' } });
     const lost = await run([], { command: 'update' }, { synced, savedPlan: undefined });
+    const broken = await run([], { command: 'update' }, { synced, savedPlan: { id: 'plan-1', title: 'Offsite 2026', groupId: 'g-1' }, failPlanSync: true });
 
     expect(found.planRuns).toEqual(['Offsite 2026']);
+    expect({ ok: broken.ok, step: broken.step }).toEqual({ ok: false, step: 'listTasks' });
     expect(found.summaries?.map((summary) => summary.id)).toEqual(['lists:contoso,1,2', 'plan-1']);
     expect(lost.ok).toBe(false);
     expect({ step: lost.step, cause: lost.cause, error: lost.error }).toEqual({ step: 'savedPlan', cause: 'not-found', error: 'no record of the plan Offsite 2026' });
@@ -669,7 +742,7 @@ describe('choosing what to sync', () => {
 
     expect(prompt.shown.join('\n')).not.toContain('Planner:');
     expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
-    expect(logger.calls.some((entry) => entry.event === 'plans.unlisted')).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'plans.unlisted', meta: { cause: 'permanent' } });
   });
 
   it('a notebook listing that fails costs the notebooks and not the picker', async () => {
@@ -677,7 +750,7 @@ describe('choosing what to sync', () => {
 
     expect(prompt.shown.join('\n')).not.toContain('OneNote:');
     expect(calls.map((call) => call.site.name)).toEqual(['Espace Contoso']);
-    expect(logger.calls.some((entry) => entry.event === 'notebooks.unlisted')).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'notebooks.unlisted', meta: { cause: 'permanent' } });
   });
 
   it('a group listing that fails costs the group inboxes and not the picker', async () => {
@@ -712,6 +785,39 @@ describe('choosing what to sync', () => {
 
     expect(prompt.shown.join('\n')).toContain('  2) My files');
     expect(calls.map((call) => call.site.name)).toEqual(['My files']);
+  });
+
+  it('the number shown against a source picks exactly that one, however many of every kind the picker lists', async () => {
+    const groups = [
+      { id: 'g-1', name: 'Board', mail: 'board@example.com' },
+      { id: 'g-2', name: 'Crew', mail: 'crew@example.com' },
+    ];
+    const todoLists = [
+      { id: 'list-1', name: 'Tasks' },
+      { id: 'list-2', name: 'Errands' },
+    ];
+    const teams = [
+      { id: 'team-1', name: 'Alpha' },
+      { id: 'team-2', name: 'Bravo' },
+      { id: 'team-3', name: 'Charlie' },
+    ];
+    const notebooks = [
+      { id: 'nb-1', name: 'Minutes', webUrl: '', site: undefined },
+      { id: 'nb-2', name: 'Journal', webUrl: '', site: undefined },
+    ];
+    const plans = [
+      { id: 'plan-1', title: 'Offsite', groupId: 'g-1' },
+      { id: 'plan-2', title: 'Launch', groupId: 'g-2' },
+    ];
+    // Drawn as sites 1-2, groups 3-4, To Do lists 5-6, teams 7-9, notebooks 10-11, the sites' lists 12-13, plans 14-15.
+    const { prompt, calls, groupRuns, todoRuns, teamRuns, notebookRuns, listsRuns, planRuns } = await run(['4,9,15'], {}, { groups, todoLists, teams, notebooks, plans });
+
+    const shown = prompt.shown.join('\n');
+    expect([shown.includes('  4) Crew'), shown.includes('  9) Charlie'), shown.includes(' 15) Launch')]).toEqual([true, true, true]);
+    expect(groupRuns).toEqual(['Crew']);
+    expect(teamRuns).toEqual([{ team: 'Charlie', channels: ['General', 'Planning'] }]);
+    expect(planRuns).toEqual(['Launch']);
+    expect([calls, todoRuns, notebookRuns, listsRuns]).toStrictEqual([[], [], [], []]);
   });
 
   it('every site is reported as it finishes, not only once the whole run is over', async () => {
@@ -820,11 +926,12 @@ describe('refreshing everything already synced', () => {
 
 describe('syncing the mailbox', () => {
   it('choosing m at the picker syncs the mailbox and no site', async () => {
-    const { mailboxRuns, calls, prompt } = await run(['m']);
+    const { mailboxRuns, calls, prompt, logger } = await run(['m']);
 
     expect(mailboxRuns).toHaveLength(1);
     expect(calls).toEqual([]);
     expect(prompt.shown.at(-1)).toContain('Mailbox:');
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'mailbox.started', meta: {} });
   });
 
   it('the mailbox is offered in the picker beside the sites', async () => {
@@ -1223,8 +1330,16 @@ describe('pointing a reader at the report a run leaves behind', () => {
 
   it('a run that left something behind ends with one line naming the report and what is in it', async () => {
     const { prompt } = await run(['1', '1'], {}, { summary: { ...EMPTY_SUMMARY, skipped: 7, failed: 2 } });
+    const failedOnly = await run(['1', '1'], {}, { summary: { ...EMPTY_SUMMARY, failed: 3 } });
 
     expect(prompt.shown.at(-1)).toBe('2 could not be read, 7 left out. See kb/_sync-report.md');
+    expect(failedOnly.prompt.shown.at(-1)).toBe('3 could not be read, 0 left out. See kb/_sync-report.md');
+  });
+
+  it('a report that could not be written is not pointed at, even when the run left something behind', async () => {
+    const { prompt } = await run(['1', '1'], {}, { summary: { ...EMPTY_SUMMARY, skipped: 7, failed: 2 }, unreported: true });
+
+    expect(prompt.shown.at(-1)).toBe('Espace Contoso: 2 converted, 0 moved, 0 archived, 7 skipped, 2 failed.');
   });
 
   it('a run that left nothing behind says nothing about a report, since there would be nothing to read', async () => {
@@ -1330,4 +1445,69 @@ describe('pointing a reader at the report a run leaves behind', () => {
 
     expect(reported[0]?.ran).toEqual([]);
   });
+});
+
+describe('stopping where a source fails, and nowhere else', () => {
+  const GROUP = { id: '0d3b-group', name: 'Leadership Team', mail: 'LeadershipTeam@example.com' };
+  const TODO = { id: 'list-1', name: 'Tasks' };
+  const TEAM = { id: 'team-1', name: 'Leadership' };
+  const NOTEBOOK = { id: '1-nb', name: 'Leadership Notebook', webUrl: '', site: undefined };
+  const PLAN = { id: 'plan-1', title: 'Offsite 2026', groupId: 'g-1' };
+  const ALL_OFFERED = { groups: [GROUP], todoLists: [TODO], teams: [TEAM], notebooks: [NOTEBOOK], plans: [PLAN] };
+  const syncedAs = (kind: SyncedSource['kind'], id: string, name: string): SyncedSource => ({ kind, id, name, lastRun: '2026-09-20T09:00:00Z', fileCount: 1 });
+  const EVERY_KIND = [
+    syncedAs('mailbox', 'me', 'Mailbox'),
+    syncedAs('calendar', 'calendar', 'Calendar'),
+    syncedAs('people', 'people', 'People'),
+    syncedAs('site', 'contoso,1,2', 'Espace Contoso'),
+    syncedAs('group', GROUP.id, GROUP.name),
+    syncedAs('todo', TODO.id, TODO.name),
+    syncedAs('team', TEAM.id, TEAM.name),
+    syncedAs('notebook', NOTEBOOK.id, NOTEBOOK.name),
+    syncedAs('lists', 'contoso,3,4', 'Direction'),
+    syncedAs('plan', PLAN.id, PLAN.title),
+  ];
+  // The runs carried back, in the order an update takes the kinds.
+  const UPDATED = ['me', 'calendar', 'people', 'site!one', GROUP.id, TODO.id, TEAM.id, NOTEBOOK.id, 'lists:contoso,3,4', PLAN.id];
+  // The runs `all` at the picker carries back: both sites for their libraries, one of every other kind, both sites for their lists.
+  const PICKED = ['site!one', 'site!one', GROUP.id, TODO.id, TEAM.id, NOTEBOOK.id, 'lists:contoso,1,2', 'lists:contoso,3,4', PLAN.id];
+  const RUN_OF: Readonly<Record<FailingKind, string>> = { calendar: 'calendar', people: 'people', group: GROUP.id, todo: TODO.id, team: TEAM.id, notebook: NOTEBOOK.id };
+  const finishedBefore = (order: ReadonlyArray<string>, kind: FailingKind): string[] => order.slice(0, order.indexOf(RUN_OF[kind]));
+
+  it('an update over one source of every kind syncs each once, in a fixed order, and carries every run back', async () => {
+    const { ok: succeeded, summaries } = await run([], { command: 'update' }, { synced: EVERY_KIND, savedNotebook: NOTEBOOK, savedPlan: PLAN });
+
+    expect(succeeded).toBe(true);
+    expect(summaries?.map((summary) => summary.id)).toEqual(UPDATED);
+  });
+
+  for (const kind of ['calendar', 'people', 'group', 'todo', 'team', 'notebook'] as const) {
+    it(`an update stops at a ${kind} that fails, naming it, keeping what finished before it and syncing nothing after`, async () => {
+      const { ok: succeeded, step, reported, planRuns } = await run([], { command: 'update' }, { synced: EVERY_KIND, savedNotebook: NOTEBOOK, savedPlan: PLAN, failing: [kind] });
+
+      expect(succeeded).toBe(false);
+      expect(step).toBe(kind);
+      expect(reported[0]?.ran.map((ran) => ran.id)).toEqual(finishedBefore(UPDATED, kind));
+      expect(planRuns).toEqual([]);
+    });
+  }
+
+  it('every source taken with all at the picker is synced once, in the order the picker drew them, and every run is carried back', async () => {
+    const { ok: succeeded, summaries, prompt } = await run(['all'], {}, ALL_OFFERED);
+
+    expect(succeeded).toBe(true);
+    expect(summaries?.map((summary) => summary.id)).toEqual(PICKED);
+    expect(prompt.asked).toEqual(['Source:']);
+  });
+
+  for (const kind of ['group', 'todo', 'team', 'notebook'] as const) {
+    it(`sources taken at the picker stop at a ${kind} that fails, naming it, keeping what finished before it and syncing nothing after`, async () => {
+      const { ok: succeeded, step, reported, planRuns } = await run(['all'], {}, { ...ALL_OFFERED, failing: [kind] });
+
+      expect(succeeded).toBe(false);
+      expect(step).toBe(kind);
+      expect(reported[0]?.ran.map((ran) => ran.id)).toEqual(finishedBefore(PICKED, kind));
+      expect(planRuns).toEqual([]);
+    });
+  }
 });
