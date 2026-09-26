@@ -566,6 +566,8 @@ plan: Offsite 2026
 bucket: To do
 progress: in progress
 priority: urgent
+labels:
+  - Waiting on client
 assigned_to:
   - Jane Doe
   - Sam Lee
@@ -592,7 +594,11 @@ Three rooms, one with a projector.
 
 Progress is Planner's three words, priority its four bands (`medium` left unsaid, being the
 default), dates are days, and assignees are named through one directory read per person per run.
-Labels are left out: their names live in the plan's details, which the library does not reach yet.
+Labels are named from the plan's details, read once a plan per run, on the page and in the board's
+last column; a label nobody named is a colour in Planner and is left out rather than shown as
+`category3`, and renaming one rewrites the pages that carry it. The details come through
+`get-planner-plan-details`, which the library is being asked for beside the group route; until it
+lands a plan syncs without its labels and the log says so (`labels.unnamed`).
 
 The plans offered are the ones Graph lists for you and those of every group you belong to, one
 call per group. On the tenant this was built against your own listing answers nothing and the

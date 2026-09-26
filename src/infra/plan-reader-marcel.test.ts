@@ -114,4 +114,13 @@ describe('reading Planner through the ask-marcel library', () => {
     expect(await reader.userName('u-x')).toEqual({ ok: true, value: 'u-x' });
     expect(recorded[0]).toEqual({ name: 'get-user', params: { userId: 'u-jane', select: 'displayName' } });
   });
+
+  it('a plan`s label names are its details` category descriptions, one read by plan id; a library without the command refuses', async () => {
+    const { reader, recorded } = readerFor({ 'get-planner-plan-details': [ok({ id: 'plan-1', categoryDescriptions: { category1: 'Urgent', category2: null } })] });
+    const bare = readerFor({});
+
+    expect(await reader.labelNames('plan-1')).toEqual({ ok: true, value: new Map([['category1', 'Urgent']]) });
+    expect(recorded).toEqual([{ name: 'get-planner-plan-details', params: { plannerPlanId: 'plan-1' } }]);
+    expect(await bare.reader.labelNames('plan-1')).toEqual({ ok: false, error: { kind: 'permanent', message: 'unknown command: get-planner-plan-details' } });
+  });
 });
