@@ -19,6 +19,8 @@ export type PlanTask = {
   readonly created: string;
   // Graph names the assignees by user id alone; the names are looked up afterwards.
   readonly assigneeIds: ReadonlyArray<string>;
+  // The labels by key (`category3`), in the order Planner numbers them; their names live in the plan.
+  readonly labels: ReadonlyArray<string>;
   readonly createdBy: string;
   readonly etag: string;
 };
@@ -70,6 +72,18 @@ const dayOf = (value: unknown): string => (typeof value === 'string' ? value.sli
 // Graph's own default for a task nobody prioritised.
 const MEDIUM = 5;
 
+const CATEGORY = 'category';
+
+const categoryNumber = (key: string): number => Number(key.slice(CATEGORY.length));
+
+// A task's labels are the categories set true on it; one set false was taken off.
+const labelKeysOf = (raw: unknown): ReadonlyArray<string> =>
+  isRecord(raw)
+    ? Object.keys(raw)
+        .filter((key) => raw[key] === true)
+        .toSorted((left, right) => categoryNumber(left) - categoryNumber(right))
+    : [];
+
 export const parsePlanTask = (raw: unknown): PlanTask | undefined => {
   const id = readString(raw, 'id');
   if (!isRecord(raw) || id === undefined) return undefined;
@@ -86,6 +100,7 @@ export const parsePlanTask = (raw: unknown): PlanTask | undefined => {
     completed: dayOf(raw['completedDateTime']),
     created: readString(raw, 'createdDateTime') ?? '',
     assigneeIds: isRecord(assignments) ? Object.keys(assignments) : [],
+    labels: labelKeysOf(raw['appliedCategories']),
     createdBy: readString(isRecord(raw['createdBy']) ? raw['createdBy']['user'] : undefined, 'displayName') ?? '',
     etag: readString(raw, ETAG) ?? '',
   };
@@ -157,4 +172,24 @@ export const priorityOf = (priority: number): string => {
 
 // The card and its details each carry an etag Graph moves on any change to that resource; the two
 // together say whether the page on disk is behind.
-export const taskFingerprint = (task: PlanTask, details: TaskDetails): string => `${task.etag} ${details.etag}`;
+// The names a plan gives its labels, by key. A Map, because the keys come from Graph.
+export type LabelNames = ReadonlyMap<string, string>;
+
+// A label nobody named is a colour in Planner and nothing in words, so it has no entry.
+export const parseLabelNames = (raw: unknown): LabelNames => {
+  const described = isRecord(raw) ? raw['categoryDescriptions'] : undefined;
+  if (!isRecord(described)) return new Map();
+  return new Map(Object.entries(described).filter((entry): entry is [string, string] => typeof entry[1] === 'string' && entry[1].length > 0));
+};
+
+// A label is shown by its name or not at all: `category3` would say nothing to a reader.
+export const labelsOf = (task: PlanTask, names: LabelNames): ReadonlyArray<string> =>
+  task.labels.flatMap((key) => {
+    const name = names.get(key);
+    return name === undefined ? [] : [name];
+  });
+
+// The labels count by name, so renaming one rewrites the pages that carry it; a task that carries
+// none keeps the fingerprint it always had.
+export const taskFingerprint = (task: PlanTask, details: TaskDetails, labels: ReadonlyArray<string>): string =>
+  labels.length === 0 ? `${task.etag} ${details.etag}` : `${task.etag} ${details.etag} ${labels.join(', ')}`;

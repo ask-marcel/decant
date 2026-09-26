@@ -27,6 +27,7 @@ export type RenderPlanTaskInput = {
   readonly details: TaskDetails;
   readonly plan: Plan;
   readonly bucket: string;
+  readonly labels: ReadonlyArray<string>;
   readonly assignees: ReadonlyArray<string>;
   readonly syncedAt: string;
 };
@@ -37,6 +38,7 @@ const fieldsOf = (input: RenderPlanTaskInput): ReadonlyArray<FrontMatterField> =
   ['bucket', stated(input.bucket)],
   ['progress', progressOf(input.task.percentComplete)],
   ['priority', priorityLine(input.task)],
+  ['labels', input.labels],
   ['assigned_to', input.assignees],
   ['start', stated(input.task.start)],
   ['due', stated(input.task.due)],
@@ -65,7 +67,13 @@ const bodyOf = (input: RenderPlanTaskInput): string =>
 export const renderPlanTaskDocument = (input: RenderPlanTaskInput): string => withFrontMatter(renderFrontMatter(fieldsOf(input)), bodyOf(input));
 
 // One task as the board shows it: in its lane, linked to its page by a path relative to the board.
-export type BoardRow = { readonly bucket: string; readonly task: PlanTask; readonly assignees: ReadonlyArray<string>; readonly link: string };
+export type BoardRow = {
+  readonly bucket: string;
+  readonly task: PlanTask;
+  readonly labels: ReadonlyArray<string>;
+  readonly assignees: ReadonlyArray<string>;
+  readonly link: string;
+};
 
 export type RenderPlanBoardInput = { readonly plan: Plan; readonly rows: ReadonlyArray<BoardRow>; readonly syncedAt: string };
 
@@ -74,9 +82,9 @@ const BAR = /\|/g;
 const cell = (text: string): string => text.replace(BAR, '\\|');
 
 const rowLine = (row: BoardRow): string =>
-  `| ${cell(row.bucket)} | [${cell(row.task.title)}](${linkDestination(row.link)}) | ${progressOf(row.task.percentComplete)} | ${row.assignees.map(cell).join(', ')} | ${row.task.due} | ${priorityOf(row.task.priority)} |`;
+  `| ${cell(row.bucket)} | [${cell(row.task.title)}](${linkDestination(row.link)}) | ${progressOf(row.task.percentComplete)} | ${row.assignees.map(cell).join(', ')} | ${row.task.due} | ${priorityOf(row.task.priority)} | ${row.labels.map(cell).join(', ')} |`;
 
-const HEADER = ['| Bucket | Task | Progress | Assigned to | Due | Priority |', '|---|---|---|---|---|---|'];
+const HEADER = ['| Bucket | Task | Progress | Assigned to | Due | Priority | Labels |', '|---|---|---|---|---|---|---|'];
 
 const NO_TASKS = '_No tasks._';
 

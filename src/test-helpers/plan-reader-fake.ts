@@ -1,4 +1,4 @@
-import type { Bucket, Plan, PlanTask, TaskDetails } from '../domain/planner.ts';
+import type { Bucket, LabelNames, Plan, PlanTask, TaskDetails } from '../domain/planner.ts';
 import { err, ok } from '../domain/result.ts';
 import type { PlanReader, PlanReaderError } from '../use-cases/ports/plan-reader.ts';
 
@@ -11,11 +11,14 @@ export type PlanReaderSeed = {
   readonly tasks?: Readonly<Record<string, ReadonlyArray<PlanTask>>>;
   readonly details?: Readonly<Record<string, TaskDetails>>;
   readonly names?: Readonly<Record<string, string>>;
+  // The names each plan gives its labels, by plan id.
+  readonly labelNames?: Readonly<Record<string, LabelNames>>;
   readonly failPlans?: PlanReaderError;
   readonly failBuckets?: PlanReaderError;
   readonly failTasks?: PlanReaderError;
   readonly failDetailsOf?: ReadonlyArray<string>;
   readonly failNamesOf?: ReadonlyArray<string>;
+  readonly failLabelNames?: PlanReaderError;
 };
 
 export type PlanReaderFake = PlanReader & { readonly calls: Array<string> };
@@ -55,6 +58,10 @@ export const createPlanReaderFake = (seed: PlanReaderSeed = {}): PlanReaderFake 
       if ((seed.failNamesOf ?? []).includes(userId)) return err({ kind: 'permanent', status: 404, message: 'Resource does not exist' });
       const name = seed.names?.[userId];
       return name === undefined ? err({ kind: 'permanent', status: 404, message: 'Resource does not exist' }) : ok(name);
+    },
+    labelNames: async (planId) => {
+      calls.push(`labels:${planId}`);
+      return seed.failLabelNames === undefined ? ok(seed.labelNames?.[planId] ?? new Map()) : err(seed.failLabelNames);
     },
   };
 };

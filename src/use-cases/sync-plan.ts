@@ -3,8 +3,8 @@ import { renderPlanBoard, renderPlanTaskDocument } from '../domain/plan-document
 import type { BoardRow } from '../domain/plan-document.ts';
 import { PLAN_STATE_VERSION, emptyPlanState, goneTasks, parsePlanState, planRootName, planTaskFiles, serializePlanState, withTask, withoutTask } from '../domain/plan-state.ts';
 import type { PlanState, PlannedTask, TaskRecord } from '../domain/plan-state.ts';
-import { byOrderHint, taskFingerprint } from '../domain/planner.ts';
-import type { Bucket, Plan, PlanTask, TaskDetails } from '../domain/planner.ts';
+import { byOrderHint, labelsOf, taskFingerprint } from '../domain/planner.ts';
+import type { Bucket, LabelNames, Plan, PlanTask, TaskDetails } from '../domain/planner.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -86,6 +86,18 @@ const namesOf = async (deps: SyncPlanDeps, tasks: ReadonlyArray<PlanTask>, concu
 
 const assigneesOf = (task: PlanTask, names: ReadonlyMap<string, string>): ReadonlyArray<string> => task.assigneeIds.map((id) => names.get(id) ?? id);
 
+// The names a plan gives its labels, read once a run. A plan whose details cannot be read has its
+// labels left out, which is what a page said before they could be named, and the log says why.
+const labelNamesOf = async (deps: SyncPlanDeps, plan: Plan): Promise<LabelNames> => {
+  const named = await deps.reader.labelNames(plan.id);
+  if (named.ok) return named.value;
+  deps.logger.warn('labels.unnamed', { plan: plan.id, cause: named.error.kind });
+  return new Map();
+};
+
+// Who a task is assigned to and what its labels are called, both looked up apart from the card.
+type Names = { readonly people: ReadonlyMap<string, string>; readonly labels: LabelNames };
+
 type Done = { readonly apply: (state: PlanState) => PlanState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
 
 const moveAside = async (deps: SyncPlanDeps, roots: Roots, output: string, what: string): Promise<void> => {
@@ -95,15 +107,17 @@ const moveAside = async (deps: SyncPlanDeps, roots: Roots, output: string, what:
 
 type Writing = { readonly read: Read; readonly planned: PlannedTask };
 
-const writeOne = async (deps: SyncPlanDeps, input: SyncPlanInput, roots: Roots, state: PlanState, names: ReadonlyMap<string, string>, entry: Writing): Promise<Done> => {
+const writeOne = async (deps: SyncPlanDeps, input: SyncPlanInput, roots: Roots, state: PlanState, names: Names, entry: Writing): Promise<Done> => {
   const { read, planned } = entry;
   if (read.details === undefined) return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: read.task.title, reason: read.failed }] } };
+  const labels = labelsOf(read.task, names.labels);
   const page = renderPlanTaskDocument({
     task: read.task,
     details: read.details,
     plan: input.plan,
     bucket: planned.bucket,
-    assignees: assigneesOf(read.task, names),
+    labels,
+    assignees: assigneesOf(read.task, names.people),
     syncedAt: deps.clock.nowIso(),
   });
   const written = await deps.files.writeText(planned.file, page);
@@ -113,7 +127,7 @@ const writeOne = async (deps: SyncPlanDeps, input: SyncPlanInput, roots: Roots, 
   }
   const before = state.tasks[read.task.id];
   if (before !== undefined && before.file !== planned.file) await moveAside(deps, roots, before.file, 'supersede');
-  const record: TaskRecord = { file: planned.file, fingerprint: taskFingerprint(read.task, read.details), title: read.task.title };
+  const record: TaskRecord = { file: planned.file, fingerprint: taskFingerprint(read.task, read.details, labels), title: read.task.title };
   return { apply: (carried) => withTask(carried, read.task.id, record), counted: { converted: 1 }, notes: {} };
 };
 
@@ -155,10 +169,15 @@ const save = async (deps: SyncPlanDeps, roots: Roots, state: PlanState): Promise
 // A task is owed when its details could not be read (so it is reported), when the card or the
 // details moved, or when its page belongs somewhere else now, which a bucket renamed does without
 // touching the card.
-const owed = (state: PlanState, entries: ReadonlyArray<Writing>): ReadonlyArray<Writing> =>
+const owed = (state: PlanState, entries: ReadonlyArray<Writing>, labels: LabelNames): ReadonlyArray<Writing> =>
   entries.filter(({ read, planned }) => {
     const record = state.tasks[read.task.id];
-    return read.details === undefined || record === undefined || record.fingerprint !== taskFingerprint(read.task, read.details) || record.file !== planned.file;
+    return (
+      read.details === undefined ||
+      record === undefined ||
+      record.fingerprint !== taskFingerprint(read.task, read.details, labelsOf(read.task, labels)) ||
+      record.file !== planned.file
+    );
   });
 
 const writePages = async (
@@ -167,7 +186,7 @@ const writePages = async (
   roots: Roots,
   carried: Progressing,
   work: ReadonlyArray<Writing>,
-  names: ReadonlyMap<string, string>
+  names: Names
 ): Promise<Result<Progressing, StepError>> => {
   let progressing = carried;
   for (let at = 0; at < work.length; at += input.concurrency) {
@@ -183,21 +202,20 @@ const writePages = async (
 
 // The board is drawn from the whole plan in the board's own order, lanes then cards, and written
 // again whenever any page was owed or put aside, and on the first run.
-const writeBoard = async (
-  deps: SyncPlanDeps,
-  input: SyncPlanInput,
-  roots: Roots,
-  entries: ReadonlyArray<Writing>,
-  buckets: ReadonlyArray<Bucket>,
-  names: ReadonlyMap<string, string>
-): Promise<void> => {
+const writeBoard = async (deps: SyncPlanDeps, input: SyncPlanInput, roots: Roots, entries: ReadonlyArray<Writing>, buckets: ReadonlyArray<Bucket>, names: Names): Promise<void> => {
   const rank = new Map([...buckets].sort(byOrderHint).map((bucket, index) => [bucket.id, index] as const));
   const rows: ReadonlyArray<BoardRow> = [...entries]
     .sort(
       (left, right) =>
         (rank.get(left.read.task.bucketId) ?? buckets.length) - (rank.get(right.read.task.bucketId) ?? buckets.length) || byOrderHint(left.read.task, right.read.task)
     )
-    .map(({ read, planned }) => ({ bucket: planned.bucket, task: read.task, assignees: assigneesOf(read.task, names), link: planned.file.slice(roots.root.length + 1) }));
+    .map(({ read, planned }) => ({
+      bucket: planned.bucket,
+      task: read.task,
+      labels: labelsOf(read.task, names.labels),
+      assignees: assigneesOf(read.task, names.people),
+      link: planned.file.slice(roots.root.length + 1),
+    }));
   const written = await deps.files.writeText(`${roots.root}/${BOARD_FILE}`, renderPlanBoard({ plan: input.plan, rows, syncedAt: deps.clock.nowIso() }));
   if (!written.ok) deps.logger.warn('board.failed', { cause: written.error.kind });
 };
@@ -227,13 +245,14 @@ export const createSyncPlan =
     const state: PlanState = { ...(await loadState(deps, roots, input.plan)), version: PLAN_STATE_VERSION };
     const plan = await listed(deps, input.plan);
     if (!plan.ok) return plan;
+    const labels = await labelNamesOf(deps, input.plan);
     // Every task is placed, so the board can link each page and a bucket renamed is noticed.
     const placed = planTaskFiles(roots.root, plan.value.tasks, plan.value.buckets, state);
     const entries = await inWindows(placed, input.concurrency, async (planned): Promise<Writing> => ({ read: await readOne(deps, planned.task), planned }));
-    const work = owed(state, entries);
+    const work = owed(state, entries, labels);
     if (input.dryRun)
       return ok({ id: input.plan.id, source: input.plan.title, summary: { ...EMPTY, queued: work.filter((entry) => entry.read.details !== undefined).length }, notes: NO_NOTES });
-    const names = await namesOf(deps, plan.value.tasks, input.concurrency);
+    const names: Names = { people: await namesOf(deps, plan.value.tasks, input.concurrency), labels };
     deps.progress.start(work.length, input.plan.title);
     const written = await writePages(deps, input, roots, { summary: EMPTY, notes: NO_NOTES, state }, work, names);
     deps.progress.done();

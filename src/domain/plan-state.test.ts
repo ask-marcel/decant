@@ -18,6 +18,7 @@ const task = (id: string, title: string, bucketId = 'bucket-1'): PlanTask => ({
   completed: '',
   created: '',
   assigneeIds: [],
+  labels: [],
   createdBy: '',
   etag: 'W/"t"',
 });

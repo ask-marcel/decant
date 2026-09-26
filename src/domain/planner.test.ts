@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { byOrderHint, parseBucket, parsePlan, parsePlanTask, parseTaskDetails, priorityOf, progressOf, taskFingerprint } from './planner.ts';
+import { byOrderHint, labelsOf, parseBucket, parseLabelNames, parsePlan, parsePlanTask, parseTaskDetails, priorityOf, progressOf, taskFingerprint } from './planner.ts';
 
 const graphTask = {
   '@odata.etag': 'W/"task-etag"',
@@ -52,6 +52,7 @@ describe('reading a Planner plan, its buckets and its tasks as Graph answers for
       completed: '',
       created: '2026-08-20T09:12:00Z',
       assigneeIds: ['u-jane', 'u-sam'],
+      labels: ['category3'],
       createdBy: 'Jane Doe',
       etag: 'W/"task-etag"',
     });
@@ -67,10 +68,12 @@ describe('reading a Planner plan, its buckets and its tasks as Graph answers for
       completed: '',
       created: '',
       assigneeIds: [],
+      labels: [],
       createdBy: '',
       etag: '',
     });
     expect(parsePlanTask({ title: 'no id' })).toBeUndefined();
+    expect(parsePlanTask({ id: 't', appliedCategories: { category10: true, category2: true, category5: false } })?.labels).toEqual(['category2', 'category10']);
     expect(parsePlanTask({ id: 't', percentComplete: '50', completedDateTime: '2026-09-10T08:00:00Z' })).toMatchObject({ percentComplete: 0, completed: '2026-09-10' });
   });
 
@@ -140,8 +143,41 @@ describe('saying where a task stands', () => {
     const details = parseTaskDetails({ '@odata.etag': 'W/"d1"' });
     if (task === undefined) throw new Error('task expected');
 
-    expect(taskFingerprint(task, details)).toBe('W/"task-etag" W/"d1"');
-    expect(taskFingerprint({ ...task, etag: 'W/"t2"' }, details)).not.toBe(taskFingerprint(task, details));
+    expect(taskFingerprint(task, details, [])).toBe('W/"task-etag" W/"d1"');
+    expect(taskFingerprint({ ...task, etag: 'W/"t2"' }, details, [])).not.toBe(taskFingerprint(task, details, []));
+  });
+
+  it('a label the task carries is part of its fingerprint by name, so renaming the label rewrites the page, and a task with none keeps its fingerprint', () => {
+    const task = parsePlanTask(graphTask);
+    const details = parseTaskDetails({ '@odata.etag': 'W/"d1"' });
+    if (task === undefined) throw new Error('task expected');
+
+    expect(taskFingerprint(task, details, ['Urgent', 'Waiting on client'])).toBe('W/"task-etag" W/"d1" Urgent, Waiting on client');
+    expect(taskFingerprint(task, details, ['Blocked'])).not.toBe(taskFingerprint(task, details, ['Urgent']));
+  });
+
+  it('a plan`s details name its labels, and a label nobody named has no name', () => {
+    expect(parseLabelNames({ categoryDescriptions: { category1: 'Urgent', category2: null, category3: 'Waiting on client', category4: '' } })).toEqual(
+      new Map([
+        ['category1', 'Urgent'],
+        ['category3', 'Waiting on client'],
+      ])
+    );
+    expect(parseLabelNames({ categoryDescriptions: 'not a record' })).toEqual(new Map());
+    expect(parseLabelNames(null)).toEqual(new Map());
+  });
+
+  it('a task`s labels are read by their names, in the task`s order, and one nobody named is left out rather than shown as its key', () => {
+    const task = parsePlanTask({ id: 't', appliedCategories: { category1: true, category3: true, category7: true } });
+    if (task === undefined) throw new Error('task expected');
+
+    const names = new Map([
+      ['category3', 'Waiting on client'],
+      ['category1', 'Urgent'],
+    ]);
+
+    expect(labelsOf(task, names)).toEqual(['Urgent', 'Waiting on client']);
+    expect(labelsOf(task, new Map())).toEqual([]);
   });
 
   it('buckets and tasks sort by their order hint the way the board draws them, character by character', () => {

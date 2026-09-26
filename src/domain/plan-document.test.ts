@@ -16,6 +16,7 @@ const task = (over: Partial<PlanTask> = {}): PlanTask => ({
   completed: '',
   created: '2026-08-20T09:12:00Z',
   assigneeIds: ['u-jane', 'u-sam'],
+  labels: [],
   createdBy: 'Jane Doe',
   etag: 'W/"t"',
   ...over,
@@ -36,7 +37,15 @@ const details: TaskDetails = {
 
 describe('writing a Planner task as a document', () => {
   it('a task opens with where it is, how far it is, who has it and when, then its description, its checklist and its references', () => {
-    const written = renderPlanTaskDocument({ task: task(), details, plan: PLAN, bucket: 'To do', assignees: ['Jane Doe', 'Sam Lee'], syncedAt: '2026-09-12T14:00:00Z' });
+    const written = renderPlanTaskDocument({
+      task: task(),
+      details,
+      plan: PLAN,
+      bucket: 'To do',
+      labels: ['Urgent', 'Waiting on client'],
+      assignees: ['Jane Doe', 'Sam Lee'],
+      syncedAt: '2026-09-12T14:00:00Z',
+    });
 
     expect(written).toBe(
       [
@@ -46,6 +55,9 @@ describe('writing a Planner task as a document', () => {
         'bucket: To do',
         'progress: in progress',
         'priority: urgent',
+        'labels:',
+        '  - Urgent',
+        '  - Waiting on client',
         'assigned_to:',
         '  - Jane Doe',
         '  - Sam Lee',
@@ -80,6 +92,7 @@ describe('writing a Planner task as a document', () => {
       details: { description: '', checklist: [], references: [], etag: '' },
       plan: PLAN,
       bucket: '',
+      labels: [],
       assignees: [],
       syncedAt: 'now',
     });
@@ -92,6 +105,7 @@ describe('writing a Planner task as a document', () => {
     expect(bare).not.toContain('due:');
     expect(bare).not.toContain('created');
     expect(bare).not.toContain('assigned_to');
+    expect(bare).not.toContain('labels');
     expect(bare).not.toContain('##');
     expect(bare.endsWith('---\n\n# Book the venue\n')).toBe(true);
   });
@@ -107,10 +121,11 @@ describe('writing a plan as a board', () => {
     const written = renderPlanBoard({
       plan: PLAN,
       rows: [
-        { bucket: 'To do', task: task(), assignees: ['Jane Doe', 'Sam Lee'], link: 'To do/Book the venue.md' },
+        { bucket: 'To do', task: task(), labels: ['Urgent', 'Waiting | client'], assignees: ['Jane Doe', 'Sam Lee'], link: 'To do/Book the venue.md' },
         {
           bucket: 'Done',
           task: task({ id: 'task-2', title: 'Pick a | date', percentComplete: 100, priority: 5, due: '', assigneeIds: [] }),
+          labels: [],
           assignees: [],
           link: 'Done/Pick a - date.md',
         },
@@ -129,10 +144,10 @@ describe('writing a plan as a board', () => {
         '',
         '# Offsite 2026',
         '',
-        '| Bucket | Task | Progress | Assigned to | Due | Priority |',
-        '|---|---|---|---|---|---|',
-        '| To do | [Book the venue](<To do/Book the venue.md>) | in progress | Jane Doe, Sam Lee | 2026-09-30 | urgent |',
-        '| Done | [Pick a \\| date](<Done/Pick a - date.md>) | done |  |  | medium |',
+        '| Bucket | Task | Progress | Assigned to | Due | Priority | Labels |',
+        '|---|---|---|---|---|---|---|',
+        '| To do | [Book the venue](<To do/Book the venue.md>) | in progress | Jane Doe, Sam Lee | 2026-09-30 | urgent | Urgent, Waiting \\| client |',
+        '| Done | [Pick a \\| date](<Done/Pick a - date.md>) | done |  |  | medium |  |',
         '',
       ].join('\n')
     );

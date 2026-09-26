@@ -32,6 +32,7 @@ const task = (id: string, title: string, over: Partial<PlanTask> = {}): PlanTask
   completed: '',
   created: '2026-08-20T09:12:00Z',
   assigneeIds: [],
+  labels: [],
   createdBy: 'Jane Doe',
   etag: `W/"${id}-1"`,
   ...over,
@@ -117,7 +118,7 @@ describe('syncing a Planner plan', () => {
     expect(done.files.written.get(`${ROOT}/To do/Book the venue.md`)).toContain('assigned_to:\n  - Jane Doe\n  - Sam Lee\n');
     expect(done.files.written.get(`${ROOT}/To do/Book the venue.md`)).toContain('# Book the venue\n\nThree rooms.\n');
     expect(done.files.written.get(BOARD_PATH)).toContain(
-      '| To do | [Book the venue](<To do/Book the venue.md>) | in progress | Jane Doe, Sam Lee | 2026-09-30 | urgent |\n| Done | [Pick a date](<Done/Pick a date.md>) | done | Jane Doe |  | medium |'
+      '| To do | [Book the venue](<To do/Book the venue.md>) | in progress | Jane Doe, Sam Lee | 2026-09-30 | urgent |  |\n| Done | [Pick a date](<Done/Pick a date.md>) | done | Jane Doe |  | medium |  |'
     );
     expect(stateOf(done.files)).toMatchObject({
       plan: PLAN,
@@ -125,6 +126,37 @@ describe('syncing a Planner plan', () => {
     });
     expect(done.logger.calls).toContainEqual({ level: 'info', event: 'plan.listed', meta: { plan: 'plan-1', buckets: 2, tasks: 2 } });
     expect(done.logger.calls.every((entry) => entry.event !== 'plan-state.unreadable')).toBe(true);
+  });
+
+  it('a task`s labels are named on its page and on the board from the plan`s own names, one nobody named left out, the names read once a run', async () => {
+    const labelled = { 'plan-1': [task('t-venue', 'Book the venue', { labels: ['category1', 'category4'] })] };
+    const done = await run({ reader: { tasks: labelled, labelNames: { 'plan-1': new Map([['category1', 'Urgent']]) } } });
+
+    expect(done.files.written.get(`${ROOT}/To do/Book the venue.md`)).toContain('labels:\n  - Urgent\n');
+    expect(done.files.written.get(BOARD_PATH)).toContain('| To do | [Book the venue](<To do/Book the venue.md>) | not started |  |  | medium | Urgent |');
+    expect(done.reader.calls.filter((call) => call.startsWith('labels:'))).toEqual(['labels:plan-1']);
+  });
+
+  it('renaming a label rewrites the pages that carry it and no other', async () => {
+    const tasks = { 'plan-1': [task('t-venue', 'Book the venue', { labels: ['category1'] }), task('t-date', 'Pick a date', { bucketId: 'b-done', orderHint: '8585 0' })] };
+    const first = await run({ reader: { tasks, labelNames: { 'plan-1': new Map([['category1', 'Urgent']]) } } });
+    const renamed = await run({
+      reader: { tasks, labelNames: { 'plan-1': new Map([['category1', 'Critical']]) } },
+      files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } },
+    });
+
+    expect(renamed.summary.converted).toBe(1);
+    expect(renamed.files.written.get(`${ROOT}/To do/Book the venue.md`)).toContain('labels:\n  - Critical\n');
+    expect(renamed.files.written.has(`${ROOT}/Done/Pick a date.md`)).toBe(false);
+  });
+
+  it('a plan whose label names cannot be read is synced without its labels, and the log says why', async () => {
+    const labelled = { 'plan-1': [task('t-venue', 'Book the venue', { labels: ['category1'] })] };
+    const done = await run({ reader: { tasks: labelled, failLabelNames: { kind: 'permanent', message: 'unknown command: get-planner-plan-details' } } });
+
+    expect(done.summary.converted).toBe(1);
+    expect(done.files.written.get(`${ROOT}/To do/Book the venue.md`)).not.toContain('labels:');
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'labels.unnamed', meta: { plan: 'plan-1', cause: 'permanent' } });
   });
 
   it('the pages are written a window at a time, each stepped once, the state saved after every window', async () => {
