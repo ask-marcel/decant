@@ -32,7 +32,7 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 });
 
 const run = async (
-  seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; drives?: typeof drives; site?: typeof site } = {}
+  seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; drives?: typeof drives; site?: typeof site; since?: string } = {}
 ): Promise<{ summary: RunSummary; files: FilesFake; logger: LoggerFake; progress: ProgressFake; reader: DriveReaderFake; ok: boolean }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
@@ -54,6 +54,7 @@ const run = async (
     maxBytes: 50 * 1024 * 1024,
     concurrency: seeds.concurrency ?? 1,
     dryRun: seeds.dryRun ?? false,
+    since: seeds.since,
   });
   return { summary: result.ok ? result.value.summary : ({} as RunSummary), files, logger, progress, reader, ok: result.ok };
 };
@@ -851,5 +852,81 @@ describe('filing a source under the category it was chosen from', () => {
     const { files } = await run({ ...converted, site: personal });
 
     expect(files.written.has('kb/OneDrive/Camille Roy/Documents/2026-05-12/Projets/Contrat.docx.md')).toBe(true);
+  });
+});
+
+describe('reaching back only as far as the day', () => {
+  const OLD = item({ id: '01OLD', name: 'Old.docx', path: 'Old.docx', lastModified: '2024-02-01T09:00:00Z' });
+  const MID = item({ id: '01MID', name: 'Mid.docx', path: 'Mid.docx', lastModified: '2025-03-01T09:00:00Z' });
+  const NEW = item({ id: '01NEW', name: 'New.docx', path: 'New.docx', lastModified: '2026-05-12T09:31:00Z' });
+  const filedUnder = (since: string, items: Record<string, { path: string; cTag: string; outputs: string[] }>): string =>
+    serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'c1', since, pending: [], items, retry: {} } },
+    });
+
+  it('files last edited before the day are left out, and a file already filed still follows its moves', async () => {
+    const known = filedUnder('2025-01-01', { '01OLD': { path: 'Archive/Old.docx', cTag: 'c1', outputs: ['kb/x/Old.docx.md'] } });
+
+    const { summary } = await run({
+      files: { texts: { [STATE_PATH]: known } },
+      reader: { pages: [{ items: [OLD, MID, NEW, item({ id: '01OLDER', lastModified: '2023-01-01T00:00:00Z' })], skipped: 0, deltaLink: 'c2' }] },
+      since: '2025-01-01',
+    });
+
+    expect(summary).toMatchObject({ converted: 2, moved: 1 });
+  });
+
+  it('moving the day earlier reads the old cursor out first, then the library whole, converting only what it had left out and still putting aside what was deleted', async () => {
+    const known = filedUnder('2025-06-01', {
+      '01NEW': { path: 'New.docx', cTag: 'c1', outputs: ['kb/x/New.docx.md'] },
+      '01GONE': { path: 'Gone.docx', cTag: 'c1', outputs: ['kb/x/Gone.docx.md'] },
+    });
+    const pages = [
+      { items: [item({ id: '01GONE', kind: 'deleted' })], skipped: 1, deltaLink: 'c2' },
+      { items: [NEW, MID, OLD], skipped: 2, deltaLink: 'c3' },
+    ];
+
+    const { summary, reader, files, logger } = await run({ files: { texts: { [STATE_PATH]: known } }, reader: { pages }, since: '2025-01-01' });
+
+    expect(reader.calls.filter((call) => call === 'delta' || call.startsWith('deltaFrom'))).toEqual(['deltaFrom:c1', 'delta']);
+    expect(summary).toMatchObject({ converted: 1, archived: 1 });
+    expect(stateAfter(files).drives['b!one']).toMatchObject({ deltaLink: 'c3', since: '2025-01-01' });
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'sync.enumerated', meta: { driveId: 'b!one', items: 4, skipped: 3 } });
+  });
+
+  it('a whole read that breaks off stops the library the way any sweep does, and keeps the cursor and the day it had', async () => {
+    const known = filedUnder('2025-06-01', {});
+    const pages = [
+      { items: [], skipped: 0, deltaLink: 'c2' },
+      { items: [MID], skipped: 0, nextLink: 'page-2' },
+    ];
+
+    const { ok, files } = await run({
+      files: { texts: { [STATE_PATH]: known } },
+      reader: { pages, failFrom: { kind: 'transient', message: 'Graph is busy' } },
+      since: '2025-01-01',
+    });
+
+    expect(ok).toBe(false);
+    expect(files.written.get(STATE_PATH)).toBe(known);
+  });
+
+  it('the same day, or a later one, follows the cursor; all reads the library whole again, and keeps no day', async () => {
+    const known = { [STATE_PATH]: filedUnder('2025-06-01', {}) };
+
+    for (const since of ['2025-06-01', '2025-09-01']) {
+      const kept = await run({ files: { texts: known }, reader: { pages: [{ items: [], skipped: 0, deltaLink: 'c2' }] }, since });
+
+      expect(kept.reader.calls).not.toContain('delta');
+      expect(stateAfter(kept.files).drives['b!one']).toMatchObject({ since });
+    }
+
+    const everything = await run({ files: { texts: known }, reader: { pages: [{ items: [], skipped: 0, deltaLink: 'c2' }] } });
+
+    expect(everything.reader.calls).toContain('delta');
+    expect('since' in (stateAfter(everything.files).drives['b!one'] ?? {})).toBe(false);
   });
 });

@@ -181,7 +181,7 @@ const librariesFor = async (deps: RunSyncDeps, site: SiteRef, wanted: ReadonlyAr
 const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, drives: ReadonlyArray<DriveSummary>): Promise<Result<SourceRun, StepError>> => {
   if (drives.length === 0) return failed('sync', 'no-library', `no library chosen for ${site.name}`);
   deps.logger.info('sync.started', { siteId: site.id, libraries: drives.length });
-  const summary = await deps.syncSite({ site, drives, maxBytes: input.maxBytes, concurrency: input.concurrency, dryRun: input.dryRun });
+  const summary = await deps.syncSite({ site, drives, maxBytes: input.maxBytes, concurrency: input.concurrency, dryRun: input.dryRun, since: dayOf(input.since) });
   if (summary.ok) deps.prompt.show(renderSummary(site.name, summary.value.summary, input.dryRun));
   return summary;
 };

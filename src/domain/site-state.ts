@@ -10,6 +10,9 @@ import type { Manifest, ManifestEntry, WorkItem } from './worklist.ts';
 export type DriveState = {
   readonly name: string;
   readonly deltaLink?: string;
+  // The day the cursor was taken reaching back to, absent when it reached everything. A run reaching
+  // further back reads the library whole again. A file written before this reached everything.
+  readonly since?: string;
   readonly pending: ReadonlyArray<WorkItem>;
   readonly items: Manifest;
   readonly retry: RetryLedger;
@@ -77,6 +80,7 @@ const parseDrive = (raw: unknown): DriveState => {
   return {
     name: readString(raw, 'name') ?? '',
     deltaLink: readString(raw, 'deltaLink'),
+    since: readString(raw, 'since'),
     pending: parsePending(raw['pending']),
     items: parseManifest(raw['items']),
     retry: parseRetry(raw['retry']),

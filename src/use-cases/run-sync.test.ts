@@ -1672,4 +1672,10 @@ describe('handing the reach to every source that keeps a history', () => {
 
     expect(reached).toEqual([{ kind: 'team', since: '2025-01-01' }]);
   });
+
+  it('a site is handed the kept day', async () => {
+    const { calls } = await run([], { siteId: 'contoso,1,2', driveIds: ['b!one'] }, { stored: '2025-01-01' });
+
+    expect(calls.map((call) => call.since)).toEqual(['2025-01-01']);
+  });
 });

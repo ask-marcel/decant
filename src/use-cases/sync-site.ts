@@ -20,14 +20,16 @@ import {
 } from '../domain/site-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import { forgetSwept, givenUp, nextFailure } from '../domain/retry-policy.ts';
+import { latestById, widens } from '../domain/sync-window.ts';
 import { buildWorklist } from '../domain/worklist.ts';
 import type { ReportEntry, ReportNotes, ReportRun } from '../domain/report.ts';
 import { appendReportRun, hasSomethingToReport, skipReason } from '../domain/report.ts';
 import type { WorkItem } from '../domain/worklist.ts';
 import type { ConvertFile } from './convert-file.ts';
 import { sweepDrive } from './enumerate-drive.ts';
+import type { DriveSweep } from './enumerate-drive.ts';
 import type { Clock } from './ports/clock.ts';
-import type { DriveReader, DriveSummary } from './ports/drive-reader.ts';
+import type { DriveReader, DriveReaderError, DriveSummary } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Progress } from './ports/progress.ts';
@@ -54,6 +56,8 @@ export type SyncSiteInput = {
   // parallel and the manifest updates fold afterwards; a window interrupted re-runs, writing the
   // same bytes to the same paths.
   readonly concurrency: number;
+  // Only files last edited on or after this day are converted; absent, every file is.
+  readonly since?: string;
 };
 
 export type RunSummary = {
@@ -209,19 +213,32 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
     deps.logger.info('sync.resuming', { driveId: drive.id, pending: known.pending.length });
     return ok({ state });
   }
-  const swept = await sweepDrive(deps.reader, drive.id, known.deltaLink);
+  const swept = await sweepFor(deps.reader, drive.id, known, input.since);
   if (!swept.ok) return { ok: false, error: { step: 'enumerate', cause: swept.error.kind, message: swept.error.message } };
   deps.logger.info('sync.enumerated', { driveId: drive.id, items: swept.value.items.length, skipped: swept.value.skipped });
   const queued = {
     ...known,
     name: drive.name,
     deltaLink: swept.value.deltaLink,
-    pending: buildWorklist(swept.value.items, known.items, known.retry),
+    since: input.since,
+    pending: buildWorklist(swept.value.items, known.items, known.retry, input.since),
     retry: forgetSwept(known.retry, swept.value.items),
   };
   const next = withDrive(state, drive.id, queued);
   const saved = await save(deps.files, statePath, next, input.dryRun);
   return saved.ok ? ok({ state: next }) : saved;
+};
+
+// A day earlier than the one the cursor was taken under: what the cursor passed over never comes back
+// through it. It is read out first all the same, so what was deleted or moved since the last run is
+// still seen, then the library is read whole for what the narrower reach passed over; a document
+// already filed at the same version is left as it is.
+const sweepFor = async (reader: DriveReader, driveId: string, known: DriveState, since: string | undefined): Promise<Result<DriveSweep, DriveReaderError>> => {
+  const drained = await sweepDrive(reader, driveId, known.deltaLink);
+  if (!drained.ok || !widens(known.since, since)) return drained;
+  const whole = await sweepDrive(reader, driveId, undefined);
+  if (!whole.ok) return whole;
+  return ok({ ...whole.value, items: latestById([...drained.value.items, ...whole.value.items]), skipped: drained.value.skipped + whole.value.skipped });
 };
 
 // What the moving counter names for each item: the path it sits at, or the id of one being archived.

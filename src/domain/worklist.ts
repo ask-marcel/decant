@@ -1,6 +1,7 @@
 import type { DriveItem } from './drive-item.ts';
 import type { RetryLedger } from './retry-policy.ts';
 import { forgetSwept, givenUp } from './retry-policy.ts';
+import { isBefore } from './sync-window.ts';
 
 export type ManifestEntry = {
   readonly path: string;
@@ -15,9 +16,11 @@ export type WorkItem =
   | { readonly kind: 'move'; readonly item: DriveItem; readonly from: string; readonly outputs: ReadonlyArray<string> }
   | { readonly kind: 'archive'; readonly itemId: string; readonly outputs: ReadonlyArray<string> };
 
-const workFor = (item: DriveItem, known: ManifestEntry | undefined): WorkItem | undefined => {
+// A file never filed that was last edited before the day is left out. One already filed is followed
+// whatever its date, through a move or an edit, since leaving it would leave its documents stale.
+const workFor = (item: DriveItem, known: ManifestEntry | undefined, since: string | undefined): WorkItem | undefined => {
   if (item.kind === 'deleted') return known === undefined ? undefined : { kind: 'archive', itemId: item.id, outputs: known.outputs };
-  if (known === undefined) return item.kind === 'folder' ? undefined : { kind: 'convert', item };
+  if (known === undefined) return item.kind === 'folder' || isBefore(item.lastModified, since) ? undefined : { kind: 'convert', item };
   if (known.path !== item.path) return { kind: 'move', item, from: known.path, outputs: known.outputs };
   return known.cTag === item.cTag || item.kind === 'folder' ? undefined : { kind: 'convert', item };
 };
@@ -32,7 +35,7 @@ const sortKey = (work: WorkItem): string => (work.kind === 'archive' ? ` ${work.
 // Oldest change first, so a run stopped halfway resumes exactly where it left off, with the id as
 // tie-break so two documents saved in the same second keep a stable order between runs. What failed
 // last time is queued alongside, sorted by the same key: a retry is ordinary work, not a tail.
-export const buildWorklist = (items: ReadonlyArray<DriveItem>, manifest: Manifest, retry: RetryLedger = {}): ReadonlyArray<WorkItem> =>
-  [...items.map((item) => workFor(item, manifest[item.id])).filter((work): work is WorkItem => work !== undefined), ...retriedWork(retry, items)].sort((left, right) =>
+export const buildWorklist = (items: ReadonlyArray<DriveItem>, manifest: Manifest, retry: RetryLedger = {}, since?: string): ReadonlyArray<WorkItem> =>
+  [...items.map((item) => workFor(item, manifest[item.id], since)).filter((work): work is WorkItem => work !== undefined), ...retriedWork(retry, items)].sort((left, right) =>
     sortKey(left).localeCompare(sortKey(right))
   );
