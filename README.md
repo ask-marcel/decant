@@ -883,7 +883,11 @@ the incremental cache does not notice new test files.
 Lint holds every function to a complexity of 10 and every layer to the imports the dependency rule
 allows: the domain imports no other layer, the use cases nothing beyond the domain and their own
 layer, the presenter only the domain, infra neither the presenter nor the composition root, and no
-production file reaches the test fakes, which themselves never wrap an adapter.
+production file reaches the test fakes, which themselves never wrap an adapter. It refuses a
+`class`, an inline `type` import, a curried arrow other than a `createX` factory, a `try` in a use
+case, `node:fs` in `src/` outside infra, the fakes and the tests, a `@ts-` comment and another tool's
+ignore marker, and
+a comment disabling a rule does nothing but get reported itself.
 `eslint.config.test.ts` lints a violation of each gate through the real config, so a gate that
 stops firing turns the suite red. Stryker runs `bun test src`, which leaves those fixtures out:
 they exercise the config, not a line of `src/`.

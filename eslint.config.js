@@ -17,6 +17,30 @@ const MOCK_BAN = {
     '`mock` from bun:test is forbidden — it leaks across test files. Use dependency injection: refactor the production code to accept the SDK as a parameter, then pass a fake at construction.',
 };
 
+// The style rules as lint (hard rules 1, 7, 10, 18). ESLint replaces a rule's options when a second
+// block matches the same file, it never merges them, so every scoped `no-restricted-syntax` block
+// below spreads this list before its own selector.
+const STYLE_BANS = [
+  { selector: 'ClassDeclaration', message: 'No class keyword (hard rule 1; rule 10 for error classes): a module of arrow functions and typed records.' },
+  { selector: 'ClassExpression', message: 'No class keyword (hard rule 1): a module of arrow functions and typed records.' },
+  { selector: 'ImportSpecifier[importKind="type"]', message: 'Type-only imports on their own line: `import type { Foo } from ...` (hard rule 7).' },
+  {
+    selector: 'VariableDeclarator[id.name!=/^create[A-Z]/] > ArrowFunctionExpression > ArrowFunctionExpression.body',
+    message: 'No curried arrow chains: one arrow with all its parameters, wrapped at the call site; the DI factory `createX = (deps) => (input) => ...` is the one exemption (hard rule 18).',
+  },
+];
+// Hard rule 17: a use case pattern-matches the Result a port returns; a catch there means the port lied.
+const TRY_BAN = {
+  selector: 'TryStatement',
+  message: 'try/catch is quarantined to src/infra/**, the pure-domain fallback and src/main.ts; a use case pattern-matches the Result (hard rule 17).',
+};
+// Hard rule 20: file IO is Bun.file and Bun.write; node:fs only in tests, src/test-helpers/** and
+// the one commented directory helper in src/infra/**.
+const FS_BAN = {
+  selector: 'ImportDeclaration[source.value=/^(node:)?fs(\\/promises)?$/]',
+  message: 'File IO goes through Bun.file and Bun.write; node:fs only in tests, src/test-helpers/** and the one commented directory helper in src/infra/** (hard rule 20).',
+};
+
 // The dependency rule as lint (hard rule 37). Dependencies point inward, so each layer names the
 // layers it may never import, and a layer left out of a list is one it may reach. Production files
 // only: a test reaches for the fakes in src/test-helpers/ by design.
@@ -45,6 +69,12 @@ export default [
   ...tsPlugin.configs.recommended,
   securityPlugin.configs.recommended,
   {
+    // Hard rule 15: no inline ignore, ever. Directive comments are inert AND each one is reported, so
+    // the violation a comment tried to hide surfaces beside it. A finding is a refactor, or a
+    // project-level severity change with a reason, never a suppression.
+    linterOptions: { noInlineConfig: true },
+  },
+  {
     files: ['**/*.ts'],
     languageOptions: { globals: globals.node },
     rules: {
@@ -57,9 +87,34 @@ export default [
       'prefer-template': 'error',
       quotes: ['error', 'single', { avoidEscape: true }],
       'no-restricted-imports': ['error', { paths: [MOCK_BAN] }],
+      // Hard rules 1, 7, 10, 18 (STYLE_BANS above); the scoped blocks below add 17 and 20.
+      'no-restricted-syntax': ['error', ...STYLE_BANS],
+      // Hard rule 15, the other tools' escape hatches: every @ts- form (the recommended preset allows
+      // a described @ts-expect-error) and the markers other tools read, anywhere in a comment.
+      '@typescript-eslint/ban-ts-comment': ['error', { 'ts-expect-error': true, 'ts-ignore': true, 'ts-nocheck': true, 'ts-check': false }],
+      'no-warning-comments': [
+        'error',
+        {
+          terms: ['prettier-ignore', 'stryker disable', 'nosonar', 'sonar-ignore', 'snyk-ignore', 'deepcode ignore', 'biome-ignore', 'oxlint-disable', 'c8 ignore', 'v8 ignore', 'istanbul ignore'],
+          location: 'anywhere',
+        },
+      ],
       '@typescript-eslint/explicit-function-return-type': ['error', { allowExpressions: true, allowTypedFunctionExpressions: true }],
       '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
     },
+  },
+  {
+    // Hard rule 17 for the one layer where the count is zero; the domain fallback, the adapter catch
+    // and the single catch in main.ts stay with review.
+    files: ['src/use-cases/**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...STYLE_BANS, TRY_BAN, FS_BAN] },
+  },
+  {
+    // Hard rule 20 over the rest of src/**; the carve-outs are paths, never inline ignores.
+    files: ['src/**/*.ts'],
+    ignores: ['**/*.test.ts', 'src/test-helpers/**', 'src/infra/**', 'src/use-cases/**'],
+    rules: { 'no-restricted-syntax': ['error', ...STYLE_BANS, FS_BAN] },
   },
   layerZone('domain', ['use-cases', 'infra', 'presenter', 'composition', 'test-helpers']),
   layerZone('use-cases', ['infra', 'presenter', 'composition', 'test-helpers']),

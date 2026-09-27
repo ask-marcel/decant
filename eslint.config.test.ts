@@ -67,3 +67,36 @@ describe('keeping every layer to what it may import', () => {
     expect(await rulesBrokenBy("import { mock } from 'bun:test';\n\nexport const used = mock;\n", 'src/use-cases/fixture.ts')).toContain('no-restricted-imports');
   });
 });
+
+describe('holding the style rules as lint', () => {
+  it('a class, an inline type import and a curried chain are refused, and a createX factory is the one chain allowed', async () => {
+    expect(await rulesBrokenBy('export class Thing {}\n', 'src/domain/fixture.ts')).toContain('no-restricted-syntax');
+    expect(
+      await rulesBrokenBy("import { type Result } from './result.ts';\n\nexport const none: Result<number, string> | undefined = undefined;\n", 'src/domain/fixture.ts')
+    ).toContain('no-restricted-syntax');
+    expect(await rulesBrokenBy('export const add = (a: number) => (b: number): number => a + b;\n', 'src/domain/fixture.ts')).toContain('no-restricted-syntax');
+    expect(await rulesBrokenBy('export const createAdd = (a: number) => (b: number): number => a + b;\n', 'src/domain/fixture.ts')).not.toContain('no-restricted-syntax');
+  });
+
+  it('a try in a use case, and node:fs outside infra, are refused, and infra may use both', async () => {
+    const guarded = 'export const safely = (run: () => void): boolean => {\n  try {\n    run();\n    return true;\n  } catch {\n    return false;\n  }\n};\n';
+    const readsDisk = "import { readFileSync } from 'node:fs';\n\nexport const read = (path: string): string => readFileSync(path, 'utf8');\n";
+
+    expect(await rulesBrokenBy(guarded, 'src/use-cases/fixture.ts')).toContain('no-restricted-syntax');
+    expect(await rulesBrokenBy(guarded, 'src/infra/fixture.ts')).not.toContain('no-restricted-syntax');
+    expect(await rulesBrokenBy(readsDisk, 'src/domain/fixture.ts')).toContain('no-restricted-syntax');
+    expect(await rulesBrokenBy(readsDisk, 'src/use-cases/fixture.ts')).toContain('no-restricted-syntax');
+    expect(await rulesBrokenBy(readsDisk, 'src/infra/fixture.ts')).not.toContain('no-restricted-syntax');
+  });
+});
+
+describe('leaving no way to silence a gate', () => {
+  it('a comment disabling a rule does nothing, so the violation it hid is still reported', async () => {
+    expect(await rulesBrokenBy(`// eslint-disable-next-line complexity\n${branchy(10)}`, 'src/domain/fixture.ts')).toContain('complexity');
+  });
+
+  it("a @ts- comment, and another tool's ignore marker, are refused", async () => {
+    expect(await rulesBrokenBy('// @ts-expect-error: nothing to expect\nexport const one: number = 1;\n', 'src/domain/fixture.ts')).toContain('@typescript-eslint/ban-ts-comment');
+    expect(await rulesBrokenBy('// istanbul ignore next\nexport const one = 1;\n', 'src/domain/fixture.ts')).toContain('no-warning-comments');
+  });
+});
