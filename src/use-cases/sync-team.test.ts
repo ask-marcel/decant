@@ -258,3 +258,12 @@ describe('reaching back only as far as the day', () => {
     expect(stateOf(done.files).channels[GENERAL.id]).toMatchObject({ deltaLink: 'https://graph/delta?token=1', since: '2025-06-01' });
   });
 });
+
+describe('telling the reader which post is being written', () => {
+  it('the counter names each post by its title, never by its id', async () => {
+    const done = await run();
+
+    expect([...done.progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(['Post a', 'Post b']);
+    expect([...done.progress.steps].sort((left, right) => left.localeCompare(right))).toEqual(['Post a', 'Post b']);
+  });
+});

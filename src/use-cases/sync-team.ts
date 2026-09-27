@@ -1,4 +1,5 @@
 import { renderPostDocument } from '../domain/channel-document.ts';
+import { postTitle } from '../domain/channel-post.ts';
 import { safeSegment } from '../domain/kb-path.ts';
 import { archivePath } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
@@ -158,9 +159,11 @@ const save = async (deps: SyncTeamDeps, input: SyncTeamInput, state: TeamState):
 const writeWindow = async (context: ChannelContext, state: TeamState, window: ReadonlyArray<PlannedPost>): Promise<ReadonlyArray<Done>> =>
   Promise.all(
     window.map((planned) => {
-      context.deps.progress.begin(planned.post.id);
+      // Named for the reader by its title, never by the id Teams keys it under.
+      const title = postTitle(planned.post);
+      context.deps.progress.begin(title);
       return writeOne(context, state, planned).then((done) => {
-        context.deps.progress.step(planned.post.id);
+        context.deps.progress.step(title);
         return done;
       });
     })

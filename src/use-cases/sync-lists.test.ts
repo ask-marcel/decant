@@ -86,7 +86,7 @@ describe('syncing the lists of a SharePoint site', () => {
     const done = await run({ concurrency: 1 });
 
     expect(done.progress.started).toEqual([{ total: 2, what: 'Espace Contoso' }]);
-    expect(done.progress.steps).toEqual(['projects', 'issues']);
+    expect(done.progress.steps).toEqual(['Projects', 'Issues']);
     expect(done.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/Projects.md`, `${ROOT}/Issues.md`]);
     expect(done.files.writeLog.filter((path) => path === STATE_PATH)).toHaveLength(3);
   });

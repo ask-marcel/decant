@@ -192,7 +192,7 @@ const writePages = async (
   for (let at = 0; at < work.length; at += input.concurrency) {
     const window = work.slice(at, at + input.concurrency);
     const results = await Promise.all(window.map((entry) => writeOne(deps, input, roots, progressing.state, names, entry)));
-    for (const entry of window) deps.progress.step(entry.read.task.id);
+    for (const entry of window) deps.progress.step(entry.read.task.title);
     progressing = fold(progressing, results);
     const saved = await save(deps, roots, progressing.state);
     if (!saved.ok) return saved;

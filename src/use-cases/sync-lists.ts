@@ -167,7 +167,7 @@ const writeTables = async (deps: SyncListsDeps, input: SyncListsInput, roots: Ro
   for (let at = 0; at < plan.length; at += input.concurrency) {
     const window = plan.slice(at, at + input.concurrency);
     const results = await Promise.all(window.map((entry) => writeOne(deps, input, roots, progressing.state, entry.read, entry.file)));
-    for (const entry of window) deps.progress.step(entry.read.list.id);
+    for (const entry of window) deps.progress.step(entry.read.list.name);
     progressing = fold(progressing, results);
     const saved = await save(deps, roots, progressing.state);
     if (!saved.ok) return saved;

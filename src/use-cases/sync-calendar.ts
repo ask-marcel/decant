@@ -245,11 +245,17 @@ const save = async (deps: SyncCalendarDeps, state: CalendarState): Promise<Resul
   return written.ok ? ok(undefined) : failed('saveState', written.error.kind, written.error.message);
 };
 
+// An event named for the reader: by its subject, or as what it is when it has none or never arrived.
+const shownAs = (entry: Fetched): string => {
+  if (entry.event === undefined) return 'an event that could not be read';
+  return entry.event.subject.length > 0 ? entry.event.subject : '(no subject)';
+};
+
 const writeWindow = async (deps: SyncCalendarDeps, input: SyncCalendarInput, carried: Progressing, ids: ReadonlyArray<string>): Promise<ReadonlyArray<Done>> => {
   const fetched = await Promise.all(ids.map((id) => fetchOne(deps, id)));
   const planned = planWindow(deps, input, carried.state, fetched);
   const written = await Promise.all(planned.map((entry) => writeOne(deps, carried.state, entry)));
-  for (const id of ids) deps.progress.step(id);
+  for (const entry of fetched) deps.progress.step(shownAs(entry));
   return [unread(fetched), ...written];
 };
 

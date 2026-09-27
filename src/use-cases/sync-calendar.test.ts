@@ -9,6 +9,7 @@ import type { FilesFake, FilesFakeSeed } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import { createProgressFake } from '../test-helpers/progress-fake.ts';
+import type { ProgressFake } from '../test-helpers/progress-fake.ts';
 import type { StepError } from './ports/step-error.ts';
 import { createSyncCalendar } from './sync-calendar.ts';
 import type { RunNotes, RunSummary } from './sync-site.ts';
@@ -43,9 +44,20 @@ const STANDUP = event('b', 'Standup', '2026-09-10T08:00:00Z');
 
 const run = async (
   seeds: { reader?: CalendarReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; since?: string } = {}
-): Promise<{ summary: RunSummary; source: string; notes: RunNotes; files: FilesFake; logger: LoggerFake; reader: CalendarReaderFake; ok: boolean; error?: StepError }> => {
+): Promise<{
+  summary: RunSummary;
+  source: string;
+  notes: RunNotes;
+  files: FilesFake;
+  logger: LoggerFake;
+  reader: CalendarReaderFake;
+  progress: ProgressFake;
+  ok: boolean;
+  error?: StepError;
+}> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
+  const progress = createProgressFake();
   const reader = createCalendarReaderFake({
     changes: [
       { id: 'a', removed: false },
@@ -57,14 +69,14 @@ const run = async (
     markdown: { 'att-1': '---\nname: Venues.xlsx\n---\n\n| Venue | Cost |\n' },
     ...seeds.reader,
   });
-  const syncCalendar = createSyncCalendar({ reader, files, clock: createClockFake('2026-09-12T14:00:00Z'), logger, progress: createProgressFake(), kbRoot: 'kb', timezone: 'UTC' });
+  const syncCalendar = createSyncCalendar({ reader, files, clock: createClockFake('2026-09-12T14:00:00Z'), logger, progress, kbRoot: 'kb', timezone: 'UTC' });
   const outcome = await syncCalendar({ dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4, since: seeds.since });
   const empty = {
     summary: { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 },
     source: 'Calendar',
     notes: { skipped: [], failed: [], givenUp: [], archived: [] },
   };
-  return outcome.ok ? { ...outcome.value, files, logger, reader, ok: true } : { ...empty, files, logger, reader, ok: false, error: outcome.error };
+  return outcome.ok ? { ...outcome.value, files, logger, reader, progress, ok: true } : { ...empty, files, logger, reader, progress, ok: false, error: outcome.error };
 };
 
 type StoredState = { lastRun: string; deltaLink?: string; events: Record<string, { file: string; lastModified: string; subject: string; outputs: string[] }> };
@@ -430,5 +442,24 @@ describe('syncing the calendar', () => {
     expect(logged).not.toContain('Offsite');
     expect(logged).not.toContain('Jane');
     expect(logged).not.toContain('example.com');
+  });
+});
+
+describe('telling the reader which event is being written', () => {
+  it('the counter names each event by its subject, one with none as such, and one it could not read as that', async () => {
+    const untitled = event('c', '', '2026-09-11T09:00:00Z');
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'a', removed: false },
+          { id: 'b', removed: false },
+          { id: 'c', removed: false },
+          { id: 'x', removed: false },
+        ],
+        events: { a: OFFSITE, b: STANDUP, c: untitled },
+      },
+    });
+
+    expect([...done.progress.steps].sort((left, right) => left.localeCompare(right))).toEqual(['(no subject)', 'an event that could not be read', 'Offsite planning', 'Standup']);
   });
 });

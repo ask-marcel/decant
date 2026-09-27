@@ -163,7 +163,7 @@ describe('syncing a Planner plan', () => {
     const done = await run({ concurrency: 1 });
 
     expect(done.progress.started).toEqual([{ total: 2, what: 'Offsite 2026' }]);
-    expect(done.progress.steps).toEqual(['t-date', 't-venue']);
+    expect(done.progress.steps).toEqual(['Pick a date', 'Book the venue']);
     expect(done.files.writeLog.filter((path) => path === STATE_PATH)).toHaveLength(3);
   });
 

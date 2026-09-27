@@ -175,7 +175,7 @@ const writePages = async (
   for (let at = 0; at < planned.length; at += input.concurrency) {
     const window = planned.slice(at, at + input.concurrency);
     const results = await Promise.all(window.map((entry) => writeOne(deps, input, roots, progressing.state, entry)));
-    for (const entry of window) deps.progress.step(entry.entry.page.id);
+    for (const entry of window) deps.progress.step(entry.entry.page.title.length > 0 ? entry.entry.page.title : '(untitled page)');
     progressing = fold(progressing, results);
     const saved = await save(deps, roots, progressing.state);
     if (!saved.ok) return saved;

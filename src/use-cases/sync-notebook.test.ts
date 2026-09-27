@@ -9,6 +9,7 @@ import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import { createNotebookReaderFake } from '../test-helpers/notebook-reader-fake.ts';
 import type { NotebookReaderFake, NotebookReaderSeed } from '../test-helpers/notebook-reader-fake.ts';
 import { createProgressFake } from '../test-helpers/progress-fake.ts';
+import type { ProgressFake } from '../test-helpers/progress-fake.ts';
 import type { StepError } from './ports/step-error.ts';
 import { createSyncNotebook } from './sync-notebook.ts';
 import type { RunNotes, RunSummary } from './sync-site.ts';
@@ -36,18 +37,29 @@ const PAGES = { 'sec-m': [page('a', 'Kick-off', '2026-09-01T10:00:00Z'), page('b
 
 const run = async (
   seeds: { reader?: NotebookReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; since?: string } = {}
-): Promise<{ summary: RunSummary; source: string; notes: RunNotes; files: FilesFake; logger: LoggerFake; reader: NotebookReaderFake; ok: boolean; error?: StepError }> => {
+): Promise<{
+  summary: RunSummary;
+  source: string;
+  notes: RunNotes;
+  files: FilesFake;
+  logger: LoggerFake;
+  reader: NotebookReaderFake;
+  progress: ProgressFake;
+  ok: boolean;
+  error?: StepError;
+}> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
+  const progress = createProgressFake();
   const reader = createNotebookReaderFake({ sections: SECTIONS, pages: PAGES, ...seeds.reader });
-  const syncNotebook = createSyncNotebook({ reader, files, clock: createClockFake('2026-09-12T14:00:00Z'), logger, progress: createProgressFake(), kbRoot: 'kb' });
+  const syncNotebook = createSyncNotebook({ reader, files, clock: createClockFake('2026-09-12T14:00:00Z'), logger, progress, kbRoot: 'kb' });
   const outcome = await syncNotebook({ notebook: NOTEBOOK, dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4, since: seeds.since });
   const empty = {
     summary: { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 },
     source: NOTEBOOK.name,
     notes: { skipped: [], failed: [], givenUp: [], archived: [] },
   };
-  return outcome.ok ? { ...outcome.value, files, logger, reader, ok: true } : { ...empty, files, logger, reader, ok: false, error: outcome.error };
+  return outcome.ok ? { ...outcome.value, files, logger, reader, progress, ok: true } : { ...empty, files, logger, reader, progress, ok: false, error: outcome.error };
 };
 
 const stateOf = (files: FilesFake): { lastRun: string; pages: Record<string, { file: string; lastModified: string; title: string; section: string }> } =>
@@ -250,5 +262,15 @@ describe('reaching back only as far as the day', () => {
     const wider = await run({ reader: { pages: DATED }, files: { texts: { [STATE_PATH]: narrow.files.written.get(STATE_PATH) ?? '' } }, since: '2024-01-01' });
 
     expect(wider.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/Meetings/Kick-off.md`]);
+  });
+});
+
+describe('telling the reader which page is being written', () => {
+  it('the counter names each page by its title, and one with none as untitled', async () => {
+    const pages = { 'sec-m': [page('a', 'Kick-off', '2026-09-01T10:00:00Z'), page('u', '', '2026-09-02T10:00:00Z')], 'sec-b': [] };
+
+    const done = await run({ reader: { pages } });
+
+    expect(done.progress.steps).toEqual(['Kick-off', '(untitled page)']);
   });
 });
