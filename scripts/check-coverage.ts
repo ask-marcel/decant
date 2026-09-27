@@ -65,23 +65,31 @@ const isSkipped = (path: string): boolean => SKIPPED.some((s) => s.match(path));
 
 const findTier = (path: string): Tier | undefined => COVERAGE_RULES.find((t) => path.startsWith(t.prefix));
 
+type Layout = { readonly path: number; readonly funcs: number; readonly lines: number };
+
+const LAYOUTS: ReadonlyArray<Layout> = [
+  { path: 0, funcs: 1, lines: 2 },
+  { path: 1, funcs: 2, lines: 3 },
+];
+
+// A cell naming a source file, rather than the header, the total or a separator.
+const isFileCell = (path: string): boolean => path !== 'File' && path !== 'All files' && !path.startsWith('-') && (path.endsWith('.ts') || path.endsWith('.tsx'));
+
+const rowAt = (parts: ReadonlyArray<string>, layout: Layout): FileRow | undefined => {
+  const path = parts[layout.path];
+  if (!path || !isFileCell(path)) return undefined;
+  const funcs = Number.parseFloat(parts[layout.funcs] ?? '');
+  const lines = Number.parseFloat(parts[layout.lines] ?? '');
+  if (Number.isNaN(funcs) || Number.isNaN(lines)) return undefined;
+  return { path: path.startsWith('./') ? path.slice(2) : path, funcs, lines };
+};
+
 const parseRow = (line: string): FileRow | undefined => {
   const parts = line.split('|').map((c) => c.trim());
   if (parts.length < 3) return undefined;
-  const layouts: ReadonlyArray<{ path: number; funcs: number; lines: number }> = [
-    { path: 0, funcs: 1, lines: 2 },
-    { path: 1, funcs: 2, lines: 3 },
-  ];
-  for (const layout of layouts) {
-    const path = parts[layout.path];
-    if (!path) continue;
-    if (path === 'File' || path === 'All files' || path.startsWith('-')) continue;
-    if (!path.endsWith('.ts') && !path.endsWith('.tsx')) continue;
-    const funcs = Number.parseFloat(parts[layout.funcs] ?? '');
-    const lines = Number.parseFloat(parts[layout.lines] ?? '');
-    if (Number.isNaN(funcs) || Number.isNaN(lines)) continue;
-    const normalised = path.startsWith('./') ? path.slice(2) : path;
-    return { path: normalised, funcs, lines };
+  for (const layout of LAYOUTS) {
+    const row = rowAt(parts, layout);
+    if (row !== undefined) return row;
   }
   return undefined;
 };
