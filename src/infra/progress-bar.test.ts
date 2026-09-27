@@ -135,6 +135,23 @@ describe('saying how much is in flight and what each item is doing', () => {
     expect(writes.at(-1)).toContain('0/25 (3 running)');
   });
 
+  // Two conversations can share a subject, and a queue from an earlier run names every one of them
+  // alike: four in flight under one name must still read as four.
+  it('two items going by the same name each keep a row, and the count includes both', () => {
+    const { bar, writes } = capture();
+    const earlier = 'a conversation from an earlier run';
+
+    bar.start(5, 'Mailbox');
+    bar.begin(earlier);
+    bar.begin(earlier);
+    const both = rowsShown(writes.at(-1));
+    bar.step(earlier);
+    bar.begin('Budget review');
+
+    expect(both).toEqual(['Mailbox 0/5 (2 running)', `  ${earlier}`, `  ${earlier}`]);
+    expect(rowsShown(writes.at(-1))).toEqual(['Mailbox 1/5 (2 running)', `  ${earlier}`, '  Budget review']);
+  });
+
   it('a lone item says nothing about how many are running, since one is not news', () => {
     const { bar, writes } = capture();
 

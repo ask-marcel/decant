@@ -10,6 +10,13 @@ import type { Progress } from '../use-cases/ports/progress.ts';
 const DEFAULT_COLUMNS = 80;
 const DEFAULT_ROWS = 24;
 
+// The items in flight less one of this name, the first begun. Which of two alike has finished cannot
+// be told from the name, and either leaves the same rows.
+const withoutOne = (labels: ReadonlyArray<string>, label: string): ReadonlyArray<string> => {
+  const at = labels.indexOf(label);
+  return labels.filter((_, index) => index !== at);
+};
+
 export const createProgressBar = (write: (text: string) => void, columns?: () => number, rows?: () => number): Progress => {
   // The screen to fit inside: whatever a caller names, else the terminal's own size, else a size no
   // terminal is smaller than. Read per write rather than once, since a terminal can be resized.
@@ -18,7 +25,9 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
   let total = 0;
   let done = 0;
   let what = '';
-  let running = new Set<string>();
+  // In the order each began, and a list rather than a set: two conversations can share a subject, and
+  // each is still a row of its own.
+  let running: ReadonlyArray<string> = [];
   // What each running item last reported. Keyed by label so every row draws its own step, rather
   // than one file's step beside another file's name.
   let steps = new Map<string, string>();
@@ -65,9 +74,9 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
   const block = (label: string): ReadonlyArray<string> => {
     // Falls back to the label just passed in when nothing is tracked as running, which is what a bare
     // `step()` call (no `begin()` first) relied on before this port grew a `begin`.
-    const inFlight = running.size > 0 ? [...running] : [label];
+    const inFlight = running.length > 0 ? running : [label];
     // Only worth counting when more than one is in flight: one running item is not news.
-    const count = running.size > 1 ? ` (${running.size} running)` : '';
+    const count = running.length > 1 ? ` (${running.length} running)` : '';
     const header = fit(`${what} ${done}/${total}${count}`);
     const room = Math.max(1, height() - 1);
     if (inFlight.length <= room) return [header, ...inFlight.map(itemRow)];
@@ -88,12 +97,12 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
       total = count;
       done = 0;
       what = label;
-      running = new Set();
+      running = [];
       steps = new Map();
       drawn = 0;
     },
     begin: (label) => {
-      running.add(label);
+      running = [...running, label];
       steps.delete(label);
       render(label);
     },
@@ -102,7 +111,7 @@ export const createProgressBar = (write: (text: string) => void, columns?: () =>
       render(label);
     },
     step: (label) => {
-      running.delete(label);
+      running = withoutOne(running, label);
       steps.delete(label);
       done += 1;
       render(label);
