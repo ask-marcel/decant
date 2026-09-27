@@ -8,6 +8,7 @@ export type PickerView = {
   readonly libraryPicker: (rows: ReadonlyArray<PickerRow>) => string;
   readonly channelPicker: (rows: ReadonlyArray<PickerRow>) => string;
   readonly summary: (name: string, summary: RunSummary, dryRun: boolean) => string;
+  readonly sourceFailed: (name: string, step: string, message: string) => string;
   readonly reportPointer: (left: { readonly skipped: number; readonly failed: number }, path: string) => string;
   readonly sinceQuestion: () => string;
   readonly sinceRefused: (answer: string) => string;

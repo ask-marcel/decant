@@ -166,8 +166,9 @@ describe('wiring the command together', () => {
 
     const outcome = await refused.runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
-    expect(outcome.ok).toBe(false);
-    expect(!outcome.ok && outcome.error.cause).toBe('no-channel');
+    expect(outcome.ok && outcome.value.map((source) => source.notes.failed)).toEqual([
+      [{ path: 'Northwind Leadership', reason: 'failed at sync: no channel chosen for Northwind Leadership' }],
+    ]);
   });
 
   it('two sites sharing a name each refresh their own libraries, not the first one to be filed', async () => {

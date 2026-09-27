@@ -62,6 +62,10 @@ export const renderSummary = (name: string, summary: RunSummary, dryRun: boolean
     ? `${name}: ${summary.queued} to do (nothing written, this was a dry run).`
     : `${name}: ${summary.converted} converted, ${summary.moved} moved, ${summary.archived} archived, ${summary.skipped} skipped, ${summary.failed} failed.`;
 
+// Said in place of a source's counts when it failed and the run went on to the next, in the words the
+// report files it under, so the line on screen and the line in the file can be matched.
+export const renderSourceFailed = (name: string, step: string, message: string): string => `${name}: failed at ${step}: ${message}`;
+
 // Printed once at the end of a run that left something behind, so the report is found without being
 // gone looking for. A run that left nothing behind prints nothing: the per-source counts above
 // already said so, and a line pointing at an empty report wastes the last thing on screen.

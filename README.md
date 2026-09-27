@@ -75,7 +75,9 @@ bun run sync update
 ```
 
 That form is safe to schedule: it never opens a browser, and a lapsed sign-in ends the run with a
-clear message instead of waiting for input.
+clear message instead of waiting for input. Any other source that fails is named as it fails, listed
+in `kb/_sync-report.md` under the ones to try again, and passed over, so the sources after it are
+still refreshed; the run then exits with a failure.
 
 ### How far back
 

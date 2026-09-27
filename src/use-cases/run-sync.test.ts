@@ -618,18 +618,16 @@ describe('choosing what to sync', () => {
     expect({ ok: noSites.ok, step: noSites.step }).toEqual({ ok: false, step: 'listSites' });
   });
 
-  it('an update refreshes a notebook from the record its earlier run left, and stops naming the step when the record is gone', async () => {
+  it('an update refreshes a notebook from the record its earlier run left, and names the step when the record is gone, carrying on', async () => {
     const synced = [{ kind: 'notebook' as const, id: '1-nb', name: 'Northwind Leadership Notebook', lastRun: '2026-09-12T09:00:00Z', fileCount: 12 }];
     const found = await run([], { command: 'update' }, { synced, savedNotebook: { id: '1-nb', name: 'Northwind Leadership Notebook', webUrl: '', site: { id: 's', name: 'S' } } });
     const lost = await run([], { command: 'update' }, { synced, savedNotebook: undefined });
 
     expect(found.notebookRuns).toEqual(['Northwind Leadership Notebook']);
-    expect(lost.ok).toBe(false);
-    expect({ step: lost.step, cause: lost.cause, error: lost.error }).toEqual({
-      step: 'savedNotebook',
-      cause: 'not-found',
-      error: 'no record of the notebook Northwind Leadership Notebook',
-    });
+    expect(lost.ok).toBe(true);
+    expect(lost.summaries?.[0]?.notes.failed).toEqual([
+      { path: 'Northwind Leadership Notebook', reason: 'failed at savedNotebook: no record of the notebook Northwind Leadership Notebook' },
+    ]);
   });
 
   it('the lists of every site are offered last, off the same listing as the libraries, and a number there syncs a site`s lists and not its libraries', async () => {
@@ -699,19 +697,31 @@ describe('choosing what to sync', () => {
     expect(stopped.listsRuns).toEqual(['Espace Contoso']);
   });
 
-  it('an update refreshes every site`s lists already synced, after the notebooks, and stops where one fails', async () => {
+  it('an update refreshes every site`s lists already synced, after the notebooks, and carries on past one that fails', async () => {
     const synced = [
       { kind: 'lists' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-09-11T09:00:00Z', fileCount: 3 },
       { kind: 'lists' as const, id: 'contoso,3,4', name: 'Direction', lastRun: '2026-09-11T09:00:00Z', fileCount: 1 },
     ];
     const both = await run([], { command: 'update' }, { synced });
-    const stopped = await run([], { command: 'update' }, { synced, failLists: true });
+    const failing = await run([], { command: 'update' }, { synced, failLists: true });
 
     expect(both.listsRuns).toEqual(['Espace Contoso', 'Direction']);
     expect(both.summaries?.map((summary) => summary.id)).toEqual(['lists:contoso,1,2', 'lists:contoso,3,4']);
-    expect(stopped.ok).toBe(false);
-    expect(stopped.step).toBe('listLists');
-    expect(stopped.listsRuns).toEqual(['Espace Contoso']);
+    expect(failing.ok).toBe(true);
+    expect(failing.listsRuns).toEqual(['Espace Contoso', 'Direction']);
+    expect(failing.summaries?.map((summary) => summary.summary.failed)).toEqual([1, 1]);
+  });
+
+  // An update runs unattended, so a source that fails is said at once and written into the report,
+  // where the reader of either finds it, rather than ending the run for every source after it.
+  it('an update names a source that fails as it fails, and lists it in the report under the ones to try again', async () => {
+    const synced = [{ kind: 'lists' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-09-11T09:00:00Z', fileCount: 3 }];
+
+    const { prompt, summaries } = await run([], { command: 'update' }, { synced, failLists: true });
+
+    expect(prompt.shown).toContain('Espace Contoso (lists): failed at listLists: Forbidden');
+    expect(summaries?.[0]).toMatchObject({ id: 'lists:contoso,1,2', source: 'Espace Contoso (lists)' });
+    expect(summaries?.[0]?.notes).toEqual({ skipped: [], failed: [{ path: 'Espace Contoso (lists)', reason: 'failed at listLists: Forbidden' }], givenUp: [], archived: [] });
   });
 
   it('the plans are offered last, found through the groups the picker lists, and a number there syncs one', async () => {
@@ -746,7 +756,7 @@ describe('choosing what to sync', () => {
     expect(unlisted.step).toBe('listPlans');
   });
 
-  it('an update refreshes a plan from the record its earlier run left, after the lists, and stops naming the step when the record is gone or the plan fails', async () => {
+  it('an update refreshes a plan from the record its earlier run left, after the lists, and names the step when the record is gone or the plan fails, carrying on', async () => {
     const synced = [
       { kind: 'lists' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-09-11T09:00:00Z', fileCount: 3 },
       { kind: 'plan' as const, id: 'plan-1', name: 'Offsite 2026', lastRun: '2026-09-11T09:00:00Z', fileCount: 4 },
@@ -756,10 +766,11 @@ describe('choosing what to sync', () => {
     const broken = await run([], { command: 'update' }, { synced, savedPlan: { id: 'plan-1', title: 'Offsite 2026', groupId: 'g-1' }, failPlanSync: true });
 
     expect(found.planRuns).toEqual(['Offsite 2026']);
-    expect({ ok: broken.ok, step: broken.step }).toEqual({ ok: false, step: 'listTasks' });
+    expect(broken.summaries?.map((summary) => summary.summary.failed)).toEqual([0, 1]);
+    expect(broken.summaries?.[1]?.notes.failed).toEqual([{ path: 'Offsite 2026', reason: 'failed at listTasks: Graph is busy' }]);
     expect(found.summaries?.map((summary) => summary.id)).toEqual(['lists:contoso,1,2', 'plan-1']);
-    expect(lost.ok).toBe(false);
-    expect({ step: lost.step, cause: lost.cause, error: lost.error }).toEqual({ step: 'savedPlan', cause: 'not-found', error: 'no record of the plan Offsite 2026' });
+    expect(lost.ok).toBe(true);
+    expect(lost.summaries?.[1]?.notes.failed).toEqual([{ path: 'Offsite 2026', reason: 'failed at savedPlan: no record of the plan Offsite 2026' }]);
   });
 
   it('a plan listing that fails costs the plans and not the picker', async () => {
@@ -1543,13 +1554,19 @@ describe('stopping where a source fails, and nowhere else', () => {
   });
 
   for (const kind of ['calendar', 'people', 'group', 'todo', 'team', 'notebook'] as const) {
-    it(`an update stops at a ${kind} that fails, naming it, keeping what finished before it and syncing nothing after`, async () => {
-      const { ok: succeeded, step, reported, planRuns } = await run([], { command: 'update' }, { synced: EVERY_KIND, savedNotebook: NOTEBOOK, savedPlan: PLAN, failing: [kind] });
+    it(`an update carries on past a ${kind} that fails, naming it and counting it failed, and syncs every source after it`, async () => {
+      const {
+        ok: succeeded,
+        summaries,
+        prompt,
+        planRuns,
+      } = await run([], { command: 'update' }, { synced: EVERY_KIND, savedNotebook: NOTEBOOK, savedPlan: PLAN, failing: [kind] });
 
-      expect(succeeded).toBe(false);
-      expect(step).toBe(kind);
-      expect(reported[0]?.ran.map((ran) => ran.id)).toEqual(finishedBefore(UPDATED, kind));
-      expect(planRuns).toEqual([]);
+      expect(succeeded).toBe(true);
+      expect(summaries?.map((summary) => summary.id)).toEqual(UPDATED);
+      expect(summaries?.find((summary) => summary.id === RUN_OF[kind])?.summary.failed).toBe(1);
+      expect(prompt.shown.some((text) => text.endsWith(`: failed at ${kind}: Graph is busy`))).toBe(true);
+      expect(planRuns).toEqual([PLAN.title]);
     });
   }
 

@@ -7,7 +7,7 @@ import type { SiteRef } from '../domain/site-state.ts';
 import { MAILBOX_ID, MAILBOX_NAME } from '../domain/mail-state.ts';
 import { PEOPLE_ID, PEOPLE_NAME } from '../domain/people-state.ts';
 import { CALENDAR_ID, CALENDAR_NAME } from '../domain/calendar-state.ts';
-import { sourceKey } from '../domain/sync-state.ts';
+import { sourceKey, sourceLabel } from '../domain/sync-state.ts';
 import type { SourceKind, SyncedSource } from '../domain/sync-state.ts';
 import { SINCE_SHAPE, dayOf, parseSince } from '../domain/sync-window.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
@@ -260,17 +260,49 @@ const EACH: ReadonlyArray<{ readonly kind: SourceKind; readonly refresh: Refresh
   { kind: 'plan', refresh: refreshPlan },
 ];
 
+// One source to refresh, held with the step that refreshes it so a failure can be named after it.
+type Refreshing = { readonly source: SyncedSource; readonly step: Step };
+
 const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome> => {
   const known = await deps.listSyncedSources();
   if (!known.ok) return known;
-  const standing = STANDING.filter(({ kind }) => known.value.some((source) => source.kind === kind)).map(
-    ({ refresh }) =>
-      () =>
-        refresh(deps, input)
-  );
-  const each = EACH.flatMap(({ kind, refresh }) => known.value.filter((source) => source.kind === kind).map((source) => () => refresh(deps, input, source)));
-  return runInTurn([...standing, ...each]);
+  const standing = STANDING.flatMap(({ kind, refresh }) => {
+    const source = known.value.find((candidate) => candidate.kind === kind);
+    return source === undefined ? [] : [{ source, step: () => refresh(deps, input) }];
+  });
+  const each = EACH.flatMap(({ kind, refresh }) => known.value.filter((source) => source.kind === kind).map((source) => ({ source, step: () => refresh(deps, input, source) })));
+  return carryOn(deps, [...standing, ...each]);
 };
+
+// What a lapsed sign-in fails with. It ends an update where any other failure does not, since every
+// source after it would fail the same way.
+const SIGNED_OUT = 'auth';
+
+// An update runs unattended, so a source that fails is named at once, counted, and passed over rather
+// than ending the run: one Loop workspace whose libraries could not be found cost every source after
+// it, run after run. The report lists it under the ones to try again, and the exit code says so.
+const carryOn = async (deps: RunSyncDeps, steps: ReadonlyArray<Refreshing>): Promise<RunOutcome> => {
+  const summaries: SourceRun[] = [];
+  for (const { source, step } of steps) {
+    const summary = await step();
+    if (summary.ok) {
+      summaries.push(summary.value);
+      continue;
+    }
+    if (summary.error.cause === SIGNED_OUT) return stoppedAfter(summaries, summary.error);
+    const name = sourceLabel(source);
+    deps.prompt.show(deps.view.sourceFailed(name, summary.error.step, summary.error.message));
+    summaries.push(failedRun(source, name, summary.error));
+  }
+  return ok(summaries);
+};
+
+const failedRun = (source: SyncedSource, name: string, error: StepError): SourceRun => ({
+  id: sourceKey(source),
+  source: name,
+  summary: { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 1, queued: 0 },
+  notes: { skipped: [], failed: [{ path: name, reason: `failed at ${error.step}: ${error.message}` }], givenUp: [], archived: [] },
+});
 
 const siteFromOptions = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SiteRef, StepError> | undefined> => {
   if (input.siteUrl !== undefined) return siteAt(deps, input.siteUrl);

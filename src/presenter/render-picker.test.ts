@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { renderChannelPicker, renderLibraryPicker, renderSitePicker, renderSummary } from './render-picker.ts';
+import { renderChannelPicker, renderLibraryPicker, renderSitePicker, renderSourceFailed, renderSummary } from './render-picker.ts';
 
 const rows = [
   { id: 'a', name: 'Espace Contoso', webUrl: 'https://x', synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 143 } },
@@ -93,6 +93,10 @@ describe('telling the operator what happened', () => {
     const summary = { converted: 12, moved: 1, archived: 2, skipped: 3, failed: 0, queued: 0 };
 
     expect(renderSummary('Espace Contoso', summary, false)).toBe('Espace Contoso: 12 converted, 1 moved, 2 archived, 3 skipped, 0 failed.');
+  });
+
+  it('a source that failed is named with the step it failed at and why, in place of its counts', () => {
+    expect(renderSourceFailed('Loop - Offsite', 'sync', 'no library chosen')).toBe('Loop - Offsite: failed at sync: no library chosen');
   });
 
   it('a dry run says what it would have done and that it wrote nothing', () => {
