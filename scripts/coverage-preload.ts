@@ -37,6 +37,7 @@ import '../src/infra/todo-reader-marcel.ts';
 import '../src/composition/build-deps.ts';
 import '../src/composition/config.ts';
 import '../src/composition/options.ts';
+import '../src/composition/picker-view.ts';
 
 // --- src/presenter/ ---
 import '../src/presenter/render-picker.ts';

@@ -1,4 +1,4 @@
-import type { PickerRow } from '../domain/picker.ts';
+import type { PickerRow, StandingRows } from '../domain/picker.ts';
 import type { AddressKind } from '../domain/address-kind.ts';
 import { kindOf } from '../domain/address-kind.ts';
 import { CATEGORY_FOLDER } from '../domain/kb-category.ts';
@@ -34,10 +34,6 @@ const headed = (rows: ReadonlyArray<PickerRow>): ReadonlyArray<string> => {
   }
   return lines;
 };
-
-// The sources that stand alone: each is the only thing of its kind, so it gets a letter beside the
-// numbered rows rather than a heading over one row that would say nothing.
-export type StandingRows = { readonly mailbox: PickerRow; readonly people: PickerRow; readonly calendar: PickerRow };
 
 export const renderSitePicker = (rows: ReadonlyArray<PickerRow>, standing: StandingRows): string =>
   [

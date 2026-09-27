@@ -9,6 +9,7 @@ import { createPromptFake } from '../test-helpers/prompt-fake.ts';
 import type { PromptFake } from '../test-helpers/prompt-fake.ts';
 import type { SyncedSource } from '../domain/sync-state.ts';
 import type { SiteCache } from '../domain/site-cache.ts';
+import { pickerView } from '../composition/picker-view.ts';
 import { createRunSync } from './run-sync.ts';
 import type { RunSyncInput } from './run-sync.ts';
 import type { RunSummary, SourceRun, SyncSiteInput } from './sync-site.ts';
@@ -196,6 +197,7 @@ const run = async (
     rememberSince: async (since) => {
       rememberedSince.push(since);
     },
+    view: pickerView,
     rememberSites: async (listed) => {
       remembered.push(listed);
     },
@@ -1037,6 +1039,7 @@ describe('when the knowledge base itself cannot be read', () => {
       rememberSites: async () => undefined,
       storedSince: async () => ok('all'),
       rememberSince: async () => undefined,
+      view: pickerView,
       syncMailbox: async () => ok(SOURCE_RUN),
     });
 
@@ -1076,6 +1079,7 @@ describe('when the knowledge base itself cannot be read', () => {
       rememberSites: async () => undefined,
       storedSince: async () => ok('all'),
       rememberSince: async () => undefined,
+      view: pickerView,
     });
 
     expect((await runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false })).ok).toBe(false);
@@ -1142,6 +1146,7 @@ describe('when one site in a refresh fails', () => {
       rememberSites: async () => undefined,
       storedSince: async () => ok('all'),
       rememberSince: async () => undefined,
+      view: pickerView,
       syncMailbox: async () => ok(SOURCE_RUN),
     });
 
@@ -1299,6 +1304,7 @@ describe('when a source run fails after it began', () => {
       rememberSites: async () => undefined,
       storedSince: async () => ok('all'),
       rememberSince: async () => undefined,
+      view: pickerView,
       syncMailbox: async () => ({ ok: false, error: { step: 'mailbox', cause: 'auth', message: 'token expired' } }),
     });
 
@@ -1345,6 +1351,7 @@ describe('when a source run fails after it began', () => {
       rememberSites: async () => undefined,
       storedSince: async () => ok('all'),
       rememberSince: async () => undefined,
+      view: pickerView,
       syncMailbox: async () => ({ ok: false, error: { step: 'mailbox', cause: 'auth', message: 'token expired' } }),
     });
 
@@ -1427,6 +1434,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
       rememberSites: async () => undefined,
       storedSince: async () => ok('all'),
       rememberSince: async () => undefined,
+      view: pickerView,
       syncMailbox: async () => ok(SOURCE_RUN),
       writeGlobalReport: async ({ ran, stopped }) => {
         reported.push({ ran, stopped });
@@ -1471,6 +1479,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
       rememberSites: async () => undefined,
       storedSince: async () => ok('all'),
       rememberSince: async () => undefined,
+      view: pickerView,
       syncMailbox: async () => ok(SOURCE_RUN),
       writeGlobalReport: async ({ ran }) => {
         reported.push({ ran });

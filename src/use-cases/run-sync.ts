@@ -10,19 +10,11 @@ import { CALENDAR_ID, CALENDAR_NAME } from '../domain/calendar-state.ts';
 import { sourceKey } from '../domain/sync-state.ts';
 import type { SourceKind, SyncedSource } from '../domain/sync-state.ts';
 import { SINCE_SHAPE, dayOf, parseSince } from '../domain/sync-window.ts';
-import {
-  renderChannelPicker,
-  renderLibraryPicker,
-  renderReportPointer,
-  renderSinceQuestion,
-  renderSinceRefused,
-  renderSitePicker,
-  renderSummary,
-} from '../presenter/render-picker.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
 import type { DriveReader, DriveSummary, SiteSummary } from './ports/drive-reader.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Prompt } from './ports/prompt.ts';
+import type { PickerView } from './ports/picker-view.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { GroupReader, GroupSummary } from './ports/group-reader.ts';
 import type { TodoList, TodoReader } from './ports/todo-reader.ts';
@@ -47,6 +39,8 @@ import type { WriteGlobalReport } from './write-global-report.ts';
 export type RunSyncDeps = {
   readonly reader: DriveReader;
   readonly prompt: Prompt;
+  // The words the run shows, from the presenter: the run decides what to say and when, not how.
+  readonly view: PickerView;
   readonly logger: Logger;
   readonly syncSite: SyncSite;
   readonly listSyncedSources: ListSyncedSources;
@@ -140,7 +134,7 @@ const syncedMarks = async (deps: RunSyncDeps): Promise<Readonly<Record<string, S
 
 const chooseLibraries = async (deps: RunSyncDeps, drives: ReadonlyArray<DriveSummary>): Promise<Result<ReadonlyArray<DriveSummary>, StepError>> => {
   const rows: ReadonlyArray<PickerRow> = drives.map((drive) => ({ id: drive.id, name: drive.name, webUrl: '' }));
-  deps.prompt.show(renderLibraryPicker(rows));
+  deps.prompt.show(deps.view.libraryPicker(rows));
   const chosen = parseSelection(await deps.prompt.ask('Libraries:'), drives.length);
   if (!chosen.ok) return failed('pickLibraries', chosen.error.kind, chosen.error.message);
   if (chosen.value.kind !== 'rows') return failed('pickLibraries', 'bad-choice', 'choose libraries by number, or all');
@@ -149,7 +143,7 @@ const chooseLibraries = async (deps: RunSyncDeps, drives: ReadonlyArray<DriveSum
 
 const chooseChannels = async (deps: RunSyncDeps, channels: ReadonlyArray<ChannelSummary>): Promise<Result<ReadonlyArray<ChannelSummary>, StepError>> => {
   const rows: ReadonlyArray<PickerRow> = channels.map((channel) => ({ id: channel.id, name: channel.name, webUrl: '' }));
-  deps.prompt.show(renderChannelPicker(rows));
+  deps.prompt.show(deps.view.channelPicker(rows));
   const chosen = parseSelection(await deps.prompt.ask('Channels:'), channels.length);
   if (!chosen.ok) return failed('pickChannels', chosen.error.kind, chosen.error.message);
   if (chosen.value.kind !== 'rows') return failed('pickChannels', 'bad-choice', 'choose channels by number, or all');
@@ -166,7 +160,7 @@ const channelsFor = async (deps: RunSyncDeps, team: TeamSummary, ask: boolean): 
 const syncOneTeam = async (deps: RunSyncDeps, input: RunSyncInput, team: TeamSummary, channels: ReadonlyArray<ChannelSummary>): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('team.started', { teamId: team.id, channels: channels.length });
   const summary = await deps.syncTeam({ team, channels, concurrency: input.concurrency, dryRun: input.dryRun, since: dayOf(input.since) });
-  if (summary.ok) deps.prompt.show(renderSummary(team.name, summary.value.summary, input.dryRun));
+  if (summary.ok) deps.prompt.show(deps.view.summary(team.name, summary.value.summary, input.dryRun));
   return summary;
 };
 
@@ -183,28 +177,28 @@ const syncOne = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, dr
   if (drives.length === 0) return failed('sync', 'no-library', `no library chosen for ${site.name}`);
   deps.logger.info('sync.started', { siteId: site.id, libraries: drives.length });
   const summary = await deps.syncSite({ site, drives, maxBytes: input.maxBytes, concurrency: input.concurrency, dryRun: input.dryRun, since: dayOf(input.since) });
-  if (summary.ok) deps.prompt.show(renderSummary(site.name, summary.value.summary, input.dryRun));
+  if (summary.ok) deps.prompt.show(deps.view.summary(site.name, summary.value.summary, input.dryRun));
   return summary;
 };
 
 const syncTheMailbox = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('mailbox.started', {});
   const summary = await deps.syncMailbox({ maxBytes: input.maxBytes, concurrency: input.concurrency, dryRun: input.dryRun, since: dayOf(input.since) });
-  if (summary.ok) deps.prompt.show(renderSummary(MAILBOX_NAME, summary.value.summary, input.dryRun));
+  if (summary.ok) deps.prompt.show(deps.view.summary(MAILBOX_NAME, summary.value.summary, input.dryRun));
   return summary;
 };
 
 const syncThePeople = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('people.started', {});
   const summary = await deps.syncPeople({ concurrency: input.concurrency, dryRun: input.dryRun });
-  if (summary.ok) deps.prompt.show(renderSummary(PEOPLE_NAME, summary.value.summary, input.dryRun));
+  if (summary.ok) deps.prompt.show(deps.view.summary(PEOPLE_NAME, summary.value.summary, input.dryRun));
   return summary;
 };
 
 const syncTheCalendar = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('calendar.started', {});
   const summary = await deps.syncCalendar({ concurrency: input.concurrency, dryRun: input.dryRun, since: dayOf(input.since) });
-  if (summary.ok) deps.prompt.show(renderSummary(CALENDAR_NAME, summary.value.summary, input.dryRun));
+  if (summary.ok) deps.prompt.show(deps.view.summary(CALENDAR_NAME, summary.value.summary, input.dryRun));
   return summary;
 };
 
@@ -330,21 +324,21 @@ const notebookFromOptions = async (deps: RunSyncDeps, input: RunSyncInput, sites
 const syncTheNotebook = async (deps: RunSyncDeps, input: RunSyncInput, notebook: Notebook): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('notebook.started', { notebook: notebook.id });
   const summary = await deps.syncNotebook({ notebook, concurrency: input.concurrency, dryRun: input.dryRun, since: dayOf(input.since) });
-  if (summary.ok) deps.prompt.show(renderSummary(notebook.name, summary.value.summary, input.dryRun));
+  if (summary.ok) deps.prompt.show(deps.view.summary(notebook.name, summary.value.summary, input.dryRun));
   return summary;
 };
 
 const syncTheLists = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('lists.started', { site: site.id });
   const summary = await deps.syncLists({ site, concurrency: input.concurrency, dryRun: input.dryRun });
-  if (summary.ok) deps.prompt.show(renderSummary(summary.value.source, summary.value.summary, input.dryRun));
+  if (summary.ok) deps.prompt.show(deps.view.summary(summary.value.source, summary.value.summary, input.dryRun));
   return summary;
 };
 
 const syncThePlan = async (deps: RunSyncDeps, input: RunSyncInput, plan: Plan): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('plan.started', { plan: plan.id });
   const summary = await deps.syncPlan({ plan, concurrency: input.concurrency, dryRun: input.dryRun });
-  if (summary.ok) deps.prompt.show(renderSummary(plan.title, summary.value.summary, input.dryRun));
+  if (summary.ok) deps.prompt.show(deps.view.summary(plan.title, summary.value.summary, input.dryRun));
   return summary;
 };
 
@@ -476,7 +470,7 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
     ...annotate(plans.map(asChoosablePlan), marks),
   ];
   deps.prompt.show(
-    renderSitePicker(rows, {
+    deps.view.sitePicker(rows, {
       mailbox: standingRow(MAILBOX_ID, MAILBOX_NAME, marks),
       people: standingRow(PEOPLE_ID, PEOPLE_NAME, marks),
       calendar: standingRow(CALENDAR_ID, CALENDAR_NAME, marks),
@@ -588,14 +582,14 @@ const teamWithChannels = async (deps: RunSyncDeps, input: RunSyncInput, team: Te
 const syncTheGroup = async (deps: RunSyncDeps, input: RunSyncInput, group: GroupSummary): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('group.started', { group: group.id });
   const summary = await deps.syncGroup({ group, maxBytes: input.maxBytes, dryRun: input.dryRun, concurrency: input.concurrency, since: dayOf(input.since) });
-  if (summary.ok) deps.prompt.show(renderSummary(`${group.name} (group inbox)`, summary.value.summary, input.dryRun));
+  if (summary.ok) deps.prompt.show(deps.view.summary(`${group.name} (group inbox)`, summary.value.summary, input.dryRun));
   return summary;
 };
 
 const syncTheTodoList = async (deps: RunSyncDeps, input: RunSyncInput, list: TodoList): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('todo.started', { list: list.id });
   const summary = await deps.syncTodo({ list, dryRun: input.dryRun, concurrency: input.concurrency });
-  if (summary.ok) deps.prompt.show(renderSummary(list.name, summary.value.summary, input.dryRun));
+  if (summary.ok) deps.prompt.show(deps.view.summary(list.name, summary.value.summary, input.dryRun));
   return summary;
 };
 
@@ -695,7 +689,7 @@ const knownSince = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
 // Asked once a source is chosen, so a run that quits at the picker asks and keeps nothing. An answer
 // that is not a reach is asked again; nothing at all stops the run, the way the picker refuses it.
 const askSince = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<string, StepError>> => {
-  deps.prompt.show(renderSinceQuestion());
+  deps.prompt.show(deps.view.sinceQuestion());
   for (;;) {
     const answer = await deps.prompt.ask(`Since (${SINCE_SHAPE}):`);
     if (answer === '') return failed('pickSince', 'bad-choice', `answer with ${SINCE_SHAPE}`);
@@ -704,7 +698,7 @@ const askSince = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<
       if (!input.dryRun) await deps.rememberSince(since.value);
       return since;
     }
-    deps.prompt.show(renderSinceRefused(answer));
+    deps.prompt.show(deps.view.sinceRefused(answer));
   }
 };
 
@@ -721,6 +715,6 @@ export const createRunSync =
     const stopped = summaries.ok ? undefined : `${summaries.error.step}: ${summaries.error.message}`;
     const path = await deps.writeGlobalReport({ ran, dryRun: input.dryRun, stopped });
     const left = leftBehind(ran);
-    if (path !== undefined && left.skipped + left.failed > 0) deps.prompt.show(renderReportPointer(left, path));
+    if (path !== undefined && left.skipped + left.failed > 0) deps.prompt.show(deps.view.reportPointer(left, path));
     return summaries;
   };

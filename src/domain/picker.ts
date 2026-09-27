@@ -14,6 +14,10 @@ export type PickerRow = {
   readonly hint?: string;
 };
 
+// The sources that stand alone: each is the only thing of its kind, so it gets a letter beside the
+// numbered rows rather than a heading over one row that would say nothing.
+export type StandingRows = { readonly mailbox: PickerRow; readonly people: PickerRow; readonly calendar: PickerRow };
+
 export type Choosable = { readonly id: string; readonly name: string; readonly webUrl?: string; readonly kind?: AddressKind };
 
 // Two different sites can carry the same display name (an unedited template title, most often), and

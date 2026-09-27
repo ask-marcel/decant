@@ -63,6 +63,7 @@ import { SINCE_SHAPE, parseSettings, serializeSettings } from '../domain/sync-wi
 import { err, ok } from '../domain/result.ts';
 import type { RunSyncDeps } from '../use-cases/run-sync.ts';
 import type { Config } from './config.ts';
+import { pickerView } from './picker-view.ts';
 
 export type BuiltDeps = {
   readonly runSync: RunSync;
@@ -271,6 +272,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const runSync = createRunSync({
     reader,
     prompt,
+    view: pickerView,
     logger,
     syncSite,
     listSyncedSources,
