@@ -77,23 +77,6 @@ const FLAGS_WITH_VALUE = new Set([
   '--timezone',
 ]);
 
-const withValue = (options: Options, flag: string, value: string): Result<Options, OptionsError> => {
-  if (flag === '--site-id') return ok({ ...options, siteId: value });
-  if (flag === '--site-url') return ok({ ...options, siteUrl: value });
-  if (flag === '--group-id') return ok({ ...options, groupId: value });
-  if (flag === '--todo-list') return ok({ ...options, todoListId: value });
-  if (flag === '--team') return ok({ ...options, teamId: value });
-  if (flag === '--notebook') return ok({ ...options, notebookId: value });
-  if (flag === '--lists') return ok({ ...options, listsSite: value });
-  if (flag === '--plan') return ok({ ...options, planId: value });
-  if (flag === '--drive-id') return ok({ ...options, driveIds: [...options.driveIds, value] });
-  if (flag === '--ocr-lang') return withOcrLang(options, value);
-  if (flag === '--concurrency') return withConcurrency(options, value);
-  if (flag === '--since') return withSince(options, value);
-  if (flag === '--timezone') return withTimezone(options, value);
-  return withSize(options, value);
-};
-
 const withOcrLang = (options: Options, value: string): Result<Options, OptionsError> =>
   OCR_LANGUAGES.includes(value) ? ok({ ...options, ocrLang: value }) : err({ kind: 'bad-option', message: `--ocr-lang expects one of ${OCR_LANGUAGES.join(', ')}, got: ${value}` });
 
@@ -122,16 +105,45 @@ const withSince = (options: Options, value: string): Result<Options, OptionsErro
   return since.ok ? ok({ ...options, since: since.value }) : err({ kind: 'bad-option', message: `--since expects ${SINCE_SHAPE}, got: ${value}` });
 };
 
+type ValueFlag = (options: Options, value: string) => Result<Options, OptionsError>;
+
+// What each flag that takes a value does with it, one row a flag. `--max-size-mb` is the one left
+// out: a flag that takes a value and has no row here takes a size.
+const VALUE_FLAGS: ReadonlyMap<string, ValueFlag> = new Map<string, ValueFlag>([
+  ['--site-id', (options, value) => ok({ ...options, siteId: value })],
+  ['--site-url', (options, value) => ok({ ...options, siteUrl: value })],
+  ['--group-id', (options, value) => ok({ ...options, groupId: value })],
+  ['--todo-list', (options, value) => ok({ ...options, todoListId: value })],
+  ['--team', (options, value) => ok({ ...options, teamId: value })],
+  ['--notebook', (options, value) => ok({ ...options, notebookId: value })],
+  ['--lists', (options, value) => ok({ ...options, listsSite: value })],
+  ['--plan', (options, value) => ok({ ...options, planId: value })],
+  ['--drive-id', (options, value) => ok({ ...options, driveIds: [...options.driveIds, value] })],
+  ['--ocr-lang', withOcrLang],
+  ['--concurrency', withConcurrency],
+  ['--since', withSince],
+  ['--timezone', withTimezone],
+]);
+
+const withValue = (options: Options, flag: string, value: string): Result<Options, OptionsError> => (VALUE_FLAGS.get(flag) ?? withSize)(options, value);
+
+// What each flag that takes no value sets, one row a flag and one for each short form.
+const FLAGS: ReadonlyMap<string, Partial<Options>> = new Map<string, Partial<Options>>([
+  ['--dry-run', { dryRun: true }],
+  ['--no-ocr', { ocr: false }],
+  ['--refresh', { refresh: true }],
+  ['--mailbox', { mailbox: true }],
+  ['--people', { people: true }],
+  ['--calendar', { calendar: true }],
+  ['--yes', { assumeYes: true }],
+  ['-y', { assumeYes: true }],
+  ['--help', { help: true }],
+  ['-h', { help: true }],
+]);
+
 const withFlag = (options: Options, flag: string): Result<Options, OptionsError> => {
-  if (flag === '--dry-run') return ok({ ...options, dryRun: true });
-  if (flag === '--no-ocr') return ok({ ...options, ocr: false });
-  if (flag === '--refresh') return ok({ ...options, refresh: true });
-  if (flag === '--mailbox') return ok({ ...options, mailbox: true });
-  if (flag === '--people') return ok({ ...options, people: true });
-  if (flag === '--calendar') return ok({ ...options, calendar: true });
-  if (flag === '--yes' || flag === '-y') return ok({ ...options, assumeYes: true });
-  if (flag === '--help' || flag === '-h') return ok({ ...options, help: true });
-  return err({ kind: 'bad-option', message: `unknown option: ${flag}` });
+  const set = FLAGS.get(flag);
+  return set === undefined ? err({ kind: 'bad-option', message: `unknown option: ${flag}` }) : ok({ ...options, ...set });
 };
 
 const parseToken = (options: Options, token: string, value: string | undefined): Result<Options, OptionsError> => {
