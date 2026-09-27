@@ -44,6 +44,9 @@ const readString = (value: unknown, key: string): string | undefined => {
   return typeof found === 'string' ? found : undefined;
 };
 
+// A text field, or the empty string where the task carries none.
+const textOf = (value: unknown, key: string): string => readString(value, key) ?? '';
+
 const readNumber = (value: Record<string, unknown>, key: string): number | undefined => {
   const found = value[key];
   return typeof found === 'number' ? found : undefined;
@@ -90,19 +93,19 @@ export const parsePlanTask = (raw: unknown): PlanTask | undefined => {
   const assignments = raw['assignments'];
   return {
     id,
-    title: readString(raw, 'title') ?? '',
-    bucketId: readString(raw, 'bucketId') ?? '',
-    orderHint: readString(raw, 'orderHint') ?? '',
+    title: textOf(raw, 'title'),
+    bucketId: textOf(raw, 'bucketId'),
+    orderHint: textOf(raw, 'orderHint'),
     percentComplete: readNumber(raw, 'percentComplete') ?? 0,
     priority: readNumber(raw, 'priority') ?? MEDIUM,
     start: dayOf(raw['startDateTime']),
     due: dayOf(raw['dueDateTime']),
     completed: dayOf(raw['completedDateTime']),
-    created: readString(raw, 'createdDateTime') ?? '',
+    created: textOf(raw, 'createdDateTime'),
     assigneeIds: isRecord(assignments) ? Object.keys(assignments) : [],
     labels: labelKeysOf(raw['appliedCategories']),
-    createdBy: readString(isRecord(raw['createdBy']) ? raw['createdBy']['user'] : undefined, 'displayName') ?? '',
-    etag: readString(raw, ETAG) ?? '',
+    createdBy: textOf(isRecord(raw['createdBy']) ? raw['createdBy']['user'] : undefined, 'displayName'),
+    etag: textOf(raw, ETAG),
   };
 };
 

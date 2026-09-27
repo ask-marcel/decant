@@ -42,6 +42,9 @@ const readString = (value: unknown, key: string): string | undefined => {
   return typeof found === 'string' ? found : undefined;
 };
 
+// A text field, or the empty string where the event carries none.
+const textOf = (value: unknown, key: string): string => readString(value, key) ?? '';
+
 const readNumber = (value: unknown, key: string): number | undefined => {
   if (!isRecord(value)) return undefined;
   const found = value[key];
@@ -132,8 +135,8 @@ export const parseCalendarEvent = (raw: unknown): CalendarEvent | undefined => {
   if (!isRecord(raw) || id === undefined) return undefined;
   return {
     id,
-    subject: readString(raw, 'subject') ?? '',
-    kind: readString(raw, 'type') ?? '',
+    subject: textOf(raw, 'subject'),
+    kind: textOf(raw, 'type'),
     start: instantOf(raw['start']),
     end: instantOf(raw['end']),
     allDay: raw['isAllDay'] === true,
@@ -143,15 +146,15 @@ export const parseCalendarEvent = (raw: unknown): CalendarEvent | undefined => {
       const attendee = attendeeOf(entry);
       return attendee === undefined ? [] : [attendee];
     }),
-    location: readString(raw['location'], 'displayName') ?? '',
-    joinUrl: readString(raw['onlineMeeting'], 'joinUrl') ?? '',
-    webLink: readString(raw, 'webLink') ?? '',
+    location: textOf(raw['location'], 'displayName'),
+    joinUrl: textOf(raw['onlineMeeting'], 'joinUrl'),
+    webLink: textOf(raw, 'webLink'),
     recurrence: recurrenceText(raw['recurrence']),
-    response: readString(raw['responseStatus'], 'response') ?? '',
+    response: textOf(raw['responseStatus'], 'response'),
     categories: strings(raw['categories']),
     hasAttachments: raw['hasAttachments'] === true,
-    lastModified: readString(raw, 'lastModifiedDateTime') ?? '',
-    body: readString(raw['body'], 'content') ?? '',
+    lastModified: textOf(raw, 'lastModifiedDateTime'),
+    body: textOf(raw['body'], 'content'),
   };
 };
 
