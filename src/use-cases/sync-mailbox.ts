@@ -336,7 +336,7 @@ type Rendered = { readonly apply: (state: MailboxState) => MailboxState; readonl
 
 // The render (with its IO) happens now; what it adds to the mailbox state comes back as a function
 // so a whole window's results fold onto the state in order, after the parallel renders.
-const renderOne = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, threadId: string): Promise<Rendered> => {
+const renderOne = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, threadId: string, shown: string): Promise<Rendered> => {
   const held = conversationsInThread(state, threadId);
   const first = held[0];
   // A queue naming a thread no conversation points at has nothing to render. It is reachable: the
@@ -345,6 +345,7 @@ const renderOne = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
   if (first === undefined) return { apply: (carried) => withoutRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
   const rendered = await deps.renderThread({
     threadId,
+    label: shown,
     conversationIds: held.map((conversation) => conversation.id),
     root: first.root,
     // Empty until a thread has been filed somewhere, and reused verbatim from then on, so a change
@@ -454,7 +455,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
       window.map((threadId) => {
         const shown = shownAs(current.titles, threadId);
         deps.progress.begin(shown);
-        return renderOne(deps, input, current, threadId).then((outcome) => {
+        return renderOne(deps, input, current, threadId, shown).then((outcome) => {
           deps.progress.step(shown);
           return outcome;
         });

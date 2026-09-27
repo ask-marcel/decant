@@ -120,6 +120,7 @@ const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: Grou
     input.group.name
   )({
     threadId: threadIdOf(thread.id),
+    label: thread.topic,
     conversationIds: [threadRef(input.group.id, thread.id)],
     root: thread.id,
     folder: state.threads[thread.id]?.folder ?? '',

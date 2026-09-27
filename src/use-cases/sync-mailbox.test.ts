@@ -74,6 +74,7 @@ const run = async (
   logger: LoggerFake;
   progress: ProgressFake;
   asked: string[];
+  labels: string[];
   ok: boolean;
   error?: StepError;
   reader: ReturnType<typeof createMailReaderFake>;
@@ -83,6 +84,7 @@ const run = async (
   const progress = createProgressFake();
   const reader = createMailReaderFake(seeds.reader);
   const asked: string[] = [];
+  const labels: string[] = [];
   const syncMailbox = createSyncMailbox({
     reader,
     files,
@@ -92,6 +94,7 @@ const run = async (
     kbRoot: 'kb',
     renderThread: async (input) => {
       asked.push(input.conversationIds.join(','));
+      labels.push(input.label);
       if (seeds.failThread === input.conversationIds.join(',')) return err({ kind: 'permanent' as const, message: 'thread refused' });
       return ok(seeds.outcome === undefined ? rendered() : seeds.outcome(input));
     },
@@ -102,7 +105,17 @@ const run = async (
     dryRun: seeds.dryRun ?? false,
     since: seeds.since,
   });
-  return { summary: result.ok ? result.value.summary : ({} as RunSummary), files, logger, progress, asked, ok: result.ok, error: result.ok ? undefined : result.error, reader };
+  return {
+    summary: result.ok ? result.value.summary : ({} as RunSummary),
+    files,
+    logger,
+    progress,
+    asked,
+    labels,
+    ok: result.ok,
+    error: result.ok ? undefined : result.error,
+    reader,
+  };
 };
 
 const stateAfter = (
@@ -651,6 +664,12 @@ describe('rendering several conversations at once', () => {
 
     expect(progress.started[1]).toEqual({ total: 2, what: 'Mailbox, new conversations' });
     expect(progress.begins.slice(1, 3)).toEqual(['Budget review', 'Venue quotes']);
+  });
+
+  it('each conversation is rendered under the name its row goes by, so what it reads shows beside it', async () => {
+    const { labels } = await run({ reader: threeConversations, concurrency: 3 });
+
+    expect(labels).toEqual(['Offsite planning', 'Budget review', 'Venue quotes']);
   });
 
   it('every conversation in the window announces itself by its subject before any of them finish', async () => {

@@ -145,6 +145,16 @@ describe('writing one conversation as one file', () => {
     ]);
   });
 
+  // A thread carrying a dozen screenshots spends minutes reading them, and a row that never changes
+  // looks like a run that stopped.
+  it('each attachment is named on the conversation`s row while it is converted', async () => {
+    const picture = { m1: [{ id: 'att1', name: 'rack.jpg', contentType: 'image/jpeg', size: 12, isInline: false }] };
+
+    const { progress } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: picture } });
+
+    expect(progress.details).toEqual([{ label: 'Contrat Contoso', what: 'reading rack.jpg' }]);
+  });
+
   it('a file kept whole as well as read names both copies in its card', async () => {
     const picture = { m1: [{ id: 'att1', name: 'rack.jpg', contentType: 'image/jpeg', size: 12, isInline: false }] };
     const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: picture } });

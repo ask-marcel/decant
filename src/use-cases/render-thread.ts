@@ -14,7 +14,7 @@ import { FILE_SLUG_LIMIT, FOLDER_SLUG_LIMIT, slugify } from '../domain/thread-sl
 import { dayIn } from '../domain/zoned-day.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
-import type { ConvertAttachment } from './convert-attachment.ts';
+import type { AttachmentOutcome, ConvertAttachment, ConvertAttachmentInput } from './convert-attachment.ts';
 import { ATTACHMENTS_FOLDER, attachmentsOf } from './thread-files.ts';
 import { rewriteBodies, writeCards } from './thread-documents.ts';
 import type { ConvertFile } from './convert-file.ts';
@@ -24,6 +24,7 @@ import type { DriveReader } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import type { MailReaderError, ThreadReader } from './ports/mail-reader.ts';
+import type { Progress } from './ports/progress.ts';
 
 export type RenderThreadDeps = {
   readonly reader: ThreadReader;
@@ -40,10 +41,14 @@ export type RenderThreadDeps = {
   // The zone a thread's day is counted in. Config for the run rather than per conversation, since
   // every folder in one vault must be dated the same way or two runs would disagree.
   readonly timezone: string;
+  // Where the file being read is named, beside the conversation's own row on the counter.
+  readonly progress: Progress;
 };
 
 export type RenderThreadInput = {
   readonly threadId: string;
+  // What the conversation goes by on the counter, so the file it is reading shows on its own row.
+  readonly label: string;
   // Every Graph conversation this thread was assembled from. More than one when Graph opened a
   // second conversation for the same exchange, which it does when an external party replies from
   // outside Exchange. They are rendered as one document, because they are one exchange.
@@ -182,6 +187,13 @@ const placeOf = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailMe
   return { folder, relative: `threads/${folder}/${slugify(bare, FILE_SLUG_LIMIT)}.md`, here: `${deps.mailboxRoot}/threads/${folder}` };
 };
 
+// Each file is named on the conversation's row as it is converted: a thread carrying a dozen
+// screenshots spends minutes reading them, and a row that never changes looks like a run that stopped.
+const announced = async (deps: RenderThreadDeps, label: string, converting: ConvertAttachmentInput): Promise<AttachmentOutcome> => {
+  deps.progress.detail(label, `reading ${converting.attachment.name}`);
+  return deps.convertAttachment(converting);
+};
+
 const writeThread = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
@@ -192,7 +204,8 @@ const writeThread = async (
   const place = placeOf(deps, input, first);
   const relative = place.relative;
   const stamp = stampFor(deps, input, first, last);
-  const attachments = await attachmentsOf(deps, { here: place.here, mailboxRoot: deps.mailboxRoot, maxBytes: input.maxBytes, stored: input.attachments }, parts, stamp);
+  const reading = { ...deps, convertAttachment: (converting: ConvertAttachmentInput): Promise<AttachmentOutcome> => announced(deps, input.label, converting) };
+  const attachments = await attachmentsOf(reading, { here: place.here, mailboxRoot: deps.mailboxRoot, maxBytes: input.maxBytes, stored: input.attachments }, parts, stamp);
   const links = await linkedFiles(deps, place.here, input.maxBytes, parts);
   // Everything the thread carried sits inside the thread's own folder, so every reference below is
   // relative to `here` and stays within the directory a reader already has open.

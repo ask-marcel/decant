@@ -18,6 +18,7 @@ import { createMailReaderFake } from './mail-reader-fake.ts';
 import { createOcrFake } from './ocr-fake.ts';
 import type { OcrSeed } from './ocr-fake.ts';
 import { createProgressFake } from './progress-fake.ts';
+import type { ProgressFake } from './progress-fake.ts';
 import { createConvertAttachment } from '../use-cases/convert-attachment.ts';
 import { createConvertFile } from '../use-cases/convert-file.ts';
 import { createRenderThread } from '../use-cases/render-thread.ts';
@@ -76,6 +77,7 @@ export const run = async (
   files: FilesFake;
   logger: LoggerFake;
   reader: ReturnType<typeof createMailReaderFake>;
+  progress: ProgressFake;
   drive: ReturnType<typeof createDriveReaderFake>;
   error: MailReaderError | undefined;
   ok: boolean;
@@ -84,7 +86,9 @@ export const run = async (
   const logger = createLoggerFake();
   const reader = createMailReaderFake(seeds.reader);
   const drive = createDriveReaderFake(seeds.drive);
+  const progress = createProgressFake();
   const render = createRenderThread({
+    progress,
     reader,
     drive,
     files,
@@ -98,6 +102,7 @@ export const run = async (
   });
   const result = await render({
     threadId: THREAD_ID,
+    label: 'Contrat Contoso',
     conversationIds: seeds.conversationIds ?? [CONV],
     root: ROOT,
     folder: seeds.folder ?? '',
@@ -105,5 +110,5 @@ export const run = async (
     linked: seeds.linked ?? {},
     attachments: seeds.attachments ?? {},
   });
-  return { outcome: result.ok ? result.value : undefined, error: result.ok ? undefined : result.error, files, logger, reader, drive, ok: result.ok };
+  return { outcome: result.ok ? result.value : undefined, error: result.ok ? undefined : result.error, files, logger, reader, drive, progress, ok: result.ok };
 };

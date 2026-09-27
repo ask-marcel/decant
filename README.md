@@ -842,7 +842,8 @@ SW Project (Fabrikam instance) / 文档  4/25 (8 running)
 
 A mailbox counts twice before it writes anything: its folders as they are read, each with the
 messages read so far, then the conversations it has not seen before, by subject, while it finds the
-thread each belongs to. A first run spends most of its time on these two:
+thread each belongs to. Once it writes, each conversation's row names the attachment it is reading,
+since a dozen screenshots take minutes to read. A first run spends most of its time on the first two:
 
 ```
 Mailbox, reading folders 3/14
