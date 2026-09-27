@@ -219,7 +219,7 @@ const runInTurn = async (steps: ReadonlyArray<Step>): Promise<RunOutcome> => {
 };
 
 const refreshSite = async (deps: RunSyncDeps, input: RunSyncInput, source: SyncedSource): Promise<Result<SourceRun, StepError>> => {
-  const site = { id: source.id, name: source.name, webUrl: '' };
+  const site = { id: source.id, name: source.name, webUrl: source.webUrl ?? '' };
   return syncOne(deps, input, site, await deps.savedDrives(site));
 };
 

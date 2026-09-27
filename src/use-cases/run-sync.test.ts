@@ -934,6 +934,21 @@ describe('refreshing everything already synced', () => {
     expect(calls[0]?.drives).toEqual([{ id: 'b!two', name: 'Site Assets' }]);
   });
 
+  it('the update command refreshes a Loop workspace under the address it was synced from, not as a plain site', async () => {
+    const loop = 'https://tenant.sharepoint.com/contentstorage/CSP_one';
+    const workspace = { kind: 'site' as const, id: 'contoso,3,4', name: 'Loop - Offsite', webUrl: loop, lastRun: '2026-07-22T09:00:00Z', fileCount: 4 };
+
+    const { calls } = await run([], { command: 'update' }, { synced: [workspace] });
+
+    expect(calls[0]?.site.webUrl).toBe(loop);
+  });
+
+  it('a site synced before addresses were kept is still refreshed, with no address, as a team site', async () => {
+    const { calls } = await run([], { command: 'update' }, { synced });
+
+    expect(calls[0]?.site.webUrl).toBe('');
+  });
+
   it('choosing u at the picker refreshes everything the same way', async () => {
     const { calls, prompt } = await run(['u'], {}, { synced });
 

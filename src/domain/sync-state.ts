@@ -9,6 +9,10 @@ export type SyncedSource = {
   readonly name: string;
   readonly lastRun: string;
   readonly fileCount: number;
+  // The address a site was synced from, which is what files it: a Loop workspace and a OneDrive are
+  // shelved apart from team sites by their address, so an update that forgot it would look for the
+  // state under the wrong heading and find no libraries. Only a site's state records one.
+  readonly webUrl?: string;
 };
 
 export type SyncStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -83,5 +87,5 @@ export const parseSyncedSource = (raw: unknown): Result<SyncedSource, SyncStateE
   if (!isRecord(source)) return malformed('sync state has no source object');
   const identity = parseIdentity(source);
   if (!identity.ok) return identity;
-  return ok({ ...identity.value, lastRun: readString(raw, 'lastRun') ?? NEVER_RUN, fileCount: countFiles(raw) });
+  return ok({ ...identity.value, lastRun: readString(raw, 'lastRun') ?? NEVER_RUN, fileCount: countFiles(raw), webUrl: readString(source, 'webUrl') });
 };

@@ -15,6 +15,14 @@ describe('reading the sync state left by a previous run', () => {
     expect(parsed).toEqual({ ok: true, value: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 3 } });
   });
 
+  it('a site keeps the address it was synced from, so an update files it where the first run did', () => {
+    const state = { source: { kind: 'site', id: 'contoso,3,4', name: 'Loop - Offsite', webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_one' } };
+
+    const parsed = parseSyncedSource(state);
+
+    expect(parsed.ok && parsed.value.webUrl).toBe('https://tenant.sharepoint.com/contentstorage/CSP_one');
+  });
+
   it('a synced mailbox is counted by its conversations, one file each', () => {
     const state = { source: { kind: 'mailbox', id: 'me', name: 'Mailbox' }, lastRun: '2026-07-22T09:00:00Z', threads: { 'conv-1': {}, 'conv-2': {} } };
 
