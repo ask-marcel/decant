@@ -541,10 +541,10 @@ describe('reporting what did not reach the knowledge base', () => {
     expect(report).toContain('- Contrat.docx: permanent: cannot convert');
   });
 
-  it('a conversation that could not be written is named in the report', async () => {
+  it('a conversation that could not be written is named in the report by its subject', async () => {
     const { files, logger } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, failThread: 'conv-1' });
 
-    expect(files.written.get(REPORT_PATH)).toContain(`- thread ${threadIdOf('m1')}: thread refused`);
+    expect(files.written.get(REPORT_PATH)).toContain('- thread Contrat Contoso: thread refused');
     expect(logger.calls.filter((call) => call.event === 'thread.failed')).toEqual([{ level: 'warn', event: 'thread.failed', meta: { cause: 'permanent' } }]);
   });
 
@@ -863,8 +863,16 @@ describe('a conversation the run could not write', () => {
     const report = third.files.written.get(REPORT_PATH) ?? '';
 
     expect(report).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
-    expect(report).toContain(`- thread ${THREAD}: thread refused`);
+    expect(report).toContain('- thread Contrat Contoso: thread refused');
     expect(report).not.toContain('will be tried again on the next run');
+  });
+
+  it('a conversation given up on before subjects were kept is named in the report by its id, all there is to call it', async () => {
+    const givenUp = serializeMailboxState({ ...emptyMailboxState(), retry: { [THREAD]: { attempts: 3, reason: 'thread refused' } } });
+
+    const { files } = await run({ files: { texts: { [STATE_PATH]: givenUp } }, reader: NOTHING_NEW });
+
+    expect(files.written.get(REPORT_PATH)).toContain(`- thread ${THREAD}: thread refused`);
   });
 
   it('a conversation that gained a reply after it was given up on is written again from scratch', async () => {

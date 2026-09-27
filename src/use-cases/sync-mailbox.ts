@@ -271,13 +271,20 @@ const titlesOf = (state: MailboxState, dirty: ReadonlyArray<Conversation>): Read
 const FROM_EARLIER = 'a conversation from an earlier run';
 const NO_SUBJECT = '(no subject)';
 
-// A conversation is named for the reader by the subject kept for it. One queued before subjects were
-// kept has none in hand and is named for what it is.
-const shownAs = (titles: Readonly<Record<string, string>>, threadId: string): string => {
+// A conversation is named for the reader by the subject kept for it, or by `fallback` when it was
+// queued before subjects were kept and has none in hand.
+const named = (titles: Readonly<Record<string, string>>, threadId: string, fallback: string): string => {
   const title = titles[threadId];
-  if (title === undefined) return FROM_EARLIER;
+  if (title === undefined) return fallback;
   return title.length > 0 ? title : NO_SUBJECT;
 };
+
+// On the counter, one with no subject kept is named for what it is.
+const shownAs = (titles: Readonly<Record<string, string>>, threadId: string): string => named(titles, threadId, FROM_EARLIER);
+
+// In the report it keeps its id instead: the report lists several side by side, and the id is what
+// tells them apart where "a conversation from an earlier run" would not.
+const reportedAs = (titles: Readonly<Record<string, string>>, threadId: string): string => `thread ${named(titles, threadId, threadId)}`;
 
 // A thread the sweep queued for itself is written from the messages the mailbox holds now, so what an
 // earlier run remembered about it is settled either way and goes with the queueing.
@@ -323,7 +330,7 @@ const renderOne = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
     const attempts = (state.retry[threadId]?.attempts ?? 0) + 1;
     // The ledger's own list names a thread that has run out of tries, so reporting it here as well
     // would print it twice under headings promising opposite things.
-    const notes = attempts >= MAX_CONVERSION_ATTEMPTS ? {} : { failed: [{ path: `thread ${threadId}`, reason: rendered.error.message }] };
+    const notes = attempts >= MAX_CONVERSION_ATTEMPTS ? {} : { failed: [{ path: reportedAs(state.titles, threadId), reason: rendered.error.message }] };
     return { apply: (carried) => withRetry(carried, threadId, { attempts, reason: rendered.error.message }), counted: { failed: 1 }, notes };
   }
   if (rendered.value.kind === 'empty') return { apply: (carried) => withoutRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
@@ -444,7 +451,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
   // the threads the ledger still holds, and the two lists are filled from different places.
   const withAbandoned = {
     ...notes,
-    givenUp: [...notes.givenUp, ...abandonedThreads(finished.retry).map((entry) => ({ path: `thread ${entry.threadId}`, reason: entry.reason }))],
+    givenUp: [...notes.givenUp, ...abandonedThreads(finished.retry).map((entry) => ({ path: reportedAs(finished.titles, entry.threadId), reason: entry.reason }))],
   };
   await writeReport(deps, input, mailboxRoot(deps.kbRoot), MAILBOX_NAME, summary, withAbandoned);
   return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary, notes: withAbandoned });

@@ -812,9 +812,10 @@ writes the counts and the line "Nothing was left behind." A file left out says w
 a `.mp4` this tool does not read, or that its name had no extension so nothing could tell.
 
 A conversation that could not be written is remembered and rendered again on the next run, the same
-three tries a SharePoint document gets, and named under the same two headings: the one that promises
-another run, then the one that says there will not be another. A reply arriving on a thread that had
-run out of tries starts it over.
+three tries a SharePoint document gets, and named by its subject under the same two headings: the one
+that promises another run, then the one that says there will not be another. One that failed before
+decant kept subjects goes by its thread id, since that is all the state file holds for it. A reply
+arriving on a thread that had run out of tries starts it over.
 
 A thread that lands while one of the files it carried does not is remembered the same way, and the
 whole thread is written again on the next run to fetch that one file. It costs the conversions of
