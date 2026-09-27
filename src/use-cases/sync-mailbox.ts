@@ -5,6 +5,7 @@ import type { MailMessage } from '../domain/mail-message.ts';
 import { attachmentRows, linkRows, renderJsonl, threadRows } from '../domain/mail-meta.ts';
 import { rootMessageId } from '../domain/root-message-id.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
+import { bareSubject } from '../domain/thread-subject.ts';
 import type { AttachmentRecord, LinkedRecord, MailboxState, ThreadRecord } from '../domain/mail-state.ts';
 import {
   MAILBOX_ID,
@@ -155,18 +156,21 @@ const sweepFolder = async (deps: SyncMailboxDeps, state: MailboxState, folder: M
   return ok({ state: withFolderCursor(state, folder.id, folder.name, page.deltaLink), messages });
 };
 
-type Conversation = { readonly id: string; readonly messageIds: ReadonlyArray<string>; readonly last: string; readonly oldest: string };
+// `subject` is the oldest message's, which is what the thread's document is titled after.
+type Conversation = { readonly id: string; readonly messageIds: ReadonlyArray<string>; readonly last: string; readonly oldest: string; readonly subject: string };
 
 // Ordered rather than compared in place. `inReceivedOrder` already settles a tie by message id, so
 // the same sweep always names the same oldest message, and it is the ordering the thread's own
 // document is written in, so the two cannot disagree about which message came first.
 const conversationOf = (id: string, first: MailMessage, rest: ReadonlyArray<MailMessage>): Conversation => {
   const ordered = inReceivedOrder([first, ...rest]);
+  const earliest = ordered[0] ?? first;
   return {
     id,
     messageIds: ordered.map((message) => message.id),
     last: (ordered[ordered.length - 1] ?? first).received,
-    oldest: (ordered[0] ?? first).id,
+    oldest: earliest.id,
+    subject: earliest.subject,
   };
 };
 
@@ -208,10 +212,14 @@ const resolveThreads = async (deps: SyncMailboxDeps, state: MailboxState, conver
 // The cursors are saved once every folder has been swept, never one at a time: a cursor means "you
 // have seen everything up to here", so storing one before its messages are queued would lose them
 // for good. A sweep stopped halfway therefore costs a full re-sweep, which is the safe direction.
-const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<MailboxState, StepError>> => {
+// What a queue came to: the state holding it, and the subject each thread it holds goes by, for the
+// reader watching the counter. The subjects are the sweep's, so a queue this run did not build has none.
+type Queued = { readonly state: MailboxState; readonly titles: ReadonlyMap<string, string> };
+
+const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<Queued, StepError>> => {
   if (state.pending.length > 0) {
     deps.logger.info('mail.resuming', { pending: state.pending.length });
-    return ok(state);
+    return ok({ state, titles: new Map() });
   }
   const folders = await folderTree(deps);
   if (!folders.ok) return stepFailure('listFolders', folders.error);
@@ -241,7 +249,7 @@ const finishQueue = async (
   state: MailboxState,
   statePath: string,
   messages: ReadonlyArray<MailMessage>
-): Promise<Result<MailboxState, StepError>> => {
+): Promise<Result<Queued, StepError>> => {
   const conversations = conversationsOf(messages, input.since);
   const dirty = conversations.filter((conversation) => needsRender(state, conversation.id, conversation.messageIds));
   deps.logger.info('mail.enumerated', { messages: messages.length, conversations: conversations.length, queued: dirty.length });
@@ -249,7 +257,28 @@ const finishQueue = async (
   const fresh = threadsToRender(resolved, dirty);
   const queued = withPending(cleared(resolved, fresh), [...fresh, ...retriedThreads(resolved.retry, fresh)]);
   const saved = await save(deps.files, statePath, queued, input.dryRun);
-  return saved.ok ? ok(queued) : saved;
+  return saved.ok ? ok({ state: queued, titles: titlesOf(resolved, dirty) }) : saved;
+};
+
+// The subject each queued thread goes by, bare of the markers a reply adds, the way the thread's
+// document is titled. A conversation left unresolved is queued under no thread, so it names none.
+const titlesOf = (state: MailboxState, dirty: ReadonlyArray<Conversation>): ReadonlyMap<string, string> =>
+  new Map(
+    dirty.flatMap((conversation) => {
+      const belongs = threadOfConversation(state, conversation.id);
+      return belongs === undefined ? [] : [[belongs.threadId, bareSubject(conversation.subject)] as const];
+    })
+  );
+
+const FROM_EARLIER = 'a conversation from an earlier run';
+const NO_SUBJECT = '(no subject)';
+
+// A conversation is named for the reader by its subject. One this run's sweep did not queue, left by a
+// run that stopped or queued again to be retried, has no subject in hand and is named for what it is.
+const shownAs = (titles: ReadonlyMap<string, string>, threadId: string): string => {
+  const title = titles.get(threadId);
+  if (title === undefined) return FROM_EARLIER;
+  return title.length > 0 ? title : NO_SUBJECT;
 };
 
 // A thread the sweep queued for itself is written from the messages the mailbox holds now, so what an
@@ -351,7 +380,7 @@ export const createSyncMailbox =
     const loaded = await loadMailboxState(deps.files, statePath, deps.logger);
     const queued = await queueWork(deps, input, loaded, statePath);
     if (!queued.ok) return queued;
-    if (input.dryRun) return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary: { ...EMPTY, queued: queued.value.pending.length }, notes: NO_NOTES });
+    if (input.dryRun) return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary: { ...EMPTY, queued: queued.value.state.pending.length }, notes: NO_NOTES });
     return drainQueue(deps, input, queued.value, statePath);
   };
 
@@ -379,19 +408,20 @@ const noted = (notes: RunNotes, results: ReadonlyArray<Rendered>): RunNotes =>
     notes
   );
 
-const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<SourceRun, StepError>> => {
-  let current = state;
+const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, queued: Queued, statePath: string): Promise<Result<SourceRun, StepError>> => {
+  let current = queued.state;
   let summary = EMPTY;
   let notes: RunNotes = NO_NOTES;
-  deps.progress.start(current.pending.length, 'Rendering');
+  deps.progress.start(current.pending.length, MAILBOX_NAME);
   for (;;) {
     if (current.pending.length === 0) break;
     const window = current.pending.slice(0, input.concurrency);
     const results = await Promise.all(
       window.map((threadId) => {
-        deps.progress.begin(threadId);
+        const shown = shownAs(queued.titles, threadId);
+        deps.progress.begin(shown);
         return renderOne(deps, input, current, threadId).then((outcome) => {
-          deps.progress.step(threadId);
+          deps.progress.step(shown);
           return outcome;
         });
       })

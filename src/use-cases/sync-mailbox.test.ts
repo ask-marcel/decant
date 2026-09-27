@@ -615,9 +615,9 @@ describe('rendering several conversations at once', () => {
     pages: [
       {
         messages: [
-          message({ id: 'a', conversationId: 'conv-a' }),
-          message({ id: 'b', conversationId: 'conv-b', received: '2026-05-13T00:00:00Z' }),
-          message({ id: 'c', conversationId: 'conv-c', received: '2026-05-14T00:00:00Z' }),
+          message({ id: 'a', conversationId: 'conv-a', subject: 'Offsite planning' }),
+          message({ id: 'b', conversationId: 'conv-b', subject: 'RE: Budget review', received: '2026-05-13T00:00:00Z' }),
+          message({ id: 'c', conversationId: 'conv-c', subject: 'Fwd: Venue quotes', received: '2026-05-14T00:00:00Z' }),
         ],
         skipped: 0,
         deltaLink: 'c1',
@@ -635,17 +635,32 @@ describe('rendering several conversations at once', () => {
   it('the progress counter shows the total up front and ticks once per conversation', async () => {
     const { progress } = await run({ reader: threeConversations, concurrency: 3 });
 
-    expect(progress.started).toEqual([{ total: 3, what: 'Rendering' }]);
+    expect(progress.started).toEqual([{ total: 3, what: 'Mailbox' }]);
     expect(progress.steps).toHaveLength(3);
     expect(progress.dones).toHaveLength(1);
   });
 
-  it('every conversation in the window announces itself as begun before any of them finish', async () => {
+  it('every conversation in the window announces itself by its subject before any of them finish', async () => {
     const { progress } = await run({ reader: threeConversations, concurrency: 3 });
 
-    expect([...progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(
-      [threadIdOf('a'), threadIdOf('b'), threadIdOf('c')].sort((left, right) => left.localeCompare(right))
-    );
+    expect([...progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(['Budget review', 'Offsite planning', 'Venue quotes']);
+  });
+
+  // The queue keeps thread ids, not subjects, so a conversation queued by a run that was stopped, or
+  // one tried again, has no subject in hand: it is still named in words, never by its id.
+  it('a conversation queued by an earlier run is named as one, since its subject is not in hand', async () => {
+    const held = withConversation(emptyMailboxState(), 'conv-9', { threadId: 'thread-9', root: '<r@example.com>' });
+    const halfDone = serializeMailboxState({ ...held, pending: ['thread-9'] });
+
+    const { progress } = await run({ files: { texts: { [STATE_PATH]: halfDone } }, reader: { folders: [folder()] } });
+
+    expect(progress.begins).toEqual(['a conversation from an earlier run']);
+  });
+
+  it('a conversation with no subject is said to have none', async () => {
+    const { progress } = await run({ reader: { folders: [folder()], pages: [{ messages: [message({ subject: '' })], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(progress.begins).toEqual(['(no subject)']);
   });
 
   // The case the whole identity scheme exists for. Graph opens a second conversation for one
