@@ -85,6 +85,10 @@ export type MailboxState = {
   // run reaching further back than this sweeps every folder from the start. Additive for the same
   // reason as the ledger: a file written before this reached everything.
   readonly since?: string;
+  // The subject each thread still queued, or owed another try, goes by, so a run that resumes the
+  // queue or tries a thread again names it on the counter as the sweep that queued it did. Kept for
+  // those threads only and dropped once one is written. Additive: a file from before holds none.
+  readonly titles: Readonly<Record<string, string>>;
 };
 
 export type MailStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -103,6 +107,7 @@ export const emptyMailboxState = (): MailboxState => ({
   attachments: {},
   pending: [],
   retry: {},
+  titles: {},
 });
 
 export const serializeMailboxState = (state: MailboxState): string => `${JSON.stringify(state, undefined, 2)}\n`;
@@ -165,8 +170,21 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     pending: stringList(raw['pending']),
     retry: mapOf(raw['retry'], retryOf),
     since: readString(raw, 'since'),
+    titles: textsOf(raw['titles']),
   });
 };
+
+// Only the entries that are text: a subject is only ever shown, so anything else is no subject.
+const textsOf = (raw: unknown): Readonly<Record<string, string>> =>
+  isRecord(raw) ? Object.fromEntries(Object.entries(raw).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : {};
+
+// The subjects kept for the threads still queued or owed another try, and no others.
+export const keptTitles = (state: MailboxState): MailboxState => ({
+  ...state,
+  titles: Object.fromEntries(Object.entries(state.titles).filter(([threadId]) => state.pending.includes(threadId) || state.retry[threadId] !== undefined)),
+});
+
+export const withTitles = (state: MailboxState, titles: Readonly<Record<string, string>>): MailboxState => keptTitles({ ...state, titles: { ...state.titles, ...titles } });
 
 export const withFolderCursor = (state: MailboxState, folderId: string, name: string, deltaLink: string | undefined): MailboxState => ({
   ...state,

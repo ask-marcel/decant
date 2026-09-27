@@ -646,15 +646,33 @@ describe('rendering several conversations at once', () => {
     expect([...progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(['Budget review', 'Offsite planning', 'Venue quotes']);
   });
 
-  // The queue keeps thread ids, not subjects, so a conversation queued by a run that was stopped, or
-  // one tried again, has no subject in hand: it is still named in words, never by its id.
-  it('a conversation queued by an earlier run is named as one, since its subject is not in hand', async () => {
+  // The subject is kept beside the queue, so a run that resumes it names the conversation the way the
+  // run that queued it did. A queue from before subjects were kept has none, and says so in words.
+  it('a conversation queued by an earlier run is named by the subject kept for it, or as one from an earlier run', async () => {
     const held = withConversation(emptyMailboxState(), 'conv-9', { threadId: 'thread-9', root: '<r@example.com>' });
-    const halfDone = serializeMailboxState({ ...held, pending: ['thread-9'] });
+    const titled = serializeMailboxState({ ...held, pending: ['thread-9'], titles: { 'thread-9': 'Budget review' } });
+    const untitled = serializeMailboxState({ ...held, pending: ['thread-9'] });
 
-    const { progress } = await run({ files: { texts: { [STATE_PATH]: halfDone } }, reader: { folders: [folder()] } });
+    const resumed = await run({ files: { texts: { [STATE_PATH]: titled } }, reader: { folders: [folder()] } });
+    const older = await run({ files: { texts: { [STATE_PATH]: untitled } }, reader: { folders: [folder()] } });
 
-    expect(progress.begins).toEqual(['a conversation from an earlier run']);
+    expect(resumed.progress.begins).toEqual(['Budget review']);
+    expect(older.progress.begins).toEqual(['a conversation from an earlier run']);
+  });
+
+  it('a conversation tried again is named by the subject kept for it, though no message of it was swept', async () => {
+    const held = withConversation(emptyMailboxState(), 'conv-9', { threadId: 'thread-9', root: '<r@example.com>' });
+    const owed = serializeMailboxState({ ...held, retry: { 'thread-9': { attempts: 1, reason: 'thread refused' } }, titles: { 'thread-9': 'Budget review' } });
+
+    const { progress } = await run({ files: { texts: { [STATE_PATH]: owed } }, reader: { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(progress.begins).toEqual(['Budget review']);
+  });
+
+  it('a subject is kept while its conversation is owed another try, and dropped once it is written', async () => {
+    const { files } = await run({ reader: threeConversations, concurrency: 3, failThread: 'conv-b' });
+
+    expect(JSON.parse(files.written.get(STATE_PATH) ?? '{}').titles).toEqual({ [threadIdOf('b')]: 'Budget review' });
   });
 
   it('a conversation with no subject is said to have none', async () => {

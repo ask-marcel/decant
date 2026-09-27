@@ -27,6 +27,8 @@ import {
   withThread,
   withoutCursors,
   withoutRetry,
+  keptTitles,
+  withTitles,
 } from '../domain/mail-state.ts';
 import { widens } from '../domain/sync-window.ts';
 import type { Result } from '../domain/result.ts';
@@ -212,14 +214,10 @@ const resolveThreads = async (deps: SyncMailboxDeps, state: MailboxState, conver
 // The cursors are saved once every folder has been swept, never one at a time: a cursor means "you
 // have seen everything up to here", so storing one before its messages are queued would lose them
 // for good. A sweep stopped halfway therefore costs a full re-sweep, which is the safe direction.
-// What a queue came to: the state holding it, and the subject each thread it holds goes by, for the
-// reader watching the counter. The subjects are the sweep's, so a queue this run did not build has none.
-type Queued = { readonly state: MailboxState; readonly titles: ReadonlyMap<string, string> };
-
-const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<Queued, StepError>> => {
+const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<MailboxState, StepError>> => {
   if (state.pending.length > 0) {
     deps.logger.info('mail.resuming', { pending: state.pending.length });
-    return ok({ state, titles: new Map() });
+    return ok(state);
   }
   const folders = await folderTree(deps);
   if (!folders.ok) return stepFailure('listFolders', folders.error);
@@ -249,21 +247,21 @@ const finishQueue = async (
   state: MailboxState,
   statePath: string,
   messages: ReadonlyArray<MailMessage>
-): Promise<Result<Queued, StepError>> => {
+): Promise<Result<MailboxState, StepError>> => {
   const conversations = conversationsOf(messages, input.since);
   const dirty = conversations.filter((conversation) => needsRender(state, conversation.id, conversation.messageIds));
   deps.logger.info('mail.enumerated', { messages: messages.length, conversations: conversations.length, queued: dirty.length });
   const resolved = await resolveThreads(deps, state, dirty);
   const fresh = threadsToRender(resolved, dirty);
-  const queued = withPending(cleared(resolved, fresh), [...fresh, ...retriedThreads(resolved.retry, fresh)]);
+  const queued = withTitles(withPending(cleared(resolved, fresh), [...fresh, ...retriedThreads(resolved.retry, fresh)]), titlesOf(resolved, dirty));
   const saved = await save(deps.files, statePath, queued, input.dryRun);
-  return saved.ok ? ok({ state: queued, titles: titlesOf(resolved, dirty) }) : saved;
+  return saved.ok ? ok(queued) : saved;
 };
 
 // The subject each queued thread goes by, bare of the markers a reply adds, the way the thread's
 // document is titled. A conversation left unresolved is queued under no thread, so it names none.
-const titlesOf = (state: MailboxState, dirty: ReadonlyArray<Conversation>): ReadonlyMap<string, string> =>
-  new Map(
+const titlesOf = (state: MailboxState, dirty: ReadonlyArray<Conversation>): Readonly<Record<string, string>> =>
+  Object.fromEntries(
     dirty.flatMap((conversation) => {
       const belongs = threadOfConversation(state, conversation.id);
       return belongs === undefined ? [] : [[belongs.threadId, bareSubject(conversation.subject)] as const];
@@ -273,10 +271,10 @@ const titlesOf = (state: MailboxState, dirty: ReadonlyArray<Conversation>): Read
 const FROM_EARLIER = 'a conversation from an earlier run';
 const NO_SUBJECT = '(no subject)';
 
-// A conversation is named for the reader by its subject. One this run's sweep did not queue, left by a
-// run that stopped or queued again to be retried, has no subject in hand and is named for what it is.
-const shownAs = (titles: ReadonlyMap<string, string>, threadId: string): string => {
-  const title = titles.get(threadId);
+// A conversation is named for the reader by the subject kept for it. One queued before subjects were
+// kept has none in hand and is named for what it is.
+const shownAs = (titles: Readonly<Record<string, string>>, threadId: string): string => {
+  const title = titles[threadId];
   if (title === undefined) return FROM_EARLIER;
   return title.length > 0 ? title : NO_SUBJECT;
 };
@@ -380,7 +378,7 @@ export const createSyncMailbox =
     const loaded = await loadMailboxState(deps.files, statePath, deps.logger);
     const queued = await queueWork(deps, input, loaded, statePath);
     if (!queued.ok) return queued;
-    if (input.dryRun) return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary: { ...EMPTY, queued: queued.value.state.pending.length }, notes: NO_NOTES });
+    if (input.dryRun) return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary: { ...EMPTY, queued: queued.value.pending.length }, notes: NO_NOTES });
     return drainQueue(deps, input, queued.value, statePath);
   };
 
@@ -408,8 +406,8 @@ const noted = (notes: RunNotes, results: ReadonlyArray<Rendered>): RunNotes =>
     notes
   );
 
-const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, queued: Queued, statePath: string): Promise<Result<SourceRun, StepError>> => {
-  let current = queued.state;
+const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<SourceRun, StepError>> => {
+  let current = state;
   let summary = EMPTY;
   let notes: RunNotes = NO_NOTES;
   deps.progress.start(current.pending.length, MAILBOX_NAME);
@@ -418,7 +416,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, queued
     const window = current.pending.slice(0, input.concurrency);
     const results = await Promise.all(
       window.map((threadId) => {
-        const shown = shownAs(queued.titles, threadId);
+        const shown = shownAs(current.titles, threadId);
         deps.progress.begin(shown);
         return renderOne(deps, input, current, threadId).then((outcome) => {
           deps.progress.step(shown);
@@ -427,7 +425,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, queued
       })
     );
     const folded = results.reduce((carried, done) => done.apply(carried), current);
-    const advanced = withPending(folded, current.pending.slice(window.length));
+    const advanced = keptTitles(withPending(folded, current.pending.slice(window.length)));
     const saved = await save(deps.files, statePath, advanced, input.dryRun);
     if (!saved.ok) {
       deps.progress.done();

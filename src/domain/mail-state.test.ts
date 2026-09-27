@@ -40,7 +40,18 @@ describe('remembering where a mailbox sync got to', () => {
       attachments: {},
       pending: [],
       retry: {},
+      titles: {},
     });
+  });
+
+  it('the subjects kept for queued conversations read back, and a state from before them has none', () => {
+    const written = serializeMailboxState({ ...emptyMailboxState(), pending: ['thread-1'], titles: { 'thread-1': 'Budget review' } });
+    const notText = parseMailboxState({ version: 2, source: { kind: 'mailbox' }, titles: { 'thread-1': 42 } });
+    const before = parseMailboxState({ version: 2, source: { kind: 'mailbox' } });
+
+    expect(parseMailboxState(JSON.parse(written))).toMatchObject({ ok: true, value: { titles: { 'thread-1': 'Budget review' } } });
+    expect(notText.ok && notText.value.titles).toEqual({});
+    expect(before.ok && before.value.titles).toEqual({});
   });
 
   it('what one run writes, the next run reads back unchanged', () => {
