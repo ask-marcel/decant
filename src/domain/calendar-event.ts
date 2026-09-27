@@ -45,8 +45,8 @@ const readString = (value: unknown, key: string): string | undefined => {
 // A text field, or the empty string where the event carries none.
 const textOf = (value: unknown, key: string): string => readString(value, key) ?? '';
 
-const readNumber = (value: unknown, key: string): number | undefined => {
-  if (!isRecord(value)) return undefined;
+// Asked only of a rule's pattern or range, which are records by the time they are read.
+const readNumber = (value: Record<string, unknown>, key: string): number | undefined => {
   const found = value[key];
   return typeof found === 'number' ? found : undefined;
 };

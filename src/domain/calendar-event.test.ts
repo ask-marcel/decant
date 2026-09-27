@@ -108,6 +108,17 @@ describe('reading a calendar event as Graph answers for it', () => {
     });
   });
 
+  it('a field of the wrong kind reads as absent, and an all-day event says so', () => {
+    const event = parseCalendarEvent({ id: 'x', subject: 42, categories: ['Board', 7, null], isAllDay: true });
+
+    expect(event).toMatchObject({ subject: '', categories: ['Board'], allDay: true });
+  });
+
+  it('a time stated in UTC gains its zone letter only when it carries its seconds', () => {
+    expect(parseCalendarEvent({ id: 'x', start: { dateTime: '2026-09-12T07:00:00', timeZone: 'UTC' } })?.start).toBe('2026-09-12T07:00:00Z');
+    expect(parseCalendarEvent({ id: 'x', start: { dateTime: '2026-09-12T07:00', timeZone: 'UTC' } })?.start).toBe('2026-09-12T07:00');
+  });
+
   it('an attendee with no address is nobody, and one with no name is named by their address', () => {
     const parsed = parseCalendarEvent({
       ...graphEvent,
@@ -132,6 +143,41 @@ describe('saying a recurrence rule in words', () => {
     expect(rule({ type: 'relativeMonthly', interval: 1, index: 'first', daysOfWeek: ['monday'] })).toBe('every month on the first Monday, from 2026-01-05');
     expect(rule({ type: 'absoluteYearly', interval: 1, month: 5, dayOfMonth: 12 })).toBe('every year on 12 May, from 2026-01-05');
     expect(rule({ type: 'relativeYearly', interval: 1, index: 'last', daysOfWeek: ['friday'], month: 5 })).toBe('every year on the last Friday of May, from 2026-01-05');
+  });
+
+  it('a week names every day it falls on, the last after "and", and a year names whichever month it is', () => {
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+    expect(rule({ type: 'weekly', interval: 1, daysOfWeek: ['monday', 'wednesday', 'saturday', 'sunday'] })).toBe(
+      'every week on Monday, Wednesday, Saturday and Sunday, from 2026-01-05'
+    );
+    expect(months.map((_, index) => rule({ type: 'absoluteYearly', interval: 1, month: index + 1, dayOfMonth: 1 }))).toEqual(
+      months.map((name) => `every year on 1 ${name}, from 2026-01-05`)
+    );
+  });
+
+  it('a monthly or yearly rule on a weekday says which one, and the first when Graph does not say', () => {
+    expect(rule({ type: 'relativeMonthly', interval: 1, index: 'second', daysOfWeek: ['tuesday'] })).toBe('every month on the second Tuesday, from 2026-01-05');
+    expect(rule({ type: 'relativeMonthly', interval: 1, daysOfWeek: ['tuesday'] })).toBe('every month on the first Tuesday, from 2026-01-05');
+    expect(rule({ type: 'relativeYearly', interval: 1, daysOfWeek: ['tuesday'], month: 3 })).toBe('every year on the first Tuesday of March, from 2026-01-05');
+  });
+
+  it('an interval that is not a number is read as every one', () => {
+    expect(rule({ type: 'daily', interval: 'two' })).toBe('every day, from 2026-01-05');
+  });
+
+  // Graph sends every part of a rule, so a gap here is a rule this does not understand. It is said
+  // as far as it goes, and the gap is left empty rather than filled with a guess.
+  it('a rule missing a part leaves the gap where the part would be, rather than making one up', () => {
+    expect(rule({ interval: 1 })).toBe(', from 2026-01-05');
+    expect(rule({ type: 'weekly', interval: 1 })).toBe('every week on , from 2026-01-05');
+    expect(rule({ type: 'absoluteMonthly', interval: 1 })).toBe('every month on day , from 2026-01-05');
+    expect(rule({ type: 'absoluteYearly', interval: 1, month: 3 })).toBe('every year on  March, from 2026-01-05');
+    expect(rule({ type: 'absoluteYearly', interval: 1, month: 0, dayOfMonth: 1 })).toBe('every year on 1 , from 2026-01-05');
+    expect(rule({ type: 'absoluteYearly', interval: 1, month: 13, dayOfMonth: 1 })).toBe('every year on 1 , from 2026-01-05');
+    expect(rule({ type: 'daily', interval: 1 }, { type: 'endDate' })).toBe('every day, from  until ');
+    expect(rule({ type: 'daily', interval: 1 }, { type: 'numbered' })).toBe('every day,  times from ');
+    expect(rule({ type: 'daily', interval: 1 }, {})).toBe('every day, from ');
   });
 
   it('a rule that ends on a day, one that runs a number of times, and one Graph describes in words this has none for', () => {
@@ -166,5 +212,12 @@ describe('reading a page of the calendar delta', () => {
       'https://graph.microsoft.com/v1.0/x?$deltatoken=z'
     );
     expect(parseEventDelta('nope').changes).toHaveLength(0);
+  });
+
+  it('a page whose value is not a list holds nothing, and a cursor is carried only where Graph gave one', () => {
+    const page = parseEventDelta({ value: 'not a list' });
+
+    expect(page.changes).toHaveLength(0);
+    expect(Object.keys(page)).toEqual(['changes']);
   });
 });
