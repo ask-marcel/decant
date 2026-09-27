@@ -1,16 +1,16 @@
-import type { SiteSummary } from '../use-cases/ports/drive-reader.ts';
+import type { SiteRef } from './site-state.ts';
 
 // The sites a run listed, kept so the next run can draw its picker at once. Finding them takes three
 // listings and a lookup per site the index does not name, tens of seconds, and the answer barely
 // changes between runs: showing what was there last time and refreshing behind it trades a site that
 // appeared since (it arrives one run late, and `--refresh` fetches it now) for never waiting again.
-export type SiteCache = { readonly listedAt: string; readonly sites: ReadonlyArray<SiteSummary> };
+export type SiteCache = { readonly listedAt: string; readonly sites: ReadonlyArray<SiteRef> };
 
 // Bumped whenever the shape below changes, so a cache an older version wrote is passed over rather
 // than half-understood. The cost of being wrong here is a picker built from nonsense.
 const CACHE_VERSION = 1;
 
-export const serializeSiteCache = (sites: ReadonlyArray<SiteSummary>, listedAt: string): string => `${JSON.stringify({ version: CACHE_VERSION, listedAt, sites }, undefined, 2)}\n`;
+export const serializeSiteCache = (sites: ReadonlyArray<SiteRef>, listedAt: string): string => `${JSON.stringify({ version: CACHE_VERSION, listedAt, sites }, undefined, 2)}\n`;
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
@@ -19,7 +19,7 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
   return typeof value === 'string' ? value : undefined;
 };
 
-const siteOf = (raw: unknown): ReadonlyArray<SiteSummary> => {
+const siteOf = (raw: unknown): ReadonlyArray<SiteRef> => {
   if (!isRecord(raw)) return [];
   const id = readString(raw, 'id');
   const name = readString(raw, 'name');

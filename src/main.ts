@@ -3,7 +3,7 @@ import { buildDeps } from './composition/build-deps.ts';
 import { readConfig } from './composition/config.ts';
 import { parseOptions, USAGE } from './composition/options.ts';
 import { formatError } from './domain/utilities/format-error.ts';
-import { printLine } from './presenter/output.ts';
+import { printLine } from './infra/output.ts';
 
 const MB = 1024 * 1024;
 

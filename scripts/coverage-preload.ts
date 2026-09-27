@@ -25,6 +25,7 @@ import '../src/infra/logger.ts';
 import '../src/infra/mail-reader-marcel.ts';
 import '../src/infra/notebook-reader-marcel.ts';
 import '../src/infra/ocr-rapid.ts';
+import '../src/infra/output.ts';
 import '../src/infra/people-reader-marcel.ts';
 import '../src/infra/plan-reader-marcel.ts';
 import '../src/infra/progress-bar.ts';
@@ -38,6 +39,5 @@ import '../src/composition/config.ts';
 import '../src/composition/options.ts';
 
 // --- src/presenter/ ---
-import '../src/presenter/output.ts';
 import '../src/presenter/render-picker.ts';
 import '../src/presenter/render-sources.ts';

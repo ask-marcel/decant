@@ -3,7 +3,7 @@ import type { AddressKind } from '../domain/address-kind.ts';
 import { kindOf } from '../domain/address-kind.ts';
 import { CATEGORY_FOLDER } from '../domain/kb-category.ts';
 import { SINCE_SHAPE } from '../domain/sync-window.ts';
-import type { RunSummary } from '../use-cases/sync-site.ts';
+import type { RunSummary } from '../domain/run-summary.ts';
 
 const files = (count: number): string => (count === 1 ? '1 file' : `${count} files`);
 

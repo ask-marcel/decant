@@ -25,6 +25,7 @@ import { buildWorklist } from '../domain/worklist.ts';
 import type { ReportEntry, ReportNotes, ReportRun } from '../domain/report.ts';
 import { appendReportRun, hasSomethingToReport, skipReason } from '../domain/report.ts';
 import type { WorkItem } from '../domain/worklist.ts';
+import type { RunSummary } from '../domain/run-summary.ts';
 import type { ConvertFile } from './convert-file.ts';
 import { sweepDrive } from './enumerate-drive.ts';
 import type { DriveSweep } from './enumerate-drive.ts';
@@ -60,14 +61,9 @@ export type SyncSiteInput = {
   readonly since?: string;
 };
 
-export type RunSummary = {
-  readonly converted: number;
-  readonly moved: number;
-  readonly archived: number;
-  readonly skipped: number;
-  readonly failed: number;
-  readonly queued: number;
-};
+// Defined in the domain, where the presenter can read it too; exported here as well, where every
+// source already takes it from.
+export type { RunSummary };
 
 // What one source's run hands back. The notes used to stop at this source's own report; the global
 // report needs them a level up, where every source of a run can be written to one file.

@@ -1,4 +1,4 @@
-import { printLine } from '../presenter/output.ts';
+import { printLine } from './output.ts';
 import type { Prompt } from '../use-cases/ports/prompt.ts';
 
 // Where a typed answer comes from. Required rather than defaulted, so the terminal is named at the
