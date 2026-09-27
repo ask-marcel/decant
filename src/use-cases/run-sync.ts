@@ -8,6 +8,7 @@ import { MAILBOX_ID, MAILBOX_NAME } from '../domain/mail-state.ts';
 import { PEOPLE_ID, PEOPLE_NAME } from '../domain/people-state.ts';
 import { CALENDAR_ID, CALENDAR_NAME } from '../domain/calendar-state.ts';
 import { sourceKey } from '../domain/sync-state.ts';
+import type { SourceKind, SyncedSource } from '../domain/sync-state.ts';
 import { SINCE_SHAPE, dayOf, parseSince } from '../domain/sync-window.ts';
 import {
   renderChannelPicker,
@@ -207,67 +208,74 @@ const syncTheCalendar = async (deps: RunSyncDeps, input: RunSyncInput): Promise<
   return summary;
 };
 
-const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
-  const known = await deps.listSyncedSources();
-  if (!known.ok) return known;
+// A run's outcome: what it got through, or where it stopped along with what it got through first.
+type RunOutcome = Result<ReadonlyArray<SourceRun>, RunFailure>;
+
+type Step = () => Promise<Result<SourceRun, StepError>>;
+
+// Each step in turn, stopping at the first that fails and carrying out what finished before it.
+const runInTurn = async (steps: ReadonlyArray<Step>): Promise<RunOutcome> => {
   const summaries: SourceRun[] = [];
-  if (known.value.some((candidate) => candidate.kind === 'mailbox')) {
-    const mailbox = await syncTheMailbox(deps, input);
-    if (!mailbox.ok) return stoppedAfter(summaries, mailbox.error);
-    summaries.push(mailbox.value);
-  }
-  if (known.value.some((candidate) => candidate.kind === 'calendar')) {
-    const calendar = await syncTheCalendar(deps, input);
-    if (!calendar.ok) return stoppedAfter(summaries, calendar.error);
-    summaries.push(calendar.value);
-  }
-  if (known.value.some((candidate) => candidate.kind === 'people')) {
-    const people = await syncThePeople(deps, input);
-    if (!people.ok) return stoppedAfter(summaries, people.error);
-    summaries.push(people.value);
-  }
-  for (const source of known.value.filter((candidate) => candidate.kind === 'site')) {
-    const site = { id: source.id, name: source.name, webUrl: '' };
-    const summary = await syncOne(deps, input, site, await deps.savedDrives(site));
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const source of known.value.filter((candidate) => candidate.kind === 'group')) {
-    const summary = await syncTheGroup(deps, input, { id: source.id, name: source.name, mail: '' });
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const source of known.value.filter((candidate) => candidate.kind === 'todo')) {
-    const summary = await syncTheTodoList(deps, input, { id: source.id, name: source.name });
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const source of known.value.filter((candidate) => candidate.kind === 'team')) {
-    const team = { id: source.id, name: source.name };
-    const summary = await syncOneTeam(deps, input, team, await deps.savedChannels(team));
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const source of known.value.filter((candidate) => candidate.kind === 'notebook')) {
-    const notebook = await deps.savedNotebook(source);
-    if (notebook === undefined) return stoppedAfter(summaries, { step: 'savedNotebook', cause: 'not-found', message: `no record of the notebook ${source.name}` });
-    const summary = await syncTheNotebook(deps, input, notebook);
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const source of known.value.filter((candidate) => candidate.kind === 'lists')) {
-    const summary = await syncTheLists(deps, input, { id: source.id, name: source.name, webUrl: '' });
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const source of known.value.filter((candidate) => candidate.kind === 'plan')) {
-    const plan = await deps.savedPlan(source);
-    if (plan === undefined) return stoppedAfter(summaries, { step: 'savedPlan', cause: 'not-found', message: `no record of the plan ${source.name}` });
-    const summary = await syncThePlan(deps, input, plan);
+  for (const step of steps) {
+    const summary = await step();
     if (!summary.ok) return stoppedAfter(summaries, summary.error);
     summaries.push(summary.value);
   }
   return ok(summaries);
+};
+
+const refreshSite = async (deps: RunSyncDeps, input: RunSyncInput, source: SyncedSource): Promise<Result<SourceRun, StepError>> => {
+  const site = { id: source.id, name: source.name, webUrl: '' };
+  return syncOne(deps, input, site, await deps.savedDrives(site));
+};
+
+const refreshTeam = async (deps: RunSyncDeps, input: RunSyncInput, source: SyncedSource): Promise<Result<SourceRun, StepError>> => {
+  const team = { id: source.id, name: source.name };
+  return syncOneTeam(deps, input, team, await deps.savedChannels(team));
+};
+
+const refreshNotebook = async (deps: RunSyncDeps, input: RunSyncInput, source: SyncedSource): Promise<Result<SourceRun, StepError>> => {
+  const notebook = await deps.savedNotebook(source);
+  return notebook === undefined ? failed('savedNotebook', 'not-found', `no record of the notebook ${source.name}`) : syncTheNotebook(deps, input, notebook);
+};
+
+const refreshPlan = async (deps: RunSyncDeps, input: RunSyncInput, source: SyncedSource): Promise<Result<SourceRun, StepError>> => {
+  const plan = await deps.savedPlan(source);
+  return plan === undefined ? failed('savedPlan', 'not-found', `no record of the plan ${source.name}`) : syncThePlan(deps, input, plan);
+};
+
+// The sources that stand alone, refreshed once each when the knowledge base holds them at all, in
+// this order and before the rest.
+const STANDING: ReadonlyArray<{ readonly kind: SourceKind; readonly refresh: (deps: RunSyncDeps, input: RunSyncInput) => Promise<Result<SourceRun, StepError>> }> = [
+  { kind: 'mailbox', refresh: syncTheMailbox },
+  { kind: 'calendar', refresh: syncTheCalendar },
+  { kind: 'people', refresh: syncThePeople },
+];
+
+type Refresh = (deps: RunSyncDeps, input: RunSyncInput, source: SyncedSource) => Promise<Result<SourceRun, StepError>>;
+
+// Every other source, once for each the knowledge base holds, kind by kind in this order, rebuilt
+// from what its own state recorded rather than listed again.
+const EACH: ReadonlyArray<{ readonly kind: SourceKind; readonly refresh: Refresh }> = [
+  { kind: 'site', refresh: refreshSite },
+  { kind: 'group', refresh: (deps, input, source) => syncTheGroup(deps, input, { id: source.id, name: source.name, mail: '' }) },
+  { kind: 'todo', refresh: (deps, input, source) => syncTheTodoList(deps, input, { id: source.id, name: source.name }) },
+  { kind: 'team', refresh: refreshTeam },
+  { kind: 'notebook', refresh: refreshNotebook },
+  { kind: 'lists', refresh: (deps, input, source) => syncTheLists(deps, input, { id: source.id, name: source.name, webUrl: '' }) },
+  { kind: 'plan', refresh: refreshPlan },
+];
+
+const updateEverything = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome> => {
+  const known = await deps.listSyncedSources();
+  if (!known.ok) return known;
+  const standing = STANDING.filter(({ kind }) => known.value.some((source) => source.kind === kind)).map(
+    ({ refresh }) =>
+      () =>
+        refresh(deps, input)
+  );
+  const each = EACH.flatMap(({ kind, refresh }) => known.value.filter((source) => source.kind === kind).map((source) => () => refresh(deps, input, source)));
+  return runInTurn([...standing, ...each]);
 };
 
 const siteFromOptions = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SiteRef, StepError> | undefined> => {
@@ -554,49 +562,27 @@ const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray
 // Each site is summarised as it lands, so a run over many of them reports along the way. A site that
 // fails stops the run there rather than burying the reason under the ones after it; every site
 // finished before it keeps what it wrote, and a re-run resumes from its own checkpoint.
-const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
-  const summaries: SourceRun[] = [];
+const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources): Promise<RunOutcome> => {
   const alone = countOf(chosen) === 1;
-  for (const site of chosen.sites) {
-    const drives = await librariesFor(deps, site, input.driveIds, alone);
-    if (!drives.ok) return stoppedAfter(summaries, drives.error);
-    const summary = await syncOne(deps, input, site, drives.value);
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const group of chosen.groups) {
-    const summary = await syncTheGroup(deps, input, group);
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const list of chosen.todoLists) {
-    const summary = await syncTheTodoList(deps, input, list);
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const team of chosen.teams) {
-    const channels = await channelsFor(deps, team, alone);
-    if (!channels.ok) return stoppedAfter(summaries, channels.error);
-    const summary = await syncOneTeam(deps, input, team, channels.value);
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const notebook of chosen.notebooks) {
-    const summary = await syncTheNotebook(deps, input, notebook);
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const site of chosen.lists) {
-    const summary = await syncTheLists(deps, input, site);
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  for (const plan of chosen.plans) {
-    const summary = await syncThePlan(deps, input, plan);
-    if (!summary.ok) return stoppedAfter(summaries, summary.error);
-    summaries.push(summary.value);
-  }
-  return ok(summaries);
+  return runInTurn([
+    ...chosen.sites.map((site) => () => siteWithLibraries(deps, input, site, alone)),
+    ...chosen.groups.map((group) => () => syncTheGroup(deps, input, group)),
+    ...chosen.todoLists.map((list) => () => syncTheTodoList(deps, input, list)),
+    ...chosen.teams.map((team) => () => teamWithChannels(deps, input, team, alone)),
+    ...chosen.notebooks.map((notebook) => () => syncTheNotebook(deps, input, notebook)),
+    ...chosen.lists.map((site) => () => syncTheLists(deps, input, site)),
+    ...chosen.plans.map((plan) => () => syncThePlan(deps, input, plan)),
+  ]);
+};
+
+const siteWithLibraries = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, alone: boolean): Promise<Result<SourceRun, StepError>> => {
+  const drives = await librariesFor(deps, site, input.driveIds, alone);
+  return drives.ok ? syncOne(deps, input, site, drives.value) : drives;
+};
+
+const teamWithChannels = async (deps: RunSyncDeps, input: RunSyncInput, team: TeamSummary, alone: boolean): Promise<Result<SourceRun, StepError>> => {
+  const channels = await channelsFor(deps, team, alone);
+  return channels.ok ? syncOneTeam(deps, input, team, channels.value) : channels;
 };
 
 const syncTheGroup = async (deps: RunSyncDeps, input: RunSyncInput, group: GroupSummary): Promise<Result<SourceRun, StepError>> => {
@@ -641,26 +627,43 @@ const runNamedTeam = async (deps: RunSyncDeps, input: RunSyncInput, team: TeamSu
   return oneSummary(await syncOneTeam(deps, input, team, channels.value));
 };
 
-const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
+// A run the command line settles on its own: `update`, or one of the sources that stand alone.
+const standingRun = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome | undefined> => {
   if (input.command === 'update') return updateEverything(deps, input);
   if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
   if (input.people === true) return oneSummary(await syncThePeople(deps, input));
   if (input.calendar === true) return oneSummary(await syncTheCalendar(deps, input));
-  const named = await siteFromOptions(deps, input);
-  if (named !== undefined) return named.ok ? runMany(deps, input, { ...NOTHING, sites: [named.value] }) : named;
-  const group = await groupFromOptions(deps, input);
-  if (group !== undefined) return group.ok ? runMany(deps, input, { ...NOTHING, groups: [group.value] }) : group;
-  const list = await todoFromOptions(deps, input);
-  if (list !== undefined) return list.ok ? runMany(deps, input, { ...NOTHING, todoLists: [list.value] }) : list;
-  const team = await teamFromOptions(deps, input);
+  return undefined;
+};
+
+// What looking up a source named on the command line came to: nothing named, a refusal, or its run.
+const settle = async <T>(found: Result<T, StepError> | undefined, run: (value: T) => Promise<RunOutcome>): Promise<RunOutcome | undefined> => {
+  if (found === undefined) return undefined;
+  return found.ok ? run(found.value) : found;
+};
+
+// The sources the command line can name, looked up in this order: the first one named is the one
+// run, and the picker is never drawn.
+const NAMED: ReadonlyArray<(deps: RunSyncDeps, input: RunSyncInput) => Promise<RunOutcome | undefined>> = [
+  async (deps, input) => settle(await siteFromOptions(deps, input), (site) => runMany(deps, input, { ...NOTHING, sites: [site] })),
+  async (deps, input) => settle(await groupFromOptions(deps, input), (group) => runMany(deps, input, { ...NOTHING, groups: [group] })),
+  async (deps, input) => settle(await todoFromOptions(deps, input), (list) => runMany(deps, input, { ...NOTHING, todoLists: [list] })),
   // Every channel, without the picker: a team named on the command line is a team meant for a script.
-  if (team !== undefined) return team.ok ? runNamedTeam(deps, input, team.value) : team;
-  const notebook = await namedNotebook(deps, input);
-  if (notebook !== undefined) return notebook.ok ? oneSummary(await syncTheNotebook(deps, input, notebook.value)) : notebook;
-  const listsSite = await listsSiteFromOptions(deps, input);
-  if (listsSite !== undefined) return listsSite.ok ? oneSummary(await syncTheLists(deps, input, listsSite.value)) : listsSite;
-  const plan = await planFromOptions(deps, input);
-  if (plan !== undefined) return plan.ok ? oneSummary(await syncThePlan(deps, input, plan.value)) : plan;
+  async (deps, input) => settle(await teamFromOptions(deps, input), (team) => runNamedTeam(deps, input, team)),
+  async (deps, input) => settle(await namedNotebook(deps, input), async (notebook) => oneSummary(await syncTheNotebook(deps, input, notebook))),
+  async (deps, input) => settle(await listsSiteFromOptions(deps, input), async (site) => oneSummary(await syncTheLists(deps, input, site))),
+  async (deps, input) => settle(await planFromOptions(deps, input), async (plan) => oneSummary(await syncThePlan(deps, input, plan))),
+];
+
+const namedRun = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome | undefined> => {
+  for (const lookup of NAMED) {
+    const ran = await lookup(deps, input);
+    if (ran !== undefined) return ran;
+  }
+  return undefined;
+};
+
+const pickAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome> => {
   const picked = await chooseSite(deps, input);
   if (!picked.ok) return picked;
   const { chosen, fromCache } = picked.value;
@@ -674,6 +677,10 @@ const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
   await refreshing;
   return chosenSummaries;
 };
+
+// The command line first, then a source it names, then the picker.
+const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome> =>
+  (await standingRun(deps, input)) ?? (await namedRun(deps, input)) ?? pickAndSync(deps, input);
 
 // `--since` first, kept for the runs after it unless this is a dry run, which keeps nothing; then
 // whatever an earlier run kept. Neither leaves the reach undefined: the picker answers that by
