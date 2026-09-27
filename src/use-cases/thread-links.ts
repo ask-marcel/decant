@@ -79,6 +79,25 @@ export type LinkedTally = {
 // vendors and partners sharing from their own SharePoint.
 const POINTS_SOMEWHERE = /sharepoint\./i;
 
+// Each path once, in the order first met.
+const addAll = (into: string[], paths: ReadonlyArray<string>): void => {
+  for (const path of paths) if (!into.includes(path)) into.push(path);
+};
+
+// A document this thread already pulled is referenced again rather than fetched again.
+const pulledOnce = async (deps: LinkDeps, here: string, maxBytes: number, link: LinkedFile, asName: string, already: LinkedRecord | undefined): Promise<Pulled> =>
+  already === undefined ? pullLinked(deps, here, maxBytes, link, asName) : { record: already };
+
+const referenceOf = (link: LinkedFile, received: string, asName: string, pulled: Pulled): MessageLink => ({
+  link,
+  received,
+  asName,
+  paths: pulled.record?.paths ?? [],
+  lastModified: pulled.lastModified,
+  modifiedBy: pulled.modifiedBy,
+  note: (pulled.skipped ?? pulled.failed)?.reason ?? pulled.note,
+});
+
 export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number, parts: ReadonlyArray<ThreadPart>): Promise<LinkedTally> => {
   // Within this thread only, the way its attachments are. The same weekly report linked from thirty
   // mails across ten threads is pulled once per thread rather than once for the mailbox: a folder
@@ -101,24 +120,15 @@ export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number
       const key = `${link.driveId}:${link.itemId}`;
       const asName = names[key] ?? uniqueName(link.name, Object.values(names));
       names[key] = asName;
-      const already = linked[key];
-      const pulled = already === undefined ? await pullLinked(deps, here, maxBytes, link, asName) : { record: already };
+      const pulled = await pulledOnce(deps, here, maxBytes, link, asName, linked[key]);
       if (pulled.skipped !== undefined) skipped.push(pulled.skipped);
       if (pulled.failed !== undefined) failed.push(pulled.failed);
       // Recorded whether or not it came: a card for a document nobody could pull is the only place
       // the thread's dependence on it is written down.
-      referenced.push({
-        link,
-        received: message.received,
-        asName,
-        paths: pulled.record?.paths ?? [],
-        lastModified: pulled.lastModified,
-        modifiedBy: pulled.modifiedBy,
-        note: (pulled.skipped ?? pulled.failed)?.reason ?? pulled.note,
-      });
+      referenced.push(referenceOf(link, message.received, asName, pulled));
       if (pulled.record === undefined) continue;
       linked[key] = pulled.record;
-      for (const path of pulled.record.paths) if (!paths.includes(path)) paths.push(path);
+      addAll(paths, pulled.record.paths);
     }
   }
   return { paths, linked, referenced, skipped, failed };

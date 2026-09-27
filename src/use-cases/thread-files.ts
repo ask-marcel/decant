@@ -142,20 +142,51 @@ const placeAttachment = async (
   // otherwise be shown in this thread with nothing under it.
   const seen = inline ? withText(shared[hash]) : store[hash];
   if (seen !== undefined) return { asName: seen.name, paths: seen.paths, primary: seen.primary, picture: inline ? seen.primary : undefined, text: seen.text, media: seen.media };
+  const fresh: Fresh = { messageId, attachment, stamp, asName, hash, inline, rendered: address.value.rendered };
+  return convertFresh(deps, place, inline ? shared : store, fresh);
+};
+
+// A content no store holds yet, and what is known of it by the time it is converted.
+type Fresh = {
+  readonly messageId: string;
+  readonly attachment: MailAttachment;
+  readonly stamp: DocumentStamp;
+  readonly asName: string;
+  readonly hash: string;
+  readonly inline: boolean;
+  readonly rendered: string | undefined;
+};
+
+// Converted once, then recorded in the store it belongs to: the mailbox's for a picture, the
+// thread's for anything else.
+const convertFresh = async (deps: FileDeps, place: FilePlace, into: Record<string, AttachmentRecord>, fresh: Fresh): Promise<Placed> => {
+  const { messageId, attachment, stamp, asName, hash, inline, rendered } = fresh;
   const folder = inline ? `${place.mailboxRoot}/${INLINE_FOLDER}` : `${place.here}/${ATTACHMENTS_FOLDER}`;
   // A shared folder needs names that cannot collide across every thread that writes into it, which
   // is what the content address gives. Inside one thread only a same-name-different-content pair
   // needs separating, and a number says that more plainly than ten hex.
   const storedAs = inline ? disambiguateSegment(attachment.name, hash) : asName;
-  const rendered = address.value.rendered;
   const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: place.maxBytes, asName: storedAs, rendered, textOnly: inline });
   if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, place.maxBytes, attachment.name) } };
   if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: attachment.name, reason: outcome.reason } };
-  const record = { name: storedAs, paths: outcome.outputs, primary: outcome.primary, media: outcome.media, text: outcome.text };
-  if (inline) shared[hash] = record;
-  else store[hash] = record;
+  into[hash] = { name: storedAs, paths: outcome.outputs, primary: outcome.primary, media: outcome.media, text: outcome.text };
   return { asName: storedAs, paths: outcome.outputs, primary: outcome.primary, picture: inline ? outcome.primary : undefined, text: outcome.text, media: outcome.media };
 };
+
+// Each path once, in the order first met.
+const addAll = (into: string[], paths: ReadonlyArray<string>): void => {
+  for (const path of paths) if (!into.includes(path)) into.push(path);
+};
+
+const messageFileOf = (attachment: MailAttachment, placed: Placed): MessageFile => ({
+  attachment,
+  asName: placed.asName,
+  paths: placed.paths,
+  primary: placed.primary,
+  picture: placed.picture,
+  text: placed.text,
+  note: placed.skipped?.reason ?? placed.failed?.reason,
+});
 
 export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: ReadonlyArray<ThreadPart>, stamp: DocumentStamp): Promise<AttachmentTally> => {
   const store: Record<string, AttachmentRecord> = {};
@@ -185,7 +216,7 @@ export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: Rea
     const carried: MessageFile[] = [];
     for (const attachment of listed.value) {
       const placed = await placeAttachment(deps, place, store, shared, taken, part.message.id, attachment, stamp);
-      for (const path of placed.paths) if (!paths.includes(path)) paths.push(path);
+      addAll(paths, placed.paths);
       // Dropped entirely, and not reported: a file nothing can read, named by a machine id, is the
       // decoration a sharing notification is built from. It gets no card and no line in the thread,
       // and reporting it contradicts that: a report is what a reader should look into, and thirteen
@@ -195,16 +226,8 @@ export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: Rea
       if (placed.skipped !== undefined && isOpaqueName(attachment.name)) continue;
       if (placed.skipped) skipped.push(placed.skipped);
       if (placed.failed) failed.push(placed.failed);
-      for (const path of placed.media ?? []) if (!media.includes(path)) media.push(path);
-      carried.push({
-        attachment,
-        asName: placed.asName,
-        paths: placed.paths,
-        primary: placed.primary,
-        picture: placed.picture,
-        text: placed.text,
-        note: placed.skipped?.reason ?? placed.failed?.reason,
-      });
+      addAll(media, placed.media ?? []);
+      carried.push(messageFileOf(attachment, placed));
     }
     byMessage[part.message.id] = carried;
   }

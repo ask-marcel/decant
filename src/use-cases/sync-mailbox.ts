@@ -269,14 +269,11 @@ const threadsToRender = (state: MailboxState, dirty: ReadonlyArray<Conversation>
   return [...new Set(threadIds)];
 };
 
+type Rendered = { readonly apply: (state: MailboxState) => MailboxState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
+
 // The render (with its IO) happens now; what it adds to the mailbox state comes back as a function
 // so a whole window's results fold onto the state in order, after the parallel renders.
-const renderOne = async (
-  deps: SyncMailboxDeps,
-  input: SyncMailboxInput,
-  state: MailboxState,
-  threadId: string
-): Promise<{ readonly apply: (state: MailboxState) => MailboxState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> }> => {
+const renderOne = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, threadId: string): Promise<Rendered> => {
   const held = conversationsInThread(state, threadId);
   const first = held[0];
   // A queue naming a thread no conversation points at has nothing to render. It is reachable: the
@@ -358,6 +355,30 @@ export const createSyncMailbox =
     return drainQueue(deps, input, queued.value, statePath);
   };
 
+// What a window of rendered threads adds to the run's counts.
+const tallied = (summary: RunSummary, results: ReadonlyArray<Rendered>): RunSummary =>
+  results.reduce(
+    (carried, done) => ({
+      ...carried,
+      converted: carried.converted + (done.counted.converted ?? 0),
+      skipped: carried.skipped + (done.counted.skipped ?? 0),
+      failed: carried.failed + (done.counted.failed ?? 0),
+    }),
+    summary
+  );
+
+// What a window of rendered threads adds to the run's notes.
+const noted = (notes: RunNotes, results: ReadonlyArray<Rendered>): RunNotes =>
+  results.reduce(
+    (carried, done) => ({
+      skipped: [...carried.skipped, ...(done.notes.skipped ?? [])],
+      failed: [...carried.failed, ...(done.notes.failed ?? [])],
+      givenUp: [...carried.givenUp, ...(done.notes.givenUp ?? [])],
+      archived: carried.archived,
+    }),
+    notes
+  );
+
 const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<SourceRun, StepError>> => {
   let current = state;
   let summary = EMPTY;
@@ -383,20 +404,8 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
       return saved;
     }
     current = advanced;
-    for (const done of results) {
-      summary = {
-        ...summary,
-        converted: summary.converted + (done.counted.converted ?? 0),
-        skipped: summary.skipped + (done.counted.skipped ?? 0),
-        failed: summary.failed + (done.counted.failed ?? 0),
-      };
-      notes = {
-        skipped: [...notes.skipped, ...(done.notes.skipped ?? [])],
-        failed: [...notes.failed, ...(done.notes.failed ?? [])],
-        givenUp: [...notes.givenUp, ...(done.notes.givenUp ?? [])],
-        archived: notes.archived,
-      };
-    }
+    summary = tallied(summary, results);
+    notes = noted(notes, results);
   }
   deps.progress.done();
   const finished = { ...current, lastRun: deps.clock.nowIso() };

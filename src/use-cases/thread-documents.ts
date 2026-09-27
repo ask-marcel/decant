@@ -95,6 +95,39 @@ export const rewriteBodies = (here: string, cards: string, parts: ReadonlyArray<
   return { parts: rewritten, pictures };
 };
 
+// The card's path, or nothing when it could not be written, which is logged.
+const writeCard = async (deps: DocumentDeps, cards: CardsFor, part: ThreadPart, file: MessageFile, name: string): Promise<string | undefined> => {
+  const folder = cards.folder;
+  // The output that IS the file, told by its name rather than by not being the extract. A mail
+  // attached to a mail unpacks into a folder of its own parts, and a document has its pictures
+  // pulled out beside it, so "the first output that is not the extract" named whichever came
+  // first: a logo, in the one real case. Nothing matches when the original was not kept, and no
+  // `original:` line is the truthful answer there.
+  const raw = file.paths.find((path) => path.endsWith(`/${file.asName}`));
+  // Read, then written back over the same path, deliberately. The converter puts the extracted
+  // text at `<name>.<ext>.md` inside this folder and the card wants that exact name, because a
+  // reader opening the folder should find ONE document per file, not a card and an extract
+  // saying the same thing. Reading first is what makes the overwrite safe: the body comes
+  // forward, and the arrival facts, who sent it and under which message, replace a stamp that
+  // said which library it came from, which is the wrong question for mail.
+  const stored = file.primary === undefined ? undefined : await deps.files.readText(file.primary);
+  const card = renderThreadCard({
+    threadId: cards.threadId,
+    messageId: part.message.id,
+    filename: file.attachment.name,
+    sender: part.message.from?.name,
+    received: part.message.received,
+    bytes: file.attachment.size,
+    body: stored?.ok === true ? unwrapSafelinks(withoutFrontMatter(stored.value)) : undefined,
+    original: raw === undefined ? undefined : pathBetween(folder, raw),
+    note: file.note,
+  });
+  const saved = await deps.files.writeText(`${folder}/${name}`, card);
+  if (saved.ok) return `${folder}/${name}`;
+  deps.logger.warn('card.failed', { filename: file.attachment.name, cause: saved.error.kind });
+  return undefined;
+};
+
 // One card per file the thread carried, written HERE rather than inside the conversion. The
 // conversion is short-circuited whenever a content is already in the store, which is the common
 // case for everything after the first thread that carried it, so a card written there would exist
@@ -107,7 +140,6 @@ export const writeCards = async (
   byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>,
   shown: ReadonlySet<string>
 ): Promise<ReadonlyArray<string>> => {
-  const folder = cards.folder;
   const written: string[] = [];
   const carded = new Set<string>();
   for (const part of parts) {
@@ -119,33 +151,8 @@ export const writeCards = async (
       const name = cardNameOf(file);
       if (carded.has(name)) continue;
       carded.add(name);
-      // The output that IS the file, told by its name rather than by not being the extract. A mail
-      // attached to a mail unpacks into a folder of its own parts, and a document has its pictures
-      // pulled out beside it, so "the first output that is not the extract" named whichever came
-      // first: a logo, in the one real case. Nothing matches when the original was not kept, and no
-      // `original:` line is the truthful answer there.
-      const raw = file.paths.find((path) => path.endsWith(`/${file.asName}`));
-      // Read, then written back over the same path, deliberately. The converter puts the extracted
-      // text at `<name>.<ext>.md` inside this folder and the card wants that exact name, because a
-      // reader opening the folder should find ONE document per file, not a card and an extract
-      // saying the same thing. Reading first is what makes the overwrite safe: the body comes
-      // forward, and the arrival facts, who sent it and under which message, replace a stamp that
-      // said which library it came from, which is the wrong question for mail.
-      const stored = file.primary === undefined ? undefined : await deps.files.readText(file.primary);
-      const card = renderThreadCard({
-        threadId: cards.threadId,
-        messageId: part.message.id,
-        filename: file.attachment.name,
-        sender: part.message.from?.name,
-        received: part.message.received,
-        bytes: file.attachment.size,
-        body: stored?.ok === true ? unwrapSafelinks(withoutFrontMatter(stored.value)) : undefined,
-        original: raw === undefined ? undefined : pathBetween(folder, raw),
-        note: file.note,
-      });
-      const saved = await deps.files.writeText(`${folder}/${name}`, card);
-      if (saved.ok) written.push(`${folder}/${name}`);
-      else deps.logger.warn('card.failed', { filename: file.attachment.name, cause: saved.error.kind });
+      const path = await writeCard(deps, cards, part, file, name);
+      if (path !== undefined) written.push(path);
     }
   }
   return written;
