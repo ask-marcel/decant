@@ -4,8 +4,9 @@
   "_packageManager_comment": "Stryker doesn't fully understand Bun yet; tell it npm so it doesn't probe for yarn/pnpm lockfiles.",
   "packageManager": "npm",
   "testRunner": "command",
+  "_commandRunner_comment": "The tests under src/ only. The lint-gate fixtures at the root lint through ESLint, which takes seconds to load on every run and exercises the config, never a line of src/, so it can kill no mutant.",
   "commandRunner": {
-    "command": "bun test"
+    "command": "bun test src"
   },
   "_mutate_comment": "Core only: src/domain + src/use-cases. Test files have no logic to mutate; ports/ files are type-only (zero mutable code).",
   "mutate": [

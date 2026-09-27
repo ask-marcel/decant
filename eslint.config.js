@@ -6,6 +6,39 @@ import unicornPlugin from 'eslint-plugin-unicorn';
 import globals from 'globals';
 import tsPlugin from 'typescript-eslint';
 
+// `mock` from `bun:test` is process-global once installed and leaks into every other test file the
+// runner loads. Use dependency injection (createXFromApi or installFetchMock) instead. See
+// references/testing-infra.md. A const, because every layer zone below has to repeat it: ESLint
+// replaces a rule's options when a second block matches the same file, it never merges them.
+const MOCK_BAN = {
+  name: 'bun:test',
+  importNames: ['mock'],
+  message:
+    '`mock` from bun:test is forbidden — it leaks across test files. Use dependency injection: refactor the production code to accept the SDK as a parameter, then pass a fake at construction.',
+};
+
+// The dependency rule as lint (hard rule 37). Dependencies point inward, so each layer names the
+// layers it may never import, and a layer left out of a list is one it may reach. Production files
+// only: a test reaches for the fakes in src/test-helpers/ by design.
+const layerZone = (layer, forbidden, files = [`src/${layer}/**/*.ts`]) => ({
+  files,
+  ignores: ['**/*.test.ts'],
+  rules: {
+    'no-restricted-imports': [
+      'error',
+      {
+        paths: [MOCK_BAN],
+        patterns: [
+          {
+            group: forbidden.flatMap((name) => [`**/${name}`, `**/${name}/**`]),
+            message: `src/${layer} must not import ${forbidden.join(', ')}: dependencies point inward (hard rule 37).`,
+          },
+        ],
+      },
+    ],
+  },
+});
+
 /** @type {import('eslint').Linter.Config[]} */
 export default [
   pluginJs.configs.recommended,
@@ -16,29 +49,29 @@ export default [
     languageOptions: { globals: globals.node },
     rules: {
       'func-style': ['error', 'expression'],
+      // Rule 35: cyclomatic complexity at most 10 per function. The branches a function holds are
+      // counted, a one-line chain of `&&`, `??` and ternaries included; the fix is never a bigger
+      // number but a split, or a table to dispatch on.
+      complexity: ['error', 10],
       'no-console': ['error'],
       'prefer-template': 'error',
       quotes: ['error', 'single', { avoidEscape: true }],
-      // `mock` from `bun:test` is process-global once installed and leaks into
-      // every other test file the runner loads. Use dependency injection
-      // (createXFromApi or installFetchMock) instead. See references/testing-infra.md.
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: 'bun:test',
-              importNames: ['mock'],
-              message:
-                '`mock` from bun:test is forbidden — it leaks across test files. Use dependency injection: refactor the production code to accept the SDK as a parameter, then pass a fake at construction.',
-            },
-          ],
-        },
-      ],
+      'no-restricted-imports': ['error', { paths: [MOCK_BAN] }],
       '@typescript-eslint/explicit-function-return-type': ['error', { allowExpressions: true, allowTypedFunctionExpressions: true }],
       '@typescript-eslint/consistent-type-definitions': ['error', 'type'],
     },
   },
+  layerZone('domain', ['use-cases', 'infra', 'presenter', 'composition', 'test-helpers']),
+  layerZone('use-cases', ['infra', 'presenter', 'composition', 'test-helpers']),
+  layerZone('presenter', ['use-cases', 'infra', 'composition', 'test-helpers']),
+  layerZone('infra', ['presenter', 'composition', 'test-helpers']),
+  layerZone('composition', ['test-helpers']),
+  // The fakes may reach the ports they stand for; an adapter is the one thing they may never wrap,
+  // or the fake stops being a fake.
+  layerZone('test-helpers', ['infra']),
+  // The entry point sees the composition root and infra; it is still production code, so the fakes
+  // stay out of it.
+  layerZone('main.ts', ['test-helpers'], ['src/main.ts']),
   {
     // Gate scripts (scripts/check-coverage.ts, scripts/regenerate-coverage-preload.ts)
     // are terminal tools, not production code: their whole job is printing to the
