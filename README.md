@@ -838,6 +838,15 @@ SW Project (Fabrikam instance) / 文档  4/25 (8 running)
   General/04_IT_Security_overview/Overview.docx · rendering the slides
 ```
 
+A mailbox counts twice before it writes anything: its folders as they are read, each with the
+messages read so far, then the conversations it has not seen before, by subject, while it finds the
+thread each belongs to. A first run spends most of its time on these two:
+
+```
+Mailbox, reading folders 3/14
+  Inbox · 1200 messages read
+```
+
 The block rewrites itself where it stands as items come and go, so one slow file does not look like
 the run has stopped while its `--concurrency` siblings finish around it. Set `--concurrency` higher
 than the terminal has rows and the overflow collapses into a single `…and N more` row, so the block

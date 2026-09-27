@@ -632,18 +632,32 @@ describe('rendering several conversations at once', () => {
     expect([...asked].sort((left, right) => left.localeCompare(right))).toEqual(['conv-a', 'conv-b', 'conv-c']);
   });
 
-  it('the progress counter shows the total up front and ticks once per conversation', async () => {
+  it('each counter shows its total up front: the folders read, the conversations new to the mailbox, then the ones written', async () => {
     const { progress } = await run({ reader: threeConversations, concurrency: 3 });
 
-    expect(progress.started).toEqual([{ total: 3, what: 'Mailbox' }]);
-    expect(progress.steps).toHaveLength(3);
-    expect(progress.dones).toHaveLength(1);
+    expect(progress.started).toEqual([
+      { total: 1, what: 'Mailbox, reading folders' },
+      { total: 3, what: 'Mailbox, new conversations' },
+      { total: 3, what: 'Mailbox' },
+    ]);
+    expect(progress.steps).toHaveLength(1 + 3 + 3);
+    expect(progress.dones).toHaveLength(3);
+  });
+
+  it('each conversation new to the mailbox is counted by its subject while its thread is found, and one already known is not', async () => {
+    const known = serializeMailboxState(withConversation(emptyMailboxState(), 'conv-a', { threadId: threadIdOf('a'), root: 'a' }));
+
+    const { progress } = await run({ files: { texts: { [STATE_PATH]: known } }, reader: threeConversations, concurrency: 3 });
+
+    expect(progress.started[1]).toEqual({ total: 2, what: 'Mailbox, new conversations' });
+    expect(progress.begins.slice(1, 3)).toEqual(['Budget review', 'Venue quotes']);
   });
 
   it('every conversation in the window announces itself by its subject before any of them finish', async () => {
     const { progress } = await run({ reader: threeConversations, concurrency: 3 });
 
-    expect([...progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(['Budget review', 'Offsite planning', 'Venue quotes']);
+    // The last three are the window's: the folder and the new conversations were counted before it.
+    expect(progress.begins.slice(-3).sort((left, right) => left.localeCompare(right))).toEqual(['Budget review', 'Offsite planning', 'Venue quotes']);
   });
 
   // The subject is kept beside the queue, so a run that resumes it names the conversation the way the
@@ -666,7 +680,7 @@ describe('rendering several conversations at once', () => {
 
     const { progress } = await run({ files: { texts: { [STATE_PATH]: owed } }, reader: { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'c1' }] } });
 
-    expect(progress.begins).toEqual(['Budget review']);
+    expect(progress.begins).toEqual(['Inbox', 'Budget review']);
   });
 
   it('a subject is kept while its conversation is owed another try, and dropped once it is written', async () => {
@@ -678,7 +692,8 @@ describe('rendering several conversations at once', () => {
   it('a conversation with no subject is said to have none', async () => {
     const { progress } = await run({ reader: { folders: [folder()], pages: [{ messages: [message({ subject: '' })], skipped: 0, deltaLink: 'c1' }] } });
 
-    expect(progress.begins).toEqual(['(no subject)']);
+    // Once while its thread is found, once while it is written.
+    expect(progress.begins).toEqual(['Inbox', '(no subject)', '(no subject)']);
   });
 
   // The case the whole identity scheme exists for. Graph opens a second conversation for one
@@ -799,6 +814,40 @@ describe('rendering several conversations at once', () => {
 
     expect(summary).toMatchObject({ converted: 1, skipped: 1 });
     expect(Object.keys(stateAfter(files).threads)).toEqual([threadIdOf('b')]);
+  });
+});
+
+describe('the counter while the mailbox is read', () => {
+  it('each folder is counted and named while it is read', async () => {
+    const { progress } = await run({
+      reader: {
+        folders: [folder(), folder({ id: 'AAMk-archive', name: 'Archive' })],
+        pages: [
+          { messages: [], skipped: 0, deltaLink: 'c1' },
+          { messages: [], skipped: 0, deltaLink: 'c2' },
+        ],
+      },
+    });
+
+    expect(progress.started[0]).toEqual({ total: 2, what: 'Mailbox, reading folders' });
+    expect(progress.begins).toEqual(['Inbox', 'Archive']);
+    expect(progress.steps).toEqual(['Inbox', 'Archive']);
+  });
+
+  it('a folder read over several pages shows how many messages it has read so far', async () => {
+    const paged = (first: ReadonlyArray<MailMessage>, second: ReadonlyArray<MailMessage>): MailReaderSeed => ({
+      folders: [folder()],
+      pages: [
+        { messages: first, skipped: 0, nextLink: 'n1' },
+        { messages: second, skipped: 0, deltaLink: 'c1' },
+      ],
+    });
+
+    const many = await run({ reader: paged([message({ id: 'a' }), message({ id: 'b' })], [message({ id: 'c' })]) });
+    const one = await run({ reader: paged([message()], []) });
+
+    expect(many.progress.details).toEqual([{ label: 'Inbox', what: '3 messages read' }]);
+    expect(one.progress.details).toEqual([{ label: 'Inbox', what: '1 message read' }]);
   });
 });
 

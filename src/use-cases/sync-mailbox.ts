@@ -141,6 +141,13 @@ const folderTree = async (deps: SyncMailboxDeps): Promise<Result<ReadonlyArray<M
 
 type Swept = { readonly state: MailboxState; readonly messages: ReadonlyArray<MailMessage> };
 
+// The two counters that run before anything is written: a first run reads the whole mailbox a page at
+// a time and then reads one header for every conversation in it, minutes against a blank screen.
+const SWEEPING = `${MAILBOX_NAME}, reading folders`;
+const RESOLVING = `${MAILBOX_NAME}, new conversations`;
+
+const messagesRead = (count: number): string => (count === 1 ? '1 message read' : `${count} messages read`);
+
 const sweepFolder = async (deps: SyncMailboxDeps, state: MailboxState, folder: MailFolder): Promise<Result<Swept, MailReaderError>> => {
   const known = state.folders[folder.id];
   const first = known?.deltaLink === undefined ? await deps.reader.folderDelta(folder.id) : await deps.reader.deltaFrom(known.deltaLink);
@@ -153,6 +160,7 @@ const sweepFolder = async (deps: SyncMailboxDeps, state: MailboxState, folder: M
     const next = await deps.reader.deltaFrom(page.nextLink);
     if (!next.ok) return next;
     messages.push(...next.value.messages);
+    deps.progress.detail(folder.name, messagesRead(messages.length));
     page = next.value;
   }
   return ok({ state: withFolderCursor(state, folder.id, folder.name, page.deltaLink), messages });
@@ -197,18 +205,27 @@ const conversationsOf = (messages: ReadonlyArray<MailMessage>, since: string | u
 // `list-conversation-messages` spans every folder and an unsent draft carries a newer time than any
 // real message and no `References` at all.
 const resolveThreads = async (deps: SyncMailboxDeps, state: MailboxState, conversations: ReadonlyArray<Conversation>): Promise<MailboxState> => {
+  const unresolved = conversations.filter((conversation) => threadOfConversation(state, conversation.id) === undefined);
+  deps.progress.start(unresolved.length, RESOLVING);
   let current = state;
-  for (const conversation of conversations) {
-    if (threadOfConversation(current, conversation.id) !== undefined) continue;
-    const headers = await deps.reader.messageHeaders(conversation.oldest);
-    if (!headers.ok) {
-      deps.logger.warn('thread.unresolved', { conversationId: conversation.id, cause: headers.error.kind });
-      continue;
-    }
-    const root = rootMessageId(headers.value, conversation.oldest);
-    current = withConversation(current, conversation.id, { threadId: threadIdOf(root), root });
+  for (const conversation of unresolved) {
+    const shown = readable(bareSubject(conversation.subject));
+    deps.progress.begin(shown);
+    current = await resolveThread(deps, current, conversation);
+    deps.progress.step(shown);
   }
+  deps.progress.done();
   return current;
+};
+
+const resolveThread = async (deps: SyncMailboxDeps, state: MailboxState, conversation: Conversation): Promise<MailboxState> => {
+  const headers = await deps.reader.messageHeaders(conversation.oldest);
+  if (!headers.ok) {
+    deps.logger.warn('thread.unresolved', { conversationId: conversation.id, cause: headers.error.kind });
+    return state;
+  }
+  const root = rootMessageId(headers.value, conversation.oldest);
+  return withConversation(state, conversation.id, { threadId: threadIdOf(root), root });
 };
 
 // The cursors are saved once every folder has been swept, never one at a time: a cursor means "you
@@ -221,15 +238,25 @@ const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
   }
   const folders = await folderTree(deps);
   if (!folders.ok) return stepFailure('listFolders', folders.error);
-  let current = sweptFrom(deps, state, input.since);
+  deps.progress.start(folders.value.length, SWEEPING);
+  const swept = await sweepFolders(deps, sweptFrom(deps, state, input.since), folders.value);
+  deps.progress.done();
+  if (!swept.ok) return stepFailure('sweepFolder', swept.error);
+  return finishQueue(deps, input, { ...swept.value.state, since: input.since }, statePath, swept.value.messages);
+};
+
+const sweepFolders = async (deps: SyncMailboxDeps, state: MailboxState, folders: ReadonlyArray<MailFolder>): Promise<Result<Swept, MailReaderError>> => {
+  let current = state;
   const messages: MailMessage[] = [];
-  for (const folder of folders.value) {
+  for (const folder of folders) {
+    deps.progress.begin(folder.name);
     const swept = await sweepFolder(deps, current, folder);
-    if (!swept.ok) return stepFailure('sweepFolder', swept.error);
+    if (!swept.ok) return swept;
+    deps.progress.step(folder.name);
     current = swept.value.state;
     messages.push(...swept.value.messages);
   }
-  return finishQueue(deps, input, { ...current, since: input.since }, statePath, messages);
+  return ok({ state: current, messages });
 };
 
 // A day earlier than the one the cursors were taken under: what they passed over never comes back
@@ -271,12 +298,14 @@ const titlesOf = (state: MailboxState, dirty: ReadonlyArray<Conversation>): Read
 const FROM_EARLIER = 'a conversation from an earlier run';
 const NO_SUBJECT = '(no subject)';
 
+// A subject as the reader sees it: one left empty says so.
+const readable = (subject: string): string => (subject.length > 0 ? subject : NO_SUBJECT);
+
 // A conversation is named for the reader by the subject kept for it, or by `fallback` when it was
 // queued before subjects were kept and has none in hand.
 const named = (titles: Readonly<Record<string, string>>, threadId: string, fallback: string): string => {
   const title = titles[threadId];
-  if (title === undefined) return fallback;
-  return title.length > 0 ? title : NO_SUBJECT;
+  return title === undefined ? fallback : readable(title);
 };
 
 // On the counter, one with no subject kept is named for what it is.
