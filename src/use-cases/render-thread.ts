@@ -202,7 +202,7 @@ const writeThread = async (
   const shown = new Set([...bodies.pictures, ...attachments.media]);
   // The head cites the thread's OWN cards, not the store three levels up, so a reader follows a
   // path that stays inside the folder they already opened.
-  const cardPaths = await writeCards(deps, { threadId: input.threadId, here, folder: cards }, parts, attachments.byMessage, shown);
+  const cardPaths = await writeCards(deps, { threadId: input.threadId, here, folder: cards }, parts, attachments.byMessage);
   await writeLinkCards(deps, input.threadId, place.here, links.referenced);
   const attachmentRefs = cardPaths.map((path) => pathBetween(here, path));
   const inlineRefs = bodies.pictures.map((path) => pathBetween(here, path));

@@ -137,15 +137,15 @@ export const writeCards = async (
   deps: DocumentDeps,
   cards: CardsFor,
   parts: ReadonlyArray<ThreadPart>,
-  byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>,
-  shown: ReadonlySet<string>
+  byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>
 ): Promise<ReadonlyArray<string>> => {
   const written: string[] = [];
   const carded = new Set<string>();
   for (const part of parts) {
     for (const file of byMessage[part.message.id] ?? []) {
+      // A picture is shown in the message itself, so a card for it would stand for something that
+      // stands for itself. Every file the thread shows is a picture, so this is the one question.
       if (file.picture !== undefined) continue;
-      if (file.primary !== undefined && shown.has(file.primary)) continue;
       // One card per FILE, not per arrival: a signature riding on ten messages of one thread is one
       // file on disk and reads as one entry in the folder beside it.
       const name = cardNameOf(file);
