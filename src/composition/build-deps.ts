@@ -99,7 +99,7 @@ const realApi = (interactive: boolean): MarcelApi => {
 
 // Resolved the same way the sync itself resolves it: two sites can share a display name, and the
 // name alone would hand the second site the first one's libraries to refresh.
-const savedDrivesFrom =
+const createSavedDrives =
   (files: Files, logger: Logger, kbRoot: string) =>
   async (site: SiteRef): Promise<ReadonlyArray<DriveSummary>> => {
     const { state } = await resolveSite({ files, logger, kbRoot }, site);
@@ -109,7 +109,7 @@ const savedDrivesFrom =
 // The channels the earlier run recorded for this team, read off its own state file, the way a
 // site's libraries are. A state that cannot be read answers no channels, and `syncTeam` refuses to
 // run on none, which is the honest outcome for a team whose record is gone.
-const savedChannelsFrom =
+const createSavedChannels =
   (files: Files, kbRoot: string) =>
   async (team: TeamSummary): Promise<ReadonlyArray<ChannelSummary>> => {
     const text = await files.readText(`${teamRoot(kbRoot, team.name)}/.sync-state.json`);
@@ -120,7 +120,7 @@ const savedChannelsFrom =
   };
 
 // The plan as its own state file recorded it, found the way a notebook is.
-const savedPlanFrom =
+const createSavedPlan =
   (files: Files, kbRoot: string) =>
   async (source: { readonly id: string; readonly name: string }): Promise<Plan | undefined> => {
     const text = await files.readText(`${kbRoot}/${planRootName(source.name)}/.sync-state.json`);
@@ -133,7 +133,7 @@ const savedPlanFrom =
 // The notebook as its own state file recorded it, site and all. Read from the plain folder the name
 // gives; a notebook that took an id-suffixed folder because another held the name is found by the
 // id in the state, since two states cannot claim one folder.
-const savedNotebookFrom =
+const createSavedNotebook =
   (files: Files, kbRoot: string) =>
   async (source: { readonly id: string; readonly name: string }): Promise<Notebook | undefined> => {
     const text = await files.readText(`${kbRoot}/${notebookRootName(source.name)}/.sync-state.json`);
@@ -263,7 +263,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const syncLists = createSyncLists({ reader: list, files, clock, logger, progress, kbRoot: config.kbRoot });
   const plan = given(overrides.plan, () => createPlanReaderFromCall(createMarcelCall(api)));
   const syncPlan = createSyncPlan({ reader: plan, files, clock, logger, progress, kbRoot: config.kbRoot });
-  const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
+  const savedDrives = createSavedDrives(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
   // expression as never executed, so spreading this call out reads as a third of the file going
@@ -287,13 +287,13 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     syncLists,
     syncPlan,
     plans: plan,
-    savedPlan: savedPlanFrom(files, config.kbRoot),
+    savedPlan: createSavedPlan(files, config.kbRoot),
     notebooks: notebook,
-    savedNotebook: savedNotebookFrom(files, config.kbRoot),
+    savedNotebook: createSavedNotebook(files, config.kbRoot),
     groups: group,
     todo,
     teams: team,
-    savedChannels: savedChannelsFrom(files, config.kbRoot),
+    savedChannels: createSavedChannels(files, config.kbRoot),
     cachedSites,
     rememberSites,
     ...sinceAt(files, logger, config.kbRoot),
