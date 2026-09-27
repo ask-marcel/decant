@@ -183,21 +183,25 @@ const sinceAt = (files: Files, logger: Logger, kbRoot: string): Pick<RunSyncDeps
   };
 };
 
+// The part a test handed in, or the real one, built only when none was: every part of the run
+// takes the same choice, so it is made in one place rather than once a part.
+const given = <T>(override: T | undefined, build: () => T): T => override ?? build();
+
 export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDeps => {
-  const logger = overrides.logger ?? createWinstonLogger(config.logLevel);
-  const files = overrides.files ?? createBunFiles();
-  const clock = overrides.clock ?? createSystemClock();
+  const logger = given(overrides.logger, () => createWinstonLogger(config.logLevel));
+  const files = given(overrides.files, () => createBunFiles());
+  const clock = given(overrides.clock, () => createSystemClock());
   // Constructing the API reaches nothing: the sign-in ladder only runs on the first Graph call.
   const api = realApi(config.interactive);
-  const reader = overrides.reader ?? createDriveReaderFromApi(api);
-  const mail = overrides.mail ?? createMailReaderFromCall(createMarcelCall(api));
+  const reader = given(overrides.reader, () => createDriveReaderFromApi(api));
+  const mail = given(overrides.mail, () => createMailReaderFromCall(createMarcelCall(api)));
   // Shared across every source, not filed under the mailbox: the same picture reaches the knowledge
   // base as a mail attachment and as a file in a library, and reading it twice is the thing this
   // exists to stop.
   const ocrCache = createFileOcrCache(`${config.kbRoot}/_meta/ocr`);
-  const ocr = overrides.ocr ?? (config.ocr ? createRapidOcr({ shell: createBunShell(), lang: config.ocrLang, cache: ocrCache }) : createNoOcr());
-  const prompt = overrides.prompt ?? createStdinPrompt(() => console);
-  const progress = overrides.progress ?? createStderrProgress();
+  const ocr = given(overrides.ocr, () => (config.ocr ? createRapidOcr({ shell: createBunShell(), lang: config.ocrLang, cache: ocrCache }) : createNoOcr()));
+  const prompt = given(overrides.prompt, () => createStdinPrompt(() => console));
+  const progress = given(overrides.progress, () => createStderrProgress());
   const convertFile = createConvertFile({ reader, files, ocr, clock, logger, progress });
   const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot });
   const listSyncedSources = createListSyncedSources({ files, logger, kbRoot: config.kbRoot });
@@ -222,7 +226,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // A group inbox reads through its own commands but renders through the same path, so it gets the
   // same converters with the group reader underneath them, and a renderer per group because each
   // one writes into its own folder.
-  const group = overrides.group ?? createGroupReaderFromCall(createMarcelCall(api));
+  const group = given(overrides.group, () => createGroupReaderFromCall(createMarcelCall(api)));
   const convertGroupAttachment = createConvertAttachment({ reader: group, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown });
   const renderGroupThreadFor = (root: string, name: string): ReturnType<typeof createRenderThread> =>
     createRenderThread({
@@ -240,23 +244,23 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const syncGroup = createSyncGroup({ reader: group, files, renderThreadFor: renderGroupThreadFor, clock, logger, progress, kbRoot: config.kbRoot });
   // A task is text with nothing hanging off it, so it needs none of the conversion machinery the
   // other sources are built out of: the reader, somewhere to write, and a clock to stamp it.
-  const todo = overrides.todo ?? createTodoReaderFromCall(createMarcelCall(api));
+  const todo = given(overrides.todo, () => createTodoReaderFromCall(createMarcelCall(api)));
   const syncTodo = createSyncTodo({ reader: todo, files, clock, logger, progress, kbRoot: config.kbRoot });
   // A channel post renders through the library, the way a mail message does, so a team needs the
   // reader, somewhere to write, and a clock, and none of the conversion machinery.
-  const team = overrides.team ?? createTeamReaderFromCall(createMarcelCall(api));
+  const team = given(overrides.team, () => createTeamReaderFromCall(createMarcelCall(api)));
   const syncTeam = createSyncTeam({ reader: team, files, clock, logger, progress, kbRoot: config.kbRoot });
   // The directory is enumerated through the Teams, so it borrows the team reader's listing.
-  const people = overrides.people ?? createPeopleReaderFromCall(createMarcelCall(api));
+  const people = given(overrides.people, () => createPeopleReaderFromCall(createMarcelCall(api)));
   const syncPeople = createSyncPeople({ reader: people, teams: team, files, clock, logger, progress, kbRoot: config.kbRoot });
   // The calendar counts its days where the mailbox counts them.
-  const calendar = overrides.calendar ?? createCalendarReaderFromCall(createMarcelCall(api));
+  const calendar = given(overrides.calendar, () => createCalendarReaderFromCall(createMarcelCall(api)));
   const syncCalendar = createSyncCalendar({ reader: calendar, files, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone });
-  const notebook = overrides.notebook ?? createNotebookReaderFromCall(createMarcelCall(api));
+  const notebook = given(overrides.notebook, () => createNotebookReaderFromCall(createMarcelCall(api)));
   const syncNotebook = createSyncNotebook({ reader: notebook, files, clock, logger, progress, kbRoot: config.kbRoot });
-  const list = overrides.list ?? createListReaderFromCall(createMarcelCall(api));
+  const list = given(overrides.list, () => createListReaderFromCall(createMarcelCall(api)));
   const syncLists = createSyncLists({ reader: list, files, clock, logger, progress, kbRoot: config.kbRoot });
-  const plan = overrides.plan ?? createPlanReaderFromCall(createMarcelCall(api));
+  const plan = given(overrides.plan, () => createPlanReaderFromCall(createMarcelCall(api)));
   const syncPlan = createSyncPlan({ reader: plan, files, clock, logger, progress, kbRoot: config.kbRoot });
   const savedDrives = savedDrivesFrom(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
