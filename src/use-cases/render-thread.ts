@@ -17,7 +17,7 @@ import type { ReportEntry } from '../domain/report.ts';
 import type { AttachmentOutcome, ConvertAttachment, ConvertAttachmentInput } from './convert-attachment.ts';
 import { ATTACHMENTS_FOLDER, attachmentsOf } from './thread-files.ts';
 import { rewriteBodies, writeCards } from './thread-documents.ts';
-import type { ConvertFile } from './convert-file.ts';
+import type { ConvertFile, ConvertFileInput, ConvertOutcome } from './convert-file.ts';
 import { linkedFiles, writeLinkCards } from './thread-links.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
@@ -194,6 +194,12 @@ const announced = async (deps: RenderThreadDeps, label: string, converting: Conv
   return deps.convertAttachment(converting);
 };
 
+// The same for a document a message links to, named as the drive has it.
+const announcedLink = async (deps: RenderThreadDeps, label: string, converting: ConvertFileInput): Promise<ConvertOutcome> => {
+  deps.progress.detail(label, `reading ${converting.item.name}`);
+  return deps.convertFile(converting);
+};
+
 const writeThread = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
@@ -206,7 +212,8 @@ const writeThread = async (
   const stamp = stampFor(deps, input, first, last);
   const reading = { ...deps, convertAttachment: (converting: ConvertAttachmentInput): Promise<AttachmentOutcome> => announced(deps, input.label, converting) };
   const attachments = await attachmentsOf(reading, { here: place.here, mailboxRoot: deps.mailboxRoot, maxBytes: input.maxBytes, stored: input.attachments }, parts, stamp);
-  const links = await linkedFiles(deps, place.here, input.maxBytes, parts);
+  const following = { ...deps, convertFile: (converting: ConvertFileInput): Promise<ConvertOutcome> => announcedLink(deps, input.label, converting) };
+  const links = await linkedFiles(following, place.here, input.maxBytes, parts);
   // Everything the thread carried sits inside the thread's own folder, so every reference below is
   // relative to `here` and stays within the directory a reader already has open.
   const here = place.here;

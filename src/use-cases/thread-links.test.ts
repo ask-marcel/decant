@@ -42,6 +42,14 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(outcome?.kind === 'rendered' && outcome.thread.linked['b!one:01ABC']).toEqual({ paths: [REPORT_MD] });
   });
 
+  // A deck behind a link renders its slides before its text is read, which is minutes on the row of
+  // the conversation that pointed at it; naming the document keeps that row from reading as stuck.
+  it('a linked document is named on the conversation`s row while it is converted', async () => {
+    const { progress } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: items });
+
+    expect(progress.details).toEqual([{ label: 'Contrat Contoso', what: 'reading Rapport.docx' }]);
+  });
+
   it('a document a thread pointed at gets a card beside the thread, naming its address at the source', async () => {
     const { files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: items });
     const card = files.written.get(REPORT_MD) ?? '';
