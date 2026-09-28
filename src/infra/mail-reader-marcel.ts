@@ -80,6 +80,12 @@ export const toLinks = (value: unknown): ReadonlyArray<LinkedFile> => {
   });
 };
 
+// How many messages a folder delta asks for on each page, the first and every one after it.
+const DELTA_PAGE_SIZE = '100';
+
+// What a message is read with, wherever a list of them is asked for.
+const MESSAGE_FIELDS = 'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients';
+
 export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
   const delta = async (name: string, params: Record<string, string>): Promise<Result<MailDeltaPage, MailReaderError>> => {
     const raw = await call(name, params);
@@ -134,14 +140,15 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
     // page-size hint that pages correctly, not the `$top` that used to read as "sync complete" and
     // drop the rest of the folder. A page of 100 cuts round trips on a large folder while keeping
     // each response small; paging continues through `nextLink` if Graph caps the page lower.
-    folderDelta: async (folderId) =>
-      delta('list-mail-folder-messages-delta', { mailFolderId: folderId, top: '100', select: 'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients' }),
-    deltaFrom: async (cursor) => delta('next-page', { url: cursor }),
+    folderDelta: async (folderId) => delta('list-mail-folder-messages-delta', { mailFolderId: folderId, top: DELTA_PAGE_SIZE, select: MESSAGE_FIELDS }),
+    // The same size again on every page after the first. Graph honours a page-size preference only on
+    // the request that carries it, so a cursor followed bare comes back ten messages at a time: a
+    // sweep of a large folder took ten times the round trips it asked for. Ignored before 2.8.0.
+    deltaFrom: async (cursor) => delta('next-page', { url: cursor, top: DELTA_PAGE_SIZE }),
     // A page hint of 100 rather than the ten Graph gives by default, which is safe here in a way it is
     // not on a delta: this is an ordinary collection, so a page smaller than asked for still answers
     // with a cursor, and the loop above follows it.
-    conversation: async (conversationId) =>
-      messagesFrom('list-conversation-messages', { conversationId, top: '100', select: 'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients' }),
+    conversation: async (conversationId) => messagesFrom('list-conversation-messages', { conversationId, top: '100', select: MESSAGE_FIELDS }),
     // The default projection leaves `internetMessageHeaders` out, and it is reachable through no
     // other command: `list-conversation-messages` does not document returning it. One call per
     // conversation, on its oldest message, is what this costs.

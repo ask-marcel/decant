@@ -38,7 +38,7 @@ describe('reading the calendar through the ask-marcel library', () => {
       value: { changes: [{ id: 'AAMkAGI-event', removed: false }], deltaLink: 'https://graph.microsoft.com/v1.0/me/events/delta?$deltatoken=abc' },
     });
     expect(recorded[0]).toEqual({ name: 'list-calendar-events-delta', params: { top: '50' } });
-    expect(recorded[1]).toEqual({ name: 'next-page', params: { url: 'https://graph.microsoft.com/v1.0/me/events/delta?$deltatoken=abc' } });
+    expect(recorded[1]).toEqual({ name: 'next-page', params: { url: 'https://graph.microsoft.com/v1.0/me/events/delta?$deltatoken=abc', top: '50' } });
     expect(later).toEqual({ ok: true, value: { changes: [{ id: 'gone', removed: true }], deltaLink: 'https://graph.microsoft.com/v1.0/x?$deltatoken=def' } });
   });
 

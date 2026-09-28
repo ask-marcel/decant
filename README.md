@@ -826,11 +826,11 @@ narrower way back: the folder cursors moved on when the messages were swept. Aft
 file is named once as given up and the thread is left alone; the card in the thread's own
 `_attachments` folder goes on saying what happened to it.
 
-A first mailbox run is slow: after a first page of a hundred, Outlook hands back a folder ten
-messages at a time, since the page size asked for is not carried to the pages that follow. A mailbox
-with tens of thousands of messages takes thousands of round trips, and every conversation written for
-the first time costs one more, to find the thread it belongs to. Later runs are cheap, reading only
-what changed. The kept day narrows what gets *written*, not what gets swept.
+A first mailbox run is slow: Outlook hands back a folder a hundred messages at a time, and only
+because every page asks for it again, since the size is honoured only on the request that carries
+it. A mailbox with tens of thousands of messages takes hundreds of round trips, and every
+conversation written for the first time costs one more, to find the thread it belongs to. Later runs
+are cheap, reading only what changed. The kept day narrows what gets *written*, not what gets swept.
 
 While it works, a counter on the terminal shows how far it has got, so a long run is never silent. A
 header row carries the count, and every item still being read from the source gets a row of its own

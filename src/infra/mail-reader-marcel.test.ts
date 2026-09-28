@@ -82,7 +82,7 @@ describe('reading a mailbox through the ask-marcel library', () => {
 
     await reader.deltaFrom('https://graph.microsoft.com/v1.0/x?$deltatoken=abc');
 
-    expect(recorded[0]).toEqual({ name: 'next-page', params: { url: 'https://graph.microsoft.com/v1.0/x?$deltatoken=abc' } });
+    expect(recorded[0]).toEqual({ name: 'next-page', params: { url: 'https://graph.microsoft.com/v1.0/x?$deltatoken=abc', top: '100' } });
   });
 
   it('a sweep whose shape we do not know is refused clearly', async () => {

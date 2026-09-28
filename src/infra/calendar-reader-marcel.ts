@@ -38,14 +38,15 @@ export const createCalendarReaderFromCall = (call: MarcelCall): CalendarReader =
       const seen = new Set<string>();
       let deltaLink: string | undefined;
       let next: { readonly name: string; readonly params: Record<string, string> } | undefined =
-        cursor === undefined ? { name: 'list-calendar-events-delta', params: { top: PAGE_SIZE } } : { name: 'next-page', params: { url: cursor } };
+        cursor === undefined ? { name: 'list-calendar-events-delta', params: { top: PAGE_SIZE } } : { name: 'next-page', params: { url: cursor, top: PAGE_SIZE } };
       while (next !== undefined) {
         const answered: Result<EventDeltaPage, CalendarReaderError> = await page(next.name, next.params);
         if (!answered.ok) return answered;
         changes.push(...answered.value.changes);
         deltaLink = answered.value.deltaLink ?? deltaLink;
         const link = answered.value.nextLink;
-        next = link === undefined || seen.has(link) ? undefined : { name: 'next-page', params: { url: link } };
+        // The page size again: Graph honours it only on the request that carries it.
+        next = link === undefined || seen.has(link) ? undefined : { name: 'next-page', params: { url: link, top: PAGE_SIZE } };
         if (link !== undefined) seen.add(link);
       }
       const delta: EventsDelta = deltaLink === undefined ? { changes } : { changes, deltaLink };
