@@ -1,7 +1,7 @@
 import type { MailFolder } from '../domain/mail-folder.ts';
 import { syncableFolders } from '../domain/mail-folder.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
-import type { MailMessage } from '../domain/mail-message.ts';
+import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
 import { attachmentRows, linkRows, renderJsonl, threadRows } from '../domain/mail-meta.ts';
 import { rootMessageId } from '../domain/root-message-id.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
@@ -148,9 +148,26 @@ const RESOLVING = `${MAILBOX_NAME}, new conversations`;
 
 const messagesRead = (count: number): string => (count === 1 ? '1 message read' : `${count} messages read`);
 
+// What Outlook answers a cursor older than the few generations of a folder's sync state it keeps.
+// Every read from a saved cursor that is not saved in turn, a dry run's or an interrupted run's, moves
+// those generations on, so a cursor can expire between two runs that did nothing wrong.
+const EXPIRED = 410;
+
+const expired = (error: MailReaderError): boolean => error.kind === 'permanent' && error.status === EXPIRED;
+
+// A cursor Outlook has expired is worth nothing, and nothing but reading the folder from the start
+// brings the folder back. What is already filed stays as it is: a conversation is written again only
+// when it holds a message the state has not seen, so the cost is the read, not the writing.
+const firstPage = async (deps: SyncMailboxDeps, folder: MailFolder, cursor: string | undefined): Promise<Result<MailDeltaPage, MailReaderError>> => {
+  if (cursor === undefined) return deps.reader.folderDelta(folder.id);
+  const resumed = await deps.reader.deltaFrom(cursor);
+  if (resumed.ok || !expired(resumed.error)) return resumed;
+  deps.logger.warn('mail.cursor-expired', { folderId: folder.id });
+  return deps.reader.folderDelta(folder.id);
+};
+
 const sweepFolder = async (deps: SyncMailboxDeps, state: MailboxState, folder: MailFolder): Promise<Result<Swept, MailReaderError>> => {
-  const known = state.folders[folder.id];
-  const first = known?.deltaLink === undefined ? await deps.reader.folderDelta(folder.id) : await deps.reader.deltaFrom(known.deltaLink);
+  const first = await firstPage(deps, folder, state.folders[folder.id]?.deltaLink);
   if (!first.ok) return first;
   const messages: MailMessage[] = [...first.value.messages];
   const seen = new Set<string>();

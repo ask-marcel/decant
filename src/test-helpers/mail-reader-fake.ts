@@ -65,7 +65,8 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
     },
     deltaFrom: async (cursor) => {
       calls.push(`deltaFrom:${cursor}`);
-      return seed.failWith ? err(seed.failWith) : ok(nextPage());
+      const refused = seed.failCalls?.['deltaFrom'] ?? seed.failWith;
+      return refused ? err(refused) : ok(nextPage());
     },
     conversation: async (conversationId) => {
       calls.push(`conversation:${conversationId}`);

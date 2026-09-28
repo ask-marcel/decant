@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { MailFolder } from '../domain/mail-folder.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
-import { serializeMailboxState, emptyMailboxState, withConversation, withThread } from '../domain/mail-state.ts';
+import { serializeMailboxState, emptyMailboxState, withConversation, withFolderCursor, withThread } from '../domain/mail-state.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import { err, ok } from '../domain/result.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
@@ -372,6 +372,43 @@ describe('running a mailbox sync again', () => {
 
     expect(asked).toEqual([]);
     expect(summary.converted).toBe(0);
+  });
+
+  // Outlook keeps a folder's sync state for only its last few generations and answers an older cursor
+  // with 410. Only reading the folder from the start brings it back; what is already filed stays as it
+  // is, since a conversation is written again only when it holds a message the state has not seen.
+  it('a folder whose saved cursor Outlook has expired is read again from the start, rather than failing the mailbox', async () => {
+    const cursored = serializeMailboxState(withFolderCursor(emptyMailboxState(), 'AAMk-inbox', 'Inbox', 'c-old'));
+    const expired = { kind: 'permanent' as const, status: 410, message: 'SyncStateNotFound: The sync state generation is not found' };
+
+    const {
+      ok: succeeded,
+      summary,
+      reader,
+      files,
+      logger,
+    } = await run({
+      files: { texts: { [STATE_PATH]: cursored } },
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c-new' }], failCalls: { deltaFrom: expired } },
+    });
+
+    expect(succeeded).toBe(true);
+    expect(reader.calls.filter((call) => call.startsWith('deltaFrom') || call.startsWith('folderDelta'))).toEqual(['deltaFrom:c-old', 'folderDelta:AAMk-inbox']);
+    expect(summary.converted).toBe(1);
+    expect(stateAfter(files).folders['AAMk-inbox']).toEqual({ name: 'Inbox', deltaLink: 'c-new' });
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'mail.cursor-expired', meta: { folderId: 'AAMk-inbox' } });
+  });
+
+  it('a saved cursor refused for any other reason still ends the mailbox run, naming the sweep', async () => {
+    const cursored = serializeMailboxState(withFolderCursor(emptyMailboxState(), 'AAMk-inbox', 'Inbox', 'c-old'));
+
+    const { ok: succeeded, error } = await run({
+      files: { texts: { [STATE_PATH]: cursored } },
+      reader: { folders: [folder()], failCalls: { deltaFrom: { kind: 'permanent', status: 403, message: 'Forbidden' } } },
+    });
+
+    expect(succeeded).toBe(false);
+    expect(error).toEqual({ step: 'sweepFolder', cause: 'permanent', message: 'Forbidden' });
   });
 
   it('a conversation that gained a reply is written again, in place', async () => {
