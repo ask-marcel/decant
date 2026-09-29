@@ -52,6 +52,16 @@ describe('deciding what the next run has to do', () => {
     expect(buildWorklist([file({ kind: 'folder', name: 'Projets', path: 'Projets' })], {})).toEqual([]);
   });
 
+  // Loop rewrites a workspace's manifest whenever one of its pages changes, so a manifest routed like a
+  // document came back as left out on every run that touched the workspace.
+  it('a Loop workspace`s manifest needs no work, new or rewritten, since no reader makes a document of it', () => {
+    const pod = file({ id: '01P', name: 'Offsite.pod', path: 'LoopAppData/.appdata/Offsite.pod', cTag: 'c2' });
+    const manifest = { '01P': { path: 'LoopAppData/.appdata/Offsite.pod', cTag: 'c1', outputs: [] } };
+
+    expect(buildWorklist([pod], {})).toEqual([]);
+    expect(buildWorklist([pod], manifest)).toEqual([]);
+  });
+
   it('a folder restamped by SharePoint without moving needs no work, since a folder converts to nothing', () => {
     const folder = file({ id: '01F', kind: 'folder', name: 'Projets', path: 'Projets', cTag: 'c2' });
     const manifest = { '01F': { path: 'Projets', cTag: 'c1', outputs: [] } };
