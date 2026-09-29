@@ -936,3 +936,23 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   `start` is the series' first occurrence, not its next. A filter on the day an event starts drops
   a weekly meeting that began before the day while it is still running, so series masters are
   exempt (`inReach` in `sync-calendar.ts`).
+
+## 2026-09-29
+
+- [gotcha] Outlook keeps only the last few generations of a mail folder's sync state, and every
+  delta read of the folder most likely moves it on, whether or not decant saves the new cursor.
+  After two dry-run `update`s and a few read-only page-size probes on 2026-09-28, the next real run
+  got a 410 `SyncStateNotFound` (`generation=74; [highest=77]`) and the whole mailbox failed. A dry
+  run or a probe against the real mailbox is therefore not free: it ages the cursor the next real
+  run depends on. `firstPage` in `sync-mailbox.ts` now reads the folder afresh on that 410 (any
+  other refusal still ends the mailbox run), so an aged cursor costs one folder re-read, not the
+  mailbox.
+
+- [decision] `update` carries on past a source that fails: it prints the source and the step it
+  failed at, lists it as failed in `kb/_sync-report.md`, moves on to the next source, and still
+  exits 1 at the end. Before, the first failure ended the run, so one broken source (a Loop
+  workspace that resolved to no library) left every source after it stale. Two cases still stop
+  the run: a lapsed sign-in (`SIGNED_OUT`, an `auth` error), since every later source would fail on
+  the same token, and the picker's runs (`runMany`, `runInTurn`), which were kept stopping at the
+  first failure when this scope was chosen. Applies to any new error kind: decide whether it breaks
+  one source (carry on) or all of them (stop, like `auth`).
