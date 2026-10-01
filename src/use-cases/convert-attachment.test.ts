@@ -495,6 +495,26 @@ describe('keeping what was attached to a mail', () => {
     expect(files.written.get(`${FOLDER}/invite.ics.md`)).toContain(NO_TEXT_NOTE);
   });
 
+  it('a shortcut sent as an attachment becomes a document linking where it goes', async () => {
+    const { outcome, files } = await run({ name: 'Plans.url' }, { reader: { attachmentRaw: { att1: '[InternetShortcut]\r\nURL=http://intranet.example/plans\r\n' } } });
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: [`${FOLDER}/Plans.url.md`], primary: `${FOLDER}/Plans.url.md`, media: [] });
+    expect(files.written.get(`${FOLDER}/Plans.url.md`)).toContain('\n[Plans](http://intranet.example/plans)');
+  });
+
+  it('a shortcut attachment the mailbox will not hand over is reported as failed', async () => {
+    const { outcome } = await run({ name: 'Plans.url' }, { reader: { failCalls: { attachmentBytes: { kind: 'transient', message: 'timed out' } } } });
+
+    expect(outcome.kind).toBe('failed');
+  });
+
+  it('a shortcut attachment whose document cannot be written is reported as failed', async () => {
+    const shortcut = '[InternetShortcut]\r\nURL=https://tenant.sharepoint.com/sites/X\r\n';
+    const { outcome } = await run({ name: 'Plans.url' }, { reader: { attachmentRaw: { att1: shortcut } }, files: { failWritesMatching: 'Plans.url.md' } });
+
+    expect(outcome.kind).toBe('failed');
+  });
+
   it('an email attached to an email is written from what was rendered of it, having no bytes of its own', async () => {
     const embedded = { kind: 'item' as const, name: 'Customs documents MSDU1691268', contentType: '' };
     const { outcome, files } = await run(embedded, { rendered: '**Subject:** Customs documents\n\nAttached.' });

@@ -2,6 +2,7 @@ import { embedsImages, planFile, worthReading } from '../domain/conversion-plan.
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { renderCalendar } from '../domain/icalendar.ts';
+import { shortcutLink } from '../domain/internet-shortcut.ts';
 import type { MimePart } from '../domain/mime.ts';
 import { readMime } from '../domain/mime.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
@@ -287,6 +288,15 @@ const asCalendar = async (context: Context): Promise<AttachmentOutcome> => {
   return written.ok ? converted_(written.value) : failure(written.error);
 };
 
+// The same reading a shortcut in a library gets: the address it opens, as a link.
+const asShortcut = async (context: Context): Promise<AttachmentOutcome> => {
+  const raw = await context.deps.reader.attachmentBytes(context.input.messageId, context.input.attachment.id);
+  if (!raw.ok) return failure(raw.error);
+  const body = shortcutLink(context.name, new TextDecoder().decode(raw.value)) ?? NO_TEXT_NOTE;
+  const written = await writeMarkdown(context, context.input.stamp, body);
+  return written.ok ? converted_(written.value) : failure(written.error);
+};
+
 // An email attached to an email is not a file to convert: Graph answers a request for its bytes
 // with the item itself, and the library renders it from the message instead. Its name carries no
 // extension either, so the routing that reads one has nothing to go on and is not consulted.
@@ -301,6 +311,7 @@ const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise
   spreadsheet: asSpreadsheet,
   message: asMessage,
   calendar: asCalendar,
+  shortcut: asShortcut,
   slides: asSlides,
   'legacy-slides': asSlides,
   pdf: asPdf,

@@ -235,6 +235,7 @@ pdf: ./Roadmap.pptx.pdf
 | ppt, rtf | a PDF, plus markdown read back from it |
 | pdf | the original, plus markdown holding its text layer |
 | ics | one markdown record of the meeting: what it is called, when, where, who was asked |
+| url | one markdown file linking where the shortcut goes, when that is a web address |
 | eml | a folder: the message as markdown, and every file it carried taken out of the base64 it travelled in |
 | zip | a manifest listing every member with the text read out of it, one markdown file per document inside, and the archive itself |
 | jpg, png, gif, webp, bmp, tiff, heic | the image, plus markdown holding the text read out of it |

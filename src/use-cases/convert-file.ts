@@ -2,6 +2,7 @@ import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import { embedsImages, planFile } from '../domain/conversion-plan.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { renderCalendar } from '../domain/icalendar.ts';
+import { shortcutLink } from '../domain/internet-shortcut.ts';
 import type { MimePart } from '../domain/mime.ts';
 import { readMime } from '../domain/mime.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
@@ -148,6 +149,15 @@ const convertCalendar = async (context: Context): Promise<ConvertOutcome> => {
   if (!passed.ok) return failure(passed.error);
   const read = renderCalendar(passed.value);
   const written = await writeMarkdown(context, `${context.name}.md`, context.stamp, read.length === 0 ? NO_TEXT_NOTE : read);
+  return written.ok ? { kind: 'converted', outputs: written.value } : failure(written.error);
+};
+
+// A shortcut holds nothing but where it goes, so that address, as a link, is the whole document.
+const convertShortcut = async (context: Context): Promise<ConvertOutcome> => {
+  const raw = await context.deps.reader.bytes({ driveId: context.input.driveId, itemId: context.input.item.id });
+  if (!raw.ok) return failure(raw.error);
+  const body = shortcutLink(context.name, new TextDecoder().decode(raw.value)) ?? NO_TEXT_NOTE;
+  const written = await writeMarkdown(context, `${context.name}.md`, context.stamp, body);
   return written.ok ? { kind: 'converted', outputs: written.value } : failure(written.error);
 };
 
@@ -306,6 +316,7 @@ const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise
   spreadsheet: convertSpreadsheet,
   message: convertMessage,
   calendar: convertCalendar,
+  shortcut: convertShortcut,
   slides: convertSlides,
   'legacy-slides': convertSlides,
   pdf: convertPdf,

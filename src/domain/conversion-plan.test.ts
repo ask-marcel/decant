@@ -44,6 +44,7 @@ const SUPPORTED: ReadonlyArray<readonly [string, ConversionRoute]> = [
   ['webp', 'image'],
   ['svg', 'vector'],
   ['ics', 'calendar'],
+  ['url', 'shortcut'],
   ['eml', 'message'],
   ['ods', 'spreadsheet'],
   ['xls', 'spreadsheet'],
@@ -75,6 +76,14 @@ describe('deciding what to produce for a document found in SharePoint', () => {
       kind: 'process',
       route: 'calendar',
       outputs: [{ relName: 'invite.ics.md', role: 'markdown' }],
+    });
+  });
+
+  it('a Windows shortcut becomes a single markdown file, since the address is all it holds', () => {
+    expect(planFile({ name: 'Plans.url', size: 120 }, CAP)).toEqual({
+      kind: 'process',
+      route: 'shortcut',
+      outputs: [{ relName: 'Plans.url.md', role: 'markdown' }],
     });
   });
 

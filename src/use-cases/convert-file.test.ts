@@ -179,6 +179,41 @@ describe('converting one document out of a library', () => {
     expect(written).toContain('No text could be read from this file');
   });
 
+  const SHORTCUT = { name: 'Plan de projet v1.2.url', path: 'Projets/Plan de projet v1.2.url' };
+  const SHORTCUT_DOCUMENT = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Plan de projet v1.2.url.md';
+  const shortcutTo = (target: string): DriveReaderSeed => ({ bytes: { '01ABC': new TextEncoder().encode(`[InternetShortcut]\r\nURL=${target}\r\n`) } });
+
+  it('a shortcut in a library becomes a document linking where it goes', async () => {
+    const { outcome, files } = await run(SHORTCUT, { reader: shortcutTo('https://tenant.sharepoint.com/sites/X/Shared%20Documents/Plans') });
+
+    expect(outcome).toEqual({ kind: 'converted', outputs: [SHORTCUT_DOCUMENT] });
+    expect(files.written.get(SHORTCUT_DOCUMENT)).toContain('\n[Plan de projet v1.2](https://tenant.sharepoint.com/sites/X/Shared%20Documents/Plans)');
+  });
+
+  it('a shortcut to something that is not a web address is written as a note rather than a link', async () => {
+    const { files } = await run(SHORTCUT, { reader: shortcutTo('file:///C:/Plans/Plan.docx') });
+
+    expect(files.written.get(SHORTCUT_DOCUMENT)).toContain(NO_TEXT_NOTE);
+  });
+
+  it('a shortcut that names no address at all is written as a note', async () => {
+    const { files } = await run(SHORTCUT, { reader: { bytes: { '01ABC': new TextEncoder().encode('[InternetShortcut]\r\nIconIndex=0\r\n') } } });
+
+    expect(files.written.get(SHORTCUT_DOCUMENT)).toContain(NO_TEXT_NOTE);
+  });
+
+  it('a shortcut the library will not hand over is reported as failed, to be tried again', async () => {
+    const { outcome } = await run(SHORTCUT, { reader: { failWith: { kind: 'transient', message: 'timed out' } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'transient: timed out' });
+  });
+
+  it('a shortcut whose document cannot be written is reported as failed', async () => {
+    const { outcome } = await run(SHORTCUT, { reader: shortcutTo('https://tenant.sharepoint.com/sites/X'), files: { failWritesMatching: 'v1.2.url.md' } });
+
+    expect(outcome.kind).toBe('failed');
+  });
+
   it('the markdown carries where it came from, when it changed and who changed it', async () => {
     const { files } = await run({});
     const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md') ?? '';
