@@ -99,9 +99,9 @@ describe('remembering where a mailbox sync got to', () => {
   });
 
   it('a mailbox that recorded its own name and address keeps them', () => {
-    const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox', id: 'vincent@example.com', name: 'Vincent inbox' } });
+    const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox', id: 'valerie@example.com', name: 'Valerie inbox' } });
 
-    expect(parsed.ok && parsed.value.source).toEqual({ kind: 'mailbox', id: 'vincent@example.com', name: 'Vincent inbox' });
+    expect(parsed.ok && parsed.value.source).toEqual({ kind: 'mailbox', id: 'valerie@example.com', name: 'Valerie inbox' });
   });
 
   it('a run date recorded as something other than text reads as never run', () => {

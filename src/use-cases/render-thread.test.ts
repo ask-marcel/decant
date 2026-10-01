@@ -33,7 +33,7 @@ describe('writing one conversation as one file', () => {
   });
 
   it('the head of the file states exactly where the conversation came from', async () => {
-    const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z', from: { name: 'Vincent DELACOURT', address: 'v@example.com' }, to: [] })] };
+    const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z', from: { name: 'Valerie FAIRBANKS', address: 'v@example.com' }, to: [] })] };
     const { files } = await run({ reader: { conversations, bodies: { m1: 'One.', m2: 'Two.' } } });
     const head = (files.written.get(THREAD_FILE) ?? '').split('\n---\n')[0] ?? '';
 
@@ -50,8 +50,8 @@ describe('writing one conversation as one file', () => {
         'subject: Contrat Contoso',
         'participants:',
         '  - Jane Doe <jane@example.com>',
-        '  - Vincent DELACOURT <v@example.com>',
-        '  - Vincent DELACOURT <vincent@example.com>',
+        '  - Valerie FAIRBANKS <v@example.com>',
+        '  - Valerie FAIRBANKS <valerie@example.com>',
         'first_message: "2026-05-12T09:31:00Z"',
         'last_message: "2026-05-13T10:00:00Z"',
         'message_count: 2',
@@ -336,7 +336,7 @@ describe('writing one conversation as one file', () => {
 
     expect(written).toContain('participants:');
     expect(written).toContain('  - Jane Doe');
-    expect(written).toContain('  - Vincent DELACOURT');
+    expect(written).toContain('  - Valerie FAIRBANKS');
     expect(written).toContain('first_message: "2026-05-12T09:31:00Z"');
     expect(written).toContain('last_message: "2026-05-13T10:00:00Z"');
     expect(written).toContain('message_count: 2');

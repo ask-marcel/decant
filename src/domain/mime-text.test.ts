@@ -55,11 +55,11 @@ describe('the encoding a transport wrapped a body in', () => {
   });
 
   it('quoted-printable comes back with its escapes read and its soft breaks closed', () => {
-    expect(decodeText('Bonjour=2C=\r\n Vincent', 'quoted-printable')).toBe('Bonjour, Vincent');
+    expect(decodeText('Bonjour=2C=\r\n Valerie', 'quoted-printable')).toBe('Bonjour, Valerie');
   });
 
   it('a soft break written the Unix way is closed as well', () => {
-    expect(decodeText('Bonjour=\nVincent', 'quoted-printable')).toBe('BonjourVincent');
+    expect(decodeText('Bonjour=\nValerie', 'quoted-printable')).toBe('BonjourValerie');
   });
 
   it('a body the transport left readable is not decoded as though it had encoded it', () => {

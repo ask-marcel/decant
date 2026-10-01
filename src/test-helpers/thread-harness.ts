@@ -54,7 +54,7 @@ export const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   received: '2026-05-12T09:31:00Z',
   hasAttachments: false,
   from: { name: 'Jane Doe', address: 'jane@example.com' },
-  to: [{ name: 'Vincent DELACOURT', address: 'vincent@example.com' }],
+  to: [{ name: 'Valerie FAIRBANKS', address: 'valerie@example.com' }],
   isDeleted: false,
   ...over,
 });
