@@ -440,3 +440,7 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   unreadable ledger over in memory and never archives, so every file the old ledger named would
   stay in the vault untracked. A naming change rides each item's next rewrite instead, where the
   supersede step puts the old file aside.
+
+- [decision] `siteIdHash` is now `idHash` in `src/domain/kb-path.ts`, beside the `freeSegment` and
+  `freePath` that cut every namesake's suffix from it, which supersedes the location the 2026-08-14
+  entry names; the path module no longer imports the site state for a hash every planner uses.
