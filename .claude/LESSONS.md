@@ -2,16 +2,9 @@
 
 Append-only session memory. Three kinds of entry: `[mistake]`, `[decision]`, `[gotcha]`.
 Never edit or delete a past entry; supersede it with a new `[decision]`.
+A compaction pass retires entries into `lessons.archive.md`, verbatim and with the reason.
 
 ## 2026-07-23
-
-- [gotcha] Outlook's message delta silently truncates when given a page size. On a 67-message
-  Inbox, `list-mail-folder-messages-delta` with `top: 2` returned 2 messages and a `deltaLink`
-  (not a `nextLink`), and following that cursor returned zero: the other 65 were unreachable and
-  the sync believed itself complete. Without `top` the same call pages correctly, ten at a time.
-  Never pass `top` to a mail delta. Drive delta is the opposite, where `top: 1000` is safe and
-  saves round trips. A fix was planned in ask-marcel-office-cli itself; the sweep omits `top`
-  either way, so the only thing that fix buys here is fewer requests.
 
 - [gotcha] `commands[...].execute` in ask-marcel-office-cli is typed as returning a `Result` but
   can still throw: it decodes base64 with `atob`, which raises `InvalidCharacterError: The string
@@ -25,26 +18,12 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   there. Note "Sent Items" is kept and only "Outbox" (French "Boîte d'envoi") is skipped, since a
   message sits in the outbox for seconds and then reappears in sent mail.
 
-- [gotcha] Stryker's `incremental: true` reports a stale score after new test files are added: it
-  showed 93.2% where the truth was 100%. Delete `reports/stryker-incremental.json` before trusting
-  a mutation score after adding tests. Its clear-text reporter also truncates the survivor list, so
-  to see them all, run `bunx stryker run --mutate '<one file>'` on the file you care about.
-
-- [gotcha] The atelier bun-typescript bootstrap checklist omits `lint:staged`, but pre-commit gate
-  4 runs `bun run lint:staged`. Copy `assets/lint-staged.sh` into `scripts/` and add the script, or
-  every commit dies at gate 4 of 5.
-
 - [decision] A conversation records no folder in its front matter. A thread spans folders by nature
   (the question sits in Inbox, the answer in Sent Items), so naming one of them would mislead.
 
 - [decision] `--since` filters which conversations get written, not which get swept. Outlook's
   message delta takes no date filter, so the sweep costs the same either way and only the expensive
   half (conversion) is narrowed.
-
-- [decision] Attachments dedupe on name **and** length within a conversation. Name alone silently
-  dropped a revised file resent under the same name; the pair keeps both, the second under a
-  disambiguated name. Deliberately not deduped across threads, which would move attachments out of
-  the per-thread folder the layout is built on.
 
 - [mistake] `--site-id` filed a site under its raw id instead of its display name, quietly building
   a second knowledge base for a site already synced. Anything used as a folder name must be
@@ -83,13 +62,6 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   SharedArrayBuffer case), and it is async besides. `new Bun.CryptoHasher('sha256').update(bytes)
   .digest('hex')` is synchronous, allocation-free, and typechecks. Prefer it for hashing in this Bun
   repo (`src/domain/content-hash.ts`).
-
-- [decision] Mailbox attachments in the shared `_attachments` store are always named
-  `<name>-<hash8>.<ext>`, never readable-name-with-a-suffix-only-on-clash. The on-clash form needed a
-  sequential `usedNames` set to detect a collision, which races under `--concurrency`: two different
-  files of the same name in one window would both write `<name>` and one would overwrite the other. A
-  name fixed purely by the content address lets conversations place files in parallel without
-  colliding. See [[content-hash]] / `render-thread.ts` `placeAttachment`.
 
 - [decision] `--concurrency` parallelises the IO per window and folds pure state deltas afterwards,
   the same shape in `sync-site` `processQueue` and `sync-mailbox` `drainQueue`: `applyWork` /
@@ -148,11 +120,6 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   file need conflict resolution, and every replayed commit still lands under the gate. `git merge
   --no-ff --no-commit` first is a cheap way to see the true conflict set before choosing rebase, then
   `git merge --abort` and rebase for real.
-
-- [gotcha] This repo has no git remote at all (confirmed via `git remote -v` and `gh repo view`):
-  two local worktrees share one checkout, the primary one holding `main`. "Push" here means
-  fast-forwarding or merging into that local `main` checkout, not a network push; there is nowhere
-  else for commits to go until a remote is deliberately added.
 
 ## 2026-08-14
 
@@ -411,15 +378,6 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   member. The archive is still kept and still listed among the outputs; it is no longer the thing
   anything links to.
 
-- [decision] The mailbox vault deliberately holds August 2026 onward, not the full history. The
-  first live run swept every folder but wrote only what `--since 2026-08-05` allowed, and the delta
-  cursors then advanced past everything older, so that history is behind the cursors and a plain
-  re-run will not bring it back. Recovering it means clearing the `folders` cursors in
-  `.sync-state.json` and re-sweeping, which is thousands of round trips and hours of rendering; the
-  user weighed that and chose the gap. Long-running threads that got a reply after 5 August ARE
-  present and carry their older messages, which is why folder dates reach back to March: the dates
-  understate what is missing. Do not "fix" this by re-sweeping without asking.
-
 - [decision] `internetMessageHeaders` IS honored on `list-conversation-messages --select`, verified
   live, and the per-conversation `get-mail-message` call stays anyway. The header read happens in
   the SWEEP, off delta data, before any conversation has been fetched, so there is no existing call
@@ -434,13 +392,6 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   registration, not something a tenant admin can grant. Outlook on the Web is not a way round it
   either, since the token holding the shared-mail scope is bound to an Exchange audience the CLI
   cannot call. Treat those commands as present but inert; they answer `ErrorAccessDenied`.
-
-- [decision] Group mailboxes are the reachable alternative and are still blocked, on post bodies.
-  `list-group-conversations` works today on `Group.Read.All`, verified against a team the account belongs to,
-  and returns topic, senders, `hasAttachments` and a PREVIEW truncated mid-word. This sync is bodies
-  from end to end: a thread document IS one rendered body per message, and cards, indexes and the
-  store all hang off messages already rendered. Listing without bodies would give subject lines with
-  nothing under them. Revisit when a command returns post bodies, not before.
 
 - [gotcha] `list-groups` returns every group in the TENANT, not the ones the signed-in user belongs
   to, so the obvious first call hands back groups that then answer `ErrorAccessDenied` on any read.
@@ -463,21 +414,6 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   test needed threads being CREATED, since a re-run over threads already written writes nothing and
   exercises no parallel folder creation at all. Run it into a scratch `KB_ROOT` with the OCR cache
   symlinked in, which keeps it off the real vault and off a cold cache.
-
-- [gotcha] `convert-mail-to-markdown` can strip an ENTIRE body as a "quoted reply chain" and report
-  success. Measured on a 7-day sync: 10 of 42 message sections, 24%, reduced to one short line. The
-  same message with `keepQuoted: true` returns 6912 bytes over 109 lines with ZERO lines starting
-  with `>`, so nothing was quoted; the heuristic misread an Outlook HTML body with headings and
-  numbered lists. The bias is the worst part: a two-line reply survives, a scoped proposal with
-  sections and a sign-off is destroyed. Nothing in the result tells the two apart, since the `note`
-  fires identically whether one line or a hundred was removed.
-  A genuine chain is NOT `>`-quoted either: it is delimited by a second `**From:**` header block
-  partway down the document, which is what a reliable rule would cut at. Written up for the
-  maintainer in `docs/bug-convert-mail-to-markdown-strips-body.md`.
-  **Decision: not worked around here.** Asking for `keepQuoted` and cutting at that header block was
-  proposed and declined in favour of an upstream fix, so the vault under-reports message bodies
-  until the library changes. Anything reading these threads should be told that, and a thread whose
-  section is a single line is a candidate for re-fetching rather than a short message.
 
 - [lesson] Deleting a shared store leaves dead code that only mutation testing sees. Moving
   attachments from one content-addressed store at the mailbox root into each thread's own folder
@@ -554,12 +490,6 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   and the suite still passed, because no test ever made `x` fail. Two seeds, a workbook and an
   invitation the source refuses, put it over 90. Coverage says the line ran; only mutation says the
   line mattered.
-
-- [gotcha] Never read a bare `bunx stryker run`. `stryker.conf.json` sets `incremental: true`, and
-  the repo's own `mutate:changed` and `mutate:staged` delete `reports/stryker-incremental.json`
-  first for exactly that reason. Running stryker directly does not, so it reports cached verdicts
-  for mutants your new tests were written to kill: this file read five survivors that were already
-  dead, and the real count was one. Use the scripts, or remove the incremental file yourself.
 
 - [lesson] A stamp nothing reads is a stamp nothing can get wrong. `render-thread.ts` sat at 90.27
   and four of its eleven survivors were the `site`, `library` and `source` of the DocumentStamp: a
@@ -692,13 +622,6 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   fails without one. Install the pinned binary from the release instead; the asset URL was checked
   with a HEAD request before it went in, since a guessed version 404s in exactly the same way.
 
-- [lesson] A dependency advisory that no published version can clear is a fact about the registry,
-  not a reason to drop the gate. SheetJS left npm, so `xlsx@0.18.5` was the newest there while the
-  advisories wanted 0.19.3 and 0.20.2, which live only on the SheetJS CDN. The gate ignored those
-  two by id with the reason and the fix written beside them, kept failing on everything else, and
-  found thirteen real upgrades the same day. When `ask-marcel-office-cli` 2.4.0 pointed `xlsx` at
-  the CDN tarball, the ignores came out and the audit was clean with no exceptions at all.
-
 - [gotcha] A source can report one condition two ways, as an empty answer or as a refusal, and code
   that handles one will not handle the other. `convertPdf` fell back to OCR when a PDF's text came
   back empty, which is the entire reason the OCR-PDF work exists, and still reported a genuinely
@@ -708,16 +631,6 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   it took a real library and one appendix sitting beside its converted siblings to show it. When
   adding a fallback, check what the source actually does in the case the fallback is for, rather
   than what an absence of data would look like.
-
-- [decision] The group inbox source was measured before it was built, and the measurement is why it
-  was not built. `list-my-memberships` answers three unified groups, and every other group on the
-  tenant refuses with 0xD10, so three is the whole reachable scope. They hold 16 threads, three of
-  them "The new X group is ready", and of the 13 that remain, all in one group, eleven previews are
-  the bare underscore rule of a calendar invitation and the rest say things like "Will re-schedule in
-  outlook". That is a reader port, a picker entry, per-group state and an npm publish, to add a
-  meeting calendar to a vault already holding 54 real mail threads. The library side stands as
-  written in `docs/report-group-thread-posts-verified.md` and the six commands work; what is absent
-  is traffic worth mirroring, which is a fact about this tenant and could change.
 
 - [gotcha] A fake that answers whatever it is handed will keep a dead feature green. The OCR fallback
   for scanned PDFs passed its tests from 24 July to 6 September and had never read one: `pdfText`
@@ -741,15 +654,6 @@ Never edit or delete a past entry; supersede it with a new `[decision]`.
   again on the next run" and the next run said `0 failed`, which is the worst pairing available: a
   promise, and a clean bill of health covering the thing it promised about. Wherever a cursor moves
   past work, the record of what that work left unfinished has to move with it, in the same write.
-
-- [gotcha] `src/domain/worklist.ts` carried two NUL bytes where `sortKey` meant spaces, committed in
-  `663d2f2` and invisible in every editor since. NUL is completely ignorable in ICU collation, so
-  `localeCompare` compared `"\x00${itemId}"` against `"${lastModified} ${id}"` as though the prefix
-  were not there, and the archive-first ordering the comment describes held only by luck: real
-  SharePoint ids start with `01`, which sorts before `2026` anyway. Verified rather than reasoned,
-  `" zzz"` sorts before a timestamp and `"\x00zzz"` after it. A NUL in either blob also makes git
-  render the whole file as `Binary files differ`, so the change is invisible to review, which is how
-  the bytes survived a scaffold commit in the first place.
 
 - [decision] Every failed conversion is retried, capped at three attempts, rather than routed by
   error kind. `DriveReaderError` does distinguish `transient`, `throttled`, `permanent` and
