@@ -17,6 +17,30 @@ left. Nothing reads this file at session start; grep it when a question needs th
 
 ## 2026-08-30
 
+- [gotcha] Exchange sends the FULL RFC `References` chain, CRLF-folded across continuation lines: a
+  30-message thread in this mailbox carries 52 ids on its newest reply. Three earlier samples each
+  showed a single id equal to `In-Reply-To`, which looked like "Exchange only sends the parent" and
+  is not: all three were direct replies to their own root, where parent and root are the same
+  message and the two hypotheses are indistinguishable. Sample a thread deep enough to contain a
+  reply-to-a-reply before concluding anything about a threading header, and read the first
+  angle-bracketed token of the whole folded value rather than splitting on lines or whitespace.
+  Archived 2026-10-01: graduate, now stated at src/domain/root-message-id.ts:2-17.
+
+- [decision] Per-thread cards are written in `writeThread`, never inside the conversion. The
+  conversion short-circuits on a content the store already holds, which is the common case for
+  every thread after the first that carried a given file, so a card written there would exist only
+  for whichever thread arrived first and every other thread would name files in its head that its
+  own folder said nothing about. The same reasoning covers link cards, since a document another
+  thread already pulled is referenced rather than fetched again.
+  Archived 2026-10-01: graduate, now stated at src/use-cases/thread-documents.ts:13, the module that
+  writes cards and never converts (`writeThread` is gone).
+
+- [decision] An archive's `primary` is its manifest, not the `.zip`. A thread used to point its
+  reader at a binary they had to unpack while the text was already on disk beside it, one file per
+  member. The archive is still kept and still listed among the outputs; it is no longer the thing
+  anything links to.
+  Archived 2026-10-01: graduate, now stated at src/use-cases/convert-attachment.ts:268.
+
 - [decision] The mailbox vault deliberately holds August 2026 onward, not the full history. The
   first live run swept every folder but wrote only what `--since 2026-08-05` allowed, and the delta
   cursors then advanced past everything older, so that history is behind the cursors and a plain
@@ -55,6 +79,16 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: archive, superseded: the library rewrote the heuristic before 2.4.0 and the
   write-up was retired (523cf99, 2026-09-06).
 
+- [gotcha] The card is written OVER the converter's extract, on purpose: both want
+  `_attachments/<name>.<ext>.md`, so `writeCards` reads the extract, carries the body forward and
+  replaces the library's stamp with the arrival facts. One document per file in the folder, not a
+  card and an extract saying the same thing. The consequence for tests is that the path is written
+  twice per file, so a "written once, not once per message" test asserts a write count of exactly 2
+  and a third write is the bug. Asserting `written.has(path)` instead passes against a card written
+  once per arrival, which is the mutant the test exists to catch: an assertion weakened to make a
+  test green stops testing the thing it was named for.
+  Archived 2026-10-01: graduate, now stated at src/use-cases/thread-documents.ts:107-111.
+
 - [gotcha] Never read a bare `bunx stryker run`. `stryker.conf.json` sets `incremental: true`, and
   the repo's own `mutate:changed` and `mutate:staged` delete `reports/stryker-incremental.json`
   first for exactly that reason. Running stryker directly does not, so it reports cached verdicts
@@ -84,6 +118,27 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: archive, superseded: the group inbox source was built
   (src/use-cases/sync-group.ts; three group inboxes in `kb/_sync-report.md`).
 
+## 2026-08-28
+
+- [decision] `mime.ts` and `mime-text.ts` are two modules because the shape of a message and the
+  encodings its pieces travelled in are two subjects. The split fell out of the commit-size gate and
+  turned out to be the better design: each file is under a hundred lines, each has its own tests, and
+  the encodings module is the one with all the awkward native-throwing calls.
+  Archived 2026-10-01: graduate, now stated at src/domain/mime.ts:1-4 and
+  src/domain/mime-text.ts:1-3 each state their own subject.
+
+- [gotcha] `mutate:changed` built its file list from `git diff` alone, which never lists an untracked
+  file, so a module that had never been added was skipped and the run printed a passing score for
+  everything else. `global-report.ts` landed at 67.74% against a break threshold of 90 and was found
+  only by running Stryker against it by hand. The blind spot is exactly the case the script exists
+  for: its header says it runs before staging, and new code is where surviving mutants live. Fixed by
+  adding `git ls-files --others --exclude-standard` to the collection. `mutate:staged` never had the
+  hole, since `--diff-filter=A` covers staged additions, which is all a commit gate must judge. Worth
+  knowing why this mattered here rather than being caught later: mutation is not in the pre-commit
+  hook (the five fast gates only), it runs in `ci.yml`, and this repo has no remote, so CI never runs
+  and that local script is the only mutation gate that actually executes.
+  Archived 2026-10-01: graduate, now stated at scripts/mutate-changed.sh:19-23.
+
 ## 2026-08-27
 
 - [decision] The OCR language is settled per image, by reading it, not by guessing from its path or
@@ -105,6 +160,57 @@ left. Nothing reads this file at session start; grep it when a question needs th
   while PP-OCRv5 `latin` beat both `latin` v3 and `en` v4 on the same English page and fixed v3's
   habit of reading `O` as `0` inside acronyms. Hence the pair now in use: `ch` at v4, `latin` at v5.
   Archived 2026-10-01: graduate, now stated at src/infra/ocr-rapid.ts:40-48.
+
+- [gotcha] Graph reports `hasAttachments: false` on a message whose only attachment is inline, so a
+  signature logo or a pasted screenshot is invisible to any code that gates a listing on that flag.
+  `list-mail-attachments` on the very same message returns the picture. Confirmed live on two
+  messages of this mailbox. The body is the other half of the question: `convert-mail-to-markdown`
+  renders every unresolved `cid:` image as `[inline image: <label>]`, so a message worth listing is
+  one where the flag is true OR the body carries that marker.
+  Archived 2026-10-01: graduate, now stated at src/use-cases/thread-files.ts:207.
+
+- [gotcha] The label in `[inline image: <label>]` is not reliably a file name. The library falls back
+  through the attachment name, the `alt` text, the content id truncated at its `@`, then the whole
+  content id, and it only has names to use when Graph said `hasAttachments`, which for an inline-only
+  message it does not. Match a placeholder on all of those, and ask
+  `list-mail-attachments --select ...,microsoft.graph.fileAttachment/contentId` to have the id at
+  all: the library's default select leaves it out.
+  Archived 2026-10-01: graduate, now stated at src/domain/inline-image.ts:2-5 and
+  src/infra/mail-reader-marcel.ts:66-69.
+
+- [decision] Two string literals from `ask-marcel-office-cli` are load-bearing in `domain/`:
+  `**Attachments:**` and `[inline image: `. Both live as named constants, and every parse degrades to
+  leaving the body exactly as it came rather than mangling it, so a reworded release costs the new
+  behaviour and never the text. The dependency is pinned `^2.3.0`; a minor bump is the thing to check
+  when a thread body suddenly stops linking its attachments.
+  Archived 2026-10-01: graduate, now stated at src/domain/thread.ts:50-53.
+
+- [gotcha] `get-mail-attachment` on an `itemAttachment` returns the item, not bytes, so anything that
+  fetches bytes first fails it with "Graph returned no bytes" and retries it every run. `@odata.type`
+  is the discriminator and Graph returns it whatever the `$select` asks for. Route on that, not on
+  the file name: an item attachment's name is a subject with no extension, so extension routing has
+  nothing to work with either.
+  Archived 2026-10-01: graduate, now stated at src/infra/mail-reader-marcel.ts:39-42 (`KIND_BY_TYPE`
+  routes on `@odata.type`).
+
+- [decision] An attachment with no bytes is content-addressed by the SHA-256 of what the library
+  renders it to. The address is then only stable within a library version, which is the price of
+  having one at all, and it is what lets a conversation that forwarded the same mail five times store
+  it once. Written down because a future reader will wonder why one address is taken from bytes and
+  another from text.
+  Archived 2026-10-01: graduate, now stated at src/use-cases/convert-attachment.ts:47-48.
+
+- [gotcha] A terminal block that rewrites itself in place climbs by the height of the PREVIOUS draw,
+  never the one it is about to make, which is why `src/infra/progress-bar.ts` keeps a `drawn`
+  counter. A third `begin()` grows the block from three rows to four and the escape it writes is
+  `\x1b[2A`, climbing the three already on screen, not `\x1b[3A`. Writing the new height instead
+  lands the cursor a row above the block, and every redraw walks it further up the screen. The
+  matching trap is a climb of zero: a terminal reads `\x1b[0A` as `\x1b[1A`, so the first draw must
+  emit no climb sequence at all rather than a zero one. `\x1b[J` after the last row is what wipes the
+  rows a shrinking block no longer fills, since `\x1b[K` only clears the row the cursor sits on. The
+  `\n` between rows lands at column 0 because `onlcr` is set on a pty, and libuv keeps it set even in
+  raw mode, so no `\r` is needed per row.
+  Archived 2026-10-01: graduate, now stated at src/infra/progress-bar.ts:3-8 and 34-35.
 
 ## 2026-08-16
 
