@@ -271,56 +271,42 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   unlucky file rather than a dead branch. When adding a fallback, check what the source actually
   does in the case the fallback is for.
 
-- [gotcha] A fake that answers whatever it is handed will keep a dead feature green. The OCR fallback
-  for scanned PDFs passed its tests from 24 July to 6 September and had never read one: `pdfText`
-  gave the reader the PDF's own path, and RapidOCR loads through PIL, which refuses a PDF outright
-  with `UnidentifiedImageError`. The OCR fake returns text for any path at all, so every test agreed
-  the feature worked, and the one thing the fake could not say is that its real counterpart takes
-  pictures and nothing else. It surfaced only because a real library held a scanned appendix and the
-  file came out holding the note instead of its own text. The trap is open wherever a fake is keyed
-  by a path or an id it never validates: those tests prove the wiring, not that the adapter can do
-  what it was asked. The fix was to read the pages, one image per page out of
-  `extract-drive-item-images`, which is what OCR can actually open.
+- [gotcha] A fake that answers whatever it is handed keeps a dead feature green: the OCR fallback
+  for scanned PDFs passed its tests from 24 July to 6 September without ever reading one, because
+  `pdfText` handed RapidOCR the PDF's own path, which PIL refuses with `UnidentifiedImageError`,
+  while the OCR fake returned text for any path. Wherever a fake is keyed by a path or an id it
+  never validates, its tests prove the wiring, not that the adapter can do what it was asked; the
+  fix read the pages as images through `extract-drive-item-images`.
 
 ## 2026-09-08
 
-- [gotcha] A checkpoint that advances past work it has not confirmed loses that work in silence. Both
-  halves of this sync saved a Graph cursor before the conversion or the render it covered: `sync-site`
-  wrote `deltaLink` when the sweep returned, `sync-mailbox` wrote every folder cursor in `finishQueue`,
-  and both then sliced a window off `pending` whether each item had succeeded or not. A delta only
-  reports what changed, so the failed item was unreachable from that moment on, and the only way back
-  was deleting `deltaLink` by hand to force a full re-sweep. The report meanwhile said "will be tried
-  again on the next run" and the next run said `0 failed`, which is the worst pairing available: a
-  promise, and a clean bill of health covering the thing it promised about. Wherever a cursor moves
-  past work, the record of what that work left unfinished has to move with it, in the same write.
+- [gotcha] A checkpoint that advances past work it has not confirmed loses that work in silence.
+  `sync-site` saved `deltaLink` and `sync-mailbox` every folder cursor before the conversions they
+  covered, then sliced windows off `pending` whether each item succeeded or not, so a failed item
+  became unreachable while the report promised a retry and the next run said `0 failed`. Wherever a
+  cursor moves past work, the record of what the work left unfinished moves with it in the same
+  write, as the retry ledger now does (`retry-policy.ts:3`).
 
 - [decision] Every failed conversion is retried, capped at three attempts, rather than routed by
-  error kind. `DriveReaderError` does distinguish `transient`, `throttled`, `permanent` and
-  `unrenderable`, but `ConvertOutcome.failed` flattens whichever one it was into a `"kind: message"`
-  string, so a kind-aware policy means threading a new field through `convertFile`,
-  `convertAttachment` and `renderThread`. Against that: the kind of the failure that prompted this
-  work was never established, so a policy that gives up on `permanent` might not have brought back
-  the one file it was written for. A flat cap costs at most two pointless calls spread over two later
-  runs and needs no new information anywhere.
+  error kind. `ConvertOutcome.failed` flattens `DriveReaderError`'s `transient`, `throttled`,
+  `permanent` and `unrenderable` into a `"kind: message"` string, so a kind-aware policy means
+  threading a new field through `convertFile`, `convertAttachment` and `renderThread`, and the kind
+  of the failure that prompted the work was never established. A flat cap costs at most two
+  pointless calls over two later runs and needs no new information.
 
-- [gotcha] A record that brings lost work back has to live at the level the queue is keyed on, not at
-  the level of the thing that failed. The plan for a failed attachment inside a thread that otherwise
-  rendered named two shapes, and the finer one turned out not to exist: a per-attachment record could
-  not get its thread re-queued, because the folder cursors had advanced when the thread's messages
-  were swept and the thread-level ledger is the only thing that reaches a thread afterwards. The
-  document had to be rewritten to carry the recovered file's card in any case, so the finer shape
-  would have saved the other attachments' conversions and nothing besides. Worth checking before
-  designing a partial-retry: whatever re-queues the work sets the smallest unit that can be retried,
-  and everything below it re-runs whether or not it needs to.
+- [gotcha] A record that brings lost work back has to live at the level the queue is keyed on, not
+  at the level of the thing that failed. A per-attachment record could not get its thread re-queued,
+  because the folder cursors had advanced when the thread's messages were swept and the thread
+  ledger is the only thing that reaches a thread afterwards. Before designing a partial retry, check
+  what re-queues the work: that sets the smallest unit that can be retried, and everything below it
+  re-runs.
 
 - [gotcha] Code written for a case nothing can yet reach is untested by construction, and it was
-  wrong here. `drainQueue` dropped a per-run given-up note in two places, `givenUp: notes.givenUp` in
-  the window fold and a final line that replaced the list rather than adding to it, both written in
-  8f38b2c when only the ledger produced such notes and no render could. Coverage was 100% and
-  mutation 92% over those very lines, because a mutant that drops an always-empty list changes
-  nothing observable. What found it was the first test that produced a note through that path, which
-  is the only thing that could have. When adding a field that nothing fills yet, either fill it from
-  something or leave it out until a caller exists.
+  wrong here: `drainQueue` dropped per-run given-up notes in two places, written in 8f38b2c when no
+  render could produce one. Coverage was 100% and mutation 92% over those lines, because dropping an
+  always-empty list changes nothing observable, and only the first test producing a note through
+  that path found it. When adding a field that nothing fills yet, fill it from something or leave it
+  out until a caller exists.
 
 - [decision] Where a source cannot do what its sibling does, the adapter answers honestly and the
   gap goes upstream, rather than a local workaround. Group posts lacked the PDF, picture and link
@@ -333,18 +319,11 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
 
 ## 2026-09-09
 
-- [decision] A delta endpoint is not automatically the incremental answer, and the thing to check
-  before designing a state around one is what its response can actually carry. Microsoft To Do has
-  `list-todo-tasks-delta`, and the first shape for this sync was built on it, the way the mailbox is.
-  Its zod schema turned out to be `{ todoTaskListId }` and nothing else, so it takes no `expand`,
-  and a task's steps and linked resources are navigation properties Graph omits unless expanded. The
-  delta would therefore have discovered which tasks changed and then cost one `get-todo-task` per
-  task to learn what each one holds. The plain listing takes `expand` and pages normally, so reading
-  the list whole is fewer requests than a delta plus a fetch per changed task, needs no cursor in the
-  state at all, and reports a deletion by absence on every run rather than on the single run a delta
-  reports its removal. Cheaper, smaller, and more robust, by not using the endpoint built for the
-  job. The general form: a delta tells you WHAT changed, not what the thing now IS, and when those
-  differ the listing usually wins.
+- [decision] A delta endpoint is not automatically the incremental answer: a delta tells you WHAT
+  changed, not what the thing now IS. To Do's `list-todo-tasks-delta` takes no `expand`, so a task's
+  steps and links would have cost one `get-todo-task` per changed task, while the plain listing
+  takes `expand`, needs no cursor and shows a deletion by absence on every run (`todo-state.ts:80`).
+  Before designing a state around a delta, check what its response can actually carry.
 
 - [gotcha] A survivor no test can kill usually marks dead code, not a missing test. A guard in front
   of a division that already yields `NaN` (`ocr-language.ts`), a stamp every card overwrote
@@ -368,51 +347,36 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   explained in the body.
   Merges: 2026-09-08, 2026-09-11.
 
-- [decision] A source reachable only through an endpoint whose token expires without a browser
-  sign-in is not a source `update` can own. Teams chats were built to the use-case test on the
-  library's Microsoft-internal substrate commands, both of which answered on the day; the next
-  morning the substrate token had lapsed while the Graph token beside it was still good, and the
-  library refreshes the one and not the other. Every scheduled `update` would have failed on that
-  one category, forever, until a person logged in again. The work is parked on `teams-chats-wip`
-  and Teams channels, which 2.7.0 landed on Graph the same day, took the place. The general form:
-  before building a category, check not only that a read works but that it will still work
-  tomorrow without anyone at the keyboard, since `update` is the run that matters.
+- [decision] A source reachable only through an endpoint whose token lapses without a browser
+  sign-in is not a source `update` can own. Teams chats were built on the library's
+  Microsoft-internal substrate commands, which answered on the day; by the next morning the
+  substrate token had lapsed while the Graph token beside it was still good, so every scheduled
+  `update` would have failed there until a person signed in. Teams channels, on Graph since 2.7.0,
+  took its place, and the parked `teams-chats-wip` branch has since gone. Before building a
+  category, check that a read will still work tomorrow with nobody at the keyboard.
 
 ## 2026-09-12
 
-- [gotcha] A new source kind that borrows another kind's id collides everywhere ids are held
-  together, and nothing fails loudly. A site's lists are keyed by the site's own id, the same id
-  its libraries are keyed by, and two maps in the tree key by id alone: the picker's synced marks
-  (`syncedMarks`) and the global report's untouched tail (`touched.has(source.id)`). With the
-  lists wired in, a site synced for its libraries would have shown as synced for its lists, and a
-  lists run would have struck the site's libraries off the tail as if they had run. Neither is a
-  crash; both are a lie in the output. `sourceKey` in `sync-state.ts` (`lists:<siteId>` for the
-  lists, the id alone for everything else) is what every such map now keys by, and `sourceLabel`
-  names the run `<Site> (lists)` beside `<Group> (group inbox)`. When a kind shares an id with
-  another, grep for every `source.id` lookup before wiring it in.
+- [gotcha] A new source kind that borrows another kind's id collides wherever ids are held together,
+  and nothing fails loudly: a site's lists share the site's id with its libraries, so the picker's
+  synced marks and the global report's untouched tail would each have taken one for the other. Every
+  such map now keys by `sourceKey` (`sync-state.ts:33`). When a new kind shares an id with an
+  existing one, grep every `source.id` lookup before wiring it in.
 
-- [gotcha] Graph's `hidden` and `readOnly` column flags do not catch every column nobody filled
-  in. A live run over one real list showed `Content Type` and `Attachments` in the table beside
-  the project columns: `ContentType` is flagged neither hidden nor read-only and is filed under
-  the `_Hidden` column group instead, and `Attachments` is a plain editable flag the list keeps
-  for itself. The rule now hides the group and names the column. The general form: for a category
-  whose output is a projection of what Graph flags, render one real item and read the header
-  before trusting the flags, since the probe showed the flags and not what they missed.
+- [gotcha] Graph's `hidden` and `readOnly` column flags miss columns nobody fills in: a live run
+  over one real list showed `Content Type`, filed under the `_Hidden` group instead
+  (`sharepoint-list.ts:49`), and `Attachments`, a plain editable flag the list keeps for itself. For
+  a category whose output is a projection of what Graph flags, render one real item and read it
+  before trusting the flags.
 
 ## 2026-09-19
 
-- [mistake] A mutation run opened the browser to sign in, over and over. The wired tests in
-  `build-deps.test.ts` faked every reader but the mail reader, which nothing in those tests
-  reached, and their config said `interactive: true`, which nothing in those tests needed. Under
-  Stryker every mutant of `run-sync.ts` runs the whole suite, and a mutant that flips `if
-  (known.value.some(kind === 'mailbox'))` to `if (true)` sends the `update` test into the real
-  mail reader, whose first Graph call opens a sign-in browser. One unfaked reader is one line
-  away from being reached, and mutation is what walks that line. Two fixes, both kept: every
-  `buildDeps` override site now fakes all ten readers (the earlier lesson on auditing every call
-  site, applied to readers this time), and the test config is `interactive: false`, so a reader
-  left real by a future test fails fast instead of asking a person to sign in. Rule: a test
-  that wires the real composition is interactive never, and fakes every port that touches the
-  network, not only the ones the scenario reaches.
+- [mistake] A mutation run opened the browser to sign in, over and over: the wired tests in
+  `build-deps.test.ts` left the mail reader real and said `interactive: true`, and a mutant turning
+  `if (known.value.some(kind === 'mailbox'))` into `if (true)` walked the `update` test into it.
+  Mutation is what walks the line from an unfaked reader to the network. A test that wires the real
+  composition is never interactive (`build-deps.test.ts:20`) and fakes every port that touches the
+  network, not only the ones its scenario reaches.
 
 ## 2026-09-26
 

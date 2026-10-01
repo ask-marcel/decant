@@ -24,6 +24,48 @@ left. Nothing reads this file at session start; grep it when a question needs th
   exempt (`inReach` in `sync-calendar.ts`).
   Archived 2026-10-01: graduate, now stated at src/use-cases/sync-calendar.ts:192-195.
 
+## 2026-09-19
+
+- [mistake] A mutation run opened the browser to sign in, over and over. The wired tests in
+  `build-deps.test.ts` faked every reader but the mail reader, which nothing in those tests
+  reached, and their config said `interactive: true`, which nothing in those tests needed. Under
+  Stryker every mutant of `run-sync.ts` runs the whole suite, and a mutant that flips `if
+  (known.value.some(kind === 'mailbox'))` to `if (true)` sends the `update` test into the real
+  mail reader, whose first Graph call opens a sign-in browser. One unfaked reader is one line
+  away from being reached, and mutation is what walks that line. Two fixes, both kept: every
+  `buildDeps` override site now fakes all ten readers (the earlier lesson on auditing every call
+  site, applied to readers this time), and the test config is `interactive: false`, so a reader
+  left real by a future test fails fast instead of asking a person to sign in. Rule: a test
+  that wires the real composition is interactive never, and fakes every port that touches the
+  network, not only the ones the scenario reaches.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-09-19 (the `interactive` half is
+  stated at src/composition/build-deps.test.ts:20-21).
+
+## 2026-09-12
+
+- [gotcha] A new source kind that borrows another kind's id collides everywhere ids are held
+  together, and nothing fails loudly. A site's lists are keyed by the site's own id, the same id
+  its libraries are keyed by, and two maps in the tree key by id alone: the picker's synced marks
+  (`syncedMarks`) and the global report's untouched tail (`touched.has(source.id)`). With the
+  lists wired in, a site synced for its libraries would have shown as synced for its lists, and a
+  lists run would have struck the site's libraries off the tail as if they had run. Neither is a
+  crash; both are a lie in the output. `sourceKey` in `sync-state.ts` (`lists:<siteId>` for the
+  lists, the id alone for everything else) is what every such map now keys by, and `sourceLabel`
+  names the run `<Site> (lists)` beside `<Group> (group inbox)`. When a kind shares an id with
+  another, grep for every `source.id` lookup before wiring it in.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-09-12 (the instance is stated at
+  src/domain/sync-state.ts:33-35, the general rule is not).
+
+- [gotcha] Graph's `hidden` and `readOnly` column flags do not catch every column nobody filled
+  in. A live run over one real list showed `Content Type` and `Attachments` in the table beside
+  the project columns: `ContentType` is flagged neither hidden nor read-only and is filed under
+  the `_Hidden` column group instead, and `Attachments` is a plain editable flag the list keeps
+  for itself. The rule now hides the group and names the column. The general form: for a category
+  whose output is a projection of what Graph flags, render one real item and read the header
+  before trusting the flags, since the probe showed the flags and not what they missed.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-09-12 (the instance is stated at
+  src/domain/sharepoint-list.ts:49-51, the general rule is not).
+
 ## 2026-09-11
 
 - [gotcha] The pre-commit typecheck runs on the working tree, not on the commit, so a landing split
@@ -38,7 +80,34 @@ left. Nothing reads this file at session start; grep it when a question needs th
   the body: a commit that compiles beats two that meet a line count.
   Archived 2026-10-01: merge, into the prove-the-commit entry (2026-09-11).
 
+- [decision] A source reachable only through an endpoint whose token expires without a browser
+  sign-in is not a source `update` can own. Teams chats were built to the use-case test on the
+  library's Microsoft-internal substrate commands, both of which answered on the day; the next
+  morning the substrate token had lapsed while the Graph token beside it was still good, and the
+  library refreshes the one and not the other. Every scheduled `update` would have failed on that
+  one category, forever, until a person logged in again. The work is parked on `teams-chats-wip`
+  and Teams channels, which 2.7.0 landed on Graph the same day, took the place. The general form:
+  before building a category, check not only that a read works but that it will still work
+  tomorrow without anyone at the keyboard, since `update` is the run that matters.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-09-11 (the `teams-chats-wip` branch it
+  names is gone, locally and on origin).
+
 ## 2026-09-09
+
+- [decision] A delta endpoint is not automatically the incremental answer, and the thing to check
+  before designing a state around one is what its response can actually carry. Microsoft To Do has
+  `list-todo-tasks-delta`, and the first shape for this sync was built on it, the way the mailbox is.
+  Its zod schema turned out to be `{ todoTaskListId }` and nothing else, so it takes no `expand`,
+  and a task's steps and linked resources are navigation properties Graph omits unless expanded. The
+  delta would therefore have discovered which tasks changed and then cost one `get-todo-task` per
+  task to learn what each one holds. The plain listing takes `expand` and pages normally, so reading
+  the list whole is fewer requests than a delta plus a fetch per changed task, needs no cursor in the
+  state at all, and reports a deletion by absence on every run rather than on the single run a delta
+  reports its removal. Cheaper, smaller, and more robust, by not using the endpoint built for the
+  job. The general form: a delta tells you WHAT changed, not what the thing now IS, and when those
+  differ the listing usually wins.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-09-09 (the To Do instance is stated at
+  src/domain/todo-state.ts:80-83, the general rule is not).
 
 - [gotcha] A `?? fallback` behind a lookup that cannot miss is dead code the coverage gate cannot see
   and mutation testing can. `syncTodo` planned each task's path into a `Map` and then wrote
@@ -53,6 +122,18 @@ left. Nothing reads this file at session start; grep it when a question needs th
 
 ## 2026-09-08
 
+- [gotcha] A checkpoint that advances past work it has not confirmed loses that work in silence. Both
+  halves of this sync saved a Graph cursor before the conversion or the render it covered: `sync-site`
+  wrote `deltaLink` when the sweep returned, `sync-mailbox` wrote every folder cursor in `finishQueue`,
+  and both then sliced a window off `pending` whether each item had succeeded or not. A delta only
+  reports what changed, so the failed item was unreachable from that moment on, and the only way back
+  was deleting `deltaLink` by hand to force a full re-sweep. The report meanwhile said "will be tried
+  again on the next run" and the next run said `0 failed`, which is the worst pairing available: a
+  promise, and a clean bill of health covering the thing it promised about. Wherever a cursor moves
+  past work, the record of what that work left unfinished has to move with it, in the same write.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-09-08 (the instance is stated at
+  src/domain/retry-policy.ts:3-7, the general rule is not).
+
 - [gotcha] `src/domain/worklist.ts` carried two NUL bytes where `sortKey` meant spaces, committed in
   `663d2f2` and invisible in every editor since. NUL is completely ignorable in ICU collation, so
   `localeCompare` compared `"\x00${itemId}"` against `"${lastModified} ${id}"` as though the prefix
@@ -63,6 +144,17 @@ left. Nothing reads this file at session start; grep it when a question needs th
   the bytes survived a scaffold commit in the first place.
   Archived 2026-10-01: archive, fixed: src/domain/worklist.ts holds no NUL byte.
 
+- [decision] Every failed conversion is retried, capped at three attempts, rather than routed by
+  error kind. `DriveReaderError` does distinguish `transient`, `throttled`, `permanent` and
+  `unrenderable`, but `ConvertOutcome.failed` flattens whichever one it was into a `"kind: message"`
+  string, so a kind-aware policy means threading a new field through `convertFile`,
+  `convertAttachment` and `renderThread`. Against that: the kind of the failure that prompted this
+  work was never established, so a policy that gives up on `permanent` might not have brought back
+  the one file it was written for. A flat cap costs at most two pointless calls spread over two later
+  runs and needs no new information anywhere.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-09-08 (the cap is stated at
+  src/domain/retry-policy.ts:16-20, the reason for no kind routing is not).
+
 - [decision] A file given up on stays in the ledger and is named in every report from then on, under
   a heading of its own saying it will not be tried again. Dropping the entry at the cap was the
   obvious alternative and it recreates the original bug three runs later instead of one: the file
@@ -71,6 +163,27 @@ left. Nothing reads this file at session start; grep it when a question needs th
   the thing that makes someone go and look at it. An edit at the source clears it, since the sweep
   returns the file with a new cTag and a fresh conversion drops the entry.
   Archived 2026-10-01: graduate, now stated at src/domain/retry-policy.ts:16-19.
+
+- [gotcha] A record that brings lost work back has to live at the level the queue is keyed on, not at
+  the level of the thing that failed. The plan for a failed attachment inside a thread that otherwise
+  rendered named two shapes, and the finer one turned out not to exist: a per-attachment record could
+  not get its thread re-queued, because the folder cursors had advanced when the thread's messages
+  were swept and the thread-level ledger is the only thing that reaches a thread afterwards. The
+  document had to be rewritten to carry the recovered file's card in any case, so the finer shape
+  would have saved the other attachments' conversions and nothing besides. Worth checking before
+  designing a partial-retry: whatever re-queues the work sets the smallest unit that can be retried,
+  and everything below it re-runs whether or not it needs to.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-09-08 (843 bytes).
+
+- [gotcha] Code written for a case nothing can yet reach is untested by construction, and it was
+  wrong here. `drainQueue` dropped a per-run given-up note in two places, `givenUp: notes.givenUp` in
+  the window fold and a final line that replaced the list rather than adding to it, both written in
+  8f38b2c when only the ledger produced such notes and no render could. Coverage was 100% and
+  mutation 92% over those very lines, because a mutant that drops an always-empty list changes
+  nothing observable. What found it was the first test that produced a note through that path, which
+  is the only thing that could have. When adding a field that nothing fills yet, either fill it from
+  something or leave it out until a caller exists.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-09-08 (726 bytes).
 
 - [mistake] Ran the gates on the working tree, then committed the index, and reported the gates as
   proof of what landed. `git merge --no-commit` stages the merge result; edits made after it, which
@@ -482,6 +595,18 @@ left. Nothing reads this file at session start; grep it when a question needs th
   is traffic worth mirroring, which is a fact about this tenant and could change.
   Archived 2026-10-01: archive, superseded: the group inbox source was built
   (src/use-cases/sync-group.ts; three group inboxes in `kb/_sync-report.md`).
+
+- [gotcha] A fake that answers whatever it is handed will keep a dead feature green. The OCR fallback
+  for scanned PDFs passed its tests from 24 July to 6 September and had never read one: `pdfText`
+  gave the reader the PDF's own path, and RapidOCR loads through PIL, which refuses a PDF outright
+  with `UnidentifiedImageError`. The OCR fake returns text for any path at all, so every test agreed
+  the feature worked, and the one thing the fake could not say is that its real counterpart takes
+  pictures and nothing else. It surfaced only because a real library held a scanned appendix and the
+  file came out holding the note instead of its own text. The trap is open wherever a fake is keyed
+  by a path or an id it never validates: those tests prove the wiring, not that the adapter can do
+  what it was asked. The fix was to read the pages, one image per page out of
+  `extract-drive-item-images`, which is what OCR can actually open.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (925 bytes).
 
 ## 2026-08-28
 
