@@ -19,6 +19,19 @@ left. Nothing reads this file at session start; grep it when a question needs th
   exempt (`inReach` in `sync-calendar.ts`).
   Archived 2026-10-01: graduate, now stated at src/use-cases/sync-calendar.ts:192-195.
 
+## 2026-09-09
+
+- [gotcha] A `?? fallback` behind a lookup that cannot miss is dead code the coverage gate cannot see
+  and mutation testing can. `syncTodo` planned each task's path into a `Map` and then wrote
+  `files.get(task.id) ?? ''` in the loop over the very tasks that built it. Line and function
+  coverage read 100%, because the line runs every time; the fallback is simply unreachable, so a
+  mutant replacing it survives and the module scored 87 against a 90 break. The fix was not a test:
+  pairing each item with its computed value (`planTaskFiles` returning `{ task, file }[]` instead of
+  a map to look the file up in) removed the lookup, the fallback and the mutant together. Wherever a
+  plan is built from a collection and then consumed by iterating the same collection, hand back the
+  pairs rather than an index into them.
+  Archived 2026-10-01: merge, into the dead-code entry (2026-09-09).
+
 ## 2026-09-08
 
 - [gotcha] `src/domain/worklist.ts` carried two NUL bytes where `sortKey` meant spaces, committed in
@@ -50,6 +63,22 @@ left. Nothing reads this file at session start; grep it when a question needs th
   reply-to-a-reply before concluding anything about a threading header, and read the first
   angle-bracketed token of the whole folded value rather than splitting on lines or whitespace.
   Archived 2026-10-01: graduate, now stated at src/domain/root-message-id.ts:2-17.
+
+- [gotcha] `expect(rendered).toContain('- name')` cannot tell a bare list entry from that entry with
+  a suffix appended, so every mutant that appends something survives it. Five survivors in
+  `zip-manifest.ts` and two in `thread-card.ts` were all of this shape: a member with nothing read
+  out of it must list as its name ALONE, and only a whole-document `toBe` says so. This is the same
+  lesson as the 2026-08-28 entry on fragment assertions, met from the other direction: there the
+  fragments missed a collapsed layout, here they miss an added suffix.
+  Archived 2026-10-01: merge, into the whole-document entry (2026-08-30).
+
+- [mistake] An ordering test whose keys the engine already orders proves nothing. The first version
+  of the `mail-meta` sort test used `'1234567890'` and `'ffff000000'`, and passed against an
+  implementation with no sort at all, because JavaScript hoists integer-like keys to the front of an
+  object whatever order it was built in. That hoisting was the very hazard the sort existed for, so
+  the test was written from the right instinct and still tested nothing. Two keys that are NOT
+  integer-like, inserted in reverse, is what makes the sort the only explanation for the result.
+  Archived 2026-10-01: merge, into the only-explanation entry (2026-08-30).
 
 - [decision] Per-thread cards are written in `writeThread`, never inside the conversion. The
   conversion short-circuits on a content the store already holds, which is the common case for
@@ -104,6 +133,17 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: archive, superseded: the library rewrote the heuristic before 2.4.0 and the
   write-up was retired (523cf99, 2026-09-06).
 
+- [lesson] Deleting a shared store leaves dead code that only mutation testing sees. Moving
+  attachments from one content-addressed store at the mailbox root into each thread's own folder
+  dropped `render-thread.ts` from 91.13 to 88.60, under the per-file gate, with the whole suite
+  green and line coverage at 100. Every new survivor pointed at the same thing: naming the file
+  before its bytes are fetched made `asName` total, so an optional field, two `=== undefined`
+  guards, a `Record<string, string>` of card names and the three function parameters that carried it
+  were all answering a question that could no longer be asked. Removing them, rather than writing
+  tests for paths nothing can reach, put the file back over 90. Read a mutation drop after a
+  deletion as a map of what the deletion orphaned.
+  Archived 2026-10-01: merge, into the dead-code entry (2026-09-09).
+
 - [gotcha] The card is written OVER the converter's extract, on purpose: both want
   `_attachments/<name>.<ext>.md`, so `writeCards` reads the extract, carries the body forward and
   replaces the library's stamp with the arrival facts. One document per file in the folder, not a
@@ -121,6 +161,13 @@ left. Nothing reads this file at session start; grep it when a question needs th
   suggests, and both need the other half.
   Archived 2026-10-01: graduate, now stated at src/use-cases/thread-files.ts:101.
 
+- [gotcha] `mutate:changed` scores the ALL FILES aggregate, so its exit code passes while a single
+  file sits under 90. `render-thread.ts` has now gone 91.13 → 88.60 → 90.08 → 89.92 → 88.24 → 90.03
+  across four changes, each time pulled back by tests written against the survivors. Read the
+  per-file row and treat that file's number as the gate; the aggregate only says the others are
+  carrying it.
+  Archived 2026-10-01: merge, into the mutation-aggregate entry (2026-08-30).
+
 - [gotcha] Never read a bare `bunx stryker run`. `stryker.conf.json` sets `incremental: true`, and
   the repo's own `mutate:changed` and `mutate:staged` delete `reports/stryker-incremental.json`
   first for exactly that reason. Running stryker directly does not, so it reports cached verdicts
@@ -128,6 +175,15 @@ left. Nothing reads this file at session start; grep it when a question needs th
   dead, and the real count was one. Use the scripts, or remove the incremental file yourself.
   Archived 2026-10-01: archive, Stryker runs without incremental mode now (stryker.conf.json
   `_incremental_comment`).
+
+- [lesson] A stamp nothing reads is a stamp nothing can get wrong. `render-thread.ts` sat at 90.27
+  and four of its eleven survivors were the `site`, `library` and `source` of the DocumentStamp: a
+  card is written over every top-level document the converter produced, so the stamp was replaced
+  before any test could see it. The exception is a saved email, which unpacks into a FOLDER whose
+  documents sit below the card's path and keep the stamp. Asserting one of those killed all four.
+  The pattern generalises: when a field appears untestable, find the one path where it survives to
+  disk, and if there is none, the field is dead rather than untested.
+  Archived 2026-10-01: merge, into the dead-code entry (2026-09-09).
 
 - [gotcha] A markdown link destination ends at the first space unless it is wrapped in `<>`. Every
   path this vault writes goes into one, and mail attachments are named by people, so
@@ -209,6 +265,14 @@ left. Nothing reads this file at session start; grep it when a question needs th
 
 ## 2026-08-28
 
+- [gotcha] The mutation gate scores the aggregate of the staged files, so a new module can sit well
+  under 90 inside a passing run, and a big weak file can fail a run where everything else is fine. It
+  took five rounds to get this one over the line: exact assertions instead of `toContain`, then the
+  input shapes the fixtures never used (LF endings, unquoted parameters, a space-folded header), then
+  simplifying the code so there were fewer defensive branches to kill in the first place. Read the
+  per-file column, not just the total.
+  Archived 2026-10-01: merge, into the mutation-aggregate entry (2026-08-30).
+
 - [decision] `mime.ts` and `mime-text.ts` are two modules because the shape of a message and the
   encodings its pieces travelled in are two subjects. The split fell out of the commit-size gate and
   turned out to be the better design: each file is under a hundred lines, each has its own tests, and
@@ -227,6 +291,15 @@ left. Nothing reads this file at session start; grep it when a question needs th
   hook (the five fast gates only), it runs in `ci.yml`, and this repo has no remote, so CI never runs
   and that local script is the only mutation gate that actually executes.
   Archived 2026-10-01: graduate, now stated at scripts/mutate-changed.sh:19-23.
+
+- [gotcha] A suite built entirely from `toContain` leaves a renderer's layout untested, and mutation
+  is what says so. `global-report.ts` had eight passing tests and scored 67.74%: every survivor was a
+  blank-line separator turned into a string, `join('\n')` turned into `join('')`, or `trimEnd` turned
+  into `trimStart`. Each one changes the document a reader opens, and no fragment assertion could see
+  any of them. One `toBe` against a whole small rendering killed all ten and took the file to 100%.
+  Where the output IS a document, pin at least one complete example; keep the fragment tests for the
+  scenarios they name, but never let them be the only thing holding the shape.
+  Archived 2026-10-01: merge, into the whole-document entry (2026-08-30).
 
 ## 2026-08-27
 
@@ -249,6 +322,15 @@ left. Nothing reads this file at session start; grep it when a question needs th
   while PP-OCRv5 `latin` beat both `latin` v3 and `en` v4 on the same English page and fixed v3's
   habit of reading `O` as `0` inside acronyms. Hence the pair now in use: `ch` at v4, `latin` at v5.
   Archived 2026-10-01: graduate, now stated at src/infra/ocr-rapid.ts:40-48.
+
+- [mistake] A guard no mutant can kill is usually dead code, not a hole in the tests. Stryker put
+  `ocr-language.ts` at 83.33% and one survivor was `if (written.length === 0) return false` sitting
+  in front of a division that already yields `NaN` for that input, and `NaN` compares false. The
+  guard changed nothing. Reformulating the comparison to multiply instead of divide
+  (`ideographs > written.length * SHARE`) removed the guard AND made a second survivor, `>` mutated
+  to `>=`, killable by the existing empty-text case, since `0 >= 0` is true where `0 > 0` is not.
+  Two survivors and a line of code gone for one rewrite; only the third needed a new test.
+  Archived 2026-10-01: merge, into the dead-code entry (2026-09-09).
 
 - [gotcha] Graph reports `hasAttachments: false` on a message whose only attachment is inline, so a
   signature logo or a pasted screenshot is invisible to any code that gates a listing on that flag.
@@ -274,6 +356,13 @@ left. Nothing reads this file at session start; grep it when a question needs th
   when a thread body suddenly stops linking its attachments.
   Archived 2026-10-01: graduate, now stated at src/domain/thread.ts:50-53.
 
+- [mistake] A test whose subject has a fallback path can pass without ever exercising its subject.
+  Every inline-image identity test used one candidate picture, so the one-to-one last resort produced
+  the right pair whatever the matching returned: green tests, 28 surviving mutants, 65% on a new
+  module. Two candidates in the fixture is what makes an identity match the only explanation for the
+  result. Mutation testing found this; coverage was already 100%.
+  Archived 2026-10-01: merge, into the only-explanation entry (2026-08-30).
+
 - [gotcha] `get-mail-attachment` on an `itemAttachment` returns the item, not bytes, so anything that
   fetches bytes first fails it with "Graph returned no bytes" and retries it every run. `@odata.type`
   is the discriminator and Graph returns it whatever the `$select` asks for. Route on that, not on
@@ -288,6 +377,11 @@ left. Nothing reads this file at session start; grep it when a question needs th
   it once. Written down because a future reader will wonder why one address is taken from bytes and
   another from text.
   Archived 2026-10-01: graduate, now stated at src/use-cases/convert-attachment.ts:47-48.
+
+- [gotcha] The mutation gate compares the AGGREGATE against the break threshold, not each file. A new
+  module can sit under 90 while the run passes. Worth checking the per-file column after adding one:
+  `icalendar.ts` first landed at 73.6% inside a passing run.
+  Archived 2026-10-01: merge, into the mutation-aggregate entry (2026-08-30).
 
 - [gotcha] A terminal block that rewrites itself in place climbs by the height of the PREVIOUS draw,
   never the one it is about to make, which is why `src/infra/progress-bar.ts` keeps a `drawn`
@@ -324,6 +418,17 @@ left. Nothing reads this file at session start; grep it when a question needs th
 
 ## 2026-08-14
 
+- [gotcha] Deleting well-tested code can fail the mutation gate even when nothing newly written is
+  weak. Moving the day-folder logic out of `thread.ts` dropped the aggregate to 89.67% against a
+  break threshold of 90, though every line written that day was mutation-clean: the removed block was
+  the well-covered share of that file, so what remained (subject trimming, the header-line anchor,
+  participant sorting) became a much larger fraction of a smaller file and its PRE-EXISTING debt
+  surfaced. The fix is tests for the debt the deletion exposed, not for the change itself: 4 tests in
+  `output-paths.test.ts` (88.10 -> 97.62%) and 4 in `thread.test.ts` (85.86 -> 88.89%) brought the
+  aggregate to 90.59%. Expect this on any commit that removes a tested block from a mixed-coverage
+  file, and read the per-file table before assuming the new code is at fault.
+  Archived 2026-10-01: merge, into the mutation-aggregate entry (2026-08-30).
+
 - [decision] The terminal is a sink with a checkpoint in front of it, the same way the filesystem has
   one in `kb-path.ts`. `printLine` (`src/presenter/output.ts`) drops C0 except tab and newline, plus
   DEL and C1, from everything it prints. The bug that motivated it: the operator's picker answer
@@ -352,6 +457,15 @@ left. Nothing reads this file at session start; grep it when a question needs th
   that used to read as "sync complete" and strand the rest of the folder. Drive delta stays at 1000,
   mail at 100 to keep each response small; paging still continues if Graph caps the page lower.
   Archived 2026-10-01: graduate, now stated at src/infra/mail-reader-marcel.ts:139-143.
+
+- [gotcha] The big use-case files carry pre-existing sub-90% mutation debt (run-sync ~81%, sync-site
+  ~86%, convert-file/convert-attachment/render-thread ~85-88% before cleanup). The scaffold's
+  "90.77%" is the all-files aggregate, lifted by many 100% domain files; `mutate:changed` gates on
+  the aggregate of the *changed* files only, so touching a single large use-case file often trips the
+  90 break threshold even when the change itself is mutation-clean. Budget for either cleaning the
+  file to 90 or tracking the debt; the survivors are mostly unkilled guard clauses (`if (!x.ok)`
+  mutated to `if (false)`), logger-payload object literals mutated to `{}`, and `?.` optional chains.
+  Archived 2026-10-01: merge, into the mutation-aggregate entry (2026-08-30).
 
 - [decision] Mailbox attachments in the shared `_attachments` store are always named
   `<name>-<hash8>.<ext>`, never readable-name-with-a-suffix-only-on-clash. The on-clash form needed a

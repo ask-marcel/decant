@@ -22,14 +22,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   already used one canonical command name and one specific id flag each were untouched; anything on
   an `--id`-style alias would have broken. Pin-read the CHANGELOG on any future bump of this package.
 
-- [gotcha] The big use-case files carry pre-existing sub-90% mutation debt (run-sync ~81%, sync-site
-  ~86%, convert-file/convert-attachment/render-thread ~85-88% before cleanup). The scaffold's
-  "90.77%" is the all-files aggregate, lifted by many 100% domain files; `mutate:changed` gates on
-  the aggregate of the *changed* files only, so touching a single large use-case file often trips the
-  90 break threshold even when the change itself is mutation-clean. Budget for either cleaning the
-  file to 90 or tracking the debt; the survivors are mostly unkilled guard clauses (`if (!x.ok)`
-  mutated to `if (false)`), logger-payload object literals mutated to `{}`, and `?.` optional chains.
-
 - [gotcha] `crypto.subtle.digest('SHA-256', bytes)` fails typecheck under this repo's TS: a plain
   `Uint8Array` is `Uint8Array<ArrayBufferLike>`, which is not assignable to `BufferSource` (the
   SharedArrayBuffer case), and it is async besides. `new Bun.CryptoHasher('sha256').update(bytes)
@@ -89,16 +81,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   `src/domain/site-state.ts`) is what makes the suffix distinguishing. Hash before slicing whenever
   a shared-prefix identifier is the source of a short suffix.
 
-- [gotcha] Deleting well-tested code can fail the mutation gate even when nothing newly written is
-  weak. Moving the day-folder logic out of `thread.ts` dropped the aggregate to 89.67% against a
-  break threshold of 90, though every line written that day was mutation-clean: the removed block was
-  the well-covered share of that file, so what remained (subject trimming, the header-line anchor,
-  participant sorting) became a much larger fraction of a smaller file and its PRE-EXISTING debt
-  surfaced. The fix is tests for the debt the deletion exposed, not for the change itself: 4 tests in
-  `output-paths.test.ts` (88.10 -> 97.62%) and 4 in `thread.test.ts` (85.86 -> 88.89%) brought the
-  aggregate to 90.59%. Expect this on any commit that removes a tested block from a mixed-coverage
-  file, and read the per-file table before assuming the new code is at fault.
-
 - [gotcha] RapidOCR's dotted-path params take enum members, never strings.
   `RapidOCR(params={"Rec.lang_type": "en"})` raises `TypeError: The value of Rec.lang_type must be
   Enum Type.`; it needs `LangRec("en")` from `rapidocr.utils.typings`, which is what
@@ -124,24 +106,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   assume a model covers a script: the dictionary is inside the ONNX file and takes one line to read,
   `ort.InferenceSession(path).get_modelmeta().custom_metadata_map["character"].splitlines()`.
   Sizes on this machine: `en` v4 95, `latin` v3 185, `latin` v5 502, `ch` v4 6623, `ch` v5 18383.
-
-- [mistake] A guard no mutant can kill is usually dead code, not a hole in the tests. Stryker put
-  `ocr-language.ts` at 83.33% and one survivor was `if (written.length === 0) return false` sitting
-  in front of a division that already yields `NaN` for that input, and `NaN` compares false. The
-  guard changed nothing. Reformulating the comparison to multiply instead of divide
-  (`ideographs > written.length * SHARE`) removed the guard AND made a second survivor, `>` mutated
-  to `>=`, killable by the existing empty-text case, since `0 >= 0` is true where `0 > 0` is not.
-  Two survivors and a line of code gone for one rewrite; only the third needed a new test.
-
-- [mistake] A test whose subject has a fallback path can pass without ever exercising its subject.
-  Every inline-image identity test used one candidate picture, so the one-to-one last resort produced
-  the right pair whatever the matching returned: green tests, 28 surviving mutants, 65% on a new
-  module. Two candidates in the fixture is what makes an identity match the only explanation for the
-  result. Mutation testing found this; coverage was already 100%.
-
-- [gotcha] The mutation gate compares the AGGREGATE against the break threshold, not each file. A new
-  module can sit under 90 while the run passes. Worth checking the per-file column after adding one:
-  `icalendar.ts` first landed at 73.6% inside a passing run.
 
 - [decision] `ThreadRecord.attachments` records what the messages carried, not every file the run
   wrote for them. Pictures taken out of a document, and a raw file written beside its markdown, are
@@ -176,36 +140,24 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   Outlook message, whose boundaries carry `.` and `+`. When a value comes from somewhere else, put
   what that somewhere else actually sends in the fixture.
 
-- [gotcha] The mutation gate scores the aggregate of the staged files, so a new module can sit well
-  under 90 inside a passing run, and a big weak file can fail a run where everything else is fine. It
-  took five rounds to get this one over the line: exact assertions instead of `toContain`, then the
-  input shapes the fixtures never used (LF endings, unquoted parameters, a space-folded header), then
-  simplifying the code so there were fewer defensive branches to kill in the first place. Read the
-  per-file column, not just the total.
-
-- [gotcha] A suite built entirely from `toContain` leaves a renderer's layout untested, and mutation
-  is what says so. `global-report.ts` had eight passing tests and scored 67.74%: every survivor was a
-  blank-line separator turned into a string, `join('\n')` turned into `join('')`, or `trimEnd` turned
-  into `trimStart`. Each one changes the document a reader opens, and no fragment assertion could see
-  any of them. One `toBe` against a whole small rendering killed all ten and took the file to 100%.
-  Where the output IS a document, pin at least one complete example; keep the fragment tests for the
-  scenarios they name, but never let them be the only thing holding the shape.
-
 ## 2026-08-30
 
-- [gotcha] `expect(rendered).toContain('- name')` cannot tell a bare list entry from that entry with
-  a suffix appended, so every mutant that appends something survives it. Five survivors in
-  `zip-manifest.ts` and two in `thread-card.ts` were all of this shape: a member with nothing read
-  out of it must list as its name ALONE, and only a whole-document `toBe` says so. This is the same
-  lesson as the 2026-08-28 entry on fragment assertions, met from the other direction: there the
-  fragments missed a collapsed layout, here they miss an added suffix.
+- [gotcha] Fragment assertions leave a document's shape untested. A `global-report.ts` suite built
+  from `toContain` scored 67.74% with every survivor a blank-line separator turned into a string,
+  `join('\n')` turned into `join('')`, or `trimEnd` into `trimStart`, and `toContain('- name')`
+  cannot tell a bare list entry from one with a suffix appended (five survivors in
+  `zip-manifest.ts`, two in `thread-card.ts`). Where the output IS a document, pin at least one
+  complete rendering with `toBe`, and keep the fragment tests for the scenarios they name.
+  Merges: 2026-08-28, 2026-08-30.
 
-- [mistake] An ordering test whose keys the engine already orders proves nothing. The first version
-  of the `mail-meta` sort test used `'1234567890'` and `'ffff000000'`, and passed against an
-  implementation with no sort at all, because JavaScript hoists integer-like keys to the front of an
-  object whatever order it was built in. That hoisting was the very hazard the sort existed for, so
-  the test was written from the right instinct and still tested nothing. Two keys that are NOT
-  integer-like, inserted in reverse, is what makes the sort the only explanation for the result.
+- [mistake] A test passes without testing its subject when something else explains the result. Every
+  inline-image identity test used one candidate picture, so the one-to-one fallback paired them
+  whatever the matching returned (green tests, 28 surviving mutants, 65%). The first `mail-meta`
+  sort test used `'1234567890'` and `'ffff000000'`, and JavaScript hoists an integer-like key to the
+  front of an object whatever order it was built in, so the test passed with no sort at all. Build
+  the fixture so the subject is the only explanation: two candidates, keys that are not integer-like
+  inserted in reverse.
+  Merges: 2026-08-27, 2026-08-30.
 
 - [gotcha] `eslint --cache` reports findings against paths that no longer hold them. Several rounds
   went into a `prettier/prettier` warning attributed to `mail-meta.test.ts` that actually lived in
@@ -250,16 +202,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   exercises no parallel folder creation at all. Run it into a scratch `KB_ROOT` with the OCR cache
   symlinked in, which keeps it off the real vault and off a cold cache.
 
-- [lesson] Deleting a shared store leaves dead code that only mutation testing sees. Moving
-  attachments from one content-addressed store at the mailbox root into each thread's own folder
-  dropped `render-thread.ts` from 91.13 to 88.60, under the per-file gate, with the whole suite
-  green and line coverage at 100. Every new survivor pointed at the same thing: naming the file
-  before its bytes are fetched made `asName` total, so an optional field, two `=== undefined`
-  guards, a `Record<string, string>` of card names and the three function parameters that carried it
-  were all answering a question that could no longer be asked. Removing them, rather than writing
-  tests for paths nothing can reach, put the file back over 90. Read a mutation drop after a
-  deletion as a map of what the deletion orphaned.
-
 - [lesson] Moving a picture's text into the thread means the state has to remember it. Once no
   document holds the reading, a second thread meeting the same picture has nothing to put under it,
   so `AttachmentRecord` carries `text` and the shared `_inline/` store is what makes the dedup pay.
@@ -273,11 +215,14 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   it tells the reader to open a file that no longer exists, once per signature down a long thread.
   A converter that returns text rather than a document has to drop it.
 
-- [gotcha] `mutate:changed` scores the ALL FILES aggregate, so its exit code passes while a single
-  file sits under 90. `render-thread.ts` has now gone 91.13 → 88.60 → 90.08 → 89.92 → 88.24 → 90.03
-  across four changes, each time pulled back by tests written against the survivors. Read the
-  per-file row and treat that file's number as the gate; the aggregate only says the others are
-  carrying it.
+- [gotcha] The mutation gate breaks on the aggregate of the files it mutates, never per file. A new
+  module can sit well under 90 inside a passing run (`icalendar.ts` landed at 73.6%), and one large
+  use-case file carrying old debt can fail a run whose own change is mutation-clean. Deleting
+  well-tested code does it too, since the removed block was the covered share and the rest of the
+  file surfaces its debt: moving the day-folder logic out of `thread.ts` took the aggregate to
+  89.67%. Read the per-file row and treat that file's number as the gate; the aggregate only says
+  the others are carrying it.
+  Merges: 2026-07-24, 2026-08-14, 2026-08-27, 2026-08-28, 2026-08-30.
 
 - [lesson] A file too big to score is a file too big to trust. `render-thread.ts` reached 692 lines
   doing five jobs, and the mutation number said so before anything else did: it crossed under 90 on
@@ -310,14 +255,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   and the suite still passed, because no test ever made `x` fail. Two seeds, a workbook and an
   invitation the source refuses, put it over 90. Coverage says the line ran; only mutation says the
   line mattered.
-
-- [lesson] A stamp nothing reads is a stamp nothing can get wrong. `render-thread.ts` sat at 90.27
-  and four of its eleven survivors were the `site`, `library` and `source` of the DocumentStamp: a
-  card is written over every top-level document the converter produced, so the stamp was replaced
-  before any test could see it. The exception is a saved email, which unpacks into a FOLDER whose
-  documents sit below the card's path and keep the stamp. Asserting one of those killed all four.
-  The pattern generalises: when a field appears untestable, find the one path where it survives to
-  disk, and if there is none, the field is dead rather than untested.
 
 - [gotcha] Substituting a multi-line block for an inline placeholder breaks whatever span held it.
   `convert-mail-to-markdown` carries the surrounding HTML's emphasis onto its placeholder, so a
@@ -512,15 +449,14 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   job. The general form: a delta tells you WHAT changed, not what the thing now IS, and when those
   differ the listing usually wins.
 
-- [gotcha] A `?? fallback` behind a lookup that cannot miss is dead code the coverage gate cannot see
-  and mutation testing can. `syncTodo` planned each task's path into a `Map` and then wrote
-  `files.get(task.id) ?? ''` in the loop over the very tasks that built it. Line and function
-  coverage read 100%, because the line runs every time; the fallback is simply unreachable, so a
-  mutant replacing it survives and the module scored 87 against a 90 break. The fix was not a test:
-  pairing each item with its computed value (`planTaskFiles` returning `{ task, file }[]` instead of
-  a map to look the file up in) removed the lookup, the fallback and the mutant together. Wherever a
-  plan is built from a collection and then consumed by iterating the same collection, hand back the
-  pairs rather than an index into them.
+- [gotcha] A survivor no test can kill usually marks dead code, not a missing test. A guard in front
+  of a division that already yields `NaN` (`ocr-language.ts`), a stamp every card overwrote
+  (`render-thread.ts`), the fields and guards a deleted store left behind, and a `?? ''` behind a
+  lookup over the very items that built the map (`syncTodo`) all survived for that reason. Remove
+  the code, or reshape it so the question cannot be asked (hand back `{ task, file }` pairs rather
+  than an index to look up), instead of writing tests for a path nothing reaches; a field that seems
+  untestable either reaches disk on some path or is dead.
+  Merges: 2026-08-27, 2026-08-30, 2026-08-30, 2026-09-09.
 
 ## 2026-09-11
 
