@@ -404,3 +404,10 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   suffix cut from the raw id still gives every namesake its own file, so "three namesakes, three
   files" cannot tell hashed from raw. Stability can: take the middle namesake off the event and the
   third must keep its file (`sync-calendar.test.ts`, 'naming the files an event carries').
+
+- [gotcha] Git hands a hook an absolute GIT_DIR when the push comes from a linked worktree, and
+  everything the hook starts inherits it. Under the pre-push hook, `verify-commits.sh` detached the
+  pushing worktree's HEAD with its `git -C "$tree" checkout`, and the suite's throwaway `git init`
+  reinitialized the real repository with `core.bare = true`, so the push failed and the checkout
+  stopped working. A script that runs git anywhere but where it was called clears
+  `git rev-parse --local-env-vars` first (`scripts/verify-commits.sh`).
