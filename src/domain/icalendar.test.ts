@@ -18,7 +18,7 @@ const INVITE = [
   'END:VTIMEZONE',
   'BEGIN:VEVENT',
   'ORGANIZER;CN=Nina Alder:mailto:nina@example.com',
-  'ATTENDEE;ROLE=REQ-PARTICIPANT;CN=Vincent Delacourt:mailto:vincent@exa',
+  'ATTENDEE;ROLE=REQ-PARTICIPANT;CN=Valerie Fairbanks:mailto:valerie@exa',
   ' mple.com',
   'ATTENDEE;ROLE=OPT-PARTICIPANT;CN=Lim Wei Ming:mailto:lim@example.com',
   'DESCRIPTION:Everything the mail already said\\, at length',
@@ -50,7 +50,7 @@ describe('reading a meeting invitation', () => {
         '- **When:** 2026-08-12 08:00 (W. Europe Standard Time) to 09:00',
         '- **Where:** Microsoft Teams Meeting',
         '- **Organiser:** Nina Alder',
-        '- **Attendees:** Vincent Delacourt, Lim Wei Ming',
+        '- **Attendees:** Valerie Fairbanks, Lim Wei Ming',
       ].join('\n')
     );
   });
@@ -92,7 +92,7 @@ describe('reading a meeting invitation', () => {
   it('someone the invitation names only by address is named by it', () => {
     const bare = INVITE.replace('ATTENDEE;ROLE=OPT-PARTICIPANT;CN=Lim Wei Ming:mailto:lim@example.com', 'ATTENDEE;ROLE=OPT-PARTICIPANT:MAILTO:lim@example.com');
 
-    expect(renderCalendar(bare)).toContain('- **Attendees:** Vincent Delacourt, lim@example.com');
+    expect(renderCalendar(bare)).toContain('- **Attendees:** Valerie Fairbanks, lim@example.com');
   });
 
   it('a line continued after a tab is joined like any other', () => {
