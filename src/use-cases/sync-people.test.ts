@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { assembleDirectory } from '../domain/directory.ts';
+import { freeSegment } from '../domain/kb-path.ts';
 import { emptyPeopleState, serializePeopleState, withPerson } from '../domain/people-state.ts';
 import type { Person } from '../domain/person.ts';
 import { ok } from '../domain/result.ts';
@@ -179,8 +180,10 @@ describe('syncing the people directory', () => {
   });
 
   it('a person renamed in the same run as a namesake puts only their own old page aside, and the namesake is rewritten in the page their record names', async () => {
+    // Where the namesake was put while the renamed person held the plain name.
+    const namesakeFile = `${ROOT}/${freeSegment('Jane Doe.md', 'jane-b', (name) => name === 'Jane Doe.md')}`;
     const state = withPerson(withPerson(emptyPeopleState(), 'jane', { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: 'stale' }), 'jane-b', {
-      file: `${ROOT}/Jane Doe-jane-b.md`,
+      file: namesakeFile,
       name: 'Jane Doe',
       fingerprint: 'stale',
     });
@@ -194,13 +197,23 @@ describe('syncing the people directory', () => {
         },
         profiles: { jane: person('jane', 'Jane Smith'), 'jane-b': person('jane-b', 'Jane Doe', { title: 'Head of Finance' }) },
       },
-      files: { texts: { [STATE_PATH]: serializePeopleState(state), [`${ROOT}/Jane Doe.md`]: 'the page as it was', [`${ROOT}/Jane Doe-jane-b.md`]: 'the namesake as it was' } },
+      files: { texts: { [STATE_PATH]: serializePeopleState(state), [`${ROOT}/Jane Doe.md`]: 'the page as it was', [namesakeFile]: 'the namesake as it was' } },
     });
 
     const recorded = stateOf(done.files).people['jane-b']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('Head of Finance');
     expect(done.files.moves).toEqual([{ from: `${ROOT}/Jane Doe.md`, to: 'kb/_archive/People/Jane Doe.md' }]);
     expect(done.files.written.get('kb/_archive/People/Jane Doe.md')).toBe('the page as it was');
+  });
+
+  it('three colleagues sharing a name each get a page of their own, even when their ids open alike', async () => {
+    const ids = ['janedoe-1', 'janedoe-2', 'janedoe-3'];
+    const done = await run({
+      reader: { members: { 'team-all': ids.map((id) => ({ userId: id, name: 'Jane Doe' })) }, profiles: Object.fromEntries(ids.map((id) => [id, person(id, 'Jane Doe')])) },
+      teams: [ALL],
+    });
+
+    expect(new Set(Object.values(stateOf(done.files).people).map((record) => record.file)).size).toBe(3);
   });
 
   it('a profile that cannot be read is reported as failed, and that person is neither written nor put aside', async () => {

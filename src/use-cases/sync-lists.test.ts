@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { freeSegment } from '../domain/kb-path.ts';
 import { emptyListsState, serializeListsState, withList } from '../domain/lists-state.ts';
 import { listFingerprint } from '../domain/sharepoint-list.ts';
 import type { ListColumn, ListItem, SharePointList } from '../domain/sharepoint-list.ts';
@@ -145,8 +146,10 @@ describe('syncing the lists of a SharePoint site', () => {
   });
 
   it('a list renamed in the same run as a namesake puts only its own old table aside, and the namesake is rewritten in the file its record names', async () => {
+    // Where the namesake was put while the renamed list held the plain name.
+    const namesakeFile = `${ROOT}/${freeSegment('Projects.md', 'twin', (name) => name === 'Projects.md')}`;
     const state = withList(withList(emptyListsState(SITE.id, SITE.name), 'projects', { file: `${ROOT}/Projects.md`, fingerprint: 'stale', name: 'Projects' }), 'twin', {
-      file: `${ROOT}/Projects-twin.md`,
+      file: namesakeFile,
       fingerprint: 'stale',
       name: 'Projects',
     });
@@ -156,7 +159,7 @@ describe('syncing the lists of a SharePoint site', () => {
         columns: { ...COLUMNS, twin: [column('Title')] },
         rows: { ...ROWS, twin: [row('9', '2026-09-11T10:00:00Z', 'Osprey')] },
       },
-      files: { texts: { [STATE_PATH]: serializeListsState(state), [`${ROOT}/Projects.md`]: 'the table as it was', [`${ROOT}/Projects-twin.md`]: 'the namesake as it was' } },
+      files: { texts: { [STATE_PATH]: serializeListsState(state), [`${ROOT}/Projects.md`]: 'the table as it was', [namesakeFile]: 'the namesake as it was' } },
     });
 
     const recorded = stateOf(done.files).lists['twin']?.file ?? '';
@@ -244,5 +247,11 @@ describe('syncing the lists of a SharePoint site', () => {
     const state = withList(emptyListsState(SITE.id, SITE.name), 'gone', { file: `${ROOT}/Retired.md`, fingerprint: 'x', name: 'Retired' });
     const stuck = await run({ files: { texts: { [STATE_PATH]: serializeListsState(state) }, failMoveWith: { kind: 'write-failed', path: 'x', message: 'disk is read-only' } } });
     expect(stuck.logger.calls).toContainEqual({ level: 'warn', event: 'archive.failed', meta: { path: `${ROOT}/Retired.md`, cause: 'write-failed' } });
+  });
+
+  it('three lists sharing a name on one site land in three files, even when their ids open alike', async () => {
+    const done = await run({ reader: { lists: { 'site-1': ['tracker-1', 'tracker-2', 'tracker-3'].map((id) => list(id, 'Tracker')) }, columns: {}, rows: {} } });
+
+    expect(new Set(Object.values(stateOf(done.files).lists).map((record) => record.file)).size).toBe(3);
   });
 });

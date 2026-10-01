@@ -1,5 +1,5 @@
 import type { Colleague } from './directory.ts';
-import { disambiguateSegment, safeSegment } from './kb-path.ts';
+import { freePath, safeSegment } from './kb-path.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 
@@ -90,9 +90,7 @@ export const planPersonFiles = (root: string, directory: ReadonlyArray<Colleague
   const taken = new Set(Object.values(state.people).map((record) => record.file));
   const planned: PlannedPerson[] = [];
   for (const colleague of directory) {
-    const name = `${safeSegment(colleague.person.name)}${MARKDOWN}`;
-    const plain = `${root}/${name}`;
-    const file = taken.has(plain) && plain !== state.people[colleague.person.id]?.file ? `${root}/${disambiguateSegment(name, colleague.person.id)}` : plain;
+    const file = freePath(root, `${safeSegment(colleague.person.name)}${MARKDOWN}`, colleague.person.id, taken, state.people[colleague.person.id]?.file);
     taken.add(file);
     planned.push({ colleague, file });
   }

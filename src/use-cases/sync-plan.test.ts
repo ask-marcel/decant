@@ -290,4 +290,10 @@ describe('syncing a Planner plan', () => {
     const unmoved = await run({ files: { texts: { [STATE_PATH]: serializePlanState(state) }, failMoveWith: { kind: 'write-failed', path: 'x', message: 'disk is read-only' } } });
     expect(unmoved.logger.calls).toContainEqual({ level: 'warn', event: 'archive.failed', meta: { path: `${ROOT}/Done/Retired.md`, cause: 'write-failed' } });
   });
+
+  it('three tasks sharing a title in one bucket land in three files, even when their ids open alike', async () => {
+    const done = await run({ reader: { tasks: { 'plan-1': ['caterer-1', 'caterer-2', 'caterer-3'].map((id) => task(id, 'Call the caterer')) } } });
+
+    expect(new Set(Object.values(stateOf(done.files).tasks).map((record) => record.file)).size).toBe(3);
+  });
 });

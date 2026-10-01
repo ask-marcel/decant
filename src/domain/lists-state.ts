@@ -1,5 +1,5 @@
 import { CATEGORY_FOLDER } from './kb-category.ts';
-import { disambiguateSegment, safeRelPath, safeSegment } from './kb-path.ts';
+import { freePath, safeRelPath, safeSegment } from './kb-path.ts';
 import type { SafeRelPath } from './kb-path.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
@@ -79,7 +79,5 @@ const MARKDOWN = '.md';
 // Where a list's table goes: under the site, named by the list. Two lists can share a name on one
 // site; the second takes a suffix from its own id. A file held by another list is taken.
 export const listFileFor = (root: string, list: SharePointList, taken: ReadonlySet<string>): string => {
-  const name = `${safeSegment(list.name)}${MARKDOWN}`;
-  const plain = `${root}/${name}`;
-  return taken.has(plain) ? `${root}/${disambiguateSegment(name, list.id)}` : plain;
+  return freePath(root, `${safeSegment(list.name)}${MARKDOWN}`, list.id, taken);
 };
