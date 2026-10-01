@@ -424,3 +424,18 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   list of sources the entry above says still free it. Planner was exposed beyond a rename: it places
   every listed task to draw the board, so an unchanged task's page counted as free, and a new task
   sharing its title and bucket, listed first, took the file.
+
+- [decision] `siteIdHash` is now `idHash` in `src/domain/kb-path.ts`, which supersedes the location
+  the 2026-08-14 entry names, and `freeName` beside it names events, tasks, attachments and Teams
+  posts: hash the id, and hash the hash while that name is held. OneNote pages, Planner tasks,
+  people and lists still slice the raw id, since theirs open on random characters. Teams post ids
+  are the send time in epoch milliseconds, so a raw 8-character slice of one resolves only to 100
+  seconds.
+
+- [gotcha] In sync-todo and sync-team the stability test above takes a third run: a task or post
+  that has left still holds its path through the run that puts it aside, so only the next run can
+  hand its name to a namesake (sync-calendar drops the record before it plans).
+
+- [gotcha] An own-copy exception that covers only the plain name re-hashes an item already filed
+  under its hashed name on every rewrite, since its own suffixed file reads as taken; the exception
+  has to cover every candidate `freeName` tries (`heldByAnother` in todo-state.ts and team-state.ts).
