@@ -418,3 +418,9 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   the whole run before the first window. A renamed event, task or post then archived its namesake's
   fresh document. A path now stays taken while any record but the item's own holds it; sync-plan,
   sync-people, sync-notebook and sync-lists still free it as of this entry.
+
+- [decision] Every planner that names a file in kb/ now keeps a path taken while any record but the
+  item's own holds it: Calendar, To Do, Teams, Planner, People, OneNote and lists, which empties the
+  list of sources the entry above says still free it. Planner was exposed beyond a rename: it places
+  every listed task to draw the board, so an unchanged task's page counted as free, and a new task
+  sharing its title and bucket, listed first, took the file.
