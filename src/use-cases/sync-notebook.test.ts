@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { freeSegment } from '../domain/kb-path.ts';
 import { emptyNotebookState, serializeNotebookState, withPage } from '../domain/notebook-state.ts';
 import type { Notebook, NotebookPage } from '../domain/onenote.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
@@ -146,8 +147,10 @@ describe('syncing a OneNote notebook', () => {
   });
 
   it('a page retitled in the same run as a namesake puts only its own old copy aside, and the namesake is rewritten in the file its record names', async () => {
+    // Where the namesake was put while the retitled page held the plain name.
+    const namesakeFile = `${ROOT}/Meetings/${freeSegment('Kick-off.md', 'b', (name) => name === 'Kick-off.md')}`;
     const state = withPage(withPage(emptyNotebookState(NOTEBOOK), 'a', { file: `${ROOT}/Meetings/Kick-off.md`, lastModified: 'stale', title: 'Kick-off', section: 'sec-m' }), 'b', {
-      file: `${ROOT}/Meetings/Kick-off-b.md`,
+      file: namesakeFile,
       lastModified: 'stale',
       title: 'Kick-off',
       section: 'sec-m',
@@ -161,7 +164,7 @@ describe('syncing a OneNote notebook', () => {
         texts: {
           [STATE_PATH]: serializeNotebookState(state),
           [`${ROOT}/Meetings/Kick-off.md`]: 'the page as it was',
-          [`${ROOT}/Meetings/Kick-off-b.md`]: 'the namesake as it was',
+          [namesakeFile]: 'the namesake as it was',
         },
       },
     });
@@ -170,6 +173,12 @@ describe('syncing a OneNote notebook', () => {
     expect(done.files.written.get(recorded)).toContain('the kick-off, moved to Monday');
     expect(done.files.moves).toEqual([{ from: `${ROOT}/Meetings/Kick-off.md`, to: 'kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md' }]);
     expect(done.files.written.get('kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md')).toBe('the page as it was');
+  });
+
+  it('three pages sharing a title in one section land in three files, even when their ids open alike', async () => {
+    const done = await run({ reader: { pages: { 'sec-m': ['notes-p-1', 'notes-p-2', 'notes-p-3'].map((id) => page(id, 'Notes', '2026-09-04T10:00:00Z')) } } });
+
+    expect(new Set(Object.values(stateOf(done.files).pages).map((record) => record.file)).size).toBe(3);
   });
 
   it('a page whose text cannot be read is reported as failed and kept where it was, and a section whose pages cannot be listed keeps its pages as they are', async () => {

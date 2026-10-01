@@ -1,5 +1,5 @@
 import { CATEGORY_FOLDER } from './kb-category.ts';
-import { disambiguateSegment, safeRelPath, safeSegment } from './kb-path.ts';
+import { freePath, safeRelPath, safeSegment } from './kb-path.ts';
 import type { SafeRelPath } from './kb-path.ts';
 import type { Bucket, Plan, PlanTask } from './planner.ts';
 import type { Result } from './result.ts';
@@ -106,9 +106,7 @@ export const planTaskFiles = (root: string, tasks: ReadonlyArray<PlanTask>, buck
   for (const task of tasks) {
     const bucket = names.get(task.bucketId) ?? '';
     const folder = `${root}/${safeSegment(bucket.length === 0 ? NO_BUCKET : bucket)}`;
-    const name = `${safeSegment(task.title)}${MARKDOWN}`;
-    const plain = `${folder}/${name}`;
-    const file = taken.has(plain) && plain !== state.tasks[task.id]?.file ? `${folder}/${disambiguateSegment(name, task.id)}` : plain;
+    const file = freePath(folder, `${safeSegment(task.title)}${MARKDOWN}`, task.id, taken, state.tasks[task.id]?.file);
     taken.add(file);
     planned.push({ task, bucket, file });
   }

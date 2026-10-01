@@ -1,5 +1,5 @@
 import { CATEGORY_FOLDER } from './kb-category.ts';
-import { disambiguateSegment, safeRelPath, safeSegment } from './kb-path.ts';
+import { freePath, safeRelPath, safeSegment } from './kb-path.ts';
 import type { SafeRelPath } from './kb-path.ts';
 import type { Notebook, NotebookPage, NotebookSection } from './onenote.ts';
 import type { Result } from './result.ts';
@@ -128,10 +128,7 @@ export const planPageFiles = (root: string, listed: ReadonlyArray<ListedPage>, s
   const taken = new Set(Object.values(state.pages).map((record) => record.file));
   const planned: PlannedPage[] = [];
   for (const entry of listed) {
-    const name = `${safeSegment(entry.page.title)}${MARKDOWN}`;
-    const folder = folderOf(root, entry.section);
-    const plain = `${folder}/${name}`;
-    const file = taken.has(plain) && plain !== state.pages[entry.page.id]?.file ? `${folder}/${disambiguateSegment(name, entry.page.id)}` : plain;
+    const file = freePath(folderOf(root, entry.section), `${safeSegment(entry.page.title)}${MARKDOWN}`, entry.page.id, taken, state.pages[entry.page.id]?.file);
     taken.add(file);
     planned.push({ entry, file });
   }
