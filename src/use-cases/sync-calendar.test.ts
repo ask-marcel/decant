@@ -294,6 +294,13 @@ describe('syncing the calendar', () => {
     expect(file).toContain(`${ROOT}/2026-09-10/Standup-`);
   });
 
+  it('two new events sharing a subject and a day, written in one window, each take a file of their own', async () => {
+    const done = await run({ reader: { events: { a: event('a', 'Standup', '2026-09-10T08:00:00Z'), b: event('b', 'Standup', '2026-09-10T09:00:00Z') } } });
+
+    const events = stateOf(done.files).events;
+    expect([events['a']?.file, events['b']?.file]).toEqual([`${ROOT}/2026-09-10/Standup.md`, `${ROOT}/2026-09-10/Standup-b.md`]);
+  });
+
   it('an event renamed in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
     const renamed = { file: `${ROOT}/2026-09-10/Call.md`, lastModified: 'older', subject: 'Call', outputs: [`${ROOT}/2026-09-10/Call.md`] };
     const namesake = { file: `${ROOT}/2026-09-10/Call-b.md`, lastModified: 'older', subject: 'Call', outputs: [`${ROOT}/2026-09-10/Call-b.md`] };
