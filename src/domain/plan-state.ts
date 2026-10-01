@@ -95,23 +95,20 @@ const MARKDOWN = '.md';
 const NO_BUCKET = '_no bucket';
 
 // Where each task about to be written goes: under its bucket, named by its title. Two tasks can
-// share a title in one bucket; the second takes a suffix from its own id. A file held by a task
-// not being rewritten is taken.
+// share a title in one bucket; the second takes a suffix from its own id. A file another task's
+// record holds is taken even when that task is placed in this run too: its old page is put aside
+// only once its own write lands, which can come after a namesake's write to the same path. A task's
+// own page never stands in its way.
 export const planTaskFiles = (root: string, tasks: ReadonlyArray<PlanTask>, buckets: ReadonlyArray<Bucket>, state: PlanState): ReadonlyArray<PlannedTask> => {
   const names = new Map(buckets.map((bucket) => [bucket.id, bucket.name] as const));
-  const rewriting = new Set(tasks.map((task) => task.id));
-  const taken = new Set(
-    Object.entries(state.tasks)
-      .filter(([id]) => !rewriting.has(id))
-      .map(([, record]) => record.file)
-  );
+  const taken = new Set(Object.values(state.tasks).map((record) => record.file));
   const planned: PlannedTask[] = [];
   for (const task of tasks) {
     const bucket = names.get(task.bucketId) ?? '';
     const folder = `${root}/${safeSegment(bucket.length === 0 ? NO_BUCKET : bucket)}`;
     const name = `${safeSegment(task.title)}${MARKDOWN}`;
     const plain = `${folder}/${name}`;
-    const file = taken.has(plain) ? `${folder}/${disambiguateSegment(name, task.id)}` : plain;
+    const file = taken.has(plain) && plain !== state.tasks[task.id]?.file ? `${folder}/${disambiguateSegment(name, task.id)}` : plain;
     taken.add(file);
     planned.push({ task, bucket, file });
   }

@@ -83,15 +83,16 @@ const MARKDOWN = '.md';
 
 // Where each person about to be written goes, settled before any is written. Two people can share
 // a display name; the second takes a suffix from their own id, the way two documents sharing a name
-// in one library do. A file held by a person not being rewritten is taken.
+// in one library do. A file another person's record holds is taken even when that person is
+// rewritten this run too: their old page is put aside only once their own write lands, which can
+// come after a namesake's write to the same path. A person's own page never stands in their way.
 export const planPersonFiles = (root: string, directory: ReadonlyArray<Colleague>, state: PeopleState): ReadonlyArray<PlannedPerson> => {
-  const rewriting = new Set(directory.map((colleague) => colleague.person.id));
-  const taken = new Set(Object.entries(state.people).flatMap(([id, record]) => (rewriting.has(id) ? [] : [record.file])));
+  const taken = new Set(Object.values(state.people).map((record) => record.file));
   const planned: PlannedPerson[] = [];
   for (const colleague of directory) {
     const name = `${safeSegment(colleague.person.name)}${MARKDOWN}`;
     const plain = `${root}/${name}`;
-    const file = taken.has(plain) ? `${root}/${disambiguateSegment(name, colleague.person.id)}` : plain;
+    const file = taken.has(plain) && plain !== state.people[colleague.person.id]?.file ? `${root}/${disambiguateSegment(name, colleague.person.id)}` : plain;
     taken.add(file);
     planned.push({ colleague, file });
   }

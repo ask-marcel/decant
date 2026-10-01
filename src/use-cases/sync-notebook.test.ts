@@ -145,6 +145,33 @@ describe('syncing a OneNote notebook', () => {
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Deleted');
   });
 
+  it('a page retitled in the same run as a namesake puts only its own old copy aside, and the namesake is rewritten in the file its record names', async () => {
+    const state = withPage(withPage(emptyNotebookState(NOTEBOOK), 'a', { file: `${ROOT}/Meetings/Kick-off.md`, lastModified: 'stale', title: 'Kick-off', section: 'sec-m' }), 'b', {
+      file: `${ROOT}/Meetings/Kick-off-b.md`,
+      lastModified: 'stale',
+      title: 'Kick-off',
+      section: 'sec-m',
+    });
+    const done = await run({
+      reader: {
+        pages: { 'sec-m': [page('a', 'Agenda', '2026-09-05T10:00:00Z'), page('b', 'Kick-off', '2026-09-06T10:00:00Z')], 'sec-b': [] },
+        markdown: { b: 'the kick-off, moved to Monday' },
+      },
+      files: {
+        texts: {
+          [STATE_PATH]: serializeNotebookState(state),
+          [`${ROOT}/Meetings/Kick-off.md`]: 'the page as it was',
+          [`${ROOT}/Meetings/Kick-off-b.md`]: 'the namesake as it was',
+        },
+      },
+    });
+
+    const recorded = stateOf(done.files).pages['b']?.file ?? '';
+    expect(done.files.written.get(recorded)).toContain('the kick-off, moved to Monday');
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/Meetings/Kick-off.md`, to: 'kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md' }]);
+    expect(done.files.written.get('kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md')).toBe('the page as it was');
+  });
+
   it('a page whose text cannot be read is reported as failed and kept where it was, and a section whose pages cannot be listed keeps its pages as they are', async () => {
     const unreadable = await run({ reader: { failMarkdownOf: ['b'] } });
     expect(unreadable.summary).toMatchObject({ converted: 2, failed: 1 });

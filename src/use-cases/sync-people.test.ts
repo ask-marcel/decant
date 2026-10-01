@@ -178,6 +178,31 @@ describe('syncing the people directory', () => {
     expect(done.files.moves).toEqual([{ from: `${ROOT}/Jane Smith.md`, to: 'kb/_archive/People/Jane Smith.md' }]);
   });
 
+  it('a person renamed in the same run as a namesake puts only their own old page aside, and the namesake is rewritten in the page their record names', async () => {
+    const state = withPerson(withPerson(emptyPeopleState(), 'jane', { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: 'stale' }), 'jane-b', {
+      file: `${ROOT}/Jane Doe-jane-b.md`,
+      name: 'Jane Doe',
+      fingerprint: 'stale',
+    });
+    const done = await run({
+      reader: {
+        members: {
+          'team-all': [
+            { userId: 'jane', name: 'Jane Smith' },
+            { userId: 'jane-b', name: 'Jane Doe' },
+          ],
+        },
+        profiles: { jane: person('jane', 'Jane Smith'), 'jane-b': person('jane-b', 'Jane Doe', { title: 'Head of Finance' }) },
+      },
+      files: { texts: { [STATE_PATH]: serializePeopleState(state), [`${ROOT}/Jane Doe.md`]: 'the page as it was', [`${ROOT}/Jane Doe-jane-b.md`]: 'the namesake as it was' } },
+    });
+
+    const recorded = stateOf(done.files).people['jane-b']?.file ?? '';
+    expect(done.files.written.get(recorded)).toContain('Head of Finance');
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/Jane Doe.md`, to: 'kb/_archive/People/Jane Doe.md' }]);
+    expect(done.files.written.get('kb/_archive/People/Jane Doe.md')).toBe('the page as it was');
+  });
+
   it('a profile that cannot be read is reported as failed, and that person is neither written nor put aside', async () => {
     const state = withPerson(emptyPeopleState(), 'jane', { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: 'whatever' });
     const done = await run({ reader: { failProfiles: ['jane'] }, files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });

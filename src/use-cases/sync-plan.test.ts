@@ -210,6 +210,19 @@ describe('syncing a Planner plan', () => {
     expect(renamed.files.moves.map((move) => move.from)).toEqual([`${ROOT}/To do/Book the venue.md`]);
   });
 
+  it('a new task sharing a title and a bucket with one already written takes a file of its own even when listed first, and the page already there stays put', async () => {
+    const tasks = { 'plan-1': [task('t-twin', 'Book the venue'), ...TASKS['plan-1']] };
+    const done = await run({
+      reader: { tasks, details: { ...DETAILS, 't-twin': details('A second venue.') } },
+      files: { texts: { [STATE_PATH]: serializePlanState(settled()), [`${ROOT}/To do/Book the venue.md`]: 'the venue page as it was' } },
+    });
+
+    const recorded = stateOf(done.files).tasks['t-twin']?.file ?? '';
+    expect(done.files.written.get(recorded)).toContain('A second venue.');
+    expect(done.files.written.get(`${ROOT}/To do/Book the venue.md`)).toBe('the venue page as it was');
+    expect(done.files.moves).toHaveLength(0);
+  });
+
   it('a task whose details cannot be read is reported as failed and kept as it was, still on the board; an assignee who cannot be named is shown by id', async () => {
     const done = await run({ reader: { failDetailsOf: ['t-venue'], failNamesOf: ['u-sam'] }, files: { texts: { [STATE_PATH]: serializePlanState(settled()) } } });
 

@@ -144,6 +144,27 @@ describe('syncing the lists of a SharePoint site', () => {
     expect(stuck.logger.calls).toContainEqual({ level: 'warn', event: 'supersede.failed', meta: { path: `${ROOT}/Old name.md`, cause: 'write-failed' } });
   });
 
+  it('a list renamed in the same run as a namesake puts only its own old table aside, and the namesake is rewritten in the file its record names', async () => {
+    const state = withList(withList(emptyListsState(SITE.id, SITE.name), 'projects', { file: `${ROOT}/Projects.md`, fingerprint: 'stale', name: 'Projects' }), 'twin', {
+      file: `${ROOT}/Projects-twin.md`,
+      fingerprint: 'stale',
+      name: 'Projects',
+    });
+    const done = await run({
+      reader: {
+        lists: { 'site-1': [list('projects', 'Programs'), list('twin', 'Projects')] },
+        columns: { ...COLUMNS, twin: [column('Title')] },
+        rows: { ...ROWS, twin: [row('9', '2026-09-11T10:00:00Z', 'Osprey')] },
+      },
+      files: { texts: { [STATE_PATH]: serializeListsState(state), [`${ROOT}/Projects.md`]: 'the table as it was', [`${ROOT}/Projects-twin.md`]: 'the namesake as it was' } },
+    });
+
+    const recorded = stateOf(done.files).lists['twin']?.file ?? '';
+    expect(done.files.written.get(recorded)).toContain('Osprey');
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/Projects.md`, to: 'kb/_archive/SharePoint lists/Espace Contoso/Projects.md' }]);
+    expect(done.files.written.get('kb/_archive/SharePoint lists/Espace Contoso/Projects.md')).toBe('the table as it was');
+  });
+
   it('a list whose columns or rows cannot be read is reported as failed and kept as it was', async () => {
     const state = withList(emptyListsState(SITE.id, SITE.name), 'issues', { file: `${ROOT}/Issues.md`, fingerprint: 'old', name: 'Issues' });
     const done = await run({ reader: { failRowsOf: ['issues'], failColumnsOf: ['projects'] }, files: { texts: { [STATE_PATH]: serializeListsState(state) } } });
