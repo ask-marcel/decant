@@ -411,3 +411,10 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   reinitialized the real repository with `core.bare = true`, so the push failed and the checkout
   stopped working. A script that runs git anywhere but where it was called clears
   `git rev-parse --local-env-vars` first (`scripts/verify-commits.sh`).
+
+- [gotcha] A planner that frees every path held by an item rewritten in the same run assumes the item
+  moves off it before anyone else writes there, and nothing ordered that: `writeOne` puts the old
+  file aside only after its own write, a window's writes run side by side, and To Do and Teams plan
+  the whole run before the first window. A renamed event, task or post then archived its namesake's
+  fresh document. A path now stays taken while any record but the item's own holds it; sync-plan,
+  sync-people, sync-notebook and sync-lists still free it as of this entry.
