@@ -423,7 +423,7 @@ source: https://outlook.office365.com/owa/?itemid=...
 subject: Offsite planning
 start: "2026-09-12 15:00"
 end: "2026-09-12 16:30"
-organizer: Vincent
+organizer: Valerie
 attendees:
   - Jane Doe (accepted)
   - Dana Farrow (optional, no answer)
