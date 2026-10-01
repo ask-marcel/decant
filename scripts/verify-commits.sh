@@ -17,6 +17,12 @@
 
 set -euo pipefail
 
+# Git hands a hook GIT_DIR and its kin, an absolute path when the push comes from a linked worktree,
+# and everything this script starts inherits them: `git -C "$tree" checkout` would detach the pushing
+# worktree's HEAD, and a check that makes a repository of its own, as the test suite does, would
+# reinitialize the pushing one as bare. githooks(5) asks a hook that works elsewhere to clear them.
+unset $(git rev-parse --local-env-vars)
+
 range="${1:-origin/main..HEAD}"
 check="${VERIFY_COMMITS_CHECK:-bun run typecheck && bun test}"
 root=$(git rev-parse --show-toplevel)

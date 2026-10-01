@@ -15,6 +15,8 @@ type Repo = {
   readonly commit: (subject: string, change: Change) => string;
   // Runs the script over a range, with the check each commit must pass replaced by `check`.
   readonly verify: (range: string, check: string) => Ran;
+  // Opens a linked worktree on a new branch at the current commit and answers its path.
+  readonly linkWorktree: (branch: string) => string;
 };
 
 const git = (dir: string, args: ReadonlyArray<string>): string =>
@@ -30,6 +32,7 @@ const apply = (dir: string, change: Change): void => {
 // A throwaway repository, gone once the scenario is over whatever it found.
 const inRepo = (scenario: (repo: Repo) => void): void => {
   const dir = mkdtempSync(join(tmpdir(), 'verify-commits-'));
+  const worktrees: string[] = [];
   try {
     git(dir, ['init', '-q']);
     scenario({
@@ -43,10 +46,24 @@ const inRepo = (scenario: (repo: Repo) => void): void => {
         const ran = Bun.spawnSync(['bash', SCRIPT, range], { cwd: dir, env: { ...process.env, VERIFY_COMMITS_CHECK: check } });
         return { code: ran.exitCode, out: ran.stdout.toString(), err: ran.stderr.toString() };
       },
+      linkWorktree: (branch) => {
+        const path = mkdtempSync(join(tmpdir(), 'verify-commits-worktree-'));
+        worktrees.push(path);
+        git(dir, ['worktree', 'add', '-q', '-b', branch, path]);
+        return path;
+      },
     });
   } finally {
-    rmSync(dir, { recursive: true, force: true });
+    for (const path of [dir, ...worktrees]) rmSync(path, { recursive: true, force: true });
   }
+};
+
+// The script run the way git runs the pre-push hook for a push made from a linked worktree: in that
+// worktree, with GIT_DIR exported as the worktree's absolute git directory (githooks(5)).
+const verifyAsHook = (worktree: string, range: string, check: string): Ran => {
+  const env = { ...process.env, GIT_DIR: git(worktree, ['rev-parse', '--absolute-git-dir']), VERIFY_COMMITS_CHECK: check };
+  const ran = Bun.spawnSync(['bash', SCRIPT, range], { cwd: worktree, env });
+  return { code: ran.exitCode, out: ran.stdout.toString(), err: ran.stderr.toString() };
 };
 
 describe('building every commit of a push on its own', () => {
@@ -89,6 +106,21 @@ describe('building every commit of a push on its own', () => {
       expect(ran.out).toContain('ok    ');
       expect(ran.out).toContain('add a reader');
       expect(ran.out).toContain('add a writer');
+    });
+  });
+
+  // The check makes a repository of its own, the way this suite does.
+  it('a push from a linked worktree leaves that worktree on its branch and its repository not bare', () => {
+    inRepo((repo) => {
+      const base = repo.commit('start', { write: 'main.ts' });
+      repo.commit('add a reader', { write: 'reader.ts' });
+      const worktree = repo.linkWorktree('feature');
+
+      const ran = verifyAsHook(worktree, `${base}..HEAD`, 'scratch=$(mktemp -d) && git init -q "$scratch" && rm -rf "$scratch"');
+
+      expect(ran.code).toBe(0);
+      expect(git(worktree, ['symbolic-ref', '--short', 'HEAD'])).toBe('feature');
+      expect(git(worktree, ['config', 'core.bare'])).toBe('false');
     });
   });
 });
