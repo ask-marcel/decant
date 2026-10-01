@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { idHash } from './kb-path.ts';
 import {
   belongsToAnotherSite,
   countSyncedItems,
@@ -10,7 +11,6 @@ import {
   rememberFailure,
   renameItem,
   serializeSiteState,
-  siteIdHash,
   withDrive,
 } from './site-state.ts';
 
@@ -77,8 +77,8 @@ describe('remembering where a site sync got to', () => {
   });
 
   it('the same site id always hashes to the same suffix, so a resumed run finds its own disambiguated folder', () => {
-    expect(siteIdHash('site-a')).toBe(siteIdHash('site-a'));
-    expect(siteIdHash('site-a')).not.toBe(siteIdHash('site-b'));
+    expect(idHash('site-a')).toBe(idHash('site-a'));
+    expect(idHash('site-a')).not.toBe(idHash('site-b'));
   });
 });
 

@@ -1,5 +1,3 @@
-import { siteIdHash } from './site-state.ts';
-
 // The filesystem sink checkpoint: SharePoint and Outlook name their items freely, so every name
 // crosses this module before it reaches a path. Sanitizing always succeeds, which is why the
 // factories are total: a name we cannot keep becomes one we can, never an error mid-sync.
@@ -54,6 +52,10 @@ export const disambiguateSegment = (segment: string, itemId: string): SafeSegmen
   return safeSegment(`${segment.slice(0, Math.min(cut, room))}${suffix}${extension}`);
 };
 
+// SHA-256 of an id, hex-encoded. Every suffix cut from an id is cut from this instead, since ids open
+// alike: a namesake's (below), and the folder of a site or notebook sharing another's name.
+export const idHash = (id: string): string => new Bun.CryptoHasher('sha256').update(id).digest('hex');
+
 // A namesake's suffix is cut from a hash of its id, never from the id itself: ids often open alike
 // (every item in one mailbox shares a long run, and a Teams post id is the millisecond it was sent),
 // so a slice of the id can hand every namesake the same suffix. A suffixed name something else holds
@@ -61,13 +63,13 @@ export const disambiguateSegment = (segment: string, itemId: string): SafeSegmen
 // namesake comes or goes.
 const freeSuffixed = (segment: string, hash: string, isTaken: (candidate: string) => boolean): string => {
   const candidate = disambiguateSegment(segment, hash);
-  return isTaken(candidate) ? freeSuffixed(segment, siteIdHash(hash), isTaken) : candidate;
+  return isTaken(candidate) ? freeSuffixed(segment, idHash(hash), isTaken) : candidate;
 };
 
 // The name an item takes among others: its own while nothing else holds it, a suffixed one when
 // something does.
 export const freeSegment = (segment: string, itemId: string, isTaken: (candidate: string) => boolean): string =>
-  isTaken(segment) ? freeSuffixed(segment, siteIdHash(itemId), isTaken) : segment;
+  isTaken(segment) ? freeSuffixed(segment, idHash(itemId), isTaken) : segment;
 
 // The same for a file in a folder, where what is taken is held as whole paths. The item's own file,
 // when it already has one, never stands in its way.
