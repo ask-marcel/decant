@@ -260,12 +260,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   tests for paths nothing can reach, put the file back over 90. Read a mutation drop after a
   deletion as a map of what the deletion orphaned.
 
-- [lesson] `isInline` does not mean picture. Graph sets it for anything the body points at by `cid:`,
-  a PDF included, so the test for "show this in the thread rather than card it" is `isInline` AND an
-  `image/` content type. The mirror of the older gotcha that Graph reports `hasAttachments: false`
-  for a message whose only attachment is inline: neither flag means on its own what its name
-  suggests, and both need the other half.
-
 - [lesson] Moving a picture's text into the thread means the state has to remember it. Once no
   document holds the reading, a second thread meeting the same picture has nothing to put under it,
   so `AttachmentRecord` carries `text` and the shared `_inline/` store is what makes the dedup pay.
@@ -325,28 +319,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   The pattern generalises: when a field appears untestable, find the one path where it survives to
   disk, and if there is none, the field is dead rather than untested.
 
-- [gotcha] A markdown link destination ends at the first space unless it is wrapped in `<>`. Every
-  path this vault writes goes into one, and mail attachments are named by people, so
-  `[Fw- DC Data -- Fabrikam.eml](_attachments/Fw- DC Data -- Fabrikam.eml.md)` rendered as literal text
-  with a stray link to `Fabrikam.eml.md` in the middle of it. Nothing caught it for weeks because the
-  tests pinned the string that was written, not what a renderer does with it, and the paths in the
-  fixtures had no spaces. `linkDestination` in `markdown-link.ts` is now the only way a path becomes
-  a destination; unbalanced parentheses end one the same way, so `Budget (final).xlsx` is wrapped too.
-
-- [lesson] Do not file a picture by whether its placeholder survived. An inline image whose
-  `[inline image: …]` marker the converter dropped was landing under **Attachments:**, which tells a
-  reader to go and open a signature logo. It is part of the message however the pairing turned out,
-  so it is shown after the text and counted under `inline_images`. The rule matters because the
-  pairing fails for a reason outside our control: when `convert-mail-to-markdown` misreads a
-  structured mail as a quoted chain it takes the placeholders with the body, and every picture in
-  that message then arrives looking like an attachment.
-
-- [gotcha] OCR text needs to say it is OCR, in words. A `>` block means quoted correspondence
-  everywhere else in a mail vault, so a signature read off a logo reads as something a person wrote.
-  It is not a theoretical risk: this vault has `LDER` for a logo saying ALDER and `AOOWE` for
-  another. Every picture with readable text now carries one line saying the words were read
-  by a machine and pointing at the image above it.
-
 - [gotcha] Substituting a multi-line block for an inline placeholder breaks whatever span held it.
   `convert-mail-to-markdown` carries the surrounding HTML's emphasis onto its placeholder, so a
   picture in a bold signature arrives as `**\[inline image: logo.png\]**`. That was harmless while
@@ -402,18 +374,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   that came out of mail" and was applied to one of the places such text lands. When adding one, list
   every route the same content can arrive by before calling it done.
 
-- [lesson] Measure before choosing a threshold. Asked to skip OCR on small pictures, the vault
-  answered what small meant: everything OCR found real text in was 64 KB or more, a table screenshot
-  at 104 KB and a signature block at 64 KB, and everything under ten kilobytes was a logo that came
-  back as `pe` from one logo and `AOOWE` from another. Ten kilobytes put the larger of the two
-  logo thirty-seven bytes on the right side of the line. A reading like that is worse than none,
-  since it reads as text somebody wrote.
-
-- [gotcha] `convert-local-file-to-markdown` refuses an image outright: "png is an image, read the
-  file directly with a vision-capable model". Anything wanting words off a picture has to go to OCR
-  itself, and the two places that decide what OCR actually said, a photo attachment and a picture
-  inside a forward, have to agree that a page of whitespace is nothing. They share `wordsIn` now.
-
 - [gotcha] The OCR cache is keyed by content hash alone, so it is shared by every mailbox synced on
   this machine and cannot be cleaned per account. What can be identified is what the current vault
   does not reference: 115 of 123 entries after a run against another tenant. That also drops
@@ -428,25 +388,11 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   runs; `mutate:changed` scores a file or two and `mutate` on main scores ninety. Run the CI
   variant before the first push, not the local one.
 
-- [gotcha] Stryker's incremental mode writes its file by pretty-printing the entire report through
-  `JSON.stringify`, in `reportAll`, after every mutant has already run. On a full sweep of 4,413
-  mutants under Node that string throws `RangeError: Invalid string length`, so the gate burned
-  twenty-five minutes and reported nothing. There is no flag to turn the mode off: `--incremental
-  false` makes Stryker read `false` as a config filename, and `=false` is rejected outright. Only the
-  config file can, and it should, since `mutate-changed.sh` and `mutate-staged.sh` delete the file
-  before every run anyway and CI discards it with the checkout. The same path wrote 75 MB locally
-  and succeeded, and that difference was never explained; the write was removed rather than
-  understood, which is worth knowing if it ever comes back.
-
 - [lesson] Read the stack trace before changing anything. The first fix for the sweep crash dropped
   the html reporter on the theory that serialising a report is a reporter's job; the trace had said
   `MutationTestReportHelper.reportAll` and `JSON.stringify` all along, and a second twenty-five
   minute run was the price of not reading it. The second fix invented a flag that does not exist and
   cost a third run. Two runs and fifty minutes bought by a guess and a habit.
-
-- [gotcha] `gitleaks/gitleaks-action` asks an organisation repository for a paid licence key and
-  fails without one. Install the pinned binary from the release instead; the asset URL was checked
-  with a HEAD request before it went in, since a guessed version 404s in exactly the same way.
 
 - [gotcha] A source can report one condition two ways, as an empty answer or as a refusal, and code
   that handles one will not handle the other. `convertPdf` fell back to OCR when a PDF's text came
@@ -489,14 +435,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   work was never established, so a policy that gives up on `permanent` might not have brought back
   the one file it was written for. A flat cap costs at most two pointless calls spread over two later
   runs and needs no new information anywhere.
-
-- [decision] A file given up on stays in the ledger and is named in every report from then on, under
-  a heading of its own saying it will not be tried again. Dropping the entry at the cap was the
-  obvious alternative and it recreates the original bug three runs later instead of one: the file
-  goes quiet, and quiet is the failure this whole mechanism exists to prevent. The cost is a report
-  written every night for as long as the file sits there unconvertible, which is the honest price and
-  the thing that makes someone go and look at it. An edit at the source clears it, since the sweep
-  returns the file with a new cTag and a fresh conversion drops the entry.
 
 - [gotcha] A record that brings lost work back has to live at the level the queue is keyed on, not at
   the level of the thing that failed. The plan for a failed attachment inside a thread that otherwise
@@ -655,17 +593,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
 - [gotcha] `toEqual([])` passes on `[undefined]`: `toEqual` ignores undefined array items and
   properties. A test asserting that nothing was remembered let a mutant through that remembered
   `undefined`; `toHaveLength(0)` (or `toStrictEqual`) is the emptiness check that can fail.
-
-- [gotcha] Moving a delta source's reach earlier cannot just drop its cursor: a fresh delta lists
-  only what exists now, so anything deleted since the last run is never reported, never archived,
-  and its document stays in `kb/` for good. Read the old cursor out first (its deletions and its
-  changes), then read the source whole, and merge the two by id with the whole read winning
-  (`latestById` in `sync-window.ts`). The mailbox needs no read-out: it never archives on deletion.
-
-- [gotcha] Outlook's events delta returns a recurring series as one `seriesMaster` event whose
-  `start` is the series' first occurrence, not its next. A filter on the day an event starts drops
-  a weekly meeting that began before the day while it is still running, so series masters are
-  exempt (`inReach` in `sync-calendar.ts`).
 
 ## 2026-09-29
 
