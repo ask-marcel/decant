@@ -42,7 +42,7 @@ describe('showing which sources have already been synced', () => {
     const sources = await createListSyncedSources({ files, logger, kbRoot: 'kb' })();
 
     expect(sources).toEqual({ ok: true, value: [] });
-    expect(logger.calls).toEqual([]);
+    expect(logger.calls).toStrictEqual([]);
   });
 
   it('a corrupt folder alongside a healthy one leaves the healthy source in the list', async () => {
@@ -76,7 +76,7 @@ describe('showing which sources have already been synced', () => {
 
     const sources = await createListSyncedSources({ files, logger, kbRoot: 'kb' })();
 
-    // Length, not just `toEqual([])`: Bun reads `[undefined]` as equal to `[]`, so an unreadable
+    // Length, not just `toStrictEqual([])`: Bun reads `[undefined]` as equal to `[]`, so an unreadable
     // source leaking through as a hole in the list would satisfy the comparison and be missed here.
     expect(sources.ok && sources.value).toHaveLength(0);
     expect(logger.calls).toEqual([{ level: 'warn', event: 'sync-state.unreadable', meta: { folder: 'SharePoint sites/Broken', cause: 'invalid-json' } }]);

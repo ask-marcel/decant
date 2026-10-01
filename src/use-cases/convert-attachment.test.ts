@@ -243,7 +243,7 @@ describe('keeping what was attached to a mail', () => {
   it('a kind that keeps a copy you can look at is not asked for its pictures', async () => {
     const { outcome } = await run({ name: 'Contrat.pdf' }, { reader: { attachmentImages: { att1: [{ path: 'p.png', bytes: new Uint8Array([1]) }] } } });
 
-    expect(outcome.kind === 'converted' && outcome.media).toEqual([]);
+    expect(outcome.kind === 'converted' && outcome.media).toStrictEqual([]);
   });
 
   it('a picture read that fails costs the pictures and not the text', async () => {

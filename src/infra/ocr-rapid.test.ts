@@ -225,7 +225,7 @@ describe('keeping what OCR read, so an image is only read once', () => {
     const ocr = createRapidOcr({ lang: 'en', cache, shell: async (command) => (capture.push([...command]), { exitCode: 0, stdout: REAL_OUTPUT, stderr: '' }) });
 
     expect(await ocr.read('a.jpg')).toEqual({ ok: true, value: { text: 'kept', label: 'rapidocr (en)' } });
-    expect(capture).toEqual([]);
+    expect(capture).toStrictEqual([]);
   });
 
   it('an image read for the first time is kept, so the next run does not read it again', async () => {

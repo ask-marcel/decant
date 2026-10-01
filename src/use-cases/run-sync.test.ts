@@ -345,8 +345,8 @@ describe('choosing what to sync', () => {
 
     expect(byId.groupRuns).toEqual(['Northwind Leadership Team']);
     expect(byMail.groupRuns).toEqual(['Northwind Leadership Team']);
-    expect(byId.prompt.asked).toEqual([]);
-    expect(byId.calls).toEqual([]);
+    expect(byId.prompt.asked).toStrictEqual([]);
+    expect(byId.calls).toStrictEqual([]);
   });
 
   it('a group you do not belong to is refused by name rather than syncing something else', async () => {
@@ -415,7 +415,7 @@ describe('choosing what to sync', () => {
 
     expect(byId.todoRuns).toEqual(['Tasks']);
     expect(byName.todoRuns).toEqual(['Tasks']);
-    expect(byId.prompt.asked).toEqual([]);
+    expect(byId.prompt.asked).toStrictEqual([]);
   });
 
   it('a To Do list this account does not have is refused by name rather than syncing something else', async () => {
@@ -478,7 +478,7 @@ describe('choosing what to sync', () => {
 
     expect(byId.teamRuns).toEqual([{ team: 'Northwind Leadership', channels: ['General', 'Planning'] }]);
     expect(byName.teamRuns).toEqual([{ team: 'Northwind Leadership', channels: ['General', 'Planning'] }]);
-    expect(byId.prompt.asked).toEqual([]);
+    expect(byId.prompt.asked).toStrictEqual([]);
   });
 
   it('a team you are not in is refused by name rather than syncing something else', async () => {
@@ -533,7 +533,7 @@ describe('choosing what to sync', () => {
 
     expect({ step: unoffered.step, cause: unoffered.cause, error: unoffered.error }).toEqual({ step: 'pickChannels', cause: 'bad-choice', error: 'no such choice: 9' });
     expect({ step: letter.step, cause: letter.cause, error: letter.error }).toEqual({ step: 'pickChannels', cause: 'bad-choice', error: 'choose channels by number, or all' });
-    expect([...unoffered.teamRuns, ...letter.teamRuns]).toEqual([]);
+    expect([...unoffered.teamRuns, ...letter.teamRuns]).toStrictEqual([]);
   });
 
   it('p syncs the people directory, offered beside the mailbox and marked when it has been synced', async () => {
@@ -549,7 +549,7 @@ describe('choosing what to sync', () => {
     const { peopleRuns, prompt } = await run([], { people: true, dryRun: true });
 
     expect(peopleRuns).toEqual([{ concurrency: 4, dryRun: true }]);
-    expect(prompt.asked).toEqual([]);
+    expect(prompt.asked).toStrictEqual([]);
   });
 
   it('an update refreshes the people directory when it is already in the knowledge base, and leaves it alone when it is not', async () => {
@@ -579,7 +579,7 @@ describe('choosing what to sync', () => {
     const untouched = await run([], { command: 'update' }, { synced: [] });
 
     expect(flagged.calendarRuns).toHaveLength(1);
-    expect(flagged.prompt.asked).toEqual([]);
+    expect(flagged.prompt.asked).toStrictEqual([]);
     expect(refreshed.calendarRuns).toHaveLength(1);
     expect(untouched.calendarRuns).toHaveLength(0);
   });
@@ -604,7 +604,7 @@ describe('choosing what to sync', () => {
     const missing = await run([], { notebookId: 'Ghost' }, { notebooks: [] });
 
     expect(byName.notebookRuns).toEqual(['Northwind Leadership Notebook']);
-    expect(byName.prompt.asked).toEqual([]);
+    expect(byName.prompt.asked).toStrictEqual([]);
     expect(byId.notebookRuns).toEqual(['Northwind Leadership Notebook']);
     expect(missing.ok).toBe(false);
     expect({ step: missing.step, cause: missing.cause, error: missing.error }).toEqual({ step: 'findNotebook', cause: 'bad-choice', error: 'no notebook you can read is Ghost' });
@@ -635,7 +635,7 @@ describe('choosing what to sync', () => {
 
     expect(prompt.shown.join('\n')).toContain('SharePoint lists:\n  3) Espace Contoso  (new)\n  4) Direction  (new)');
     expect(listsRuns).toEqual(['Direction']);
-    expect(calls).toEqual([]);
+    expect(calls).toStrictEqual([]);
     expect(prompt.shown.join('\n')).toContain('Direction (lists)');
     expect(logger.calls).toContainEqual({ level: 'info', event: 'lists.started', meta: { site: 'contoso,3,4' } });
   });
@@ -674,8 +674,8 @@ describe('choosing what to sync', () => {
     const unlisted = await run([], { listsSite: 'Ghost' }, { reader: { failWith: { kind: 'auth', message: 'not authenticated' } } });
 
     expect(byName.listsRuns).toEqual(['Direction']);
-    expect(byName.prompt.asked).toEqual([]);
-    expect(byName.calls).toEqual([]);
+    expect(byName.prompt.asked).toStrictEqual([]);
+    expect(byName.calls).toStrictEqual([]);
     expect(byId.listsRuns).toEqual(['Espace Contoso']);
     expect(byAddress.listsRuns).toEqual(['Direction']);
     expect(missing.ok).toBe(false);
@@ -748,7 +748,7 @@ describe('choosing what to sync', () => {
     const unlisted = await run([], { planId: 'plan-1' }, { plans: [plan], failPlans: true });
 
     expect(byTitle.planRuns).toEqual(['Offsite 2026']);
-    expect(byTitle.prompt.asked).toEqual([]);
+    expect(byTitle.prompt.asked).toStrictEqual([]);
     expect(byId.planRuns).toEqual(['Offsite 2026']);
     expect(fetched.planRuns).toEqual(['Offsite 2026']);
     expect(missing.ok).toBe(false);
@@ -873,13 +873,13 @@ describe('choosing what to sync', () => {
     const { calls, ok: succeeded } = await run(['q']);
 
     expect(succeeded).toBe(true);
-    expect(calls).toEqual([]);
+    expect(calls).toStrictEqual([]);
   });
 
   it('naming a site and its library outright skips both questions, and syncs nothing else', async () => {
     const { calls, prompt, groupRuns, todoRuns, teamRuns, notebookRuns, listsRuns, planRuns } = await run([], { siteId: 'contoso,1,2', driveIds: ['b!two'] });
 
-    expect(prompt.asked).toEqual([]);
+    expect(prompt.asked).toStrictEqual([]);
     expect(calls[0]?.drives).toEqual([{ id: 'b!two', name: 'Site Assets' }]);
     // Strictly: `toEqual` would take a run recorded as `undefined` for no run at all.
     expect([groupRuns, todoRuns, teamRuns, notebookRuns, listsRuns, planRuns]).toStrictEqual([[], [], [], [], [], []]);
@@ -895,7 +895,7 @@ describe('choosing what to sync', () => {
     const { ok: succeeded, calls } = await run([], { siteId: 'contoso,9,9', driveIds: ['b!one'] });
 
     expect(succeeded).toBe(false);
-    expect(calls).toEqual([]);
+    expect(calls).toStrictEqual([]);
   });
 
   it('naming a site by address skips the picker too', async () => {
@@ -934,7 +934,7 @@ describe('refreshing everything already synced', () => {
   it('the update command asks nothing and syncs every site already in the knowledge base', async () => {
     const { calls, prompt } = await run([], { command: 'update' }, { synced });
 
-    expect(prompt.asked).toEqual([]);
+    expect(prompt.asked).toStrictEqual([]);
     expect(calls).toHaveLength(1);
     expect(calls[0]?.site.name).toBe('Espace Contoso');
   });
@@ -971,7 +971,7 @@ describe('refreshing everything already synced', () => {
     const { calls, ok: succeeded } = await run([], { command: 'update' });
 
     expect(succeeded).toBe(true);
-    expect(calls).toEqual([]);
+    expect(calls).toStrictEqual([]);
   });
 });
 
@@ -980,7 +980,7 @@ describe('syncing the mailbox', () => {
     const { mailboxRuns, calls, prompt, logger } = await run(['m']);
 
     expect(mailboxRuns).toHaveLength(1);
-    expect(calls).toEqual([]);
+    expect(calls).toStrictEqual([]);
     expect(prompt.shown.at(-1)).toContain('Mailbox:');
     expect(logger.calls).toContainEqual({ level: 'info', event: 'mailbox.started', meta: {} });
   });
@@ -1002,7 +1002,7 @@ describe('syncing the mailbox', () => {
     const { mailboxRuns, prompt } = await run([], { mailbox: true });
 
     expect(mailboxRuns).toHaveLength(1);
-    expect(prompt.asked).toEqual([]);
+    expect(prompt.asked).toStrictEqual([]);
   });
 
   it('a day to sync from is passed through to the mailbox run', async () => {
@@ -1026,7 +1026,7 @@ describe('syncing the mailbox', () => {
     const synced = [{ kind: 'site' as const, id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-07-22T09:00:00Z', fileCount: 143 }];
     const { mailboxRuns } = await run([], { command: 'update' }, { synced });
 
-    expect(mailboxRuns).toEqual([]);
+    expect(mailboxRuns).toStrictEqual([]);
   });
 });
 
@@ -1384,7 +1384,7 @@ describe('when a source run fails after it began', () => {
     const result = await runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(result.ok).toBe(false);
-    expect(calls).toEqual([]);
+    expect(calls).toStrictEqual([]);
   });
 });
 
@@ -1515,7 +1515,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
 
     await runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 4, dryRun: false });
 
-    expect(reported[0]?.ran).toEqual([]);
+    expect(reported[0]?.ran).toStrictEqual([]);
   });
 });
 
@@ -1585,7 +1585,7 @@ describe('stopping where a source fails, and nowhere else', () => {
       expect(succeeded).toBe(false);
       expect(step).toBe(kind);
       expect(reported[0]?.ran.map((ran) => ran.id)).toEqual(finishedBefore(PICKED, kind));
-      expect(planRuns).toEqual([]);
+      expect(planRuns).toStrictEqual([]);
     });
   }
 });
@@ -1630,14 +1630,14 @@ describe('reaching back as far as the first run was told to', () => {
 
     expect(stopped).toMatchObject({ ok: false, step: 'pickSince', cause: 'bad-choice', error: 'answer with a day like 2026-01-31, or all' });
     expect(stopped.mailboxRuns).toHaveLength(0);
-    expect(stopped.rememberedSince).toEqual([]);
+    expect(stopped.rememberedSince).toStrictEqual([]);
   });
 
   it('quitting the picker asks nothing more and keeps nothing', async () => {
     const { prompt, rememberedSince } = await run(['q'], {}, { firstRun: true });
 
     expect(prompt.asked).toEqual(['Source:']);
-    expect(rememberedSince).toEqual([]);
+    expect(rememberedSince).toStrictEqual([]);
   });
 
   it('a kept reach is used without asking', async () => {
@@ -1645,7 +1645,7 @@ describe('reaching back as far as the first run was told to', () => {
 
     expect(prompt.asked).toEqual(['Source:']);
     expect(calendarRuns).toEqual([{ since: '2024-06-01' }]);
-    expect(rememberedSince).toEqual([]);
+    expect(rememberedSince).toStrictEqual([]);
   });
 
   it('--since replaces the kept reach and is kept for the runs after; a dry run uses a reach, named or answered, and keeps nothing', async () => {
@@ -1658,12 +1658,12 @@ describe('reaching back as far as the first run was told to', () => {
 
     expect(dry.mailboxRuns).toHaveLength(1);
     expect(dry.mailboxRuns[0]?.since).toBeUndefined();
-    expect(dry.rememberedSince).toEqual([]);
+    expect(dry.rememberedSince).toStrictEqual([]);
 
     const asked = await run(['m', '2025-01-01'], { dryRun: true }, { firstRun: true });
 
     expect(asked.mailboxRuns[0]?.since).toBe('2025-01-01');
-    expect(asked.rememberedSince).toEqual([]);
+    expect(asked.rememberedSince).toStrictEqual([]);
   });
 
   it('a first run that uses --since in the picker is not asked again', async () => {
@@ -1676,13 +1676,13 @@ describe('reaching back as far as the first run was told to', () => {
   it('update, and a source named on the command line, never ask: they take the kept reach, or everything when none was kept', async () => {
     const updated = await run([], { command: 'update' }, { firstRun: true, synced: [CALENDAR_SYNCED] });
 
-    expect(updated.prompt.asked).toEqual([]);
+    expect(updated.prompt.asked).toStrictEqual([]);
     expect(updated.calendarRuns).toHaveLength(1);
     expect(updated.calendarRuns[0]?.since).toBeUndefined();
 
     const named = await run([], { calendar: true }, { stored: '2024-06-01' });
 
-    expect(named.prompt.asked).toEqual([]);
+    expect(named.prompt.asked).toStrictEqual([]);
     expect(named.calendarRuns).toEqual([{ since: '2024-06-01' }]);
   });
 

@@ -279,12 +279,12 @@ describe('listing who took part in a conversation', () => {
     ]);
   });
 
-  // The length is pinned beside the contents: an array holding one `undefined` satisfies `toEqual([])`
+  // The length is pinned beside the contents: an array holding one `undefined` satisfies `toStrictEqual([])`
   // in Bun, so a sender that leaked through as nothing would read as nobody having been named.
   it('a conversation with nobody named lists nobody', () => {
     const named = participantsOf([{ message: message({ from: undefined, to: [] }), body: '' }]);
 
-    expect(named).toEqual([]);
+    expect(named).toStrictEqual([]);
     expect(named).toHaveLength(0);
   });
 

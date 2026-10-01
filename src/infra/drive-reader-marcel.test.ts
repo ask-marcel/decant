@@ -183,7 +183,7 @@ describe('reading SharePoint through the ask-marcel library', () => {
     const found = await reader.siteByUrl('not an address');
 
     expect(found.ok === false && found.error.kind).toBe('permanent');
-    expect(recorded).toEqual([]);
+    expect(recorded).toStrictEqual([]);
   });
 
   it('a site named by id comes back with the name the knowledge base files it under', async () => {

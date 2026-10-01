@@ -227,7 +227,7 @@ describe('writing one conversation as one file', () => {
 
     // No document of any kind in the thread's own folder: the picture is in the mailbox store, and
     // a card for it would be a card for something that stands for itself.
-    expect([...files.written.keys()].filter((path) => path.startsWith(`${ATTACHMENTS_STORE}/`))).toEqual([]);
+    expect([...files.written.keys()].filter((path) => path.startsWith(`${ATTACHMENTS_STORE}/`))).toStrictEqual([]);
     expect(files.written.get(THREAD_FILE)).toContain('Regards,\n\n![logo.png](../../_inline/logo-3d8c205c.png)');
     expect(files.written.get(THREAD_FILE)).not.toContain('**Attachments:**');
   });

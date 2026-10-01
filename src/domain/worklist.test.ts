@@ -23,7 +23,7 @@ describe('deciding what the next run has to do', () => {
   it('a file untouched since the last run is left alone', () => {
     const manifest = { '01ABC': { path: 'Projets/Roadmap.pptx', cTag: 'c1', outputs: ['Projets/Roadmap.pptx.md'] } };
 
-    expect(buildWorklist([file()], manifest)).toEqual([]);
+    expect(buildWorklist([file()], manifest)).toStrictEqual([]);
   });
 
   it('a file edited since the last run is queued for conversion again', () => {
@@ -45,11 +45,11 @@ describe('deciding what the next run has to do', () => {
   });
 
   it('a file deleted before it was ever synced needs no work', () => {
-    expect(buildWorklist([file({ kind: 'deleted' })], {})).toEqual([]);
+    expect(buildWorklist([file({ kind: 'deleted' })], {})).toStrictEqual([]);
   });
 
   it('a new folder needs no work of its own, since writing a file creates its folders', () => {
-    expect(buildWorklist([file({ kind: 'folder', name: 'Projets', path: 'Projets' })], {})).toEqual([]);
+    expect(buildWorklist([file({ kind: 'folder', name: 'Projets', path: 'Projets' })], {})).toStrictEqual([]);
   });
 
   // Loop rewrites a workspace's manifest whenever one of its pages changes, so a manifest routed like a
@@ -58,15 +58,15 @@ describe('deciding what the next run has to do', () => {
     const pod = file({ id: '01P', name: 'Offsite.pod', path: 'LoopAppData/.appdata/Offsite.pod', cTag: 'c2' });
     const manifest = { '01P': { path: 'LoopAppData/.appdata/Offsite.pod', cTag: 'c1', outputs: [] } };
 
-    expect(buildWorklist([pod], {})).toEqual([]);
-    expect(buildWorklist([pod], manifest)).toEqual([]);
+    expect(buildWorklist([pod], {})).toStrictEqual([]);
+    expect(buildWorklist([pod], manifest)).toStrictEqual([]);
   });
 
   it('a folder restamped by SharePoint without moving needs no work, since a folder converts to nothing', () => {
     const folder = file({ id: '01F', kind: 'folder', name: 'Projets', path: 'Projets', cTag: 'c2' });
     const manifest = { '01F': { path: 'Projets', cTag: 'c1', outputs: [] } };
 
-    expect(buildWorklist([folder], manifest)).toEqual([]);
+    expect(buildWorklist([folder], manifest)).toStrictEqual([]);
   });
 
   it('a renamed folder is moved on disk so its whole subtree follows', () => {
@@ -107,11 +107,11 @@ describe('bringing back a file whose conversion failed', () => {
   });
 
   it('a file deleted at the source is not retried, even with tries left', () => {
-    expect(buildWorklist([file({ kind: 'deleted' })], {}, { '01ABC': failed() })).toEqual([]);
+    expect(buildWorklist([file({ kind: 'deleted' })], {}, { '01ABC': failed() })).toStrictEqual([]);
   });
 
   it('a file that has failed three times is left alone', () => {
-    expect(buildWorklist([], {}, { '01ABC': failed({}, 3) })).toEqual([]);
+    expect(buildWorklist([], {}, { '01ABC': failed({}, 3) })).toStrictEqual([]);
   });
 
   it('a retried file takes its place in the queue by the day it last changed', () => {

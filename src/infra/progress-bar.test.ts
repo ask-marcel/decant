@@ -45,7 +45,7 @@ describe('showing how far a conversion has got', () => {
     bar.step('phantom.docx');
     bar.done();
 
-    expect(writes).toEqual([]);
+    expect(writes).toStrictEqual([]);
   });
 
   it('a close before any item is done prints no newline, so an empty run leaves the line clean', () => {
@@ -54,7 +54,7 @@ describe('showing how far a conversion has got', () => {
     bar.start(5, 'Converting');
     bar.done();
 
-    expect(writes).toEqual([]);
+    expect(writes).toStrictEqual([]);
   });
 
   it('the no-op progress writes nothing at all, for a run whose output is piped away', () => {
@@ -65,7 +65,7 @@ describe('showing how far a conversion has got', () => {
     progress.step('a.docx');
     progress.done();
 
-    expect(writes).toEqual([]);
+    expect(writes).toStrictEqual([]);
   });
 
   it('an item that has begun but not finished shows on the line, so a slow item does not look like the run has stopped', () => {

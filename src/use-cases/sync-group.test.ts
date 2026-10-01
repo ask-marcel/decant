@@ -132,14 +132,14 @@ describe('mirroring a group inbox into the knowledge base', () => {
     const { summary, asked } = await run({ files: { texts: { [STATE_PATH]: serializeGroupState(held) } } });
 
     expect(summary.converted).toBe(0);
-    expect(asked).toEqual([]);
+    expect(asked).toStrictEqual([]);
   });
 
   it('a run that found nothing new still records that it ran, so a later report does not call it stale', async () => {
     const held = withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', RECORD);
     const { asked, files } = await run({ files: { texts: { [STATE_PATH]: serializeGroupState(held) } } });
 
-    expect(asked).toEqual([]);
+    expect(asked).toStrictEqual([]);
     expect(stateAfter(files).lastRun).toBe('2026-07-23T14:00:00Z');
   });
 
@@ -174,7 +174,7 @@ describe('mirroring a group inbox into the knowledge base', () => {
     const { summary, files, asked } = await run({ dryRun: true });
 
     expect(summary.queued).toBe(1);
-    expect(asked).toEqual([]);
+    expect(asked).toStrictEqual([]);
     expect(files.written.size).toBe(0);
   });
 
@@ -315,7 +315,7 @@ describe('a group thread the run could not write', () => {
     const fourth = await again(third.files.written.get(STATE_PATH) ?? '', 'early');
 
     expect(askedFor(third)).toEqual(['early']);
-    expect(askedFor(fourth)).toEqual([]);
+    expect(askedFor(fourth)).toStrictEqual([]);
     expect(stateAfter(fourth.files).retry['early']).toMatchObject({ attempts: 3 });
   });
 
@@ -339,7 +339,7 @@ describe('a group thread the run could not write', () => {
     const fourth = await owed(third.files.written.get(STATE_PATH) ?? '');
 
     expect(askedFor(third)).toEqual(['early']);
-    expect(askedFor(fourth)).toEqual([]);
+    expect(askedFor(fourth)).toStrictEqual([]);
     expect(stateAfter(third.files).retry).toEqual({});
     expect(third.notes.givenUp).toEqual([{ path: 'budget.xlsx', reason: 'locked' }]);
     expect(third.files.written.get(REPORT_PATH)).toContain('- budget.xlsx: locked');
@@ -394,7 +394,7 @@ describe('reaching back only as far as the day', () => {
     for (const since of ['2025-06-01', '2025-09-01']) {
       const { asked } = await run({ files: { texts: { [STATE_PATH]: filedUnder('2025-06-01') } }, reader: LISTING, since });
 
-      expect(asked).toEqual([]);
+      expect(asked).toStrictEqual([]);
     }
   });
 
@@ -414,6 +414,6 @@ describe('reaching back only as far as the day', () => {
 
     const { asked } = await run({ files: { texts: { [STATE_PATH]: given } }, reader: LISTING, since: '2025-01-01' });
 
-    expect(asked.map((input) => input.root)).toEqual([]);
+    expect(asked.map((input) => input.root)).toStrictEqual([]);
   });
 });
