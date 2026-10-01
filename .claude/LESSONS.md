@@ -168,13 +168,11 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   the others are carrying it.
   Merges: 2026-07-24, 2026-08-14, 2026-08-27, 2026-08-28, 2026-08-30.
 
-- [lesson] A file too big to score is a file too big to trust. `render-thread.ts` reached 692 lines
-  doing five jobs, and the mutation number said so before anything else did: it crossed under 90 on
-  three of four changes in one session, each time pulled back by tests written against whatever had
-  survived. Splitting it into the jobs it was doing put every piece over 90 on its own, and the
-  survivors that had been hiding in the aggregate became attributable to one module each. The split
-  itself found three pieces of dead code: a path reported for a document that no longer exists, a
-  constant declared twice under two names, and a failure path the fake could not even produce.
+- [gotcha] A file too big to score is a file too big to trust: `render-thread.ts` reached 692 lines
+  doing five jobs and crossed under 90 on three of four changes in one session, each time pulled
+  back by tests written against whatever survived. Splitting it into its jobs put every piece over
+  90 on its own, made each survivor attributable to one module, and turned up three pieces of dead
+  code.
 
 - [gotcha] Extracting a module is where narrow dependencies pay. Each piece took a `Pick<>` of the
   ports it actually calls rather than the whole `RenderThreadDeps` bag, which is free at every call
@@ -191,12 +189,11 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   lint, typecheck, the suite, coverage and mutation have run by hand, said in the body.
   Merges: 2026-07-26, 2026-08-27, 2026-08-30.
 
-- [lesson] Splitting a test file is not the same as splitting the code. The four thread modules got
-  their own test files but kept ONE harness, because what each of them does is only visible in the
-  documents a whole run writes: a card names a file the placement chose, and a body links a card the
-  writing made. Narrower fakes per module would test the seams between them rather than the vault
-  they produce. Mutation is scored per source file whatever drives it, so the measurement was never
-  the reason to split the tests; readability was.
+- [decision] The four thread modules got their own test files but kept ONE harness, because what
+  each does is only visible in the documents a whole run writes: a card names a file the placement
+  chose, and a body links a card the writing made. Narrower fakes per module would test the seams
+  between them rather than the vault they produce; mutation is scored per source file whatever
+  drives it, so readability was the reason to split the tests.
 
 - [gotcha] An untested error path looks exactly like a covered one. `convert-file.ts` sat at 89.07
   with line coverage at 100: every `if (!x.ok) return failure(x.error)` could be deleted outright
@@ -204,37 +201,29 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   invitation the source refuses, put it over 90. Coverage says the line ran; only mutation says the
   line mattered.
 
-- [gotcha] Substituting a multi-line block for an inline placeholder breaks whatever span held it.
-  `convert-mail-to-markdown` carries the surrounding HTML's emphasis onto its placeholder, so a
-  picture in a bold signature arrives as `**\[inline image: logo.png\]**`. That was harmless while
-  the replacement was one line; once the OCR reading went under the picture it was three blocks, and
-  the opening marker stranded itself on the image line while the closer landed after the quote.
-  Seven of them in one seven-day vault, all one sender's signature. Worth checking the next time a
-  replacement grows from a line to a block: the question is not whether the new text is right, but
-  what was wrapped around the old.
-  Attributed upstream first and it was ours. Before writing a bug report, check whether the input
-  was fine until our own output changed shape.
+- [mistake] Blamed the library for bold markers stranded around inline pictures, and the break was
+  ours: the placeholder arrives inside the HTML's emphasis (`**\[inline image: logo.png\]**`), which
+  was harmless while its replacement was one line and broke once the OCR reading made it three
+  blocks (now handled in `inline-image.ts:75`). Before writing a bug report upstream, check whether
+  the input was fine until our own output changed shape.
 
-- [lesson] A message a person reads has to say which and why, not just that. "a kind of file this
-  tool does not read" appeared fourteen times in one seven-day report and covered two situations
-  wanting different answers: a kind we know and decline to convert, worth revisiting, and a name
-  with no extension at all, where nothing could have been done. Naming the extension, or saying
-  there is none, turned a wall of identical lines into something a reader can act on. The same
-  applies to the front matter: `original:` named the file beside a card and a reader still had to
-  retype the path, so the card links it.
-  Describe the file at the SOURCE, not the words a message linked it under: a message can point at
-  a recording calling it `Rapport.docx`, and the reason would then name a kind that was never there.
+- [decision] A message a person reads says which and why, not just that: "a kind of file this tool
+  does not read" appeared fourteen times in one seven-day report and covered a kind we decline to
+  convert and a name with no extension at all, which want different answers, so the reason names the
+  extension or says there is none. Describe the file at the SOURCE, not by the words a message
+  linked it under, which can call a recording `Rapport.docx`. Front matter follows the same rule: a
+  card links the file beside it rather than naming a path to retype.
 
-- [lesson] A report earns attention only if everything in it deserves attention. Two decisions had
-  drifted apart: a notification icon was dropped from the thread as decoration, then reported as
-  something that did not reach the knowledge base. One run's report was fourteen lines, all false
-  positives, thirteen icons and a shared folder, with nothing lost in any of them. Whatever is
-  deliberately ignored has to be ignored everywhere, or the report is noise on the day something
-  real lands in it. Ask of every line: would a reader do anything about this?
+- [decision] A report earns attention only if everything in it deserves attention. One run's report
+  was fourteen lines, thirteen notification icons and a shared folder, all false positives, because
+  an icon dropped from the thread as decoration was still reported as not reaching the knowledge
+  base. Whatever is deliberately ignored is ignored everywhere, or the report is noise on the day
+  something real lands in it: ask of every line whether a reader would do anything about it.
 
-- [gotcha] `--since` bounds the sweep, not the folder date. A thread whose first message is from
-  April but which had activity inside the window is filed under April, because the folder is named
-  from the first message and frozen there. That is correct and looks wrong in a directory listing.
+- [gotcha] The reach day decides which threads are written, not where they are filed: a thread whose
+  first message is from April but which had activity inside the reach is filed under April, because
+  the folder is named from the first message and frozen there. That is correct and looks wrong in a
+  directory listing.
 
 - [gotcha] Check `my-quick-context` before diagnosing a slow or surprising run, since the signed-in
   account can change: a sync that took ninety seconds ran past an hour because the account had moved
@@ -245,22 +234,18 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   Ask per run rather than carrying an answer forward.
   Merges: 2026-08-30, 2026-08-30.
 
-- [gotcha] A unit test proves the function, never the call. `withoutPlaceholders` was written, tested
-  and never called: the edit meant to wire it into `rewriteMessageBody` missed its anchor because
-  prettier had collapsed the array onto one line, and the function's own tests passed regardless. The
-  suite stayed green, the mutation gate stayed green, and a re-sync left the ten markers exactly
-  where they were. Counting the vault afterwards is what caught it. Wiring a new transformation in
-  needs one test at the level of the thing that should USE it, and the proof it works is that
-  removing the call turns a test red. Two of the tests it turned red were asserting the old
-  behaviour, which is how you know the call was doing something.
+- [gotcha] A unit test proves the function, never the call: `withoutPlaceholders` was written and
+  tested but never called, because the edit meant to wire it into `rewriteMessageBody` missed its
+  anchor after prettier had collapsed the array onto one line. The suite and the mutation gate
+  stayed green, and only counting the vault after a re-sync showed the ten markers still there.
+  Wiring a transformation in needs one test at the level of the thing that uses it, and the proof is
+  that removing the call turns a test red.
 
-- [lesson] A capability wired in one place and not its mirror is the shape this codebase keeps
-  producing. The safelink unwrapping went into thread bodies and not card bodies, so a signature sat
-  in a card at six hundred characters a line beside a thread that read cleanly. OCR went into the
-  inline-image path and not into the parts of a saved email, so a signature block was read when its
-  owner mailed you and silent when somebody forwarded them. Both times the rule belonged to "text
-  that came out of mail" and was applied to one of the places such text lands. When adding one, list
-  every route the same content can arrive by before calling it done.
+- [mistake] A capability wired into one route and not its mirror is the shape this codebase keeps
+  producing: safelink unwrapping went into thread bodies and not card bodies, and OCR into inline
+  images and not the parts of a saved email. Both times the rule belonged to "text that came out of
+  mail" and was applied to one of the places such text lands. When adding one, list every route the
+  same content can arrive by before calling it done.
 
 - [gotcha] The OCR cache is keyed by content hash alone, so it is shared by every mailbox synced on
   this machine and cannot be cleaned per account. What can be identified is what the current vault
@@ -268,29 +253,23 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   readings for mail outside the current `--since` window, which costs one pass each if that mail
   comes back into range. It survives `rm -rf kb/Mailbox`, which is why a killed sync loses no OCR.
 
-- [gotcha] CI had never run on this code before the day it went public, and its first four failures
-  were all first contact rather than regressions: `gitleaks` absent from the runner, one error that
-  only the strict type-aware lint sees, thirteen fixable CVEs, and a mutation sweep that ran every
-  mutant and then died writing its report. None of them showed locally because none of the local
-  gates are the CI gates. `bun run lint` is the cached ordinary pass and `lint:strict` is what CI
-  runs; `mutate:changed` scores a file or two and `mutate` on main scores ninety. Run the CI
-  variant before the first push, not the local one.
+- [gotcha] The local gates are not the CI gates: `bun run lint` is the cached ordinary pass where CI
+  runs `lint:strict`, and `mutate:changed` scores a file or two where `mutate` on main scores
+  ninety. CI's first run failed four ways no local gate could show: `gitleaks` absent from the
+  runner, one error only the strict type-aware lint sees, thirteen fixable CVEs, and a mutation
+  sweep that died writing its report. Run the CI variant before the first push, not the local one.
 
-- [lesson] Read the stack trace before changing anything. The first fix for the sweep crash dropped
-  the html reporter on the theory that serialising a report is a reporter's job; the trace had said
-  `MutationTestReportHelper.reportAll` and `JSON.stringify` all along, and a second twenty-five
-  minute run was the price of not reading it. The second fix invented a flag that does not exist and
-  cost a third run. Two runs and fifty minutes bought by a guess and a habit.
+- [mistake] Changed things before reading the stack trace: the first fix for the mutation sweep
+  crash dropped the html reporter on a theory, while the trace had said
+  `MutationTestReportHelper.reportAll` and `JSON.stringify` all along, and the second fix invented a
+  flag that does not exist. Two extra twenty-five-minute runs were the price of a guess and a habit.
 
 - [gotcha] A source can report one condition two ways, as an empty answer or as a refusal, and code
   that handles one will not handle the other. `convertPdf` fell back to OCR when a PDF's text came
-  back empty, which is the entire reason the OCR-PDF work exists, and still reported a genuinely
-  scanned PDF as failed: the library answers that case with a 415 and a message, never with an empty
-  body, so the fallback was unreachable for the only file type it was written for. Nothing looked
-  wrong from inside, since a failed file reads as an unlucky file rather than as a dead branch, and
-  it took a real library and one appendix sitting beside its converted siblings to show it. When
-  adding a fallback, check what the source actually does in the case the fallback is for, rather
-  than what an absence of data would look like.
+  back empty, but the library answers a genuinely scanned PDF with a 415 and a message, so the
+  fallback was unreachable for the only file type it was written for, and the failure read as an
+  unlucky file rather than a dead branch. When adding a fallback, check what the source actually
+  does in the case the fallback is for.
 
 - [gotcha] A fake that answers whatever it is handed will keep a dead feature green. The OCR fallback
   for scanned PDFs passed its tests from 24 July to 6 September and had never read one: `pdfText`

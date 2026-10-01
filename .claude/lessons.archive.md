@@ -274,11 +274,28 @@ left. Nothing reads this file at session start; grep it when a question needs th
   carrying it.
   Archived 2026-10-01: merge, into the mutation-aggregate entry (2026-08-30).
 
+- [lesson] A file too big to score is a file too big to trust. `render-thread.ts` reached 692 lines
+  doing five jobs, and the mutation number said so before anything else did: it crossed under 90 on
+  three of four changes in one session, each time pulled back by tests written against whatever had
+  survived. Splitting it into the jobs it was doing put every piece over 90 on its own, and the
+  survivors that had been hiding in the aggregate became attributable to one module each. The split
+  itself found three pieces of dead code: a path reported for a document that no longer exists, a
+  constant declared twice under two names, and a failure path the fake could not even produce.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (retagged from `[lesson]`).
+
 - [gotcha] `scripts/check-commit-size.sh` allows `--no-verify` for a mass-move, and a file split is
   one: moving 690 lines counts as some 750 changed however the commits are cut, so splitting the
   commit does not help. Run lint, typecheck, the suite, coverage and mutation by hand first, and say
   in the body that you did.
   Archived 2026-10-01: merge, into the commit-size entry (2026-08-30).
+
+- [lesson] Splitting a test file is not the same as splitting the code. The four thread modules got
+  their own test files but kept ONE harness, because what each of them does is only visible in the
+  documents a whole run writes: a card names a file the placement chose, and a body links a card the
+  writing made. Narrower fakes per module would test the seams between them rather than the vault
+  they produce. Mutation is scored per source file whatever drives it, so the measurement was never
+  the reason to split the tests; readability was.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (retagged from `[lesson]`).
 
 - [gotcha] Never read a bare `bunx stryker run`. `stryker.conf.json` sets `incremental: true`, and
   the repo's own `mutate:changed` and `mutate:staged` delete `reports/stryker-incremental.json`
@@ -322,12 +339,69 @@ left. Nothing reads this file at session start; grep it when a question needs th
   by a machine and pointing at the image above it.
   Archived 2026-10-01: graduate, now stated at src/domain/inline-image.ts:53 (`READ_BY_MACHINE`).
 
+- [gotcha] Substituting a multi-line block for an inline placeholder breaks whatever span held it.
+  `convert-mail-to-markdown` carries the surrounding HTML's emphasis onto its placeholder, so a
+  picture in a bold signature arrives as `**\[inline image: logo.png\]**`. That was harmless while
+  the replacement was one line; once the OCR reading went under the picture it was three blocks, and
+  the opening marker stranded itself on the image line while the closer landed after the quote.
+  Seven of them in one seven-day vault, all one sender's signature. Worth checking the next time a
+  replacement grows from a line to a block: the question is not whether the new text is right, but
+  what was wrapped around the old.
+  Attributed upstream first and it was ours. Before writing a bug report, check whether the input
+  was fine until our own output changed shape.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (the span half is stated at
+  src/domain/inline-image.ts:75-82, the attribution half is not; retagged `[mistake]`).
+
+- [lesson] A message a person reads has to say which and why, not just that. "a kind of file this
+  tool does not read" appeared fourteen times in one seven-day report and covered two situations
+  wanting different answers: a kind we know and decline to convert, worth revisiting, and a name
+  with no extension at all, where nothing could have been done. Naming the extension, or saying
+  there is none, turned a wall of identical lines into something a reader can act on. The same
+  applies to the front matter: `original:` named the file beside a card and a reader still had to
+  retype the path, so the card links it.
+  Describe the file at the SOURCE, not the words a message linked it under: a message can point at
+  a recording calling it `Rapport.docx`, and the reason would then name a kind that was never there.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (retagged from `[lesson]`).
+
+- [lesson] A report earns attention only if everything in it deserves attention. Two decisions had
+  drifted apart: a notification icon was dropped from the thread as decoration, then reported as
+  something that did not reach the knowledge base. One run's report was fourteen lines, all false
+  positives, thirteen icons and a shared folder, with nothing lost in any of them. Whatever is
+  deliberately ignored has to be ignored everywhere, or the report is noise on the day something
+  real lands in it. Ask of every line: would a reader do anything about this?
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (retagged from `[lesson]`).
+
+- [gotcha] `--since` bounds the sweep, not the folder date. A thread whose first message is from
+  April but which had activity inside the window is filed under April, because the folder is named
+  from the first message and frozen there. That is correct and looks wrong in a directory listing.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 ("`--since` bounds the sweep" no
+  longer matches `--since`; the folder-date point stands).
+
 - [gotcha] Check `my-quick-context` before diagnosing a slow or surprising run. A sync that had
   taken ninety seconds ran past an hour and wrote threads nobody recognised: the signed-in account
   had changed to another tenant whose mail is full of pasted screenshots, 113 of them against 5,
   each costing an OCR pass at some twenty seconds on a cold cache. Nothing in the code had changed
   that path's cost. One call would have said so in a second.
   Archived 2026-10-01: merge, into the `my-quick-context` entry (2026-08-30).
+
+- [gotcha] A unit test proves the function, never the call. `withoutPlaceholders` was written, tested
+  and never called: the edit meant to wire it into `rewriteMessageBody` missed its anchor because
+  prettier had collapsed the array onto one line, and the function's own tests passed regardless. The
+  suite stayed green, the mutation gate stayed green, and a re-sync left the ten markers exactly
+  where they were. Counting the vault afterwards is what caught it. Wiring a new transformation in
+  needs one test at the level of the thing that should USE it, and the proof it works is that
+  removing the call turns a test red. Two of the tests it turned red were asserting the old
+  behaviour, which is how you know the call was doing something.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (734 bytes).
+
+- [lesson] A capability wired in one place and not its mirror is the shape this codebase keeps
+  producing. The safelink unwrapping went into thread bodies and not card bodies, so a signature sat
+  in a card at six hundred characters a line beside a thread that read cleanly. OCR went into the
+  inline-image path and not into the parts of a saved email, so a signature block was read when its
+  owner mailed you and silent when somebody forwarded them. Both times the rule belonged to "text
+  that came out of mail" and was applied to one of the places such text lands. When adding one, list
+  every route the same content can arrive by before calling it done.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (retagged from `[lesson]`).
 
 - [lesson] Measure before choosing a threshold. Asked to skip OCR on small pictures, the vault
   answered what small meant: everything OCR found real text in was 64 KB or more, a table screenshot
@@ -345,6 +419,15 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: graduate, now stated at src/use-cases/convert-attachment.ts:192-193, with
   `wordsIn` at :165.
 
+- [gotcha] CI had never run on this code before the day it went public, and its first four failures
+  were all first contact rather than regressions: `gitleaks` absent from the runner, one error that
+  only the strict type-aware lint sees, thirteen fixable CVEs, and a mutation sweep that ran every
+  mutant and then died writing its report. None of them showed locally because none of the local
+  gates are the CI gates. `bun run lint` is the cached ordinary pass and `lint:strict` is what CI
+  runs; `mutate:changed` scores a file or two and `mutate` on main scores ninety. Run the CI
+  variant before the first push, not the local one.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (626 bytes).
+
 - [gotcha] Stryker's incremental mode writes its file by pretty-printing the entire report through
   `JSON.stringify`, in `reportAll`, after every mutant has already run. On a full sweep of 4,413
   mutants under Node that string throws `RangeError: Invalid string length`, so the gate burned
@@ -355,6 +438,13 @@ left. Nothing reads this file at session start; grep it when a question needs th
   and succeeded, and that difference was never explained; the write was removed rather than
   understood, which is worth knowing if it ever comes back.
   Archived 2026-10-01: graduate, now stated at stryker.conf.json `_incremental_comment`.
+
+- [lesson] Read the stack trace before changing anything. The first fix for the sweep crash dropped
+  the html reporter on the theory that serialising a report is a reporter's job; the trace had said
+  `MutationTestReportHelper.reportAll` and `JSON.stringify` all along, and a second twenty-five
+  minute run was the price of not reading it. The second fix invented a flag that does not exist and
+  cost a third run. Two runs and fifty minutes bought by a guess and a habit.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (retagged from `[lesson]`).
 
 - [gotcha] `gitleaks/gitleaks-action` asks an organisation repository for a paid licence key and
   fails without one. Install the pinned binary from the release instead; the asset URL was checked
@@ -369,6 +459,17 @@ left. Nothing reads this file at session start; grep it when a question needs th
   the CDN tarball, the ignores came out and the audit was clean with no exceptions at all.
   Archived 2026-10-01: archive, closed: 2.4.0 pointed `xlsx` at the CDN and the ignores came out
   (its own last sentence); ci.yml:60 audits with none.
+
+- [gotcha] A source can report one condition two ways, as an empty answer or as a refusal, and code
+  that handles one will not handle the other. `convertPdf` fell back to OCR when a PDF's text came
+  back empty, which is the entire reason the OCR-PDF work exists, and still reported a genuinely
+  scanned PDF as failed: the library answers that case with a 415 and a message, never with an empty
+  body, so the fallback was unreachable for the only file type it was written for. Nothing looked
+  wrong from inside, since a failed file reads as an unlucky file rather than as a dead branch, and
+  it took a real library and one appendix sitting beside its converted siblings to show it. When
+  adding a fallback, check what the source actually does in the case the fallback is for, rather
+  than what an absence of data would look like.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (820 bytes).
 
 - [decision] The group inbox source was measured before it was built, and the measurement is why it
   was not built. `list-my-memberships` answers three unified groups, and every other group on the
