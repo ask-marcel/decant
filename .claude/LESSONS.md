@@ -424,3 +424,19 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   list of sources the entry above says still free it. Planner was exposed beyond a rename: it places
   every listed task to draw the board, so an unchanged task's page counted as free, and a new task
   sharing its title and bucket, listed first, took the file.
+
+- [decision] Every namesake suffix goes through `freeSegment` or `freePath` (`kb-path.ts`): a hash
+  of the id, then a re-check against what is taken that moves on to the hash of the hash, and no
+  planner calls `disambiguateSegment` with a raw id. The hash and the re-check are each pinned once,
+  by two attachment tests in `sync-calendar.test.ts` ('a namesake listed after it keeps its file',
+  'named the way its namesake would be suffixed'), while a planner's own test only shows its suffix
+  is not a raw slice. Keep `attachmentName` on the helper, or move those two tests with it.
+
+- [gotcha] A Teams post id is the millisecond the post was sent, so posts sent within 100 seconds of
+  each other can open on the same eight digits. Shared prefixes are not only Graph's base64 ids: any
+  id that feeds a short suffix gets hashed first.
+
+- [gotcha] A state version bump cannot carry a change to how files are named. `loadState` starts an
+  unreadable ledger over in memory and never archives, so every file the old ledger named would
+  stay in the vault untracked. A naming change rides each item's next rewrite instead, where the
+  supersede step puts the old file aside.
