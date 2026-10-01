@@ -145,18 +145,21 @@ const save = async (deps: SyncListsDeps, roots: Roots, state: ListsState): Promi
 const owed = (state: ListsState, reads: ReadonlyArray<Read>): ReadonlyArray<Read> =>
   reads.filter((read) => read.table === undefined || state.lists[read.list.id]?.fingerprint !== read.table.fingerprint);
 
+// Every table a list other than this one holds, rewritten in this run or not. A rewritten list still
+// holds its old table until its own write lands and puts it aside; handed to a namesake, that file
+// would be put aside after the namesake's write, taking the namesake's fresh table with it.
+const heldByOthers = (state: ListsState, id: string): ReadonlyArray<string> =>
+  Object.entries(state.lists)
+    .filter(([held]) => held !== id)
+    .map(([, record]) => record.file);
+
 // Paths settled one list at a time before the window's writes run side by side: two lists sharing a
 // name must not both be handed the same file.
 const planned = (roots: Roots, state: ListsState, reads: ReadonlyArray<Read>): ReadonlyArray<{ readonly read: Read; readonly file: string }> => {
-  const rewriting = new Set(reads.map((read) => read.list.id));
-  const taken = new Set(
-    Object.entries(state.lists)
-      .filter(([id]) => !rewriting.has(id))
-      .map(([, record]) => record.file)
-  );
+  const handedOut = new Set<string>();
   return reads.map((read) => {
-    const file = listFileFor(roots.root, read.list, taken);
-    taken.add(file);
+    const file = listFileFor(roots.root, read.list, new Set([...heldByOthers(state, read.list.id), ...handedOut]));
+    handedOut.add(file);
     return { read, file };
   });
 };

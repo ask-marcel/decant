@@ -121,16 +121,17 @@ const folderOf = (root: string, section: NotebookSection): string => `${root}/${
 
 // Where each page about to be written goes: under its section, under the section's group when it
 // sits in one, named by its title. Two pages can share a title in one section; the second takes a
-// suffix from its own id. A file held by a page not being rewritten is taken.
+// suffix from its own id. A file another page's record holds is taken even when that page is
+// rewritten this run too: its old copy is put aside only once its own write lands, which can come
+// after a namesake's write to the same path. A page's own copy never stands in its way.
 export const planPageFiles = (root: string, listed: ReadonlyArray<ListedPage>, state: NotebookState): ReadonlyArray<PlannedPage> => {
-  const rewriting = new Set(listed.map((entry) => entry.page.id));
-  const taken = new Set(Object.entries(state.pages).flatMap(([id, record]) => (rewriting.has(id) ? [] : [record.file])));
+  const taken = new Set(Object.values(state.pages).map((record) => record.file));
   const planned: PlannedPage[] = [];
   for (const entry of listed) {
     const name = `${safeSegment(entry.page.title)}${MARKDOWN}`;
     const folder = folderOf(root, entry.section);
     const plain = `${folder}/${name}`;
-    const file = taken.has(plain) ? `${folder}/${disambiguateSegment(name, entry.page.id)}` : plain;
+    const file = taken.has(plain) && plain !== state.pages[entry.page.id]?.file ? `${folder}/${disambiguateSegment(name, entry.page.id)}` : plain;
     taken.add(file);
     planned.push({ entry, file });
   }
