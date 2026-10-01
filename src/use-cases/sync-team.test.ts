@@ -108,6 +108,24 @@ describe('syncing the channels of a Microsoft Team', () => {
     expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-01/Post a.md`, to: 'kb/_archive/Teams/Northwind Leadership/General/2026-09-01/Post a.md' }]);
   });
 
+  it('a post retitled in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
+    const retitled = { file: `${ROOT}/General/2026-09-08/Venue.md`, lastModified: '2026-09-08T09:00:00Z', title: 'Venue' };
+    const namesake = { file: `${ROOT}/General/2026-09-08/Venue-namesake.md`, lastModified: '2026-09-08T10:00:00Z', title: 'Venue' };
+    const state = withPost(withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'retitled', retitled), GENERAL.id, GENERAL.name, 'namesake', namesake);
+    const done = await run({
+      reader: {
+        posts: { [GENERAL.id]: [post('retitled', '2026-09-08T16:00:00Z', { subject: 'Catering' }), post('namesake', '2026-09-08T17:00:00Z', { subject: 'Venue' })] },
+        markdown: { namesake: '### the venue is booked' },
+      },
+      files: { texts: { [STATE_PATH]: serializeTeamState(state), [retitled.file]: 'the post as it was', [namesake.file]: 'the namesake as it was' } },
+    });
+
+    const recorded = stateOf(done.files).channels[GENERAL.id]?.posts['namesake']?.file ?? '';
+    expect(done.files.written.get(recorded)).toContain('the venue is booked');
+    expect(done.files.moves).toEqual([{ from: retitled.file, to: 'kb/_archive/Teams/Northwind Leadership/General/2026-09-08/Venue.md' }]);
+    expect(done.files.written.get('kb/_archive/Teams/Northwind Leadership/General/2026-09-08/Venue.md')).toBe('the post as it was');
+  });
+
   it('a post deleted in Teams is put aside in the archive and named in the report', async () => {
     const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'a', {
       file: `${ROOT}/General/2026-09-01/Post a.md`,

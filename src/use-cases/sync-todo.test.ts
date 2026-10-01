@@ -140,6 +140,25 @@ describe('syncing a Microsoft To Do list', () => {
     expect([...done.files.written.keys()].filter((path) => path.endsWith('.md'))).toHaveLength(2);
   });
 
+  it('a task renamed in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
+    const renamed = { file: 'kb/To Do/Tasks/2026-09-08/Call the venue.md', lastModified: '2026-09-08T09:00:00Z', title: 'Call the venue' };
+    const namesake = { file: 'kb/To Do/Tasks/2026-09-08/Call the venue-namesake.md', lastModified: '2026-09-08T10:00:00Z', title: 'Call the venue' };
+    const state = withTask(withTask(emptyTodoState('list-1', 'Tasks'), 'renamed', renamed), 'namesake', namesake);
+    const tasks = [
+      task({ id: 'renamed', title: 'Book the venue', lastModified: '2026-09-08T16:00:00Z' }),
+      task({ id: 'namesake', title: 'Call the venue', lastModified: '2026-09-08T17:00:00Z', notes: 'Ask about parking' }),
+    ];
+    const done = await run({
+      reader: { tasks: { 'list-1': tasks } },
+      files: { texts: { [STATE_PATH]: serializeTodoState(state), [renamed.file]: 'the task as it was', [namesake.file]: 'the namesake as it was' } },
+    });
+
+    const recorded = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks['namesake'].file;
+    expect(done.files.written.get(recorded)).toContain('Ask about parking');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/To Do/Tasks/2026-09-08/Call the venue.md' }]);
+    expect(done.files.written.get('kb/_archive/To Do/Tasks/2026-09-08/Call the venue.md')).toBe('the task as it was');
+  });
+
   it('a dry run says how much it would write and writes nothing at all', async () => {
     const done = await run({ reader: { tasks: { 'list-1': [task()] } }, dryRun: true });
 

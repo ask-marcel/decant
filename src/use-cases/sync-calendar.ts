@@ -203,15 +203,23 @@ const wanted = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: Calenda
 const inReach = (deps: SyncCalendarDeps, input: SyncCalendarInput, event: CalendarEvent): boolean =>
   input.since === undefined || event.kind === 'seriesMaster' || dayIn(event.start, deps.timezone) >= input.since;
 
+// Every path an event other than this one holds, rewritten in this window or not. A rewritten event
+// still holds its old file until its own write lands and puts it aside; handed to a namesake, that
+// file would be put aside after the namesake's write, taking the namesake's fresh document with it.
+const heldByOthers = (state: CalendarState, id: string): ReadonlyArray<string> =>
+  Object.entries(state.events)
+    .filter(([held]) => held !== id)
+    .map(([, record]) => record.file);
+
 // Paths settled one event at a time, in order, before the window's writes run side by side: two
 // events sharing a subject and a day must not both be handed the same file.
 const planWindow = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: CalendarState, fetched: ReadonlyArray<Fetched>): ReadonlyArray<Planned> => {
-  const taken = new Set(Object.entries(state.events).flatMap(([id, record]) => (fetched.some((entry) => entry.id === id) ? [] : [record.file])));
+  const handedOut = new Set<string>();
   const planned: Planned[] = [];
   for (const entry of fetched) {
     if (entry.event === undefined || !wanted(deps, input, state, entry.event)) continue;
-    const file = eventFileFor(calendarRoot(deps.kbRoot), entry.event, deps.timezone, taken);
-    taken.add(file);
+    const file = eventFileFor(calendarRoot(deps.kbRoot), entry.event, deps.timezone, new Set([...heldByOthers(state, entry.event.id), ...handedOut]));
+    handedOut.add(file);
     planned.push({ event: entry.event, file });
   }
   return planned;

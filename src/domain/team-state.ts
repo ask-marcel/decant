@@ -118,15 +118,17 @@ const fileAt = (channelRoot: string, post: ChannelPost, name: string): string =>
 
 // Where each post about to be written goes, settled before any is written. Two posts can carry
 // the same subject and last change on the same day; the second takes a suffix from its own id, as
-// a document sharing a name in one library does. A path held by a post not being rewritten is taken.
+// a document sharing a name in one library does. A path another post's record holds is taken, even
+// when that post is rewritten this run too: its file is put aside only once its own write lands,
+// which can come after a namesake's write to the same path. A post's own copy never stands in its way.
 export const planPostFiles = (channelRoot: string, posts: ReadonlyArray<ChannelPost>, state: TeamState, channelId: string): ReadonlyArray<PlannedPost> => {
-  const rewriting = new Set(posts.map((post) => post.id));
-  const taken = new Set(Object.entries(state.channels[channelId]?.posts ?? {}).flatMap(([id, record]) => (rewriting.has(id) ? [] : [record.file])));
+  const known = state.channels[channelId]?.posts ?? {};
+  const taken = new Set(Object.values(known).map((record) => record.file));
   const planned: PlannedPost[] = [];
   for (const post of posts) {
     const name = `${safeSegment(postTitle(post))}${MARKDOWN}`;
     const plain = fileAt(channelRoot, post, name);
-    const file = taken.has(plain) ? fileAt(channelRoot, post, disambiguateSegment(name, post.id)) : plain;
+    const file = taken.has(plain) && plain !== known[post.id]?.file ? fileAt(channelRoot, post, disambiguateSegment(name, post.id)) : plain;
     taken.add(file);
     planned.push({ post, file });
   }
