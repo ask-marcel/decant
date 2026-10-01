@@ -247,7 +247,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     const pages = [{ items: [item({ id: 'a', path: 'a.docx' }), item({ id: 'b', path: 'b.docx' })], skipped: 0, deltaLink: 'cursor-1' }];
     const { files } = await run({ reader: { pages } });
 
-    expect(stateAfter(files).drives['b!one']?.pending).toEqual([]);
+    expect(stateAfter(files).drives['b!one']?.pending).toStrictEqual([]);
   });
 
   it('a document renamed in SharePoint has its files moved rather than converted again', async () => {
@@ -323,7 +323,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     const { summary, files } = await run({ reader: { pages: [{ items: [item({ name: 'Demo.mp4', path: 'Demo.mp4' })], skipped: 0, deltaLink: 'cursor-1' }] } });
 
     expect(summary.skipped).toBe(1);
-    expect(stateAfter(files).drives['b!one']?.items['01ABC']?.outputs).toEqual([]);
+    expect(stateAfter(files).drives['b!one']?.items['01ABC']?.outputs).toStrictEqual([]);
   });
 
   it('a dry run reports what it would do and writes nothing at all', async () => {

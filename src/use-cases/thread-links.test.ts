@@ -29,7 +29,7 @@ describe('following the SharePoint files a conversation points at', () => {
   it('a message pointing at nothing is never asked what it points at', async () => {
     const { reader } = await run({ reader: { conversations: { [CONV]: [message()] }, links: linked } });
 
-    expect(reader.calls.filter((call) => call.startsWith('links:'))).toEqual([]);
+    expect(reader.calls.filter((call) => call.startsWith('links:'))).toStrictEqual([]);
   });
 
   it('a linked document is pulled once and listed in the conversation head', async () => {
@@ -103,8 +103,8 @@ describe('following the SharePoint files a conversation points at', () => {
     const seeded = { items: { '01VMT': { ...REPORT, id: '01VMT', name: 'VMT', path: 'VMT', kind: 'folder' as const } } };
     const { outcome, files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: shared }, drive: seeded });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([]);
-    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toStrictEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toStrictEqual([]);
     // The card stands all the same: it is the record that the thread depended on what was shared.
     expect(files.written.get(`${LINKED_HERE}/VMT.md`) ?? '').toContain('It is a folder at the source, so there was nothing to pull.');
   });

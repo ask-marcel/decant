@@ -75,7 +75,7 @@ describe('keeping what a conversation carried', () => {
     // Under `inline_images`, not `attachments`: no placeholder answered for it, and it is shown
     // after the text all the same, because a picture a message carried inline is part of it. One
     // entry for two messages, since the mailbox's picture store holds it once.
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toStrictEqual([]);
     expect(outcome?.kind === 'rendered' && outcome.thread.record.inlineImages).toEqual([`${INLINE_STORE}/${disambiguateSegment('image001.png', contentHash(bytesOf('sig')))}`]);
   });
 
@@ -101,7 +101,7 @@ describe('keeping what a conversation carried', () => {
     const attachments = { m1: [{ id: 'att1', name: 'Ghost.docx', contentType: 'application/vnd', size: 10, isInline: false }] };
     const { outcome } = await run({ reader: { conversations: { [CONV]: messages }, attachments } });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toStrictEqual([]);
   });
 
   it('an attachment whose bytes cannot be fetched is counted as failed, and the thread still lands', async () => {
@@ -115,7 +115,7 @@ describe('keeping what a conversation carried', () => {
     const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: 'Enorme.docx', contentType: 'application/vnd', size: 60 * 1024 * 1024, isInline: false }] } };
     const { outcome } = await run({ reader });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toStrictEqual([]);
   });
 
   // Named before its bytes are asked for, which is what lets a file nobody can read still be
@@ -166,7 +166,7 @@ describe('keeping what a conversation carried', () => {
     expect(files.written.get(THREAD_FILE)).not.toContain(ICON.name);
     // Nor in the run's report. A report is what a reader should look into, and thirteen lines
     // saying an icon had no extension were the whole of one run's while nothing had gone wrong.
-    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toStrictEqual([]);
   });
 
   // Both halves are needed. A machine id on a file that reads fine still yields a document worth
@@ -192,13 +192,13 @@ describe('keeping what a conversation carried', () => {
     const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: 'Demo.mp4', contentType: 'video/mp4', size: 10, isInline: false }] } };
     const { outcome } = await run({ reader });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toStrictEqual([]);
   });
 
   it('an attachment whose bytes failed adds nothing to what the conversation lists', async () => {
     const { outcome } = await run({ reader: { ...withAttachment, failCalls: { attachmentBytes: { kind: 'transient', message: 'timeout' } } } });
 
-    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toStrictEqual([]);
   });
 
   it('a message that carries nothing is never asked for its attachments', async () => {
@@ -243,7 +243,7 @@ describe('keeping what a conversation carried', () => {
     expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([
       { path: `${THREAD_RELATIVE}: Contrat.docx`, reason: 'locked with a password, so nothing could be read from it' },
     ]);
-    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toStrictEqual([]);
   });
 
   it('an attachment that could not be converted names itself and the reason', async () => {

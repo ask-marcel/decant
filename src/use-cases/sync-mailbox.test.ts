@@ -165,7 +165,7 @@ describe('syncing a mailbox into the knowledge base', () => {
       reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] },
     });
 
-    expect(reader.calls.filter((call) => call.startsWith('headers:'))).toEqual([]);
+    expect(reader.calls.filter((call) => call.startsWith('headers:'))).toStrictEqual([]);
   });
 
   // Left unresolved rather than guessed at. The root names a folder written once and never rebuilt,
@@ -177,7 +177,7 @@ describe('syncing a mailbox into the knowledge base', () => {
 
     expect(stateAfter(files).conversations).toEqual({});
     // Never queued: a thread cannot be rendered before it is known which one it is.
-    expect(stateAfter(files).pending).toEqual([]);
+    expect(stateAfter(files).pending).toStrictEqual([]);
     expect(summary).toMatchObject({ converted: 0, skipped: 0, failed: 0 });
     expect(logger.calls.filter((call) => call.event === 'thread.unresolved')).toEqual([
       { level: 'warn', event: 'thread.unresolved', meta: { conversationId: 'conv-1', cause: 'transient' } },
@@ -221,7 +221,7 @@ describe('syncing a mailbox into the knowledge base', () => {
   it('a message Graph returned without a conversation is passed over rather than queued alone', async () => {
     const { asked } = await run({ reader: { folders: [folder()], pages: [{ messages: [message({ conversationId: '' })], skipped: 0, deltaLink: 'c1' }] } });
 
-    expect(asked).toEqual([]);
+    expect(asked).toStrictEqual([]);
   });
 
   it('the bin and the drafts are never swept at all', async () => {
@@ -275,7 +275,7 @@ describe('syncing a mailbox into the knowledge base', () => {
   it('the queue empties as each conversation is finished, so a stop loses at most one', async () => {
     const { files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] } });
 
-    expect(stateAfter(files).pending).toEqual([]);
+    expect(stateAfter(files).pending).toStrictEqual([]);
   });
 
   // The queue holds threads, so a resumed run reads back which conversations each one covers rather
@@ -295,7 +295,7 @@ describe('syncing a mailbox into the knowledge base', () => {
     const halfDone = serializeMailboxState({ ...emptyMailboxState(), pending: ['thread-orphan'] });
     const { asked, summary, files } = await run({ files: { texts: { [STATE_PATH]: halfDone } }, reader: { folders: [folder()] } });
 
-    expect(asked).toEqual([]);
+    expect(asked).toStrictEqual([]);
     expect(summary).toMatchObject({ converted: 0, skipped: 1 });
     expect(stateAfter(files).threads).toEqual({});
   });
@@ -370,7 +370,7 @@ describe('running a mailbox sync again', () => {
       reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] },
     });
 
-    expect(asked).toEqual([]);
+    expect(asked).toStrictEqual([]);
     expect(summary.converted).toBe(0);
   });
 
@@ -838,7 +838,7 @@ describe('rendering several conversations at once', () => {
   it('a dry run leaves no index behind, having written nothing to index', async () => {
     const { files } = await run({ dryRun: true, reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] } });
 
-    expect([...files.written.keys()].filter((path) => path.includes('_meta/'))).toEqual([]);
+    expect([...files.written.keys()].filter((path) => path.includes('_meta/'))).toStrictEqual([]);
   });
 
   it('a window of conversations saves the state once, not once per conversation', async () => {
@@ -957,7 +957,7 @@ describe('a conversation the run could not write', () => {
     const fourth = await again(third.files.written.get(STATE_PATH) ?? '', true);
 
     expect(third.summary).toMatchObject({ failed: 1 });
-    expect(fourth.asked).toEqual([]);
+    expect(fourth.asked).toStrictEqual([]);
     expect(fourth.summary).toMatchObject({ converted: 0, failed: 0 });
     expect(stateAfter(fourth.files).retry[THREAD]).toMatchObject({ attempts: 3 });
   });
@@ -1046,7 +1046,7 @@ describe('a thread that renders while one of its files does not', () => {
     const fourth = await again(third.files.written.get(STATE_PATH) ?? '', OWING);
 
     expect(third.asked).toEqual(['conv-1']);
-    expect(fourth.asked).toEqual([]);
+    expect(fourth.asked).toStrictEqual([]);
     expect(stateAfter(fourth.files).retry).toEqual({});
   });
 

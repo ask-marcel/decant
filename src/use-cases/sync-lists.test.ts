@@ -105,7 +105,7 @@ describe('syncing the lists of a SharePoint site', () => {
 
     expect(done.summary.converted).toBe(1);
     expect(done.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/Issues.md`]);
-    expect(done.files.moves).toEqual([]);
+    expect(done.files.moves).toStrictEqual([]);
     expect(stateOf(done.files).lists['issues']?.file).toBe(`${ROOT}/Issues.md`);
   });
 

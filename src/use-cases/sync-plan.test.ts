@@ -180,7 +180,7 @@ describe('syncing a Planner plan', () => {
     });
     expect(edited.summary.converted).toBe(1);
     expect(edited.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/To do/Book the venue.md`, BOARD_PATH]);
-    expect(edited.files.moves).toEqual([]);
+    expect(edited.files.moves).toStrictEqual([]);
   });
 
   it('a task moved to another bucket or a bucket renamed is written afresh with the old page put aside, and a task gone from the plan is put aside and named in the report', async () => {
