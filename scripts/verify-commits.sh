@@ -3,8 +3,10 @@
 # Build every commit of a landing on its own before it leaves this machine. The pre-commit hook
 # typechecks the working tree, not the commit, so a landing split into "the consumer gains a
 # dependency" then "the composition supplies it" passes the hook twice and leaves a commit on main
-# that does not compile (LESSONS.md, 2026-09-11). Each commit is checked out alone in a detached
-# worktree, with this checkout's node_modules linked in, and has to typecheck and pass the suite.
+# that does not compile (lessons.archive.md, 2026-09-11). Each commit is checked out alone in a
+# detached worktree, with this checkout's node_modules linked in, and has to typecheck and pass the
+# suite. A split that cannot build alone is folded into one commit, taking the size-gate bypass with
+# the reason in its body.
 #
 #   bash scripts/verify-commits.sh                  # every commit in origin/main..HEAD
 #   bash scripts/verify-commits.sh <base>..<tip>    # any range; the pre-push hook passes its own

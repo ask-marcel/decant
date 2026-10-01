@@ -24,6 +24,17 @@ left. Nothing reads this file at session start; grep it when a question needs th
   exempt (`inReach` in `sync-calendar.ts`).
   Archived 2026-10-01: graduate, now stated at src/use-cases/sync-calendar.ts:192-195.
 
+- [gotcha] Bun's `toEqual` ignores `undefined` array items and properties, so
+  `expect([undefined]).toEqual([])` passes, and so does `toEqual({ ok: true, value: [] })` on a list
+  holding a hole. Guard clauses and filters that keep `undefined` out of a result survived mutation
+  three times for this (`shared-site.test.ts`, `listSyncedSources`, and a value remembered as
+  `undefined`). Where a test asserts that nothing came back or that something was filtered out, pin
+  the count with `toHaveLength(0)`, use `toStrictEqual`, or assert a mapped projection where a hole
+  shows up as `undefined`.
+  Merges: 2026-08-27, 2026-09-08, 2026-09-26.
+  Archived 2026-10-01: graduate, now enforced by eslint.config.js:44-51 (`EMPTY_EQUAL_BAN`), which
+  also states the object case it leaves alone.
+
 ## 2026-09-19
 
 - [mistake] A mutation run opened the browser to sign in, over and over. The wired tests in
@@ -91,6 +102,19 @@ left. Nothing reads this file at session start; grep it when a question needs th
   tomorrow without anyone at the keyboard, since `update` is the run that matters.
   Archived 2026-10-01: tighten, rewritten in place under 2026-09-11 (the `teams-chats-wip` branch it
   names is gone, locally and on origin).
+
+- [mistake] Proved the tree and landed something else, twice. After `git merge --no-commit` the
+  reconciliation edits stayed unstaged, so the gates passed on disk while `main` got a
+  `sync-group.ts` that did not typecheck for four commits; and a landing split into "the consumer
+  gains a dependency" then "the composition supplies it" passed the hook twice, since the hook
+  typechecks the working tree, and left a commit that does not compile. Run `git add -A` before the
+  gates, and before pushing build every commit of the landing in a detached worktree
+  (`git worktree add --detach <dir> <sha>`, a symlinked `node_modules`, `tsc` and `bun test` per
+  sha). A split that cannot compile alone is folded into one commit, with the size-gate bypass
+  explained in the body.
+  Merges: 2026-09-08, 2026-09-11.
+  Archived 2026-10-01: graduate, now enforced by scripts/verify-commits.sh:3-9, which
+  .githooks/pre-push runs over every push.
 
 ## 2026-09-09
 
@@ -607,6 +631,18 @@ left. Nothing reads this file at session start; grep it when a question needs th
   what it was asked. The fix was to read the pages, one image per page out of
   `extract-drive-item-images`, which is what OCR can actually open.
   Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (925 bytes).
+
+- [gotcha] The mutation gate breaks on the aggregate of the files it mutates, never per file. A new
+  module can sit well under 90 inside a passing run (`icalendar.ts` landed at 73.6%), and one large
+  use-case file carrying old debt can fail a run whose own change is mutation-clean. Deleting
+  well-tested code does it too, since the removed block was the covered share and the rest of the
+  file surfaces its debt: moving the day-folder logic out of `thread.ts` took the aggregate to
+  89.67%. Read the per-file row and treat that file's number as the gate; the aggregate only says
+  the others are carrying it.
+  Merges: 2026-07-24, 2026-08-14, 2026-08-27, 2026-08-28, 2026-08-30.
+  Archived 2026-10-01: graduate, now enforced by scripts/check-mutation-files.ts:1-3, which
+  mutate:changed and mutate:staged run after Stryker (scripts/mutate-changed.sh:61,
+  scripts/mutate-staged.sh:47).
 
 ## 2026-08-28
 

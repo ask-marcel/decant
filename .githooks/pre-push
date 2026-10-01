@@ -3,10 +3,10 @@
 # atelier pre-push hook - every commit about to leave builds on its own
 #
 # The pre-commit hook proves the working tree, not the commit, and a landing split across commits
-# can pass it every time while leaving one on main that does not compile (LESSONS.md, 2026-09-11).
-# This runs scripts/verify-commits.sh over what is being pushed: each commit checked out alone, the
-# typecheck and the suite run there. A commit touching only prose is skipped, so a push of journal
-# entries costs nothing, and one of code costs about a suite run per commit.
+# can pass it every time while leaving one on main that does not compile (lessons.archive.md,
+# 2026-09-11). This runs scripts/verify-commits.sh over what is being pushed: each commit checked
+# out alone, the typecheck and the suite run there. A commit touching only prose is skipped, so a
+# push of journal entries costs nothing, and one of code costs about a suite run per commit.
 #
 # Git hands the hook one line per ref being pushed: local ref, local sha, remote ref, remote sha.
 

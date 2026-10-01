@@ -42,9 +42,9 @@ const FS_BAN = {
 };
 
 // Bun's `toEqual` ignores an `undefined` array item, so `toEqual([])` passes on `[undefined]`, and
-// mutants that left one in a result survived three times for it (LESSONS.md, 2026-09-26). An empty
-// array is asserted with a matcher that can fail. An empty array inside an object is left alone:
-// the report notes hold one in nearly every scenario, and the trap there is rarer.
+// mutants that left one in a result survived three times for it (lessons.archive.md, 2026-09-26).
+// An empty array is asserted with a matcher that can fail. An empty array inside an object is left
+// alone: the report notes hold one in nearly every scenario, and the trap there is rarer.
 const EMPTY_EQUAL_BAN = {
   selector: "CallExpression[callee.property.name='toEqual'] > ArrayExpression[elements.length=0]",
   message: '`toEqual([])` passes on `[undefined]`: assert an empty array with `toStrictEqual([])` or `toHaveLength(0)`.',

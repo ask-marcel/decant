@@ -159,15 +159,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   it tells the reader to open a file that no longer exists, once per signature down a long thread.
   A converter that returns text rather than a document has to drop it.
 
-- [gotcha] The mutation gate breaks on the aggregate of the files it mutates, never per file. A new
-  module can sit well under 90 inside a passing run (`icalendar.ts` landed at 73.6%), and one large
-  use-case file carrying old debt can fail a run whose own change is mutation-clean. Deleting
-  well-tested code does it too, since the removed block was the covered share and the rest of the
-  file surfaces its debt: moving the day-folder logic out of `thread.ts` took the aggregate to
-  89.67%. Read the per-file row and treat that file's number as the gate; the aggregate only says
-  the others are carrying it.
-  Merges: 2026-07-24, 2026-08-14, 2026-08-27, 2026-08-28, 2026-08-30.
-
 - [gotcha] A file too big to score is a file too big to trust: `render-thread.ts` reached 692 lines
   doing five jobs and crossed under 90 on three of four changes in one session, each time pulled
   back by tests written against whatever survived. Splitting it into its jobs put every piece over
@@ -336,17 +327,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
 
 ## 2026-09-11
 
-- [mistake] Proved the tree and landed something else, twice. After `git merge --no-commit` the
-  reconciliation edits stayed unstaged, so the gates passed on disk while `main` got a
-  `sync-group.ts` that did not typecheck for four commits; and a landing split into "the consumer
-  gains a dependency" then "the composition supplies it" passed the hook twice, since the hook
-  typechecks the working tree, and left a commit that does not compile. Run `git add -A` before the
-  gates, and before pushing build every commit of the landing in a detached worktree
-  (`git worktree add --detach <dir> <sha>`, a symlinked `node_modules`, `tsc` and `bun test` per
-  sha). A split that cannot compile alone is folded into one commit, with the size-gate bypass
-  explained in the body.
-  Merges: 2026-09-08, 2026-09-11.
-
 - [decision] A source reachable only through an endpoint whose token lapses without a browser
   sign-in is not a source `update` can own. Teams chats were built on the library's
   Microsoft-internal substrate commands, which answered on the day; by the next morning the
@@ -386,15 +366,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   columns. Re-running ESLint puts the quotes back but not the layout, because Prettier keeps an
   object literal multi-line once it breaks after the opening brace; one stray run turned a
   250-line test diff into 1,200 lines and the file had to be restored and re-patched.
-
-- [gotcha] Bun's `toEqual` ignores `undefined` array items and properties, so
-  `expect([undefined]).toEqual([])` passes, and so does `toEqual({ ok: true, value: [] })` on a list
-  holding a hole. Guard clauses and filters that keep `undefined` out of a result survived mutation
-  three times for this (`shared-site.test.ts`, `listSyncedSources`, and a value remembered as
-  `undefined`). Where a test asserts that nothing came back or that something was filtered out, pin
-  the count with `toHaveLength(0)`, use `toStrictEqual`, or assert a mapped projection where a hole
-  shows up as `undefined`.
-  Merges: 2026-08-27, 2026-09-08, 2026-09-26.
 
 ## 2026-09-29
 

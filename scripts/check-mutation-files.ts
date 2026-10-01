@@ -1,6 +1,6 @@
 // The mutation gate breaks on the total of the files a run mutates, never per file, so a weak file
-// passes while the others carry it (LESSONS.md, 2026-08-30). Run after Stryker, this reads the report
-// it just wrote and fails on any single file under the same break threshold.
+// passes while the others carry it (lessons.archive.md, 2026-08-30). Run after Stryker, this reads
+// the report it just wrote and fails on any single file under the same break threshold.
 //
 //   bun run scripts/check-mutation-files.ts [report]   (default reports/mutation/mutation.json)
 
