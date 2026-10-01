@@ -5,6 +5,11 @@ left. Nothing reads this file at session start; grep it when a question needs th
 
 ## 2026-09-26
 
+- [gotcha] `toEqual([])` passes on `[undefined]`: `toEqual` ignores undefined array items and
+  properties. A test asserting that nothing was remembered let a mutant through that remembered
+  `undefined`; `toHaveLength(0)` (or `toStrictEqual`) is the emptiness check that can fail.
+  Archived 2026-10-01: merge, into the `toEqual` entry (2026-09-26).
+
 - [gotcha] Moving a delta source's reach earlier cannot just drop its cursor: a fresh delta lists
   only what exists now, so anything deleted since the last run is never reported, never archived,
   and its document stays in `kb/` for good. Read the old cursor out first (its deletions and its
@@ -18,6 +23,20 @@ left. Nothing reads this file at session start; grep it when a question needs th
   a weekly meeting that began before the day while it is still running, so series masters are
   exempt (`inReach` in `sync-calendar.ts`).
   Archived 2026-10-01: graduate, now stated at src/use-cases/sync-calendar.ts:192-195.
+
+## 2026-09-11
+
+- [gotcha] The pre-commit typecheck runs on the working tree, not on the commit, so a landing split
+  into "the consumer gains a dependency" and "the composition supplies it" passes the hook twice
+  and leaves a commit on `main` that does not compile. It happened here on the Teams picker: the
+  `run-sync` commit added `syncTeam`, `teams` and `savedChannels` to `RunSyncDeps`, `build-deps`
+  supplied them one commit later, and the hook was green on both because the tree had everything.
+  Found by the check the earlier `[mistake]` entry prescribes and this session made a habit: build
+  every commit of a multi-commit landing in a detached worktree (`git worktree add --detach`, a
+  symlinked `node_modules`, `tsc` and `bun test` per sha) BEFORE pushing, not only the last one.
+  The fix was to fold the two into one commit and take the size-gate bypass, with the reason in
+  the body: a commit that compiles beats two that meet a line count.
+  Archived 2026-10-01: merge, into the prove-the-commit entry (2026-09-11).
 
 ## 2026-09-09
 
@@ -52,6 +71,52 @@ left. Nothing reads this file at session start; grep it when a question needs th
   the thing that makes someone go and look at it. An edit at the source clears it, since the sweep
   returns the file with a new cTag and a fresh conversion drops the entry.
   Archived 2026-10-01: graduate, now stated at src/domain/retry-policy.ts:16-19.
+
+- [mistake] Ran the gates on the working tree, then committed the index, and reported the gates as
+  proof of what landed. `git merge --no-commit` stages the merge result; edits made after it, which
+  is where the reconciliation for a type that changed on the branch lives, stay unstaged, and a bare
+  `git commit` writes the staged merge without them. Every gate passed on the files on disk, so
+  nothing looked wrong: 1291 tests, tsc clean, lint clean, all true of a tree that was never
+  committed. `main` then carried a `sync-group.ts` that did not typecheck for four commits, and it
+  was found only when a later commit was checked out into a fresh worktree and tested there.
+  Two habits close it. `git add -A` before running the gates, so what is tested is what is staged.
+  And when a commit is the one that lands on a shared branch, prove the COMMIT rather than the tree:
+  `git worktree add --detach <dir> <sha>`, install, run the gates there. The tell that was available
+  and went unread: the commit's own summary line said 35 files while the reconciliation had touched
+  two more, and a diff smaller than the change just verified is never right.
+  Archived 2026-10-01: merge, into the prove-the-commit entry (2026-09-11).
+
+- [decision] Where a source cannot do what its sibling does, the adapter answers honestly and the gap
+  goes upstream, rather than being worked around locally. A group post has no command to render an
+  attachment to PDF, to extract the pictures inside one, or to resolve the SharePoint links in a
+  body, all three of which a mail message has. The adapter returns `unrenderable` for the first and
+  an empty list for the other two, each with the reason written beside it, so a thread records that
+  no PDF exists rather than implying one was refused. Fetching the bytes and converting them here
+  would have duplicated a conversion the library owns and drifted from it within a release or two.
+  The request is `docs/request-group-post-parity.md`; when the commands land, the change is confined
+  to those three methods and nothing else moves, because the rendering path is already shared.
+  Archived 2026-10-01: merge, into the answer-honestly entry (2026-09-08).
+
+- [gotcha] `expect(result).toEqual({ ok: true, value: [] })` does not prove a list is empty: Bun reads
+  `[undefined]` as equal to `[]`, so a `filter` that drops holes out of an array can be deleted
+  outright and every such assertion still passes. Two mutants survived on one line of
+  `listSyncedSources` for exactly that reason, both of them the filter that keeps an unreadable
+  source from leaking into the list as a hole, and the tests covering that line read as if they had
+  it pinned. `toHaveLength(0)` sees the difference and kills both. Where a test asserts that
+  something was filtered OUT, assert the length, or assert on a mapped projection
+  (`value.map((source) => source.name)`) where a hole shows up as `undefined` rather than vanishing.
+  Archived 2026-10-01: merge, into the `toEqual` entry (2026-09-26).
+
+- [decision] Answering a missing upstream command honestly, and writing the gap up rather than
+  working around it, paid back exactly as predicted. 2.6.0 landed all three group-post commands as
+  siblings of the mail ones, sharing their pipeline and taking the same parameters every other group
+  command takes, and wiring them was three method bodies in `group-reader-marcel.ts` plus one test.
+  No use-case, no domain module, no rendering code moved, because the honest `unrenderable` and the
+  honest empty list had kept the shape of the real answer. Supersedes nothing: it confirms the
+  earlier entry on the same adapter. The general form: when a dependency cannot do something, return
+  the shape the real answer will have, say why in the error, and file the request. A local
+  workaround would have had to be unpicked here instead.
+  Archived 2026-10-01: merge, into the answer-honestly entry (2026-09-08).
 
 ## 2026-08-30
 
@@ -116,6 +181,18 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: archive, superseded: group inboxes are a synced source
   (src/use-cases/sync-group.ts) since 2.6.0.
 
+- [gotcha] The tenant's zone and the machine's diverge the moment an account changes, and the folder
+  date is frozen at creation. The first account was a China tenant read from a Shanghai machine, so
+  the machine default was accidentally right; the second is a Paris tenant (`Romance Standard Time`)
+  read from the same machine, where the default would have filed every thread under a Shanghai day.
+  `my-quick-context` reports the tenant zone in Windows spelling, which `--timezone` refuses, so the
+  mapping is a human step: Romance Standard Time is `Europe/Paris`.
+  Ask it per run rather than carrying the answer forward. On 2026-08-30 the signed-in account was
+  an account on another tenant reporting `China Standard Time`, so the machine default was
+  right and a run "corrected" to `Europe/Paris` on the strength of this note would have been wrong.
+  One call settles it; the note above records what one account said once.
+  Archived 2026-10-01: merge, into the `my-quick-context` entry (2026-08-30).
+
 - [gotcha] `convert-mail-to-markdown` can strip an ENTIRE body as a "quoted reply chain" and report
   success. Measured on a 7-day sync: 10 of 42 message sections, 24%, reduced to one short line. The
   same message with `keepQuoted: true` returns 6912 bytes over 109 lines with ZERO lines starting
@@ -168,6 +245,12 @@ left. Nothing reads this file at session start; grep it when a question needs th
   carrying it.
   Archived 2026-10-01: merge, into the mutation-aggregate entry (2026-08-30).
 
+- [gotcha] `scripts/check-commit-size.sh` allows `--no-verify` for a mass-move, and a file split is
+  one: moving 690 lines counts as some 750 changed however the commits are cut, so splitting the
+  commit does not help. Run lint, typecheck, the suite, coverage and mutation by hand first, and say
+  in the body that you did.
+  Archived 2026-10-01: merge, into the commit-size entry (2026-08-30).
+
 - [gotcha] Never read a bare `bunx stryker run`. `stryker.conf.json` sets `incremental: true`, and
   the repo's own `mutate:changed` and `mutate:staged` delete `reports/stryker-incremental.json`
   first for exactly that reason. Running stryker directly does not, so it reports cached verdicts
@@ -209,6 +292,13 @@ left. Nothing reads this file at session start; grep it when a question needs th
   another. Every picture with readable text now carries one line saying the words were read
   by a machine and pointing at the image above it.
   Archived 2026-10-01: graduate, now stated at src/domain/inline-image.ts:53 (`READ_BY_MACHINE`).
+
+- [gotcha] Check `my-quick-context` before diagnosing a slow or surprising run. A sync that had
+  taken ninety seconds ran past an hour and wrote threads nobody recognised: the signed-in account
+  had changed to another tenant whose mail is full of pasted screenshots, 113 of them against 5,
+  each costing an OCR pass at some twenty seconds on a cold cache. Nothing in the code had changed
+  that path's cost. One call would have said so in a second.
+  Archived 2026-10-01: merge, into the `my-quick-context` entry (2026-08-30).
 
 - [lesson] Measure before choosing a threshold. Asked to skip OCR on small pictures, the vault
   answered what small meant: everything OCR found real text in was 64 KB or more, a table screenshot
@@ -383,6 +473,20 @@ left. Nothing reads this file at session start; grep it when a question needs th
   `icalendar.ts` first landed at 73.6% inside a passing run.
   Archived 2026-10-01: merge, into the mutation-aggregate entry (2026-08-30).
 
+- [gotcha] The commit-size gate is 10 files AND 300 lines, and a step that touches a domain module
+  plus its wiring will breach one of them. Splitting by file works when the new module has no caller
+  yet: commit the pure part first, the wiring second. Three of the eight steps here needed it.
+  Archived 2026-10-01: merge, into the commit-size entry (2026-08-30).
+
+- [gotcha] `expect([undefined]).toEqual([])` PASSES in Bun. Verified in isolation, not inferred: an
+  array holding one `undefined` satisfies an assertion that it is empty. Three assertions in
+  `shared-site.test.ts` read as "nothing came back" while a stray `undefined` would have satisfied
+  them, which is why a guard clause (`if (site === undefined) continue`) survived mutation with the
+  whole condition replaced by `false`: the mutant pushed `undefined` into the result and every test
+  still agreed. `toHaveLength(0)` beside the `toEqual` is what kills it. Anywhere a function can
+  return `undefined` into a collection, pin the count as well as the contents.
+  Archived 2026-10-01: merge, into the `toEqual` entry (2026-09-26).
+
 - [gotcha] A terminal block that rewrites itself in place climbs by the height of the PREVIOUS draw,
   never the one it is about to make, which is why `src/infra/progress-bar.ts` keeps a `drawn`
   counter. A third `begin()` grows the block from three rows to four and the escape it writes is
@@ -441,6 +545,16 @@ left. Nothing reads this file at session start; grep it when a question needs th
   `src/presenter/output.ts` path it names is stale).
 
 ## 2026-07-26
+
+- [decision] Landing a branch whose commits already fit the pre-commit size gate (10 files / 300
+  lines) onto a `main` that has diverged, with files touched on both sides: rebase onto the new
+  `main` tip rather than making one merge commit. A single merge commit carries the whole branch's
+  cumulative diff and re-trips the same size gate every original commit already respected; rebasing
+  replays the original commits one at a time, so only the commit(s) that actually touch a conflicting
+  file need conflict resolution, and every replayed commit still lands under the gate. `git merge
+  --no-ff --no-commit` first is a cheap way to see the true conflict set before choosing rebase, then
+  `git merge --abort` and rebase for real.
+  Archived 2026-10-01: merge, into the commit-size entry (2026-08-30).
 
 - [gotcha] This repo has no git remote at all (confirmed via `git remote -v` and `gh repo view`):
   two local worktrees share one checkout, the primary one holding `main`. "Push" here means

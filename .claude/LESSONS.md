@@ -62,15 +62,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   fixture text from something that is actually a contract, then handle the contract as its own
   confirmed change.
 
-- [decision] Landing a branch whose commits already fit the pre-commit size gate (10 files / 300
-  lines) onto a `main` that has diverged, with files touched on both sides: rebase onto the new
-  `main` tip rather than making one merge commit. A single merge commit carries the whole branch's
-  cumulative diff and re-trips the same size gate every original commit already respected; rebasing
-  replays the original commits one at a time, so only the commit(s) that actually touch a conflicting
-  file need conflict resolution, and every replayed commit still lands under the gate. `git merge
-  --no-ff --no-commit` first is a cheap way to see the true conflict set before choosing rebase, then
-  `git merge --abort` and rebase for real.
-
 ## 2026-08-14
 
 - [gotcha] `disambiguateSegment(name, id)` takes the first 8 characters of the id, which
@@ -111,18 +102,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   wrote for them. Pictures taken out of a document, and a raw file written beside its markdown, are
   in the shared store record instead, which is what dedupe reads. The rule is that the record mirrors
   what a reader sees in the front matter; the store holds the whole production.
-
-- [gotcha] The commit-size gate is 10 files AND 300 lines, and a step that touches a domain module
-  plus its wiring will breach one of them. Splitting by file works when the new module has no caller
-  yet: commit the pure part first, the wiring second. Three of the eight steps here needed it.
-
-- [gotcha] `expect([undefined]).toEqual([])` PASSES in Bun. Verified in isolation, not inferred: an
-  array holding one `undefined` satisfies an assertion that it is empty. Three assertions in
-  `shared-site.test.ts` read as "nothing came back" while a stray `undefined` would have satisfied
-  them, which is why a guard clause (`if (site === undefined) continue`) survived mutation with the
-  whole condition replaced by `false`: the mutant pushed `undefined` into the result and every test
-  still agreed. `toHaveLength(0)` beside the `toEqual` is what kills it. Anywhere a function can
-  return `undefined` into a collection, pin the count as well as the contents.
 
 - [mistake] Estimated a parallelisation win from timings taken by shelling out to the CLI, and was
   wrong by an order of magnitude. `bunx ask-marcel-office list-accessible-drives` measured 39s and
@@ -185,17 +164,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   That reads like a permissions bug and is not one. `list-joined-teams` gives the groups the user is
   actually in: three here, against a tenant list still paging after ten.
 
-- [gotcha] The tenant's zone and the machine's diverge the moment an account changes, and the folder
-  date is frozen at creation. The first account was a China tenant read from a Shanghai machine, so
-  the machine default was accidentally right; the second is a Paris tenant (`Romance Standard Time`)
-  read from the same machine, where the default would have filed every thread under a Shanghai day.
-  `my-quick-context` reports the tenant zone in Windows spelling, which `--timezone` refuses, so the
-  mapping is a human step: Romance Standard Time is `Europe/Paris`.
-  Ask it per run rather than carrying the answer forward. On 2026-08-30 the signed-in account was
-  an account on another tenant reporting `China Standard Time`, so the machine default was
-  right and a run "corrected" to `Europe/Paris` on the strength of this note would have been wrong.
-  One call settles it; the note above records what one account said once.
-
 - [gotcha] Concurrency 4 is proven clean against real mail: 169 threads, 169 documents, no thread id
   in two folders. The race the sequential folder resolution guards against did not occur, and the
   test needed threads being CREATED, since a re-run over threads already written writes nothing and
@@ -238,10 +206,14 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   and that writing a card never fetches anything. The alternative, one shared context module every
   piece imports whole, keeps the coupling and merely moves it.
 
-- [gotcha] `scripts/check-commit-size.sh` allows `--no-verify` for a mass-move, and a file split is
-  one: moving 690 lines counts as some 750 changed however the commits are cut, so splitting the
-  commit does not help. Run lint, typecheck, the suite, coverage and mutation by hand first, and say
-  in the body that you did.
+- [gotcha] The commit-size gate is 10 files AND 300 lines. A step touching a domain module and its
+  wiring splits as the pure module first, while it has no caller, and the wiring second; a branch
+  lands by rebase rather than one merge commit, which carries the whole cumulative diff and trips
+  the gate every original commit respected (`git merge --no-ff --no-commit`, then
+  `git merge --abort`, shows the real conflict set first). A mass move cannot be split under it,
+  since 690 moved lines count some 750 however the commits are cut, so it takes `--no-verify` after
+  lint, typecheck, the suite, coverage and mutation have run by hand, said in the body.
+  Merges: 2026-07-26, 2026-08-27, 2026-08-30.
 
 - [lesson] Splitting a test file is not the same as splitting the code. The four thread modules got
   their own test files but kept ONE harness, because what each of them does is only visible in the
@@ -288,11 +260,14 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   April but which had activity inside the window is filed under April, because the folder is named
   from the first message and frozen there. That is correct and looks wrong in a directory listing.
 
-- [gotcha] Check `my-quick-context` before diagnosing a slow or surprising run. A sync that had
-  taken ninety seconds ran past an hour and wrote threads nobody recognised: the signed-in account
-  had changed to another tenant whose mail is full of pasted screenshots, 113 of them against 5,
-  each costing an OCR pass at some twenty seconds on a cold cache. Nothing in the code had changed
-  that path's cost. One call would have said so in a second.
+- [gotcha] Check `my-quick-context` before diagnosing a slow or surprising run, since the signed-in
+  account can change: a sync that took ninety seconds ran past an hour because the account had moved
+  to another tenant whose mail held 113 pasted screenshots against 5, each an OCR pass. The account
+  also sets the day: a thread's folder is dated in the `--timezone` zone (default: this machine's)
+  and frozen at creation, and `my-quick-context` reports the tenant zone in Windows spelling, which
+  `--timezone` refuses, so the mapping is a human step (Romance Standard Time is `Europe/Paris`).
+  Ask per run rather than carrying an answer forward.
+  Merges: 2026-08-30, 2026-08-30.
 
 - [gotcha] A unit test proves the function, never the call. `withoutPlaceholders` was written, tested
   and never called: the edit meant to wire it into `rewriteMessageBody` missed its anchor because
@@ -392,47 +367,14 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   is the only thing that could have. When adding a field that nothing fills yet, either fill it from
   something or leave it out until a caller exists.
 
-- [mistake] Ran the gates on the working tree, then committed the index, and reported the gates as
-  proof of what landed. `git merge --no-commit` stages the merge result; edits made after it, which
-  is where the reconciliation for a type that changed on the branch lives, stay unstaged, and a bare
-  `git commit` writes the staged merge without them. Every gate passed on the files on disk, so
-  nothing looked wrong: 1291 tests, tsc clean, lint clean, all true of a tree that was never
-  committed. `main` then carried a `sync-group.ts` that did not typecheck for four commits, and it
-  was found only when a later commit was checked out into a fresh worktree and tested there.
-  Two habits close it. `git add -A` before running the gates, so what is tested is what is staged.
-  And when a commit is the one that lands on a shared branch, prove the COMMIT rather than the tree:
-  `git worktree add --detach <dir> <sha>`, install, run the gates there. The tell that was available
-  and went unread: the commit's own summary line said 35 files while the reconciliation had touched
-  two more, and a diff smaller than the change just verified is never right.
-
-- [decision] Where a source cannot do what its sibling does, the adapter answers honestly and the gap
-  goes upstream, rather than being worked around locally. A group post has no command to render an
-  attachment to PDF, to extract the pictures inside one, or to resolve the SharePoint links in a
-  body, all three of which a mail message has. The adapter returns `unrenderable` for the first and
-  an empty list for the other two, each with the reason written beside it, so a thread records that
-  no PDF exists rather than implying one was refused. Fetching the bytes and converting them here
-  would have duplicated a conversion the library owns and drifted from it within a release or two.
-  The request is `docs/request-group-post-parity.md`; when the commands land, the change is confined
-  to those three methods and nothing else moves, because the rendering path is already shared.
-
-- [gotcha] `expect(result).toEqual({ ok: true, value: [] })` does not prove a list is empty: Bun reads
-  `[undefined]` as equal to `[]`, so a `filter` that drops holes out of an array can be deleted
-  outright and every such assertion still passes. Two mutants survived on one line of
-  `listSyncedSources` for exactly that reason, both of them the filter that keeps an unreadable
-  source from leaking into the list as a hole, and the tests covering that line read as if they had
-  it pinned. `toHaveLength(0)` sees the difference and kills both. Where a test asserts that
-  something was filtered OUT, assert the length, or assert on a mapped projection
-  (`value.map((source) => source.name)`) where a hole shows up as `undefined` rather than vanishing.
-
-- [decision] Answering a missing upstream command honestly, and writing the gap up rather than
-  working around it, paid back exactly as predicted. 2.6.0 landed all three group-post commands as
-  siblings of the mail ones, sharing their pipeline and taking the same parameters every other group
-  command takes, and wiring them was three method bodies in `group-reader-marcel.ts` plus one test.
-  No use-case, no domain module, no rendering code moved, because the honest `unrenderable` and the
-  honest empty list had kept the shape of the real answer. Supersedes nothing: it confirms the
-  earlier entry on the same adapter. The general form: when a dependency cannot do something, return
-  the shape the real answer will have, say why in the error, and file the request. A local
-  workaround would have had to be unpicked here instead.
+- [decision] Where a source cannot do what its sibling does, the adapter answers honestly and the
+  gap goes upstream, rather than a local workaround. Group posts lacked the PDF, picture and link
+  commands mail has, so the adapter returned `unrenderable` or an empty list with the reason beside
+  it and `docs/request-group-post-parity.md` asked for them; when 2.6.0 landed all three, wiring
+  them took three method bodies in `group-reader-marcel.ts` plus one test, because the honest
+  answers had kept the shape of the real ones. Return the shape the real answer will have, say why
+  in the error, and file the request.
+  Merges: 2026-09-08, 2026-09-08.
 
 ## 2026-09-09
 
@@ -460,16 +402,16 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
 
 ## 2026-09-11
 
-- [gotcha] The pre-commit typecheck runs on the working tree, not on the commit, so a landing split
-  into "the consumer gains a dependency" and "the composition supplies it" passes the hook twice
-  and leaves a commit on `main` that does not compile. It happened here on the Teams picker: the
-  `run-sync` commit added `syncTeam`, `teams` and `savedChannels` to `RunSyncDeps`, `build-deps`
-  supplied them one commit later, and the hook was green on both because the tree had everything.
-  Found by the check the earlier `[mistake]` entry prescribes and this session made a habit: build
-  every commit of a multi-commit landing in a detached worktree (`git worktree add --detach`, a
-  symlinked `node_modules`, `tsc` and `bun test` per sha) BEFORE pushing, not only the last one.
-  The fix was to fold the two into one commit and take the size-gate bypass, with the reason in
-  the body: a commit that compiles beats two that meet a line count.
+- [mistake] Proved the tree and landed something else, twice. After `git merge --no-commit` the
+  reconciliation edits stayed unstaged, so the gates passed on disk while `main` got a
+  `sync-group.ts` that did not typecheck for four commits; and a landing split into "the consumer
+  gains a dependency" then "the composition supplies it" passed the hook twice, since the hook
+  typechecks the working tree, and left a commit that does not compile. Run `git add -A` before the
+  gates, and before pushing build every commit of the landing in a detached worktree
+  (`git worktree add --detach <dir> <sha>`, a symlinked `node_modules`, `tsc` and `bun test` per
+  sha). A split that cannot compile alone is folded into one commit, with the size-gate bypass
+  explained in the body.
+  Merges: 2026-09-08, 2026-09-11.
 
 - [decision] A source reachable only through an endpoint whose token expires without a browser
   sign-in is not a source `update` can own. Teams chats were built to the use-case test on the
@@ -526,9 +468,14 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   object literal multi-line once it breaks after the opening brace; one stray run turned a
   250-line test diff into 1,200 lines and the file had to be restored and re-patched.
 
-- [gotcha] `toEqual([])` passes on `[undefined]`: `toEqual` ignores undefined array items and
-  properties. A test asserting that nothing was remembered let a mutant through that remembered
-  `undefined`; `toHaveLength(0)` (or `toStrictEqual`) is the emptiness check that can fail.
+- [gotcha] Bun's `toEqual` ignores `undefined` array items and properties, so
+  `expect([undefined]).toEqual([])` passes, and so does `toEqual({ ok: true, value: [] })` on a list
+  holding a hole. Guard clauses and filters that keep `undefined` out of a result survived mutation
+  three times for this (`shared-site.test.ts`, `listSyncedSources`, and a value remembered as
+  `undefined`). Where a test asserts that nothing came back or that something was filtered out, pin
+  the count with `toHaveLength(0)`, use `toStrictEqual`, or assert a mapped projection where a hole
+  shows up as `undefined`.
+  Merges: 2026-08-27, 2026-09-08, 2026-09-26.
 
 ## 2026-09-29
 
