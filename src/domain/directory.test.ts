@@ -54,7 +54,7 @@ describe('assembling the directory out of the profiles and the rosters', () => {
   });
 
   it('a colleague the rosters did not name is still a colleague, in no team', () => {
-    expect(assembleDirectory([JANE], {})[0]?.teams).toEqual([]);
+    expect(assembleDirectory([JANE], {})[0]?.teams).toStrictEqual([]);
   });
 
   it('two colleagues who differ only in their reports fingerprint differently', () => {

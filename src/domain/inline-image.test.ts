@@ -58,15 +58,15 @@ describe('deciding which picture a placeholder stands for', () => {
     const first = { name: 'a.png', contentId: '' };
     const second = { name: 'b.png', contentId: '' };
 
-    expect(pairInlineImages(['one', 'two'], [first, second])).toEqual([]);
+    expect(pairInlineImages(['one', 'two'], [first, second])).toStrictEqual([]);
   });
 
   it('a placeholder nothing answers beside two spare pictures is left alone as well', () => {
-    expect(pairInlineImages(['mystery'], [pasted, signature])).toEqual([]);
+    expect(pairInlineImages(['mystery'], [pasted, signature])).toStrictEqual([]);
   });
 
   it('a message showing a picture it never carried pairs nothing', () => {
-    expect(pairInlineImages(['gone.png'], [])).toEqual([]);
+    expect(pairInlineImages(['gone.png'], [])).toStrictEqual([]);
   });
 });
 

@@ -13,7 +13,7 @@ describe('finding a site through a library someone shared', () => {
   });
 
   it('a site already listed is recognised through an encoded, differently cased address', () => {
-    expect(unlistedSiteUrls(['https://TENANT.sharepoint.com/sites/Team/Documents%20partages'], [TEAM])).toEqual([]);
+    expect(unlistedSiteUrls(['https://TENANT.sharepoint.com/sites/Team/Documents%20partages'], [TEAM])).toStrictEqual([]);
   });
 
   it('two libraries of one site name that site once', () => {
@@ -21,7 +21,7 @@ describe('finding a site through a library someone shared', () => {
   });
 
   it('a site already listed with a trailing slash is recognised without it', () => {
-    expect(unlistedSiteUrls([`${TEAM}/Shared%20Documents`], [`${TEAM}/`])).toEqual([]);
+    expect(unlistedSiteUrls([`${TEAM}/Shared%20Documents`], [`${TEAM}/`])).toStrictEqual([]);
   });
 
   it('a library address ending in a slash still names the site above it', () => {
@@ -50,7 +50,7 @@ describe('finding a site through a library someone shared', () => {
   });
 
   it('an address that is not a library is left out entirely rather than offered as nothing', () => {
-    // `toEqual([])` alone would pass on `[undefined]` in Bun, so the length is pinned as well.
+    // `toStrictEqual([])` alone would pass on `[undefined]` in Bun, so the length is pinned as well.
     expect(unlistedSiteUrls(['not a url'], [])).toHaveLength(0);
   });
 

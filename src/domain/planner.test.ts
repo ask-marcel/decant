@@ -177,7 +177,7 @@ describe('saying where a task stands', () => {
     ]);
 
     expect(labelsOf(task, names)).toEqual(['Urgent', 'Waiting on client']);
-    expect(labelsOf(task, new Map())).toEqual([]);
+    expect(labelsOf(task, new Map())).toStrictEqual([]);
   });
 
   it('buckets and tasks sort by their order hint the way the board draws them, character by character', () => {

@@ -68,7 +68,7 @@ describe('the shapes a saved email comes in', () => {
     const read = readMime(lines('From: Mei Lin <mei@example.com>', 'Subject: No files', 'Content-Type: text/plain', '', 'Just a line.'));
 
     expect(read.text).toBe('**Subject:** No files\n**From:** Mei Lin <mei@example.com>\n\nJust a line.');
-    expect(read.parts).toEqual([]);
+    expect(read.parts).toStrictEqual([]);
   });
 
   it('a message written in HTML alone is read as the HTML it is, rather than as nothing', () => {
@@ -177,11 +177,11 @@ describe('the files a saved email carried', () => {
     const read = readMime(multipart(TEXT, ['Content-Type: application/pdf; name="x.pdf"', 'Content-Transfer-Encoding: base64', '', '!!!not base64!!!']));
 
     expect(read.text).toBe('**Subject:** Carried\n\nthe body');
-    expect(read.parts).toEqual([]);
+    expect(read.parts).toStrictEqual([]);
   });
 
   it('are not written at all when a part is a name and no bytes', () => {
-    expect(readMime(multipart(['Content-Type: application/pdf; name="x.pdf"', 'Content-Transfer-Encoding: base64', '', ''])).parts).toEqual([]);
+    expect(readMime(multipart(['Content-Type: application/pdf; name="x.pdf"', 'Content-Transfer-Encoding: base64', '', ''])).parts).toStrictEqual([]);
   });
 
   it('leave an empty stretch between two boundaries to be passed over', () => {

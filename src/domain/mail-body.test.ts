@@ -139,7 +139,7 @@ describe('what a message body says once the files it carried are on disk', () =>
     expect(rewritten.body).toBe(
       'Please find the CV attached.\n\n**Attachments:**\n- [Jerry+Zhang-EN.pdf](../../_attachments/Jerry+Zhang-EN-d8871f82.pdf.md) (292.1 KB, application/pdf)'
     );
-    expect(rewritten.pictures).toEqual([]);
+    expect(rewritten.pictures).toStrictEqual([]);
   });
 
   it('the list the converter left is replaced rather than added to', () => {
@@ -177,7 +177,7 @@ describe('what a message body says once the files it carried are on disk', () =>
     expect(rewritten.body).toContain('**Attachments:**');
     // Attached rather than pasted, so nothing shows it and no marker stands where it did not.
     expect(rewritten.body).not.toContain('inline image:');
-    expect(rewritten.pictures).toEqual([]);
+    expect(rewritten.pictures).toStrictEqual([]);
   });
 
   it('a message that carried nothing keeps its text and gains no list', () => {

@@ -56,7 +56,7 @@ describe('reading a group inbox thread and the posts under it', () => {
     const parsed = parseGroupPost({ id: 'AAMkAD-post' }, thread, GROUP);
 
     expect(parsed?.subject).toBe('Bi-Monthly Leadership Meeting');
-    expect(parsed?.to).toEqual([]);
+    expect(parsed?.to).toStrictEqual([]);
     expect(parsed?.isDeleted).toBe(false);
     expect(parsed?.received).toBe('');
     expect(parsed?.hasAttachments).toBe(false);

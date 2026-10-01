@@ -48,11 +48,11 @@ describe('reading a message out of a mailbox sweep', () => {
   it('recipients Graph returned unusable are dropped rather than breaking the header', () => {
     const parsed = parseMessage({ ...rawMessage, toRecipients: [{ emailAddress: { name: 'Nobody' } }, 'broken'] });
 
-    expect(parsed?.to).toEqual([]);
+    expect(parsed?.to).toStrictEqual([]);
   });
 
   it('a message with no recipients recorded still reads', () => {
-    expect(parseMessage({ ...rawMessage, toRecipients: undefined })?.to).toEqual([]);
+    expect(parseMessage({ ...rawMessage, toRecipients: undefined })?.to).toStrictEqual([]);
   });
 
   it('a message deleted since the last sweep is marked deleted, id and all', () => {

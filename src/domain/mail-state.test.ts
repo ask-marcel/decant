@@ -233,10 +233,10 @@ describe('remembering a conversation the run could not write', () => {
   });
 
   it('a thread the sweep queued again drops what an earlier run remembered about it', () => {
-    expect(retriedThreads(withRetry(emptyMailboxState(), 'd9f4e0a3c1', failed).retry, ['d9f4e0a3c1'])).toEqual([]);
+    expect(retriedThreads(withRetry(emptyMailboxState(), 'd9f4e0a3c1', failed).retry, ['d9f4e0a3c1'])).toStrictEqual([]);
   });
 
   it('a thread that has failed three times is left alone', () => {
-    expect(retriedThreads(withRetry(emptyMailboxState(), 'd9f4e0a3c1', { attempts: 3, reason: 'permanent: thread refused' }).retry, [])).toEqual([]);
+    expect(retriedThreads(withRetry(emptyMailboxState(), 'd9f4e0a3c1', { attempts: 3, reason: 'permanent: thread refused' }).retry, [])).toStrictEqual([]);
   });
 });

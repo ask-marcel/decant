@@ -15,7 +15,7 @@ describe('reading the folders of a mailbox', () => {
   });
 
   it('a folder Graph returned without an id or a name is dropped rather than swept', () => {
-    expect(parseMailFolders({ value: [{ displayName: 'No id' }, { id: 'AAMk2' }, 'broken', null] })).toEqual([]);
+    expect(parseMailFolders({ value: [{ displayName: 'No id' }, { id: 'AAMk2' }, 'broken', null] })).toStrictEqual([]);
   });
 
   it('the folders that did read are kept even when others in the same page did not', () => {
@@ -31,8 +31,8 @@ describe('reading the folders of a mailbox', () => {
   });
 
   it('a response that is not a folder list yields nothing', () => {
-    expect(parseMailFolders({ nope: true })).toEqual([]);
-    expect(parseMailFolders(null)).toEqual([]);
+    expect(parseMailFolders({ nope: true })).toStrictEqual([]);
+    expect(parseMailFolders(null)).toStrictEqual([]);
   });
 });
 
