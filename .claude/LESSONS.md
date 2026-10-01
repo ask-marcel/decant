@@ -6,33 +6,12 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
 
 ## 2026-07-23
 
-- [gotcha] `commands[...].execute` in ask-marcel-office-cli is typed as returning a `Result` but
-  can still throw: it decodes base64 with `atob`, which raises `InvalidCharacterError: The string
-  contains invalid characters` on a malformed payload. A live mailbox run died on one attachment.
-  Every call from an adapter needs a `try`/`catch` translating a throw into an error for that item;
-  a typed `Result` return is not a promise that nothing throws.
-
-- [gotcha] Graph v1.0 does not expose `wellKnownName` on a mailFolder, so Junk, Deleted Items,
-  Drafts and Outbox can only be recognised by the display name Outlook shows, which is localised.
-  `src/domain/mail-folder.ts` matches English and French; another locale needs its names added
-  there. Note "Sent Items" is kept and only "Outbox" (French "Boîte d'envoi") is skipped, since a
-  message sits in the outbox for seconds and then reappears in sent mail.
-
 - [decision] A conversation records no folder in its front matter. A thread spans folders by nature
   (the question sits in Inbox, the answer in Sent Items), so naming one of them would mislead.
-
-- [decision] `--since` filters which conversations get written, not which get swept. Outlook's
-  message delta takes no date filter, so the sweep costs the same either way and only the expensive
-  half (conversion) is narrowed.
 
 - [mistake] `--site-id` filed a site under its raw id instead of its display name, quietly building
   a second knowledge base for a site already synced. Anything used as a folder name must be
   resolved to the name the source itself uses before it reaches the filesystem.
-
-- [mistake] Wrote a plan detail as truth without checking it: the reply-prefix regex and several
-  sanitizer patterns were built from assumption, and lint caught two as backtracking risks. When a
-  regex is the checkpoint in front of a filesystem sink, prefer explicit character sets and loops
-  over a clever pattern.
 
 ## 2026-07-24
 
@@ -42,12 +21,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   surface used to silently strip the key and return data that looked like it had obeyed. Calls that
   already used one canonical command name and one specific id flag each were untouched; anything on
   an `--id`-style alias would have broken. Pin-read the CHANGELOG on any future bump of this package.
-
-- [decision] The mail sweep sends `top: 100` on the folder delta again, as of 2.3.0. This supersedes
-  the 2026-07-23 [gotcha] that said never pass `top` to a mail delta: 2.3.0 sends `top` as a
-  `Prefer: odata.maxpagesize` header, a page-size hint that pages through `nextLink`, not the `$top`
-  that used to read as "sync complete" and strand the rest of the folder. Drive delta stays at 1000,
-  mail at 100 to keep each response small; paging still continues if Graph caps the page lower.
 
 - [gotcha] The big use-case files carry pre-existing sub-90% mutation debt (run-sync ~81%, sync-site
   ~86%, convert-file/convert-attachment/render-thread ~85-88% before cleanup). The scaffold's
@@ -62,14 +35,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   SharedArrayBuffer case), and it is async besides. `new Bun.CryptoHasher('sha256').update(bytes)
   .digest('hex')` is synchronous, allocation-free, and typechecks. Prefer it for hashing in this Bun
   repo (`src/domain/content-hash.ts`).
-
-- [decision] `--concurrency` parallelises the IO per window and folds pure state deltas afterwards,
-  the same shape in `sync-site` `processQueue` and `sync-mailbox` `drainQueue`: `applyWork` /
-  `renderOne` return an update *function* `(state) => state`, a window of them runs N-wide through
-  `Promise.all`, then the updates reduce onto the manifest/mailbox-state and the state saves once per
-  window. A window interrupted mid-flight re-runs, and every write is idempotent (same bytes to the
-  same paths), so a partial window costs a redo, never a corruption. Default 4; `--concurrency 1` is
-  the old strictly-sequential behaviour.
 
 - [gotcha] A per-iteration save-guard in a loop that also saves once at the end cannot be killed by
   asserting the run failed, when the fake fails every write. In `sync-site` `processQueue` the guard
@@ -93,13 +58,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   cover the window-save failure in `sync-mailbox` `drainQueue` (and `sync-site` `processQueue`), load
   a resumed state with `pending` already set: `queueWork` returns early without its own save, so the
   window save is the first write and `files-fake` `failWriteWith` makes it fail, reaching the branch.
-
-- [decision] Run progress is a `Progress` port (`start`/`step`/`done`), not the `Logger`. The counter
-  is user-facing status, drawn once per item as each window resolves; logs are diagnostics at `error`
-  level on stderr. The real adapter (`createStderrProgress`) rewrites one stderr line with `\r\x1b[K`
-  and no-ops when stderr is not a TTY, so piped and headless runs stay clean. The `process.stderr`
-  read lives in infra, not the composition root, so `build-deps` stays testable; the TTY-true branch
-  and its writer arrow are the only uncoverable spots, left as equivalent mutants.
 
 ## 2026-07-26
 
@@ -141,15 +99,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   aggregate to 90.59%. Expect this on any commit that removes a tested block from a mixed-coverage
   file, and read the per-file table before assuming the new code is at fault.
 
-- [decision] The terminal is a sink with a checkpoint in front of it, the same way the filesystem has
-  one in `kb-path.ts`. `printLine` (`src/presenter/output.ts`) drops C0 except tab and newline, plus
-  DEL and C1, from everything it prints. The bug that motivated it: the operator's picker answer
-  echoed back into a refusal carried a raw ESC from an arrow key, so `no such choice: ^[[Au` moved
-  the cursor up a row and overwrote the line above with itself, leaving `bun run sync` exiting 1 with
-  nothing visible on screen. Text reaching stdout comes either from Graph (a site or file name) or
-  from the operator's own input, so neither is trusted. Printable characters in any script pass
-  through untouched, so a name like 工作组网站 still prints as itself.
-
 - [gotcha] RapidOCR's dotted-path params take enum members, never strings.
   `RapidOCR(params={"Rec.lang_type": "en"})` raises `TypeError: The value of Rec.lang_type must be
   Enum Type.`; it needs `LangRec("en")` from `rapidocr.utils.typings`, which is what
@@ -166,25 +115,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   cause in `convert-file.ts` or `kb-document.ts`. A fix belongs in the library, or in a
   post-extraction word-splitter this repo does not have and has not been asked for.
 
-## 2026-08-16
-
-- [gotcha] A SharePoint Embedded container (a Loop workspace, for one) answers to two site ids and
-  only one of them is safe to store. The search index reports a `.pod` manifest's parent as
-  `loop.cloud.microsoft,<guid>,<guid>`, while `get-sharepoint-site` on that very id answers with
-  `<tenant>.sharepoint.com,<same guids>`. Both address the same container and both work on
-  `list-sharepoint-site-drives`, so nothing fails loudly: the site state keys on the id it was given,
-  so a workspace discovered through the index and the same workspace named with `--site-id` became
-  two sources, and the second one swept every page again into a disambiguated folder. `listSites`
-  now resolves each manifest through the site lookup before offering it, so one workspace is one id.
-
-- [gotcha] A container's web address comes in two shapes, and matching the wrong half of it silently
-  loses one. A shared workspace sits at `/contentstorage/CSP_<guid>`, a personal one at
-  `/contentstorage/<opaque token>` with no `CSP_` at all. That path is what tells a container apart
-  from an ordinary site, since Graph hands back the workspace's plain display name and nothing else
-  to say the pages are Loop pages. Matching `/contentstorage/CSP_` labelled every shared workspace
-  and left the operator's own workspace looking like a site named `My workspace`. Match the path,
-  never the id shape that follows it.
-
 ## 2026-08-27
 
 - [gotcha] A PP-OCR recognizer can only emit characters its own dictionary holds, so the wrong
@@ -194,22 +124,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   assume a model covers a script: the dictionary is inside the ONNX file and takes one line to read,
   `ort.InferenceSession(path).get_modelmeta().custom_metadata_map["character"].splitlines()`.
   Sizes on this machine: `en` v4 95, `latin` v3 185, `latin` v5 502, `ch` v4 6623, `ch` v5 18383.
-
-- [decision] The OCR language is settled per image, by reading it, not by guessing from its path or
-  from a run-level flag. `ch` reads first because it is the only recognizer that spans both scripts,
-  holding CJK and ASCII alike: its reading is therefore evidence in BOTH directions, where a Latin
-  model's proves nothing, since it could not have emitted an ideograph either way. No ideographs
-  above a small share of the written characters means the image is read again with `latin`.
-  Confidence scores were considered as the discriminator and rejected: the margins are asymmetric,
-  `ch` beat `en` by 12 points on a Chinese page but `en` beat `ch` by only 1.2 on an English one.
-  The policy lives in TypeScript, not in `rapidocr-run.py`, which `bun test`, coverage and mutation
-  cannot reach; the script only learned to take a model version.
-
-- [gotcha] Newer is not better per model, so measure per script instead of upgrading wholesale.
-  PP-OCRv5 `ch` scored below v4 on this tenant's Chinese and silently dropped characters mid-word
-  (headings came back short a character or two, which reads as plausible text, not as an error),
-  while PP-OCRv5 `latin` beat both `latin` v3 and `en` v4 on the same English page and fixed v3's
-  habit of reading `O` as `0` inside acronyms. Hence the pair now in use: `ch` at v4, `latin` at v5.
 
 - [mistake] A guard no mutant can kill is usually dead code, not a hole in the tests. Stryker put
   `ocr-language.ts` at 83.33% and one survivor was `if (written.length === 0) return false` sitting

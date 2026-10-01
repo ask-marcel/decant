@@ -84,6 +84,62 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: archive, superseded: the group inbox source was built
   (src/use-cases/sync-group.ts; three group inboxes in `kb/_sync-report.md`).
 
+## 2026-08-27
+
+- [decision] The OCR language is settled per image, by reading it, not by guessing from its path or
+  from a run-level flag. `ch` reads first because it is the only recognizer that spans both scripts,
+  holding CJK and ASCII alike: its reading is therefore evidence in BOTH directions, where a Latin
+  model's proves nothing, since it could not have emitted an ideograph either way. No ideographs
+  above a small share of the written characters means the image is read again with `latin`.
+  Confidence scores were considered as the discriminator and rejected: the margins are asymmetric,
+  `ch` beat `en` by 12 points on a Chinese page but `en` beat `ch` by only 1.2 on an English one.
+  The policy lives in TypeScript, not in `rapidocr-run.py`, which `bun test`, coverage and mutation
+  cannot reach; the script only learned to take a model version.
+  Archived 2026-10-01: graduate, now stated at src/domain/ocr-language.ts:1-5 and
+  src/infra/ocr-rapid.ts:40-48 (the policy is now: probe with `ch` v5, then read with the model
+  built for the script found).
+
+- [gotcha] Newer is not better per model, so measure per script instead of upgrading wholesale.
+  PP-OCRv5 `ch` scored below v4 on this tenant's Chinese and silently dropped characters mid-word
+  (headings came back short a character or two, which reads as plausible text, not as an error),
+  while PP-OCRv5 `latin` beat both `latin` v3 and `en` v4 on the same English page and fixed v3's
+  habit of reading `O` as `0` inside acronyms. Hence the pair now in use: `ch` at v4, `latin` at v5.
+  Archived 2026-10-01: graduate, now stated at src/infra/ocr-rapid.ts:40-48.
+
+## 2026-08-16
+
+- [gotcha] A SharePoint Embedded container (a Loop workspace, for one) answers to two site ids and
+  only one of them is safe to store. The search index reports a `.pod` manifest's parent as
+  `loop.cloud.microsoft,<guid>,<guid>`, while `get-sharepoint-site` on that very id answers with
+  `<tenant>.sharepoint.com,<same guids>`. Both address the same container and both work on
+  `list-sharepoint-site-drives`, so nothing fails loudly: the site state keys on the id it was given,
+  so a workspace discovered through the index and the same workspace named with `--site-id` became
+  two sources, and the second one swept every page again into a disambiguated folder. `listSites`
+  now resolves each manifest through the site lookup before offering it, so one workspace is one id.
+  Archived 2026-10-01: graduate, now stated at src/infra/drive-reader-marcel.ts:297-300.
+
+- [gotcha] A container's web address comes in two shapes, and matching the wrong half of it silently
+  loses one. A shared workspace sits at `/contentstorage/CSP_<guid>`, a personal one at
+  `/contentstorage/<opaque token>` with no `CSP_` at all. That path is what tells a container apart
+  from an ordinary site, since Graph hands back the workspace's plain display name and nothing else
+  to say the pages are Loop pages. Matching `/contentstorage/CSP_` labelled every shared workspace
+  and left the operator's own workspace looking like a site named `My workspace`. Match the path,
+  never the id shape that follows it.
+  Archived 2026-10-01: graduate, now stated at src/infra/drive-reader-marcel.ts:281-285.
+
+## 2026-08-14
+
+- [decision] The terminal is a sink with a checkpoint in front of it, the same way the filesystem has
+  one in `kb-path.ts`. `printLine` (`src/presenter/output.ts`) drops C0 except tab and newline, plus
+  DEL and C1, from everything it prints. The bug that motivated it: the operator's picker answer
+  echoed back into a refusal carried a raw ESC from an arrow key, so `no such choice: ^[[Au` moved
+  the cursor up a row and overwrote the line above with itself, leaving `bun run sync` exiting 1 with
+  nothing visible on screen. Text reaching stdout comes either from Graph (a site or file name) or
+  from the operator's own input, so neither is trusted. Printable characters in any script pass
+  through untouched, so a name like 工作组网站 still prints as itself.
+  Archived 2026-10-01: graduate, now stated at src/infra/output.ts:1-14 (the
+  `src/presenter/output.ts` path it names is stale).
+
 ## 2026-07-26
 
 - [gotcha] This repo has no git remote at all (confirmed via `git remote -v` and `gh repo view`):
@@ -95,6 +151,13 @@ left. Nothing reads this file at session start; grep it when a question needs th
 
 ## 2026-07-24
 
+- [decision] The mail sweep sends `top: 100` on the folder delta again, as of 2.3.0. This supersedes
+  the 2026-07-23 [gotcha] that said never pass `top` to a mail delta: 2.3.0 sends `top` as a
+  `Prefer: odata.maxpagesize` header, a page-size hint that pages through `nextLink`, not the `$top`
+  that used to read as "sync complete" and strand the rest of the folder. Drive delta stays at 1000,
+  mail at 100 to keep each response small; paging still continues if Graph caps the page lower.
+  Archived 2026-10-01: graduate, now stated at src/infra/mail-reader-marcel.ts:139-143.
+
 - [decision] Mailbox attachments in the shared `_attachments` store are always named
   `<name>-<hash8>.<ext>`, never readable-name-with-a-suffix-only-on-clash. The on-clash form needed a
   sequential `usedNames` set to detect a collision, which races under `--concurrency`: two different
@@ -104,6 +167,25 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: archive, superseded: attachments sit in each thread's folder under their own
   name, and only inline pictures take a hash suffix, in `_inline/`
   (src/use-cases/thread-files.ts:168).
+
+- [decision] `--concurrency` parallelises the IO per window and folds pure state deltas afterwards,
+  the same shape in `sync-site` `processQueue` and `sync-mailbox` `drainQueue`: `applyWork` /
+  `renderOne` return an update *function* `(state) => state`, a window of them runs N-wide through
+  `Promise.all`, then the updates reduce onto the manifest/mailbox-state and the state saves once per
+  window. A window interrupted mid-flight re-runs, and every write is idempotent (same bytes to the
+  same paths), so a partial window costs a redo, never a corruption. Default 4; `--concurrency 1` is
+  the old strictly-sequential behaviour.
+  Archived 2026-10-01: graduate, now stated at src/use-cases/sync-site.ts:56-57,
+  src/use-cases/sync-mailbox.ts:63-65, README.md:127.
+
+- [decision] Run progress is a `Progress` port (`start`/`step`/`done`), not the `Logger`. The counter
+  is user-facing status, drawn once per item as each window resolves; logs are diagnostics at `error`
+  level on stderr. The real adapter (`createStderrProgress`) rewrites one stderr line with `\r\x1b[K`
+  and no-ops when stderr is not a TTY, so piped and headless runs stay clean. The `process.stderr`
+  read lives in infra, not the composition root, so `build-deps` stays testable; the TTY-true branch
+  and its writer arrow are the only uncoverable spots, left as equivalent mutants.
+  Archived 2026-10-01: graduate, now stated at src/use-cases/ports/progress.ts:1-3 and
+  src/infra/progress-bar.ts:138; the one-line `\r\x1b[K` adapter it describes is gone.
 
 ## 2026-07-23
 
@@ -116,6 +198,21 @@ left. Nothing reads this file at session start; grep it when a question needs th
   either way, so the only thing that fix buys here is fewer requests.
   Archived 2026-10-01: archive, superseded by the 2026-07-24 [decision] on `top`, which says so
   itself.
+
+- [gotcha] `commands[...].execute` in ask-marcel-office-cli is typed as returning a `Result` but
+  can still throw: it decodes base64 with `atob`, which raises `InvalidCharacterError: The string
+  contains invalid characters` on a malformed payload. A live mailbox run died on one attachment.
+  Every call from an adapter needs a `try`/`catch` translating a throw into an error for that item;
+  a typed `Result` return is not a promise that nothing throws.
+  Archived 2026-10-01: graduate, now stated at src/infra/drive-reader-marcel.ts:105-107 (`attempt`),
+  which every reader reaches through `MarcelCall`.
+
+- [gotcha] Graph v1.0 does not expose `wellKnownName` on a mailFolder, so Junk, Deleted Items,
+  Drafts and Outbox can only be recognised by the display name Outlook shows, which is localised.
+  `src/domain/mail-folder.ts` matches English and French; another locale needs its names added
+  there. Note "Sent Items" is kept and only "Outbox" (French "Boîte d'envoi") is skipped, since a
+  message sits in the outbox for seconds and then reappears in sent mail.
+  Archived 2026-10-01: graduate, now stated at src/domain/mail-folder.ts:8-10.
 
 - [gotcha] Stryker's `incremental: true` reports a stale score after new test files are added: it
   showed 93.2% where the truth was 100%. Delete `reports/stryker-incremental.json` before trusting
@@ -130,9 +227,21 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: archive, done: `scripts/lint-staged.sh` exists and runs as gate 4 of the
   pre-commit hook.
 
+- [decision] `--since` filters which conversations get written, not which get swept. Outlook's
+  message delta takes no date filter, so the sweep costs the same either way and only the expensive
+  half (conversion) is narrowed.
+  Archived 2026-10-01: graduate, now stated at src/use-cases/sync-mailbox.ts:67-68.
+
 - [decision] Attachments dedupe on name **and** length within a conversation. Name alone silently
   dropped a revised file resent under the same name; the pair keeps both, the second under a
   disambiguated name. Deliberately not deduped across threads, which would move attachments out of
   the per-thread folder the layout is built on.
   Archived 2026-10-01: archive, superseded by content addressing (src/domain/content-hash.ts:1-3); a
   file two threads carry is written into each (src/use-cases/thread-files.test.ts:83).
+
+- [mistake] Wrote a plan detail as truth without checking it: the reply-prefix regex and several
+  sanitizer patterns were built from assumption, and lint caught two as backtracking risks. When a
+  regex is the checkpoint in front of a filesystem sink, prefer explicit character sets and loops
+  over a clever pattern.
+  Archived 2026-10-01: graduate, now stated at eslint.config.js:196, whose `sonarjs` recommended set
+  makes `sonarjs/slow-regex` an error.
