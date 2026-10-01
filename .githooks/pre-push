@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+#
+# atelier pre-push hook - every commit about to leave builds on its own
+#
+# The pre-commit hook proves the working tree, not the commit, and a landing split across commits
+# can pass it every time while leaving one on main that does not compile (LESSONS.md, 2026-09-11).
+# This runs scripts/verify-commits.sh over what is being pushed: each commit checked out alone, the
+# typecheck and the suite run there. A commit touching only prose is skipped, so a push of journal
+# entries costs nothing, and one of code costs about a suite run per commit.
+#
+# Git hands the hook one line per ref being pushed: local ref, local sha, remote ref, remote sha.
+
+set -euo pipefail
+
+zero=0000000000000000000000000000000000000000
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  # A deleted ref pushes no commit.
+  if [ "$local_sha" = "$zero" ]; then continue; fi
+  # A new branch has nothing on the remote yet, so it is measured against main.
+  if [ "$remote_sha" = "$zero" ]; then range="origin/main..${local_sha}"; else range="${remote_sha}..${local_sha}"; fi
+  # Its own stdin, so nothing the checks run can eat the next ref's line.
+  bash scripts/verify-commits.sh "$range" </dev/null
+done

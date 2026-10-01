@@ -893,12 +893,18 @@ bun run typecheck              # tsc --noEmit
 bun run coverage               # per-tier gate: 100% domain and use-cases, 80% elsewhere
 bun run mutate                 # Stryker over everything, break threshold 90
 bun run mutate:changed         # Stryker over what changed since origin/main, each file held to 90
+bash scripts/verify-commits.sh # every commit since origin/main typechecked and tested on its own
 ```
 
 Stryker breaks on the total of the files it mutates, so one weak file passes while the others carry
 it. `mutate:changed` and `mutate:staged` follow the run with `scripts/check-mutation-files.ts`,
 which reads the report the run just wrote and fails on any single file under the break. The full
 sweep on main keeps the total alone.
+
+The pre-push hook runs `scripts/verify-commits.sh` over what is being pushed: each commit is checked
+out alone in a detached worktree and has to typecheck and pass the suite there, since the pre-commit
+hook only ever sees the working tree. A commit touching only prose (`*.md`, `.claude/`, `docs/`) is
+skipped.
 
 Lint holds every function to a complexity of 10 and every layer to the imports the dependency rule
 allows: the domain imports no other layer, the use cases nothing beyond the domain and their own
