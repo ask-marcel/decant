@@ -50,5 +50,12 @@ mutate_arg=$(echo "$files" | paste -sd, -)
 # test-only change (a stronger assertion, same source) does not invalidate it
 # and the score reports stale. Clear it so this pre-stage check is trustworthy.
 rm -f reports/stryker-incremental.json
+# The report the per-file check reads is written by this run alone, so a run that fails to write one
+# fails the check rather than passing it on an earlier run's numbers.
+rm -f reports/mutation/mutation.json
 
 bunx stryker run --mutate "$mutate_arg"
+
+# The run above breaks on the total of the files it mutated; this breaks on any one file under the
+# same threshold, which the total hides when the other files carry it.
+bun run scripts/check-mutation-files.ts

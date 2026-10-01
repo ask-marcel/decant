@@ -886,16 +886,19 @@ This repo follows the atelier standard: Clean Architecture, TDD with hand-writte
 `Result<T, E>` at every IO boundary. See `CLAUDE.md`.
 
 ```bash
-bun test            # test suite
-bun run lint        # fast rules, zero warnings allowed
-bun run lint:strict # adds the type-aware rules (pre-commit gate)
-bun run typecheck   # tsc --noEmit
-bun run coverage    # per-tier gate: 100% domain and use-cases, 80% elsewhere
-bun run mutate      # Stryker, break threshold 90
+bun test                       # test suite
+bun run lint                   # fast rules, zero warnings allowed
+bun run lint:strict            # adds the type-aware rules (pre-commit gate)
+bun run typecheck              # tsc --noEmit
+bun run coverage               # per-tier gate: 100% domain and use-cases, 80% elsewhere
+bun run mutate                 # Stryker over everything, break threshold 90
+bun run mutate:changed         # Stryker over what changed since origin/main, each file held to 90
 ```
 
-Delete `reports/stryker-incremental.json` before trusting a mutation score after adding tests:
-the incremental cache does not notice new test files.
+Stryker breaks on the total of the files it mutates, so one weak file passes while the others carry
+it. `mutate:changed` and `mutate:staged` follow the run with `scripts/check-mutation-files.ts`,
+which reads the report the run just wrote and fails on any single file under the break. The full
+sweep on main keeps the total alone.
 
 Lint holds every function to a complexity of 10 and every layer to the imports the dependency rule
 allows: the domain imports no other layer, the use cases nothing beyond the domain and their own
