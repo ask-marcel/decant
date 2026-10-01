@@ -903,8 +903,8 @@ layer, the presenter only the domain, infra neither the presenter nor the compos
 production file reaches the test fakes, which themselves never wrap an adapter. It refuses a
 `class`, an inline `type` import, a curried arrow other than a `createX` factory, a `try` in a use
 case, `node:fs` in `src/` outside infra, the fakes and the tests, a `@ts-` comment and another tool's
-ignore marker, and
-a comment disabling a rule does nothing but get reported itself.
+ignore marker, and `toEqual([])` in a test, which passes on `[undefined]`; a comment disabling a rule
+does nothing but get reported itself.
 `eslint.config.test.ts` lints a violation of each gate through the real config, so a gate that
 stops firing turns the suite red. Stryker runs `bun test src`, which leaves those fixtures out:
 they exercise the config, not a line of `src/`.

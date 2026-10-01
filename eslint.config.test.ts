@@ -90,6 +90,18 @@ describe('holding the style rules as lint', () => {
   });
 });
 
+describe('asserting emptiness with a matcher that can fail', () => {
+  it('`toEqual([])` is refused in a test, since it passes on `[undefined]`, and the strict forms are not', async () => {
+    const asserting = (assertion: string): string => `import { expect } from 'bun:test';\n\nconst found: unknown[] = [];\n${assertion}\n`;
+
+    expect(await rulesBrokenBy(asserting('expect(found).toEqual([]);'), 'src/domain/fixture.test.ts')).toContain('no-restricted-syntax');
+    expect(await rulesBrokenBy(asserting('expect(found).not.toEqual([]);'), 'src/domain/fixture.test.ts')).toContain('no-restricted-syntax');
+    expect(
+      await rulesBrokenBy(asserting('expect(found).toStrictEqual([]);\nexpect(found).toHaveLength(0);\nexpect(found).toEqual([1]);'), 'src/domain/fixture.test.ts')
+    ).not.toContain('no-restricted-syntax');
+  });
+});
+
 describe('leaving no way to silence a gate', () => {
   it('a comment disabling a rule does nothing, so the violation it hid is still reported', async () => {
     expect(await rulesBrokenBy(`// eslint-disable-next-line complexity\n${branchy(10)}`, 'src/domain/fixture.ts')).toContain('complexity');

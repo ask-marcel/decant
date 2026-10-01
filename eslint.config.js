@@ -41,6 +41,15 @@ const FS_BAN = {
   message: 'File IO goes through Bun.file and Bun.write; node:fs only in tests, src/test-helpers/** and the one commented directory helper in src/infra/** (hard rule 20).',
 };
 
+// Bun's `toEqual` ignores an `undefined` array item, so `toEqual([])` passes on `[undefined]`, and
+// mutants that left one in a result survived three times for it (LESSONS.md, 2026-09-26). An empty
+// array is asserted with a matcher that can fail. An empty array inside an object is left alone:
+// the report notes hold one in nearly every scenario, and the trap there is rarer.
+const EMPTY_EQUAL_BAN = {
+  selector: "CallExpression[callee.property.name='toEqual'] > ArrayExpression[elements.length=0]",
+  message: '`toEqual([])` passes on `[undefined]`: assert an empty array with `toStrictEqual([])` or `toHaveLength(0)`.',
+};
+
 // The dependency rule as lint (hard rule 37). Dependencies point inward, so each layer names the
 // layers it may never import, and a layer left out of a list is one it may reach. Production files
 // only: a test reaches for the fakes in src/test-helpers/ by design.
@@ -115,6 +124,11 @@ export default [
     files: ['src/**/*.ts'],
     ignores: ['**/*.test.ts', 'src/test-helpers/**', 'src/infra/**', 'src/use-cases/**'],
     rules: { 'no-restricted-syntax': ['error', ...STYLE_BANS, FS_BAN] },
+  },
+  {
+    // The one assertion that cannot fail where it matters (EMPTY_EQUAL_BAN above), in every test.
+    files: ['**/*.test.ts'],
+    rules: { 'no-restricted-syntax': ['error', ...STYLE_BANS, EMPTY_EQUAL_BAN] },
   },
   layerZone('domain', ['use-cases', 'infra', 'presenter', 'composition', 'test-helpers']),
   layerZone('use-cases', ['infra', 'presenter', 'composition', 'test-helpers']),
