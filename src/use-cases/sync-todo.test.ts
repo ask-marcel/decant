@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { freeSegment } from '../domain/kb-path.ts';
 import { emptyTodoState, serializeTodoState, withTask } from '../domain/todo-state.ts';
 import type { TodoTask } from '../domain/todo-task.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
@@ -142,7 +143,9 @@ describe('syncing a Microsoft To Do list', () => {
 
   it('a task renamed in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
     const renamed = { file: 'kb/To Do/Tasks/2026-09-08/Call the venue.md', lastModified: '2026-09-08T09:00:00Z', title: 'Call the venue' };
-    const namesake = { file: 'kb/To Do/Tasks/2026-09-08/Call the venue-namesake.md', lastModified: '2026-09-08T10:00:00Z', title: 'Call the venue' };
+    // Where the namesake was put while the renamed task held the plain name.
+    const namesakeFile = `kb/To Do/Tasks/2026-09-08/${freeSegment('Call the venue.md', 'namesake', (name) => name === 'Call the venue.md')}`;
+    const namesake = { file: namesakeFile, lastModified: '2026-09-08T10:00:00Z', title: 'Call the venue' };
     const state = withTask(withTask(emptyTodoState('list-1', 'Tasks'), 'renamed', renamed), 'namesake', namesake);
     const tasks = [
       task({ id: 'renamed', title: 'Book the venue', lastModified: '2026-09-08T16:00:00Z' }),
@@ -157,6 +160,12 @@ describe('syncing a Microsoft To Do list', () => {
     expect(done.files.written.get(recorded)).toContain('Ask about parking');
     expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/To Do/Tasks/2026-09-08/Call the venue.md' }]);
     expect(done.files.written.get('kb/_archive/To Do/Tasks/2026-09-08/Call the venue.md')).toBe('the task as it was');
+  });
+
+  it('three tasks sharing a title and a day land in three files, though Graph opens all their ids alike', async () => {
+    const done = await run({ reader: { tasks: { 'list-1': ['AAMkADU3-one', 'AAMkADU3-two', 'AAMkADU3-three'].map((id) => task({ id, title: 'Follow up' })) } } });
+
+    expect([...done.files.written.keys()].filter((path) => path.endsWith('.md'))).toHaveLength(3);
   });
 
   it('a dry run says how much it would write and writes nothing at all', async () => {
