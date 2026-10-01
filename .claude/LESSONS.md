@@ -386,3 +386,21 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   the same token, and the picker's runs (`runMany`, `runInTurn`), which were kept stopping at the
   first failure when this scope was chosen. Applies to any new error kind: decide whether it breaks
   one source (carry on) or all of them (stop, like `auth`).
+
+## 2026-10-01
+
+- [gotcha] Stryker 9 makes no mutant for a ternary whose test is a call (`taken.has(x) ? a : b`,
+  the branch for it is commented out in its `conditional-expression-mutator.js`), nor for a changed
+  call argument, so `mutate:changed` scored the calendar attachment fix 95.49 with its new decisions
+  never mutated. Hand-mutate such lines: back up the file, swap one expression, run
+  `timeout 30 bun test <file>`, restore.
+
+- [gotcha] JavaScriptCore eliminates tail calls in ES modules, so a runaway
+  `return cond ? f(...) : x` spins forever instead of overflowing the stack, and Bun's per-test
+  timeout cannot interrupt synchronous code: the run hangs with no output until it is killed. Under
+  `timeout`, exit 124 means the mutant was caught.
+
+- [gotcha] A re-check loop hides a missing hash: once a suffixed name that is taken moves on, a
+  suffix cut from the raw id still gives every namesake its own file, so "three namesakes, three
+  files" cannot tell hashed from raw. Stability can: take the middle namesake off the event and the
+  third must keep its file (`sync-calendar.test.ts`, 'naming the files an event carries').
