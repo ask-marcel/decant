@@ -172,6 +172,17 @@ left. Nothing reads this file at session start; grep it when a question needs th
   with a cursor reads the cursor out before a whole read (README.md:84-106, `widens` in
   src/domain/sync-window.ts:43).
 
+- [decision] `internetMessageHeaders` IS honored on `list-conversation-messages --select`, verified
+  live, and the per-conversation `get-mail-message` call stays anyway. The header read happens in
+  the SWEEP, off delta data, before any conversation has been fetched, so there is no existing call
+  to fold the select into: both cost one call per conversation, and `get-mail-message` returns one
+  message's headers (~4 KB) where the conversation call returns every message's (~120 KB on a
+  30-message thread). A capability being available is not the same as it being the cheaper option;
+  check which call is actually being made at that point in the run before folding anything into it.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (the comment at
+  src/infra/mail-reader-marcel.ts:154-156 is narrower ("does not document returning it"), so the
+  verified fact stays here).
+
 - [decision] Group mailboxes are the reachable alternative and are still blocked, on post bodies.
   `list-group-conversations` works today on `Group.Read.All`, verified against a team the account belongs to,
   and returns topic, senders, `hasAttachments` and a PREVIEW truncated mid-word. This sync is bodies
@@ -192,6 +203,14 @@ left. Nothing reads this file at session start; grep it when a question needs th
   right and a run "corrected" to `Europe/Paris` on the strength of this note would have been wrong.
   One call settles it; the note above records what one account said once.
   Archived 2026-10-01: merge, into the `my-quick-context` entry (2026-08-30).
+
+- [gotcha] Concurrency 4 is proven clean against real mail: 169 threads, 169 documents, no thread id
+  in two folders. The race the sequential folder resolution guards against did not occur, and the
+  test needed threads being CREATED, since a re-run over threads already written writes nothing and
+  exercises no parallel folder creation at all. Run it into a scratch `KB_ROOT` with the OCR cache
+  symlinked in, which keeps it off the real vault and off a cold cache.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (the technique outlives the
+  proof).
 
 - [gotcha] `convert-mail-to-markdown` can strip an ENTIRE body as a "quoted reply chain" and report
   success. Measured on a 7-day sync: 10 of 42 message sections, 24%, reduced to one short line. The
@@ -237,6 +256,16 @@ left. Nothing reads this file at session start; grep it when a question needs th
   for a message whose only attachment is inline: neither flag means on its own what its name
   suggests, and both need the other half.
   Archived 2026-10-01: graduate, now stated at src/use-cases/thread-files.ts:101.
+
+- [lesson] Moving a picture's text into the thread means the state has to remember it. Once no
+  document holds the reading, a second thread meeting the same picture has nothing to put under it,
+  so `AttachmentRecord` carries `text` and the shared `_inline/` store is what makes the dedup pay.
+  A record written before that change holds no text, and honouring it would show the picture
+  wordlessly for ever, so a record with no text is treated as unstored: one extra fetch, and it
+  repairs itself. Prefer that shape to a state version bump whenever the repair is cheap, since a
+  bump makes every user rebuild for a field most of them could have refilled in a second.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-30 (the instance is stated at
+  src/use-cases/thread-files.ts:141, the general rule is not; retagged from `[lesson]`).
 
 - [gotcha] `mutate:changed` scores the ALL FILES aggregate, so its exit code passes while a single
   file sits under 90. `render-thread.ts` has now gone 91.13 → 88.60 → 90.08 → 89.92 → 88.24 → 90.03
@@ -393,6 +422,16 @@ left. Nothing reads this file at session start; grep it when a question needs th
 
 ## 2026-08-27
 
+- [gotcha] A PP-OCR recognizer can only emit characters its own dictionary holds, so the wrong
+  `--ocr-lang` yields confident line noise rather than a failure. `en_PP-OCRv4` holds 95 characters,
+  ASCII only, with no CJK and not one accented letter, which is why a Chinese announcement came back
+  as `STARZE / 1. / 2.i / 3.A` while its front matter still claimed `ocr: rapidocr (en)`. Never
+  assume a model covers a script: the dictionary is inside the ONNX file and takes one line to read,
+  `ort.InferenceSession(path).get_modelmeta().custom_metadata_map["character"].splitlines()`.
+  Sizes on this machine: `en` v4 95, `latin` v3 185, `latin` v5 502, `ch` v4 6623, `ch` v5 18383.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-27 (the rule is stated at
+  src/domain/ocr-language.ts:1-5, the dictionary one-liner and the sizes are not).
+
 - [decision] The OCR language is settled per image, by reading it, not by guessing from its path or
   from a run-level flag. `ch` reads first because it is the only recognizer that spans both scripts,
   holding CJK and ASCII alike: its reading is therefore evidence in BOTH directions, where a Latin
@@ -487,6 +526,15 @@ left. Nothing reads this file at session start; grep it when a question needs th
   return `undefined` into a collection, pin the count as well as the contents.
   Archived 2026-10-01: merge, into the `toEqual` entry (2026-09-26).
 
+- [mistake] Estimated a parallelisation win from timings taken by shelling out to the CLI, and was
+  wrong by an order of magnitude. `bunx ask-marcel-office list-accessible-drives` measured 39s and
+  `search-all-accessible-sites` 10s, so running them together looked like it would take a minute
+  down to forty seconds. In-process, through the library with a warm token and connection, the whole
+  listing was already 33s and became 30s: about 10%, not 50%. A process-spawn measurement carries
+  cold auth and module loading that the real call path does not pay. Time the code as it actually
+  runs before promising a number, or promise no number.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-27 (635 bytes).
+
 - [gotcha] A terminal block that rewrites itself in place climbs by the height of the PREVIOUS draw,
   never the one it is about to make, which is why `src/infra/progress-bar.ts` keeps a `drawn`
   counter. A third `begin()` grows the block from three rows to four and the escape it writes is
@@ -522,6 +570,16 @@ left. Nothing reads this file at session start; grep it when a question needs th
 
 ## 2026-08-14
 
+- [gotcha] `disambiguateSegment(name, id)` takes the first 8 characters of the id, which
+  disambiguates nothing when ids share a prefix, and Graph ids do. Every item in one drive starts
+  `01W25LGY...`, and a site id is `<tenant>.sharepoint.com,<guid>,<guid>`, so two sites in the same
+  tenant agree for the first 20-odd characters. Two same-named sites would have landed in the same
+  folder either way, which is the bug the suffix was added to fix. `siteIdHash` (sha256, in
+  `src/domain/site-state.ts`) is what makes the suffix distinguishing. Hash before slicing whenever
+  a shared-prefix identifier is the source of a short suffix.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-14 (the site case is stated at
+  src/domain/site-state.ts:107-110, the general rule is not, and one call site breaks it).
+
 - [gotcha] Deleting well-tested code can fail the mutation gate even when nothing newly written is
   weak. Moving the day-folder logic out of `thread.ts` dropped the aggregate to 89.67% against a
   break threshold of 90, though every line written that day was mutation-clean: the removed block was
@@ -544,7 +602,36 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: graduate, now stated at src/infra/output.ts:1-14 (the
   `src/presenter/output.ts` path it names is stale).
 
+- [gotcha] RapidOCR's dotted-path params take enum members, never strings.
+  `RapidOCR(params={"Rec.lang_type": "en"})` raises `TypeError: The value of Rec.lang_type must be
+  Enum Type.`; it needs `LangRec("en")` from `rapidocr.utils.typings`, which is what
+  `src/infra/rapidocr-run.py` does. `Cls.lang_type` has to be left at its default: RapidOCR's own
+  `default_models.yaml` ships only a `ch` classifier, so overriding it fails at construction. `Det`
+  has both, but the shared detector locates Latin-script text fine, so only `Rec` is set. Simplifying
+  that file back to a plain string breaks OCR at engine construction, before an image is ever read.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-14 (the classifier half is stated
+  at src/infra/rapidocr-run.py:7-9, the enum half is not).
+
+- [gotcha] Slide or PDF markdown that arrives as one run-on wall of text with no spaces between words
+  comes from upstream's PDF text extraction (`unpdf`, inside ask-marcel-office-cli), not from
+  anything here. Checked against a real synced file: line 12 was 34,252 characters on a single line.
+  The only whitespace folding in this repo is `front-matter.ts` `/\s+/g -> ' '` applied to front
+  matter *values*; a document body goes through `withFrontMatter` untouched. Do not look for the
+  cause in `convert-file.ts` or `kb-document.ts`. A fix belongs in the library, or in a
+  post-extraction word-splitter this repo does not have and has not been asked for.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-08-14 (650 bytes).
+
 ## 2026-07-26
+
+- [gotcha] A batch rename across test fixtures can collide with a real identifier that happens to
+  share the same substring. Renaming the "Espace Northwind" site-name fixture to "Espace Contoso" across
+  21 test files, `build-deps.test.ts` also held `KB_LOG_LEVEL`/`KB_ROOT`, the actual env
+  var names read by `config.ts` and documented in `README.md`. A blind find-and-replace would have
+  renamed those too, breaking the test without touching the production contract to match. Before a
+  batch string rename, grep the substring together with its neighbours (here `KB_`) to separate
+  fixture text from something that is actually a contract, then handle the contract as its own
+  confirmed change.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-07-26 (686 bytes).
 
 - [decision] Landing a branch whose commits already fit the pre-commit size gate (10 files / 300
   lines) onto a `main` that has diverged, with files touched on both sides: rebase onto the new
@@ -600,6 +687,32 @@ left. Nothing reads this file at session start; grep it when a question needs th
   the old strictly-sequential behaviour.
   Archived 2026-10-01: graduate, now stated at src/use-cases/sync-site.ts:56-57,
   src/use-cases/sync-mailbox.ts:63-65, README.md:127.
+
+- [gotcha] A per-iteration save-guard in a loop that also saves once at the end cannot be killed by
+  asserting the run failed, when the fake fails every write. In `sync-site` `processQueue` the guard
+  `if (!saved.ok) return saved` (and the same shape in `sync-mailbox` `drainQueue`) survived mutation
+  to `if (false)`: under `files-fake` `failWriteWith` the window save AND the final `createSyncSite`
+  save both fail, so `ok === false` holds whether the loop stops at the window or runs to the end and
+  trips the final save. The distinguishing observable is how much work was attempted: seed two pending
+  items at `concurrency: 1` and assert exactly one `convert.failed` was logged. The real run stops
+  after window one; the mutant runs into window two and logs a second. This is the technique for the
+  run-sync/sync-site mutation debt flagged in the earlier 2026-07-24 [gotcha]: both files are now at
+  94.83% / 93.90%. The remaining survivors there are genuinely equivalent, chiefly the six `add`
+  `+`->`-` mutants, which cancel because `add` is always applied to `EMPTY` twice (processQueue then
+  createSyncSite), so `0 - (0 - n) === n`; do not chase them without refactoring `add` out of the
+  double-negation.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-07-24 (six long sentences; the
+  percentages are history).
+
+- [gotcha] Splitting a one-line `if (!saved.ok) return saved` into a multi-line block (here to add a
+  `deps.progress.done()` before the return) drops line coverage even though behaviour is unchanged:
+  Bun counts a one-line `if` as covered the moment it executes, condition false every time, but once
+  the body is on its own lines those lines are tracked separately and read as uncovered because the
+  true branch was never taken. A mechanical refactor can therefore fail the 100% use-case gate. To
+  cover the window-save failure in `sync-mailbox` `drainQueue` (and `sync-site` `processQueue`), load
+  a resumed state with `pending` already set: `queueWork` returns early without its own save, so the
+  window save is the first write and `files-fake` `failWriteWith` makes it fail, reaching the branch.
+  Archived 2026-10-01: tighten, rewritten in place under 2026-07-24 (791 bytes).
 
 - [decision] Run progress is a `Progress` port (`start`/`step`/`done`), not the `Logger`. The counter
   is user-facing status, drawn once per item as each window resolves; logs are diagnostics at `error`
