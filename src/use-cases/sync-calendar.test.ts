@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { basename } from 'node:path';
 import type { CalendarEvent } from '../domain/calendar-event.ts';
 import { emptyCalendarState, serializeCalendarState, withCursor, withEvent } from '../domain/calendar-state.ts';
 import { createCalendarReaderFake } from '../test-helpers/calendar-reader-fake.ts';
@@ -10,6 +11,7 @@ import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import { createProgressFake } from '../test-helpers/progress-fake.ts';
 import type { ProgressFake } from '../test-helpers/progress-fake.ts';
+import type { EventAttachment } from './ports/calendar-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import { createSyncCalendar } from './sync-calendar.ts';
 import type { RunNotes, RunSummary } from './sync-site.ts';
@@ -461,5 +463,63 @@ describe('telling the reader which event is being written', () => {
     });
 
     expect([...done.progress.steps].sort((left, right) => left.localeCompare(right))).toEqual(['(no subject)', 'an event that could not be read', 'Offsite planning', 'Standup']);
+  });
+});
+
+// Graph's ids open on the same long run for every attachment an event carries: the mailbox, then
+// the event itself. Only the last characters differ. Synthetic, laid out the way Graph lays them.
+const GRAPH_PREFIX = 'AAMkADFkNGMyZjdlLTViOGEtNGMzZC05ZTZmLTJhN2I4YzlkMGUxZgBGAAAAAACwcvLpCwN7fRwWojnDQijDaUNxbMFh4btl8KY62myHchIAEA';
+
+const agenda = (tail: string): EventAttachment => ({
+  id: `${GRAPH_PREFIX}${tail}`,
+  name: 'Agenda.docx',
+  contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  size: 4096,
+});
+
+const FIRST = agenda('Cnk3tkuMqljwNyG7a6z1x4');
+const SECOND = agenda('AWNnqstnpKAXyNqKuVaCzL');
+const THIRD = agenda('Cx6ZMkUFvTLaDh-F3PXhmg');
+
+const ATTACHED = `${ROOT}/2026-09-12/Offsite planning.attachments/`;
+
+// How many files in the event's attachment folder hold each attachment's text: one each means every
+// attachment landed in a file of its own and none was written over.
+const filesHolding = (files: FilesFake, attachments: ReadonlyArray<EventAttachment>): ReadonlyArray<number> => {
+  const texts = [...files.written].filter(([path]) => path.startsWith(ATTACHED)).map(([, text]) => text);
+  return attachments.map(({ id }) => texts.filter((text) => text.includes(`text of ${id}`)).length);
+};
+
+describe('naming the files an event carries', () => {
+  it('three attachments named alike on one event land as three files, none written over another', async () => {
+    const done = await run({ reader: { attachments: { a: [FIRST, SECOND, THIRD] } } });
+
+    expect(filesHolding(done.files, [FIRST, SECOND, THIRD])).toEqual([1, 1, 1]);
+  });
+
+  // The lookalike's name is read off a first run rather than worked out here, so it is the name the
+  // namesake really takes, whatever the suffix is made of.
+  it('an attachment named the way its namesake would be suffixed keeps its file, and the namesake lands in another', async () => {
+    const probe = await run({ reader: { attachments: { a: [FIRST, SECOND] } } });
+    const suffixed = basename(stateOf(probe.files).events['a']?.outputs.at(-1) ?? '', '.md');
+    const lookalike = { ...THIRD, name: suffixed };
+
+    const done = await run({ reader: { attachments: { a: [FIRST, lookalike, SECOND] } } });
+
+    expect(suffixed).toStartWith('Agenda.docx-');
+    expect(filesHolding(done.files, [FIRST, lookalike, SECOND])).toEqual([1, 1, 1]);
+  });
+
+  it('an attachment taken off the event goes to the archive, and a namesake listed after it keeps its file', async () => {
+    const before = await run({ reader: { attachments: { a: [FIRST, SECOND, THIRD] } } });
+    const [eventFile = '', firstFile = '', secondFile = '', thirdFile = ''] = stateOf(before.files).events['a']?.outputs ?? [];
+
+    const after = await run({
+      reader: { changes: [{ id: 'a', removed: false }], events: { a: { ...OFFSITE, lastModified: '2026-09-13T08:00:00Z' } }, attachments: { a: [FIRST, THIRD] } },
+      files: { texts: { [STATE_PATH]: before.files.written.get(STATE_PATH) ?? '' } },
+    });
+
+    expect(after.files.moves.map(({ from }) => from)).toStrictEqual([secondFile]);
+    expect(stateOf(after.files).events['a']?.outputs).toStrictEqual([eventFile, firstFile, thirdFile]);
   });
 });

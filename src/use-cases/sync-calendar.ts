@@ -18,6 +18,7 @@ import { disambiguateSegment, safeSegment } from '../domain/kb-path.ts';
 import { archivePath } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
+import { siteIdHash } from '../domain/site-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import { dayIn } from '../domain/zoned-day.ts';
 import { widens } from '../domain/sync-window.ts';
@@ -106,9 +107,17 @@ type Attached = {
   readonly skipped: RunNotes['skipped'];
 };
 
+// A suffix from the hash of the attachment's id, since Graph ids agree for their first fifty-odd
+// characters and a slice of the id itself hands every namesake the same one. A suffixed name that is
+// taken too, by an attachment named that way, moves on to the hash of the hash.
+const freeName = (plain: string, hash: string, taken: ReadonlySet<string>): string => {
+  const name = disambiguateSegment(plain, hash);
+  return taken.has(name) ? freeName(plain, siteIdHash(hash), taken) : name;
+};
+
 const attachmentName = (attachment: EventAttachment, taken: Set<string>): string => {
   const plain = `${safeSegment(attachment.name)}${MARKDOWN}`;
-  const name = taken.has(plain) ? disambiguateSegment(plain, attachment.id) : plain;
+  const name = taken.has(plain) ? freeName(plain, siteIdHash(attachment.id), taken) : plain;
   taken.add(name);
   return name;
 };
