@@ -1,5 +1,5 @@
 import type { CalendarEvent } from './calendar-event.ts';
-import { disambiguateSegment, safeSegment } from './kb-path.ts';
+import { freePath, safeSegment } from './kb-path.ts';
 import { stringList } from './mail-state.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
@@ -92,7 +92,5 @@ const nameOf = (event: CalendarEvent): string => (event.subject.length > 0 ? eve
 // library does. `taken` is every path some other event holds, on disk or planned this run.
 export const eventFileFor = (root: string, event: CalendarEvent, zone: string, taken: ReadonlySet<string>): string => {
   const name = `${safeSegment(nameOf(event))}${MARKDOWN}`;
-  const day = `${root}/${dayIn(event.start, zone)}`;
-  const plain = `${day}/${name}`;
-  return taken.has(plain) ? `${day}/${disambiguateSegment(name, event.id)}` : plain;
+  return freePath(`${root}/${dayIn(event.start, zone)}`, name, event.id, taken);
 };

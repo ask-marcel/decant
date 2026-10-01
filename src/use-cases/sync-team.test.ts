@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { ChannelPost } from '../domain/channel-post.ts';
+import { freeSegment } from '../domain/kb-path.ts';
 import { emptyTeamState, serializeTeamState, withChannelCursor, withPost } from '../domain/team-state.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
@@ -110,7 +111,9 @@ describe('syncing the channels of a Microsoft Team', () => {
 
   it('a post retitled in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
     const retitled = { file: `${ROOT}/General/2026-09-08/Venue.md`, lastModified: '2026-09-08T09:00:00Z', title: 'Venue' };
-    const namesake = { file: `${ROOT}/General/2026-09-08/Venue-namesake.md`, lastModified: '2026-09-08T10:00:00Z', title: 'Venue' };
+    // Where the namesake was put while the retitled post held the plain name.
+    const namesakeFile = `${ROOT}/General/2026-09-08/${freeSegment('Venue.md', 'namesake', (name) => name === 'Venue.md')}`;
+    const namesake = { file: namesakeFile, lastModified: '2026-09-08T10:00:00Z', title: 'Venue' };
     const state = withPost(withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'retitled', retitled), GENERAL.id, GENERAL.name, 'namesake', namesake);
     const done = await run({
       reader: {
@@ -124,6 +127,13 @@ describe('syncing the channels of a Microsoft Team', () => {
     expect(done.files.written.get(recorded)).toContain('the venue is booked');
     expect(done.files.moves).toEqual([{ from: retitled.file, to: 'kb/_archive/Teams/Northwind Leadership/General/2026-09-08/Venue.md' }]);
     expect(done.files.written.get('kb/_archive/Teams/Northwind Leadership/General/2026-09-08/Venue.md')).toBe('the post as it was');
+  });
+
+  it('three posts sharing a subject, sent within the same minute, land in three files', async () => {
+    const sent = (at: string): ChannelPost => post(String(Date.parse(at)), at, { subject: 'Update' });
+    const done = await run({ reader: { posts: { [GENERAL.id]: [sent('2026-09-08T09:00:00Z'), sent('2026-09-08T09:00:20Z'), sent('2026-09-08T09:00:40Z')] } } });
+
+    expect(new Set(Object.values(stateOf(done.files).channels[GENERAL.id]?.posts ?? {}).map((record) => record.file)).size).toBe(3);
   });
 
   it('a post deleted in Teams is put aside in the archive and named in the report', async () => {

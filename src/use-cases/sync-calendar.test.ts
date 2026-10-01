@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { basename } from 'node:path';
 import type { CalendarEvent } from '../domain/calendar-event.ts';
 import { emptyCalendarState, serializeCalendarState, withCursor, withEvent } from '../domain/calendar-state.ts';
+import { freeSegment } from '../domain/kb-path.ts';
 import { createCalendarReaderFake } from '../test-helpers/calendar-reader-fake.ts';
 import type { CalendarReaderFake, CalendarReaderSeed } from '../test-helpers/calendar-reader-fake.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
@@ -298,12 +299,15 @@ describe('syncing the calendar', () => {
     const done = await run({ reader: { events: { a: event('a', 'Standup', '2026-09-10T08:00:00Z'), b: event('b', 'Standup', '2026-09-10T09:00:00Z') } } });
 
     const events = stateOf(done.files).events;
-    expect([events['a']?.file, events['b']?.file]).toEqual([`${ROOT}/2026-09-10/Standup.md`, `${ROOT}/2026-09-10/Standup-b.md`]);
+    expect(events['a']?.file).toBe(`${ROOT}/2026-09-10/Standup.md`);
+    expect(events['b']?.file).toStartWith(`${ROOT}/2026-09-10/Standup-`);
   });
 
   it('an event renamed in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
     const renamed = { file: `${ROOT}/2026-09-10/Call.md`, lastModified: 'older', subject: 'Call', outputs: [`${ROOT}/2026-09-10/Call.md`] };
-    const namesake = { file: `${ROOT}/2026-09-10/Call-b.md`, lastModified: 'older', subject: 'Call', outputs: [`${ROOT}/2026-09-10/Call-b.md`] };
+    // Where the namesake was put while the renamed event held the plain name.
+    const namesakeFile = `${ROOT}/2026-09-10/${freeSegment('Call.md', 'b', (name) => name === 'Call.md')}`;
+    const namesake = { file: namesakeFile, lastModified: 'older', subject: 'Call', outputs: [namesakeFile] };
     const state = withEvent(withEvent(emptyCalendarState(), 'a', renamed), 'b', namesake);
     const done = await run({
       reader: { events: { a: event('a', 'Meeting', '2026-09-10T08:00:00Z'), b: event('b', 'Call', '2026-09-10T09:00:00Z', { body: '<p>Bring the contract</p>' }) } },
@@ -314,6 +318,15 @@ describe('syncing the calendar', () => {
     expect(done.files.written.get(recorded)).toContain('Bring the contract');
     expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/Calendar/2026-09-10/Call.md' }]);
     expect(done.files.written.get('kb/_archive/Calendar/2026-09-10/Call.md')).toBe('the call as it was');
+  });
+
+  it('three events sharing a subject and a day land in three files, though Graph opens all their ids alike', async () => {
+    const ids = ['AAMkADU3-one', 'AAMkADU3-two', 'AAMkADU3-three'];
+    const done = await run({
+      reader: { changes: ids.map((id) => ({ id, removed: false })), events: Object.fromEntries(ids.map((id) => [id, event(id, 'Standup', '2026-09-10T08:00:00Z')])) },
+    });
+
+    expect(new Set(Object.values(stateOf(done.files).events).map((record) => record.file)).size).toBe(3);
   });
 
   it('an event the delta named twice is fetched once', async () => {

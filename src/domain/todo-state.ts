@@ -1,5 +1,5 @@
 import { CATEGORY_FOLDER } from './kb-category.ts';
-import { disambiguateSegment, safeRelPath, safeSegment } from './kb-path.ts';
+import { freePath, safeRelPath, safeSegment } from './kb-path.ts';
 import type { SafeRelPath } from './kb-path.ts';
 import { datedRoot } from './output-paths.ts';
 import type { Result } from './result.ts';
@@ -94,8 +94,6 @@ export const todoWorklist = (state: TodoState, tasks: ReadonlyArray<TodoTask>): 
 
 const MARKDOWN = '.md';
 
-const fileAt = (root: string, task: TodoTask, name: string): string => `${datedRoot(root, task.lastModified)}/${name}`;
-
 // One task and the file it is about to be written to. Paired rather than looked up by id later, so
 // there is no lookup that could miss and no fallback path for a miss that cannot happen.
 export type PlannedTask = { readonly task: TodoTask; readonly file: string };
@@ -111,8 +109,7 @@ export const planTaskFiles = (root: string, tasks: ReadonlyArray<TodoTask>, stat
   const taken = new Set(Object.values(state.tasks).map((record) => record.file));
   const planned: PlannedTask[] = [];
   for (const task of tasks) {
-    const plain = fileAt(root, task, `${safeSegment(task.title)}${MARKDOWN}`);
-    const file = taken.has(plain) && plain !== state.tasks[task.id]?.file ? fileAt(root, task, disambiguateSegment(`${safeSegment(task.title)}${MARKDOWN}`, task.id)) : plain;
+    const file = freePath(datedRoot(root, task.lastModified), `${safeSegment(task.title)}${MARKDOWN}`, task.id, taken, state.tasks[task.id]?.file);
     taken.add(file);
     planned.push({ task, file });
   }

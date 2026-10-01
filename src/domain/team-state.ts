@@ -1,7 +1,7 @@
 import type { ChannelPost } from './channel-post.ts';
 import { postTitle } from './channel-post.ts';
 import { CATEGORY_FOLDER } from './kb-category.ts';
-import { disambiguateSegment, safeRelPath, safeSegment } from './kb-path.ts';
+import { freePath, safeRelPath, safeSegment } from './kb-path.ts';
 import type { SafeRelPath } from './kb-path.ts';
 import { datedRoot } from './output-paths.ts';
 import type { Result } from './result.ts';
@@ -114,8 +114,6 @@ export type PlannedPost = { readonly post: ChannelPost; readonly file: string };
 
 const MARKDOWN = '.md';
 
-const fileAt = (channelRoot: string, post: ChannelPost, name: string): string => `${datedRoot(channelRoot, post.lastModified)}/${name}`;
-
 // Where each post about to be written goes, settled before any is written. Two posts can carry
 // the same subject and last change on the same day; the second takes a suffix from its own id, as
 // a document sharing a name in one library does. A path another post's record holds is taken, even
@@ -126,9 +124,7 @@ export const planPostFiles = (channelRoot: string, posts: ReadonlyArray<ChannelP
   const taken = new Set(Object.values(known).map((record) => record.file));
   const planned: PlannedPost[] = [];
   for (const post of posts) {
-    const name = `${safeSegment(postTitle(post))}${MARKDOWN}`;
-    const plain = fileAt(channelRoot, post, name);
-    const file = taken.has(plain) && plain !== known[post.id]?.file ? fileAt(channelRoot, post, disambiguateSegment(name, post.id)) : plain;
+    const file = freePath(datedRoot(channelRoot, post.lastModified), `${safeSegment(postTitle(post))}${MARKDOWN}`, post.id, taken, known[post.id]?.file);
     taken.add(file);
     planned.push({ post, file });
   }
