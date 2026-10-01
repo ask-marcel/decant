@@ -11,7 +11,7 @@ const ESCAPED = 'Regards,\n\n\\[inline image: image931066.png\\]';
 
 describe('spotting a picture the body shows but does not carry', () => {
   it('a message with no picture in it carries none', () => {
-    expect(carriesInlineImage('Hi Vincent,\n\nNo pictures here.')).toBe(false);
+    expect(carriesInlineImage('Hi Valerie,\n\nNo pictures here.')).toBe(false);
   });
 
   it('the escaped form the converter emits is still recognised', () => {

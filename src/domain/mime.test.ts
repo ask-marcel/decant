@@ -19,7 +19,7 @@ describe('reading a saved email', () => {
   const read = readMime(
     lines(
       'From: Mei Lin <mei@example.com>',
-      'To: Vincent Delacourt <vincent@example.com>,',
+      'To: Valerie Fairbanks <valerie@example.com>,',
       '\tAlex Zhao <alex@example.com>',
       'Subject: =?utf-8?B?5Zue5aSN?= Teams Intv',
       'Date: Mon, 24 Aug 2026 07:22:00 +0000',
@@ -30,7 +30,7 @@ describe('reading a saved email', () => {
       'Content-Type: text/plain; charset="utf-8"',
       'Content-Transfer-Encoding: quoted-printable',
       '',
-      'Bonjour Vincent=2C',
+      'Bonjour Valerie=2C',
       '',
       'voici le contrat en pi=C3=A8ce jointe.',
       '--BOUND',
@@ -48,10 +48,10 @@ describe('reading a saved email', () => {
       [
         '**Subject:** 回复 Teams Intv',
         '**From:** Mei Lin <mei@example.com>',
-        '**To:** Vincent Delacourt <vincent@example.com>, Alex Zhao <alex@example.com>',
+        '**To:** Valerie Fairbanks <valerie@example.com>, Alex Zhao <alex@example.com>',
         '**Date:** Mon, 24 Aug 2026 07:22:00 +0000',
         '',
-        'Bonjour Vincent,',
+        'Bonjour Valerie,',
         '',
         'voici le contrat en pièce jointe.',
       ].join('\n')

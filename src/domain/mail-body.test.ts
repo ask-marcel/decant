@@ -10,7 +10,7 @@ const NOTE = '_Text below was read out of the picture by OCR, so it can be wrong
 // A message body as the library hands it back: its own closing list of what the message carried,
 // naming a raw Graph id and telling the reader to fetch bytes that are already on disk by then.
 const CONVERTED = [
-  'Hi Vincent,',
+  'Hi Valerie,',
   '',
   'Please find the CV attached.',
   '',
@@ -21,11 +21,11 @@ const CONVERTED = [
 
 describe('the list of files the converter closes a message with', () => {
   it('is cut away, because the files it names are already converted and beside the thread', () => {
-    expect(withoutAttachmentList(CONVERTED)).toBe('Hi Vincent,\n\nPlease find the CV attached.');
+    expect(withoutAttachmentList(CONVERTED)).toBe('Hi Valerie,\n\nPlease find the CV attached.');
   });
 
   it('a message that carried nothing is left exactly as it came', () => {
-    expect(withoutAttachmentList('Hi Vincent,\n\nNo files here.')).toBe('Hi Vincent,\n\nNo files here.');
+    expect(withoutAttachmentList('Hi Valerie,\n\nNo files here.')).toBe('Hi Valerie,\n\nNo files here.');
   });
 
   it('a sentence merely mentioning the words is not mistaken for the list', () => {
@@ -181,6 +181,6 @@ describe('what a message body says once the files it carried are on disk', () =>
   });
 
   it('a message that carried nothing keeps its text and gains no list', () => {
-    expect(rewriteMessageBody('Hi Vincent,\n\nNothing attached.', [])).toEqual({ body: 'Hi Vincent,\n\nNothing attached.', pictures: [] });
+    expect(rewriteMessageBody('Hi Valerie,\n\nNothing attached.', [])).toEqual({ body: 'Hi Valerie,\n\nNothing attached.', pictures: [] });
   });
 });

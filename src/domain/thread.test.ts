@@ -9,7 +9,7 @@ const message = (over: Partial<MailMessage> = {}): MailMessage => ({
   received: '2026-05-12T09:31:00Z',
   hasAttachments: false,
   from: { name: 'Jane Doe', address: 'jane@example.com' },
-  to: [{ name: 'Vincent DELACOURT', address: 'vincent@example.com' }],
+  to: [{ name: 'Valerie FAIRBANKS', address: 'valerie@example.com' }],
   isDeleted: false,
   ...over,
 });
@@ -87,7 +87,7 @@ describe('writing a conversation as one document', () => {
         message: message({
           id: 'm2',
           received: '2026-05-13T10:00:00Z',
-          from: { name: 'Vincent DELACOURT', address: 'v@example.com' },
+          from: { name: 'Valerie FAIRBANKS', address: 'v@example.com' },
           to: [{ name: 'Jane Doe', address: 'j@example.com' }],
         }),
         body: 'Agreed.',
@@ -99,11 +99,11 @@ describe('writing a conversation as one document', () => {
       [
         '# Contrat Contoso',
         '',
-        '## 2026-05-12 11:31 — Jane Doe to Vincent DELACOURT',
+        '## 2026-05-12 11:31 — Jane Doe to Valerie FAIRBANKS',
         '',
         'Here is the contract.',
         '',
-        '## 2026-05-13 12:00 — Vincent DELACOURT to Jane Doe',
+        '## 2026-05-13 12:00 — Valerie FAIRBANKS to Jane Doe',
         '',
         'Agreed.',
       ].join('\n')
@@ -117,7 +117,7 @@ describe('writing a conversation as one document', () => {
         message: message({
           id: 'out',
           received: '2026-05-12T11:00:00Z',
-          from: { name: 'Vincent DELACOURT', address: 'vincent@example.com' },
+          from: { name: 'Valerie FAIRBANKS', address: 'valerie@example.com' },
           to: [{ name: 'Jane Doe', address: 'jane@example.com' }],
         }),
         body: 'Confirmed, signing today.',
@@ -126,7 +126,7 @@ describe('writing a conversation as one document', () => {
 
     const rendered = renderThread({ subject: 'Contrat Contoso', parts }, 'Europe/Paris');
 
-    expect(rendered).toContain('## 2026-05-12 13:00 — Vincent DELACOURT to Jane Doe');
+    expect(rendered).toContain('## 2026-05-12 13:00 — Valerie FAIRBANKS to Jane Doe');
     expect(rendered).toContain('Confirmed, signing today.');
   });
 
@@ -147,7 +147,7 @@ describe('writing a conversation as one document', () => {
   });
 
   it('the header block the converter adds is dropped, since the section already says all of it', () => {
-    const body = ['**Subject:** FW: Kick-off', '**From:** Eva Xie <eva@example.com>', '**To:** Vincent DELACOURT', '**Date:** 2026-07-08', '', 'Please review the budget.'].join(
+    const body = ['**Subject:** FW: Kick-off', '**From:** Eva Xie <eva@example.com>', '**To:** Valerie FAIRBANKS', '**Date:** 2026-07-08', '', 'Please review the budget.'].join(
       '\n'
     );
     const rendered = renderThread({ subject: 'Kick-off', parts: [{ message: message({ from: undefined, to: [] }), body }] }, 'Europe/Paris');
@@ -254,7 +254,7 @@ describe('listing who took part in a conversation', () => {
   it('a name is written with its address, the way mail itself writes one', () => {
     const parts = [{ message: message(), body: '' }];
 
-    expect(participantsOf(parts)).toEqual(['Jane Doe <jane@example.com>', 'Vincent DELACOURT <vincent@example.com>']);
+    expect(participantsOf(parts)).toEqual(['Jane Doe <jane@example.com>', 'Valerie FAIRBANKS <valerie@example.com>']);
   });
 
   it('somebody the source named without an address is listed by name alone', () => {
@@ -266,7 +266,7 @@ describe('listing who took part in a conversation', () => {
   it('everyone who wrote or received is named once, in a stable order', () => {
     const parts = [
       { message: message(), body: '' },
-      { message: message({ id: 'm2', from: { name: 'Vincent DELACOURT', address: 'v@example.com' }, to: [{ name: 'Jane Doe', address: 'j@example.com' }] }), body: '' },
+      { message: message({ id: 'm2', from: { name: 'Valerie FAIRBANKS', address: 'v@example.com' }, to: [{ name: 'Jane Doe', address: 'j@example.com' }] }), body: '' },
     ];
 
     // One person under two addresses is two entries: two ways to reach them, and dropping either
@@ -274,8 +274,8 @@ describe('listing who took part in a conversation', () => {
     expect(participantsOf(parts)).toEqual([
       'Jane Doe <j@example.com>',
       'Jane Doe <jane@example.com>',
-      'Vincent DELACOURT <v@example.com>',
-      'Vincent DELACOURT <vincent@example.com>',
+      'Valerie FAIRBANKS <v@example.com>',
+      'Valerie FAIRBANKS <valerie@example.com>',
     ]);
   });
 

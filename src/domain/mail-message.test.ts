@@ -12,7 +12,7 @@ const rawMessage = {
   conversationId: 'AAQkADk0...=',
   from: { emailAddress: { name: 'Erica English', address: 'erica.english@contoso.com' } },
   toRecipients: [
-    { emailAddress: { name: 'Vincent DELACOURT', address: 'vincent.delacourt@contoso.com' } },
+    { emailAddress: { name: 'Valerie FAIRBANKS', address: 'valerie.fairbanks@contoso.com' } },
     { emailAddress: { name: 'David Chang', address: 'david.chang@contoso.com' } },
   ],
 };
@@ -27,7 +27,7 @@ describe('reading a message out of a mailbox sweep', () => {
       hasAttachments: false,
       from: { name: 'Erica English', address: 'erica.english@contoso.com' },
       to: [
-        { name: 'Vincent DELACOURT', address: 'vincent.delacourt@contoso.com' },
+        { name: 'Valerie FAIRBANKS', address: 'valerie.fairbanks@contoso.com' },
         { name: 'David Chang', address: 'david.chang@contoso.com' },
       ],
       isDeleted: false,
