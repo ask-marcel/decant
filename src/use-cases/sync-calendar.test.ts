@@ -294,6 +294,21 @@ describe('syncing the calendar', () => {
     expect(file).toContain(`${ROOT}/2026-09-10/Standup-`);
   });
 
+  it('an event renamed in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
+    const renamed = { file: `${ROOT}/2026-09-10/Call.md`, lastModified: 'older', subject: 'Call', outputs: [`${ROOT}/2026-09-10/Call.md`] };
+    const namesake = { file: `${ROOT}/2026-09-10/Call-b.md`, lastModified: 'older', subject: 'Call', outputs: [`${ROOT}/2026-09-10/Call-b.md`] };
+    const state = withEvent(withEvent(emptyCalendarState(), 'a', renamed), 'b', namesake);
+    const done = await run({
+      reader: { events: { a: event('a', 'Meeting', '2026-09-10T08:00:00Z'), b: event('b', 'Call', '2026-09-10T09:00:00Z', { body: '<p>Bring the contract</p>' }) } },
+      files: { texts: { [STATE_PATH]: serializeCalendarState(state), [renamed.file]: 'the call as it was', [namesake.file]: 'the namesake as it was' } },
+    });
+
+    const recorded = stateOf(done.files).events['b']?.file ?? '';
+    expect(done.files.written.get(recorded)).toContain('Bring the contract');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/Calendar/2026-09-10/Call.md' }]);
+    expect(done.files.written.get('kb/_archive/Calendar/2026-09-10/Call.md')).toBe('the call as it was');
+  });
+
   it('an event the delta named twice is fetched once', async () => {
     const done = await run({
       reader: {

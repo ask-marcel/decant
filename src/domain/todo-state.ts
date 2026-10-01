@@ -103,14 +103,16 @@ export type PlannedTask = { readonly task: TodoTask; readonly file: string };
 // Where each task about to be written goes. Two tasks can carry the same title and last change on
 // the same day, which would land them on one path and lose one of them silently; the second and any
 // after it take a suffix from their own id, the way two documents sharing a name in one library do.
-// A path a task NOT being rewritten already occupies counts as taken, since that file is on disk.
+// A path another task's record holds counts as taken even when that task is rewritten this run too:
+// its file stays on disk until its own write lands and puts it aside, which can come after a second
+// task's write to the same path and put the second task's fresh file aside instead. A task's own
+// copy never stands in its way.
 export const planTaskFiles = (root: string, tasks: ReadonlyArray<TodoTask>, state: TodoState): ReadonlyArray<PlannedTask> => {
-  const rewriting = new Set(tasks.map((task) => task.id));
-  const taken = new Set(Object.entries(state.tasks).flatMap(([id, record]) => (rewriting.has(id) ? [] : [record.file])));
+  const taken = new Set(Object.values(state.tasks).map((record) => record.file));
   const planned: PlannedTask[] = [];
   for (const task of tasks) {
     const plain = fileAt(root, task, `${safeSegment(task.title)}${MARKDOWN}`);
-    const file = taken.has(plain) ? fileAt(root, task, disambiguateSegment(`${safeSegment(task.title)}${MARKDOWN}`, task.id)) : plain;
+    const file = taken.has(plain) && plain !== state.tasks[task.id]?.file ? fileAt(root, task, disambiguateSegment(`${safeSegment(task.title)}${MARKDOWN}`, task.id)) : plain;
     taken.add(file);
     planned.push({ task, file });
   }
