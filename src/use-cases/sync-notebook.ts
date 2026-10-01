@@ -1,4 +1,4 @@
-import { disambiguateSegment } from '../domain/kb-path.ts';
+import { disambiguateSegment, idHash } from '../domain/kb-path.ts';
 import { renderNotebookPage } from '../domain/notebook-document.ts';
 import {
   NOTEBOOK_STATE_VERSION,
@@ -16,7 +16,6 @@ import type { Notebook, NotebookSection } from '../domain/onenote.ts';
 import { archivePath } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
-import { siteIdHash } from '../domain/site-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Files } from './ports/files.ts';
@@ -74,7 +73,7 @@ const resolve = async (deps: SyncNotebookDeps, notebook: Notebook): Promise<Reso
   if (held === undefined) return { roots: plain, state: emptyNotebookState(notebook) };
   if (held.ok && held.value.source.id === notebook.id) return { roots: plain, state: held.value };
   if (held.ok) {
-    const own = rootsFor(deps.kbRoot, notebookRootName(disambiguateSegment(notebook.name, siteIdHash(notebook.id))));
+    const own = rootsFor(deps.kbRoot, notebookRootName(disambiguateSegment(notebook.name, idHash(notebook.id))));
     const state = await readState(deps, own.root);
     return { roots: own, state: state?.ok === true ? state.value : emptyNotebookState(notebook) };
   }
