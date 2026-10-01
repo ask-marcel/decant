@@ -27,7 +27,7 @@ const event = (id: string, subject: string, start: string, over: Partial<Calenda
   end: start,
   allDay: false,
   cancelled: false,
-  organizer: { name: 'Vincent', address: 'me@example.com' },
+  organizer: { name: 'Valerie', address: 'me@example.com' },
   attendees: [{ name: 'Jane Doe', address: 'jane@example.com', response: 'accepted', required: true }],
   location: '',
   joinUrl: '',

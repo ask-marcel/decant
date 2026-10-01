@@ -10,7 +10,7 @@ const event: CalendarEvent = {
   end: '2026-09-12T08:30:00Z',
   allDay: false,
   cancelled: false,
-  organizer: { name: 'Vincent', address: 'me@example.com' },
+  organizer: { name: 'Valerie', address: 'me@example.com' },
   attendees: [
     { name: 'Jane Doe', address: 'jane@example.com', response: 'accepted', required: true },
     { name: 'Dana Farrow', address: 'dana@example.com', response: 'none', required: false },
@@ -39,7 +39,7 @@ describe('writing one calendar event as a document', () => {
         'subject: Offsite planning',
         'start: "2026-09-12 15:00"',
         'end: "2026-09-12 16:30"',
-        'organizer: Vincent',
+        'organizer: Valerie',
         'attendees:',
         '  - Jane Doe (accepted)',
         '  - Dana Farrow (optional, no answer)',
