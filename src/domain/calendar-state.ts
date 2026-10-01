@@ -1,5 +1,5 @@
 import type { CalendarEvent } from './calendar-event.ts';
-import { disambiguateSegment, safeSegment } from './kb-path.ts';
+import { freeName, safeSegment } from './kb-path.ts';
 import { stringList } from './mail-state.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
@@ -88,11 +88,11 @@ const nameOf = (event: CalendarEvent): string => (event.subject.length > 0 ? eve
 
 // Where an event goes: under the day it starts, counted where the calendar lives, named by its
 // subject. Two events can share a subject and a day (a standup and its exception, two calls named
-// alike); the second takes a suffix from its own id, the way a document sharing a name in one
-// library does. `taken` is every path some other event holds, on disk or planned this run.
+// alike); the second takes a suffix from a hash of its own id, the way a document sharing a name
+// in one library does. `taken` is every path some other event holds, on disk or planned this run.
 export const eventFileFor = (root: string, event: CalendarEvent, zone: string, taken: ReadonlySet<string>): string => {
   const name = `${safeSegment(nameOf(event))}${MARKDOWN}`;
   const day = `${root}/${dayIn(event.start, zone)}`;
-  const plain = `${day}/${name}`;
-  return taken.has(plain) ? `${day}/${disambiguateSegment(name, event.id)}` : plain;
+  const segment = freeName(name, event.id, (candidate) => taken.has(`${day}/${candidate}`));
+  return `${day}/${segment}`;
 };

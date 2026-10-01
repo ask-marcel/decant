@@ -142,7 +142,7 @@ describe('syncing a Microsoft To Do list', () => {
 
   it('a task renamed in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
     const renamed = { file: 'kb/To Do/Tasks/2026-09-08/Call the venue.md', lastModified: '2026-09-08T09:00:00Z', title: 'Call the venue' };
-    const namesake = { file: 'kb/To Do/Tasks/2026-09-08/Call the venue-namesake.md', lastModified: '2026-09-08T10:00:00Z', title: 'Call the venue' };
+    const namesake = { file: 'kb/To Do/Tasks/2026-09-08/Call the venue-259c694d.md', lastModified: '2026-09-08T10:00:00Z', title: 'Call the venue' };
     const state = withTask(withTask(emptyTodoState('list-1', 'Tasks'), 'renamed', renamed), 'namesake', namesake);
     const tasks = [
       task({ id: 'renamed', title: 'Book the venue', lastModified: '2026-09-08T16:00:00Z' }),
@@ -218,5 +218,46 @@ describe('syncing a Microsoft To Do list', () => {
     expect(done.summary.failed).toBe(1);
     expect(done.notes.failed).toEqual([{ path: 'Book the venue', reason: 'cannot write kb/To Do/Tasks/2026-09-08/Book the venue.md' }]);
     expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks).toEqual({});
+  });
+});
+
+// Shaped the way Graph hands them out: `AAMkA`, the mailbox's GUID, the folder, then the item, so
+// every task in one mailbox agrees on all but its last few characters.
+const exchangeId = (item: string): string =>
+  `AAMkAGVmMDEzMTM4LTZmYWUtNDdkNC1hMDZiLTU1OGY5OTZhYmY4OABGAAAAAAAiQ8W967B7TKBjgx9rVEURBwAiIsqMbYjsT5e-T7KzowPTAAAAAAESAAAiIsqMbYjsT5e-T7KzowPTAAA${item}AAA=`;
+
+const MILL = task({ id: exchangeId('a_WKz'), notes: 'Ask the old mill' });
+const BARN = task({ id: exchangeId('a_WK0'), notes: 'Ask the barn' });
+const HALL = task({ id: exchangeId('a_WK1'), notes: 'Ask the town hall' });
+
+const fileOf = (files: FilesFake, id: string): string => JSON.parse(files.written.get(STATE_PATH) ?? '{}').tasks[id]?.file ?? '';
+
+describe('keeping apart tasks that share a title', () => {
+  it('three tasks sharing a title and a day each land in a file of their own, and none is written over another', async () => {
+    const done = await run({ reader: { tasks: { 'list-1': [MILL, BARN, HALL] } } });
+
+    const filed = [MILL, BARN, HALL].map((each) => fileOf(done.files, each.id));
+    expect(new Set(filed).size).toBe(3);
+    expect(filed.map((path) => done.files.written.get(path))).toEqual([
+      expect.stringContaining('Ask the old mill'),
+      expect.stringContaining('Ask the barn'),
+      expect.stringContaining('Ask the town hall'),
+    ]);
+  });
+
+  // A task the list no longer holds keeps its path through the run that puts it aside, so the third
+  // run, after it has gone, is the first in which a namesake could be handed its old name.
+  it('a task keeps its file once a namesake filed before it has left the list, the next time it changes', async () => {
+    const first = await run({ reader: { tasks: { 'list-1': [MILL, BARN, HALL] } } });
+    const second = await run({ reader: { tasks: { 'list-1': [MILL, HALL] } }, files: { texts: Object.fromEntries(first.files.written) } });
+    const third = await run({
+      reader: { tasks: { 'list-1': [MILL, { ...HALL, lastModified: '2026-09-08T18:00:00Z' }] } },
+      files: { texts: Object.fromEntries(second.files.written) },
+    });
+
+    expect(second.files.moves.map((move) => move.from)).toEqual([fileOf(first.files, BARN.id)]);
+    expect(second.files.written.get(second.files.moves[0]?.to ?? '')).toContain('Ask the barn');
+    expect(fileOf(third.files, HALL.id)).toBe(fileOf(first.files, HALL.id));
+    expect(third.files.moves).toHaveLength(0);
   });
 });

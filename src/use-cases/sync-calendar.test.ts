@@ -298,12 +298,12 @@ describe('syncing the calendar', () => {
     const done = await run({ reader: { events: { a: event('a', 'Standup', '2026-09-10T08:00:00Z'), b: event('b', 'Standup', '2026-09-10T09:00:00Z') } } });
 
     const events = stateOf(done.files).events;
-    expect([events['a']?.file, events['b']?.file]).toEqual([`${ROOT}/2026-09-10/Standup.md`, `${ROOT}/2026-09-10/Standup-b.md`]);
+    expect([events['a']?.file, events['b']?.file]).toEqual([`${ROOT}/2026-09-10/Standup.md`, `${ROOT}/2026-09-10/Standup-3e23e816.md`]);
   });
 
   it('an event renamed in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
     const renamed = { file: `${ROOT}/2026-09-10/Call.md`, lastModified: 'older', subject: 'Call', outputs: [`${ROOT}/2026-09-10/Call.md`] };
-    const namesake = { file: `${ROOT}/2026-09-10/Call-b.md`, lastModified: 'older', subject: 'Call', outputs: [`${ROOT}/2026-09-10/Call-b.md`] };
+    const namesake = { file: `${ROOT}/2026-09-10/Call-3e23e816.md`, lastModified: 'older', subject: 'Call', outputs: [`${ROOT}/2026-09-10/Call-3e23e816.md`] };
     const state = withEvent(withEvent(emptyCalendarState(), 'a', renamed), 'b', namesake);
     const done = await run({
       reader: { events: { a: event('a', 'Meeting', '2026-09-10T08:00:00Z'), b: event('b', 'Call', '2026-09-10T09:00:00Z', { body: '<p>Bring the contract</p>' }) } },
@@ -543,5 +543,64 @@ describe('naming the files an event carries', () => {
 
     expect(after.files.moves.map(({ from }) => from)).toStrictEqual([secondFile]);
     expect(stateOf(after.files).events['a']?.outputs).toStrictEqual([eventFile, firstFile, thirdFile]);
+  });
+});
+
+// Shaped the way Graph hands them out (Microsoft's own example): `AAMkA`, the mailbox's GUID, the
+// calendar's folder, then the item, so every event in one calendar agrees on all but a few characters.
+const exchangeId = (item: string): string =>
+  `AAMkAGVmMDEzMTM4LTZmYWUtNDdkNC1hMDZiLTU1OGY5OTZhYmY4OABGAAAAAAAiQ8W967B7TKBjgx9rVEURBwAiIsqMbYjsT5e-T7KzowPTAAAAAAENAAAiIsqMbYjsT5e-T7KzowPTAAA${item}AAA=`;
+
+const SUPPLIER = event(exchangeId('a_WKz'), 'Call', '2026-09-10T08:00:00Z', { body: '<p>Supplier call</p>' });
+const CLIENT = event(exchangeId('a_WK0'), 'Call', '2026-09-10T11:00:00Z', { body: '<p>Client call</p>' });
+const BOARD = event(exchangeId('a_WK1'), 'Call', '2026-09-10T15:00:00Z', { body: '<p>Board call</p>' });
+
+const changed = (events: ReadonlyArray<CalendarEvent>): CalendarReaderSeed => ({
+  changes: events.map((each) => ({ id: each.id, removed: false })),
+  events: Object.fromEntries(events.map((each) => [each.id, each])),
+});
+
+const fileOf = (files: FilesFake, id: string): string => stateOf(files).events[id]?.file ?? '';
+
+describe('keeping apart what shares a name', () => {
+  it('three events sharing a subject and a day each land in a file of their own, and none is written over another', async () => {
+    const done = await run({ reader: changed([SUPPLIER, CLIENT, BOARD]) });
+
+    const filed = [SUPPLIER, CLIENT, BOARD].map((call) => fileOf(done.files, call.id));
+    expect(new Set(filed).size).toBe(3);
+    expect(filed.map((path) => done.files.written.get(path))).toEqual([
+      expect.stringContaining('Supplier call'),
+      expect.stringContaining('Client call'),
+      expect.stringContaining('Board call'),
+    ]);
+  });
+
+  it('an event keeps its file when a namesake filed before it is deleted, and only the deleted one goes aside', async () => {
+    const first = await run({ reader: changed([SUPPLIER, CLIENT, BOARD]) });
+    const second = await run({
+      reader: {
+        changes: [
+          { id: CLIENT.id, removed: true },
+          { id: BOARD.id, removed: false },
+        ],
+        events: { [BOARD.id]: { ...BOARD, lastModified: '2026-09-11T09:00:00Z' } },
+      },
+      files: { texts: Object.fromEntries(first.files.written) },
+    });
+
+    expect(fileOf(second.files, BOARD.id)).toBe(fileOf(first.files, BOARD.id));
+    expect(second.files.moves.map((move) => move.from)).toEqual([fileOf(first.files, CLIENT.id)]);
+    expect(second.files.written.get(second.files.moves[0]?.to ?? '')).toContain('Client call');
+  });
+
+  it('an event whose subject reads like the name a namesake would be given keeps it, and the namesake takes the next free one', async () => {
+    // `554bab7a` opens the SHA-256 of the client call's id, so this subject reads exactly like the
+    // name that call would be suffixed to.
+    const lookalike = event(exchangeId('a_WK2'), 'Call-554bab7a', '2026-09-10T09:00:00Z', { body: '<p>Looks like a suffix</p>' });
+    const done = await run({ reader: changed([SUPPLIER, lookalike, CLIENT]) });
+
+    expect(fileOf(done.files, lookalike.id)).toBe(`${ROOT}/2026-09-10/Call-554bab7a.md`);
+    expect(fileOf(done.files, CLIENT.id)).toBe(`${ROOT}/2026-09-10/Call-8598177d.md`);
+    expect(done.files.written.get(`${ROOT}/2026-09-10/Call-554bab7a.md`)).toContain('Looks like a suffix');
   });
 });

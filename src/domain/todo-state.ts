@@ -1,5 +1,5 @@
 import { CATEGORY_FOLDER } from './kb-category.ts';
-import { disambiguateSegment, safeRelPath, safeSegment } from './kb-path.ts';
+import { freeName, safeRelPath, safeSegment } from './kb-path.ts';
 import type { SafeRelPath } from './kb-path.ts';
 import { datedRoot } from './output-paths.ts';
 import type { Result } from './result.ts';
@@ -100,19 +100,23 @@ const fileAt = (root: string, task: TodoTask, name: string): string => `${datedR
 // there is no lookup that could miss and no fallback path for a miss that cannot happen.
 export type PlannedTask = { readonly task: TodoTask; readonly file: string };
 
+// Held by another task: taken, and not the task's own copy.
+const heldByAnother = (path: string, own: string | undefined, taken: ReadonlySet<string>): boolean => path !== own && taken.has(path);
+
 // Where each task about to be written goes. Two tasks can carry the same title and last change on
 // the same day, which would land them on one path and lose one of them silently; the second and any
-// after it take a suffix from their own id, the way two documents sharing a name in one library do.
-// A path another task's record holds counts as taken even when that task is rewritten this run too:
-// its file stays on disk until its own write lands and puts it aside, which can come after a second
-// task's write to the same path and put the second task's fresh file aside instead. A task's own
-// copy never stands in its way.
+// after it take a suffix from a hash of their own id, the way two documents sharing a name in one
+// library do. A path another task's record holds counts as taken even when that task is rewritten
+// this run too: its file stays on disk until its own write lands and puts it aside, which can come
+// after a second task's write to the same path and put the second task's fresh file aside instead.
+// A task's own copy never stands in its way, suffixed or not.
 export const planTaskFiles = (root: string, tasks: ReadonlyArray<TodoTask>, state: TodoState): ReadonlyArray<PlannedTask> => {
   const taken = new Set(Object.values(state.tasks).map((record) => record.file));
   const planned: PlannedTask[] = [];
   for (const task of tasks) {
-    const plain = fileAt(root, task, `${safeSegment(task.title)}${MARKDOWN}`);
-    const file = taken.has(plain) && plain !== state.tasks[task.id]?.file ? fileAt(root, task, disambiguateSegment(`${safeSegment(task.title)}${MARKDOWN}`, task.id)) : plain;
+    const own = state.tasks[task.id]?.file;
+    const segment = freeName(`${safeSegment(task.title)}${MARKDOWN}`, task.id, (candidate) => heldByAnother(fileAt(root, task, candidate), own, taken));
+    const file = fileAt(root, task, segment);
     taken.add(file);
     planned.push({ task, file });
   }

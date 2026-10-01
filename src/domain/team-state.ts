@@ -1,7 +1,7 @@
 import type { ChannelPost } from './channel-post.ts';
 import { postTitle } from './channel-post.ts';
 import { CATEGORY_FOLDER } from './kb-category.ts';
-import { disambiguateSegment, safeRelPath, safeSegment } from './kb-path.ts';
+import { freeName, safeRelPath, safeSegment } from './kb-path.ts';
 import type { SafeRelPath } from './kb-path.ts';
 import { datedRoot } from './output-paths.ts';
 import type { Result } from './result.ts';
@@ -116,19 +116,24 @@ const MARKDOWN = '.md';
 
 const fileAt = (channelRoot: string, post: ChannelPost, name: string): string => `${datedRoot(channelRoot, post.lastModified)}/${name}`;
 
+// Held by another post: taken, and not the post's own copy.
+const heldByAnother = (path: string, own: string | undefined, taken: ReadonlySet<string>): boolean => path !== own && taken.has(path);
+
 // Where each post about to be written goes, settled before any is written. Two posts can carry
-// the same subject and last change on the same day; the second takes a suffix from its own id, as
-// a document sharing a name in one library does. A path another post's record holds is taken, even
-// when that post is rewritten this run too: its file is put aside only once its own write lands,
-// which can come after a namesake's write to the same path. A post's own copy never stands in its way.
+// the same subject and last change on the same day; the second takes a suffix from a hash of its
+// own id, as a document sharing a name in one library does. A path another post's record holds is
+// taken, even when that post is rewritten this run too: its file is put aside only once its own
+// write lands, which can come after a namesake's write to the same path. A post's own copy never
+// stands in its way, suffixed or not.
 export const planPostFiles = (channelRoot: string, posts: ReadonlyArray<ChannelPost>, state: TeamState, channelId: string): ReadonlyArray<PlannedPost> => {
   const known = state.channels[channelId]?.posts ?? {};
   const taken = new Set(Object.values(known).map((record) => record.file));
   const planned: PlannedPost[] = [];
   for (const post of posts) {
     const name = `${safeSegment(postTitle(post))}${MARKDOWN}`;
-    const plain = fileAt(channelRoot, post, name);
-    const file = taken.has(plain) && plain !== known[post.id]?.file ? fileAt(channelRoot, post, disambiguateSegment(name, post.id)) : plain;
+    const own = known[post.id]?.file;
+    const segment = freeName(name, post.id, (candidate) => heldByAnother(fileAt(channelRoot, post, candidate), own, taken));
+    const file = fileAt(channelRoot, post, segment);
     taken.add(file);
     planned.push({ post, file });
   }

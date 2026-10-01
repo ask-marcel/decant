@@ -110,7 +110,7 @@ describe('syncing the channels of a Microsoft Team', () => {
 
   it('a post retitled in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
     const retitled = { file: `${ROOT}/General/2026-09-08/Venue.md`, lastModified: '2026-09-08T09:00:00Z', title: 'Venue' };
-    const namesake = { file: `${ROOT}/General/2026-09-08/Venue-namesake.md`, lastModified: '2026-09-08T10:00:00Z', title: 'Venue' };
+    const namesake = { file: `${ROOT}/General/2026-09-08/Venue-259c694d.md`, lastModified: '2026-09-08T10:00:00Z', title: 'Venue' };
     const state = withPost(withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'retitled', retitled), GENERAL.id, GENERAL.name, 'namesake', namesake);
     const done = await run({
       reader: {
@@ -283,5 +283,35 @@ describe('telling the reader which post is being written', () => {
 
     expect([...done.progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(['Post a', 'Post b']);
     expect([...done.progress.steps].sort((left, right) => left.localeCompare(right))).toEqual(['Post a', 'Post b']);
+  });
+});
+
+describe('keeping apart posts that share a title', () => {
+  it('three posts sharing a title sent within the same minute each land in a file of their own', async () => {
+    // A post's id is the millisecond it was sent, so posts sent close together agree on all but the
+    // last few digits.
+    const alerts = ['1789027200000', '1789027230000', '1789027260000'].map((sent) => post(sent, new Date(Number(sent)).toISOString(), { subject: 'Build failed' }));
+    const done = await run({ reader: { posts: { [GENERAL.id]: alerts } } });
+
+    const filed = alerts.map((alert) => stateOf(done.files).channels[GENERAL.id]?.posts[alert.id]?.file ?? '');
+    expect(new Set(filed).size).toBe(3);
+    expect(filed.map((path) => done.files.written.get(path))).toEqual(alerts.map((alert) => expect.stringContaining(`### rendered ${alert.id}`)));
+  });
+
+  // A post deleted in Teams keeps its path through the run that puts it aside, so the third run,
+  // after it has gone, is the first in which a namesake could be handed its old name.
+  it('a post keeps its file once a namesake sent before it has been deleted, the next time it changes', async () => {
+    const alert = (sent: string, over: Partial<ChannelPost> = {}): ChannelPost => post(sent, new Date(Number(sent)).toISOString(), { subject: 'Build failed', ...over });
+    const fileOf = (files: FilesFake, id: string): string => stateOf(files).channels[GENERAL.id]?.posts[id]?.file ?? '';
+    const first = await run({ reader: { posts: { [GENERAL.id]: [alert('1789027200000'), alert('1789027230000'), alert('1789027260000')] } } });
+    const second = await run({ reader: { posts: { [GENERAL.id]: [alert('1789027230000', { deleted: true })] } }, files: { texts: Object.fromEntries(first.files.written) } });
+    const third = await run({
+      reader: { posts: { [GENERAL.id]: [alert('1789027260000', { lastModified: '2026-09-10T17:00:00.000Z' })] } },
+      files: { texts: Object.fromEntries(second.files.written) },
+    });
+
+    expect(second.files.moves.map((move) => move.from)).toEqual([fileOf(first.files, '1789027230000')]);
+    expect(fileOf(third.files, '1789027260000')).toBe(fileOf(first.files, '1789027260000'));
+    expect(third.files.moves).toHaveLength(0);
   });
 });
