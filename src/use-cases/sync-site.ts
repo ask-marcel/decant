@@ -1,6 +1,6 @@
 import type { DriveItem } from '../domain/drive-item.ts';
 import { categoryFolderOf } from '../domain/kb-category.ts';
-import { disambiguateSegment, safeSegment } from '../domain/kb-path.ts';
+import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
 import { archivePath, datedRoot, outputPrefix, recordedPrefix, remapOutputs } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
@@ -15,7 +15,6 @@ import {
   rememberFailure,
   renameItem,
   serializeSiteState,
-  siteIdHash,
   withDrive,
 } from '../domain/site-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -125,7 +124,7 @@ export const resolveSite = async (deps: ResolveSiteDeps, site: SiteRef): Promise
   const defaultState = await loadState(deps.files, `${siteRoot(deps.kbRoot, defaultSegment)}/${STATE_FILE_NAME}`, site, deps.logger);
   if (!belongsToAnotherSite(defaultState, site)) return { segment: defaultSegment, state: defaultState };
   deps.logger.warn('sync.site-name-collision', { siteId: site.id, name: site.name });
-  const segment = `${category}/${disambiguateSegment(site.name, siteIdHash(site.id))}`;
+  const segment = `${category}/${disambiguateSegment(site.name, idHash(site.id))}`;
   return { segment, state: await loadState(deps.files, `${siteRoot(deps.kbRoot, segment)}/${STATE_FILE_NAME}`, site, deps.logger) };
 };
 

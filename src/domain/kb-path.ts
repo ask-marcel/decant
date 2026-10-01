@@ -51,3 +51,20 @@ export const disambiguateSegment = (segment: string, itemId: string): SafeSegmen
   const room = Math.max(0, MAX_SEGMENT_LENGTH - suffix.length - extension.length);
   return safeSegment(`${segment.slice(0, Math.min(cut, room))}${suffix}${extension}`);
 };
+
+// SHA-256 of an id, hex-encoded. Graph ids share long prefixes: every item in one mailbox opens on
+// `AAMkA` and the mailbox's GUID, an attachment's id carries its event's whole id, a Teams post's id
+// is the millisecond it was sent, and a site's embeds the tenant's hostname. Hashing first spreads
+// what tells two ids apart across the whole string before `disambiguateSegment` takes its slice.
+export const idHash = (id: string): string => new Bun.CryptoHasher('sha256').update(id).digest('hex');
+
+const suffixedFree = (plain: string, hash: string, isTaken: (name: string) => boolean): string => {
+  const name = disambiguateSegment(plain, hash);
+  return isTaken(name) ? suffixedFree(plain, idHash(hash), isTaken) : name;
+};
+
+// The name an item is written under, `isTaken` saying which names something else holds: its plain
+// name when that is free, else the plain name suffixed from the hash of its id, hashed again while
+// that is held too, by a name that only looks like a suffixed one. The name depends on the id and on
+// what is held, never on how many namesakes came first, so an item keeps it when one of them goes.
+export const freeName = (plain: string, itemId: string, isTaken: (name: string) => boolean): string => (isTaken(plain) ? suffixedFree(plain, idHash(itemId), isTaken) : plain);
