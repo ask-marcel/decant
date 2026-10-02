@@ -206,6 +206,33 @@ describe('syncing the people directory', () => {
     expect(done.files.written.get('kb/_archive/People/Jane Doe.md')).toBe('the page as it was');
   });
 
+  it('a person renamed while their namesake changes puts only their own old page aside, and the namesake is rewritten in the file their record names', async () => {
+    // Where the namesake was put while the renamed person held the plain name.
+    const namesakeFile = `${ROOT}/${freeSegment('Sam Lee.md', 'namesake', (name) => name === 'Sam Lee.md')}`;
+    const renamed = { file: `${ROOT}/Sam Lee.md`, name: 'Sam Lee', fingerprint: 'old' };
+    const namesake = { file: namesakeFile, name: 'Sam Lee', fingerprint: 'old' };
+    const state = withPerson(withPerson(emptyPeopleState(), 'renamed', renamed), 'namesake', namesake);
+    // Sam Lee sorts before Sam Park, so the namesake is written a window before the renamed person's old page is put aside.
+    const done = await run({
+      reader: {
+        members: {
+          'team-all': [
+            { userId: 'renamed', name: 'Sam Park' },
+            { userId: 'namesake', name: 'Sam Lee' },
+          ],
+        },
+        profiles: { renamed: person('renamed', 'Sam Park'), namesake: person('namesake', 'Sam Lee', { title: 'Head of Finance' }) },
+      },
+      files: { texts: { [STATE_PATH]: serializePeopleState(state), [renamed.file]: 'the page as it was', [namesake.file]: 'the namesake as it was' } },
+      concurrency: 1,
+    });
+
+    const recorded = stateOf(done.files).people['namesake']?.file ?? '';
+    expect(done.files.written.get(recorded)).toContain('Head of Finance');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/People/Sam Lee.md' }]);
+    expect(done.files.written.get('kb/_archive/People/Sam Lee.md')).toBe('the page as it was');
+  });
+
   it('three colleagues sharing a name each get a page of their own, even when their ids open alike', async () => {
     const ids = ['janedoe-1', 'janedoe-2', 'janedoe-3'];
     const done = await run({

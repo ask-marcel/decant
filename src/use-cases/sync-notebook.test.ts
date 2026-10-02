@@ -175,6 +175,26 @@ describe('syncing a OneNote notebook', () => {
     expect(done.files.written.get('kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md')).toBe('the page as it was');
   });
 
+  it('a page renamed while its namesake changes puts only its own old copy aside, and the namesake is rewritten in the file its record names', async () => {
+    // Where the namesake was put while the renamed page held the plain name.
+    const namesakeFile = `${ROOT}/Meetings/${freeSegment('Retro.md', 'namesake', (name) => name === 'Retro.md')}`;
+    const renamed = { file: `${ROOT}/Meetings/Retro.md`, lastModified: 'older', title: 'Retro', section: 'sec-m' };
+    const namesake = { file: namesakeFile, lastModified: 'older', title: 'Retro', section: 'sec-m' };
+    const state = withPage(withPage(emptyNotebookState(NOTEBOOK), 'renamed', renamed), 'namesake', namesake);
+    // Changed first, the namesake is written a window before the renamed page puts its old copy aside.
+    const pages = { 'sec-m': [page('renamed', 'Lessons learned', '2026-09-02T10:00:00Z'), page('namesake', 'Retro', '2026-09-01T10:00:00Z')], 'sec-b': [] };
+    const done = await run({
+      reader: { pages, markdown: { namesake: 'What went well' } },
+      files: { texts: { [STATE_PATH]: serializeNotebookState(state), [renamed.file]: 'the page as it was', [namesake.file]: 'the namesake as it was' } },
+      concurrency: 1,
+    });
+
+    const recorded = stateOf(done.files).pages['namesake']?.file ?? '';
+    expect(done.files.written.get(recorded)).toContain('What went well');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Retro.md' }]);
+    expect(done.files.written.get('kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Retro.md')).toBe('the page as it was');
+  });
+
   it('three pages sharing a title in one section land in three files, even when their ids open alike', async () => {
     const done = await run({ reader: { pages: { 'sec-m': ['notes-p-1', 'notes-p-2', 'notes-p-3'].map((id) => page(id, 'Notes', '2026-09-04T10:00:00Z')) } } });
 

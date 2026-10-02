@@ -168,6 +168,26 @@ describe('syncing the lists of a SharePoint site', () => {
     expect(done.files.written.get('kb/_archive/SharePoint lists/Espace Contoso/Projects.md')).toBe('the table as it was');
   });
 
+  it('a list renamed while its namesake changes puts only its own old table aside, and the namesake is rewritten in the file its record names', async () => {
+    // Where the namesake was put while the renamed list held the plain name.
+    const namesakeFile = `${ROOT}/${freeSegment('Tracker.md', 'namesake', (name) => name === 'Tracker.md')}`;
+    const renamed = { file: `${ROOT}/Tracker.md`, fingerprint: 'stale', name: 'Tracker' };
+    const namesake = { file: namesakeFile, fingerprint: 'stale', name: 'Tracker' };
+    const state = withList(withList(emptyListsState(SITE.id, SITE.name), 'renamed', renamed), 'namesake', namesake);
+    // Listed first, the namesake is written a window before the renamed list puts its old table aside.
+    const lists = { 'site-1': [list('namesake', 'Tracker'), list('renamed', 'Roadmap')] };
+    const done = await run({
+      reader: { lists, columns: { namesake: [column('Title')] }, rows: { namesake: [row('1', '2026-09-10T10:00:00Z', 'Falcon')] } },
+      files: { texts: { [STATE_PATH]: serializeListsState(state), [renamed.file]: 'the table as it was', [namesake.file]: 'the namesake as it was' } },
+      concurrency: 1,
+    });
+
+    const recorded = stateOf(done.files).lists['namesake']?.file ?? '';
+    expect(done.files.written.get(recorded)).toContain('| Falcon |');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/SharePoint lists/Espace Contoso/Tracker.md' }]);
+    expect(done.files.written.get('kb/_archive/SharePoint lists/Espace Contoso/Tracker.md')).toBe('the table as it was');
+  });
+
   it('a list whose columns or rows cannot be read is reported as failed and kept as it was', async () => {
     const state = withList(emptyListsState(SITE.id, SITE.name), 'issues', { file: `${ROOT}/Issues.md`, fingerprint: 'old', name: 'Issues' });
     const done = await run({ reader: { failRowsOf: ['issues'], failColumnsOf: ['projects'] }, files: { texts: { [STATE_PATH]: serializeListsState(state) } } });
