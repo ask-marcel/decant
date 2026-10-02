@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { freeSegment } from '../domain/kb-path.ts';
 import { emptyPlanState, serializePlanState, withTask } from '../domain/plan-state.ts';
 import type { Bucket, PlanTask, TaskDetails } from '../domain/planner.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
@@ -221,6 +222,26 @@ describe('syncing a Planner plan', () => {
     expect(done.files.written.get(recorded)).toContain('A second venue.');
     expect(done.files.written.get(`${ROOT}/To do/Book the venue.md`)).toBe('the venue page as it was');
     expect(done.files.moves).toHaveLength(0);
+  });
+
+  it('a task renamed while its namesake changes puts only its own old page aside, and the namesake is rewritten in the file its record names', async () => {
+    // Where the namesake was put while the renamed task held the plain name.
+    const namesakeFile = `${ROOT}/To do/${freeSegment('Call the caterer.md', 'namesake', (name) => name === 'Call the caterer.md')}`;
+    const renamed = { file: `${ROOT}/To do/Call the caterer.md`, fingerprint: 'old', title: 'Call the caterer' };
+    const namesake = { file: namesakeFile, fingerprint: 'old', title: 'Call the caterer' };
+    const state = withTask(withTask(emptyPlanState(PLAN), 'renamed', renamed), 'namesake', namesake);
+    // Listed first, the namesake is written a window before the renamed task puts its old page aside.
+    const tasks = { 'plan-1': [task('namesake', 'Call the caterer'), task('renamed', 'Book the caterer')] };
+    const done = await run({
+      reader: { tasks, details: { namesake: details('Ask about the menu.') } },
+      files: { texts: { [STATE_PATH]: serializePlanState(state), [renamed.file]: 'the task as it was', [namesake.file]: 'the namesake as it was' } },
+      concurrency: 1,
+    });
+
+    const recorded = stateOf(done.files).tasks['namesake']?.file ?? '';
+    expect(done.files.written.get(recorded)).toContain('Ask about the menu.');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/Planner/Offsite 2026/To do/Call the caterer.md' }]);
+    expect(done.files.written.get('kb/_archive/Planner/Offsite 2026/To do/Call the caterer.md')).toBe('the task as it was');
   });
 
   it('a task whose details cannot be read is reported as failed and kept as it was, still on the board; an assignee who cannot be named is shown by id', async () => {
