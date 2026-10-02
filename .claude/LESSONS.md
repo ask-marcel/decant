@@ -444,3 +444,17 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
 - [decision] `siteIdHash` is now `idHash` in `src/domain/kb-path.ts`, beside the `freeSegment` and
   `freePath` that cut every namesake's suffix from it, which supersedes the location the 2026-08-14
   entry names; the path module no longer imports the site state for a hash every planner uses.
+
+- [gotcha] A race between two items of one window is settled by the fakes' scheduling, not by the
+  code under test: the files fake's methods are `async` with no `await`, so a window's items advance
+  in lockstep and every write lands before any move, while a real disk answers in whatever order. To
+  pin a write-then-move race, put the two items in separate windows: `concurrency: 1` with the one
+  that writes the path planned first, so the test fails on window order alone (the namesake tests in
+  `sync-plan`, `sync-people`, `sync-notebook` and `sync-lists`).
+
+- [gotcha] "A path another record holds is taken" has two forms that differ only when two records
+  already name one file, which the old failed-read race left behind in Planner, Lists and OneNote.
+  `freePath` given the item's own file (`todo-state.ts`, `team-state.ts`, `plan-state.ts`,
+  `people-state.ts`, `notebook-state.ts`) plans both onto that file and one page stays lost; a set
+  built per item from the other records plus the files already handed out (`heldByOthers` in
+  `sync-calendar.ts` and `sync-lists.ts`) gives each its own. The second is the one to reach for.
