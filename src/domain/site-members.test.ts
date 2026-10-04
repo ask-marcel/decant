@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
-import { hasMembers, parseSiteMembers, renderSiteMembers } from './site-members.ts';
+import { emptyPeopleState, withPerson } from './people-state.ts';
+import { hasMembers, parseSiteMembers, peopleLinksOf, renderSiteMembers } from './site-members.ts';
 
 const RAW = {
   group: { id: 'g-1', displayName: 'Contoso Team', mail: 'contoso@example.com' },
@@ -19,10 +20,10 @@ describe('reading who can open a site', () => {
   it('takes the owning group, its people, the SharePoint groups, the sharing links and the note', () => {
     expect(parseSiteMembers(RAW)).toStrictEqual({
       group: { name: 'Contoso Team', mail: 'contoso@example.com' },
-      owners: [{ name: 'Jane Doe', mail: 'jane@example.com', guest: false }],
+      owners: [{ id: 'u-1', name: 'Jane Doe', mail: 'jane@example.com', guest: false }],
       members: [
-        { name: 'Jane Doe', mail: 'jane@example.com', guest: false },
-        { name: 'Sam Lee', mail: '', guest: true },
+        { id: 'u-1', name: 'Jane Doe', mail: 'jane@example.com', guest: false },
+        { id: 'u-2', name: 'Sam Lee', mail: '', guest: true },
       ],
       sharePointGroups: [{ name: 'Contoso Team Visitors', roles: ['read'] }],
       sharingLinks: [{ name: 'organization', roles: ['write'] }],
@@ -49,7 +50,7 @@ describe('reading who can open a site', () => {
 
   it('an empty entry in a list is passed over, and roles that are not a list are none', () => {
     const parsed = parseSiteMembers({ members: [null, { displayName: 'Sam Lee' }], sharingLinks: [{ scope: 'organization', roles: 'read' }] });
-    expect(parsed.members).toStrictEqual([{ name: 'Sam Lee', mail: '', guest: false }]);
+    expect(parsed.members).toStrictEqual([{ id: '', name: 'Sam Lee', mail: '', guest: false }]);
     expect(parsed.sharingLinks).toStrictEqual([{ name: 'organization', roles: [] }]);
   });
 });
@@ -136,5 +137,33 @@ describe('writing who can open a site', () => {
   it('a guest with a mail shows both', () => {
     const written = renderSiteMembers(SITE, parseSiteMembers({ members: [{ displayName: 'Ann Roe', mail: 'ann@partner.com', userType: 'Guest' }] }));
     expect(written).toContain('- Ann Roe (ann@partner.com), guest\n');
+  });
+});
+
+describe('linking each person to their page under People/', () => {
+  const people = withPerson(withPerson(emptyPeopleState(), 'u-1', { file: 'kb/People/Jane Doe.md', name: 'Jane Doe', fingerprint: 'f' }), 'u-9', {
+    file: 'kb/People/Ann Roe.md',
+    name: 'Ann Roe',
+    fingerprint: 'f',
+  });
+
+  it('a page is reached from the site folder by climbing out of it to the root of the knowledge base', () => {
+    expect(peopleLinksOf(people, 'kb', 'SharePoint sites/Espace Contoso')).toStrictEqual(
+      new Map([
+        ['u-1', '../../People/Jane Doe.md'],
+        ['u-9', '../../People/Ann Roe.md'],
+      ])
+    );
+  });
+
+  it('a page recorded outside the knowledge base is not linked', () => {
+    const elsewhere = withPerson(emptyPeopleState(), 'u-1', { file: 'other/People/Jane Doe.md', name: 'Jane Doe', fingerprint: 'f' });
+    expect(peopleLinksOf(elsewhere, 'kb', 'SharePoint sites/Espace Contoso').size).toBe(0);
+  });
+
+  it('a person with a page is written as a link to it, and a person without one as a name', () => {
+    const written = renderSiteMembers(SITE, parseSiteMembers(RAW), peopleLinksOf(people, 'kb', 'SharePoint sites/Espace Contoso'));
+    expect(written).toContain('## Owners\n\n- [Jane Doe](<../../People/Jane Doe.md>) (jane@example.com)\n');
+    expect(written).toContain('- Sam Lee, guest\n');
   });
 });

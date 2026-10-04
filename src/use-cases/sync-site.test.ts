@@ -935,7 +935,7 @@ describe('writing down who can open a site', () => {
   const MEMBERS_PATH = 'kb/SharePoint sites/Espace Contoso/_members.md';
   const people = {
     group: { name: 'Contoso Team', mail: '' },
-    owners: [{ name: 'Jane Doe', mail: 'jane@example.com', guest: false }],
+    owners: [{ id: 'u-1', name: 'Jane Doe', mail: 'jane@example.com', guest: false }],
     members: [],
     sharePointGroups: [],
     sharingLinks: [],
