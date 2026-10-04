@@ -328,7 +328,7 @@ Each SharePoint site gets one `_members.md` beside its libraries. The data comes
 
 ## Owners
 
-- Jane Doe (jane@example.com)
+- [Jane Doe](<../../People/Jane Doe.md>) (jane@example.com)
 
 ## Members
 
@@ -344,9 +344,13 @@ Graph does not list the persons in a SharePoint group. Thus the group members ar
 of persons who can open the site. Graph shows a caller who is not a site owner only the grants that
 apply to that caller. A file with unique permissions is not in this page.
 
+If the People sync wrote a page for a person, the name links to that page. The links come from
+the last People sync. A person without a page at that time gets a link on a later run.
+
 Loop workspaces and OneDrives do not get this page, because they have no Microsoft 365 group. If
-Graph does not give the data, the run writes no page and continues. If the answer does not change, the run does not
-write the page again.
+Graph does not give the data, the run keeps the old page and continues. If the answer does not
+change, the run does not write the page again. If the site gives an empty answer, the run moves
+the old page to `_archive/`.
 
 ### What did not make it in
 
