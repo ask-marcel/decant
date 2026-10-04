@@ -990,6 +990,42 @@ describe('writing down who can open a site', () => {
     expect(drive.reader.calls).not.toContain(`members:${site.id}`);
   });
 
+  it('a person the People sync filed is linked to their page', async () => {
+    const directory = JSON.stringify({
+      version: 1,
+      source: { kind: 'people', id: 'people', name: 'People' },
+      lastRun: '',
+      people: { 'u-1': { file: 'kb/People/Jane Doe.md', name: 'Jane Doe', fingerprint: 'f' } },
+    });
+    const { files } = await run({ reader: { members: { [site.id]: people } }, files: { texts: { 'kb/People/.sync-state.json': directory } } });
+
+    expect(files.written.get(MEMBERS_PATH)).toContain('- [Jane Doe](<../../People/Jane Doe.md>) (jane@example.com)\n');
+  });
+
+  it('an unreadable People state costs the links and nothing else', async () => {
+    const { files } = await run({ reader: { members: { [site.id]: people } }, files: { texts: { 'kb/People/.sync-state.json': 'not json' } } });
+
+    expect(files.written.get(MEMBERS_PATH)).toContain('- Jane Doe (jane@example.com)\n');
+  });
+
+  it('a page whose site now answers with nobody is put aside, since it no longer says who can open the site', async () => {
+    const { files } = await run({ files: { texts: { [MEMBERS_PATH]: 'an older page' } } });
+
+    expect(files.moves).toContainEqual({ from: MEMBERS_PATH, to: 'kb/_archive/SharePoint sites/Espace Contoso/_members.md' });
+  });
+
+  it('a page that cannot be put aside is logged with its cause', async () => {
+    const { logger } = await run({ files: { texts: { [MEMBERS_PATH]: 'an older page' }, failMoveWith: { kind: 'write-failed', path: MEMBERS_PATH, message: 'locked' } } });
+
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'members.archive-failed', meta: { siteId: site.id, cause: 'write-failed' } });
+  });
+
+  it('a refused read keeps the page it had, since a refusal says nothing about who can open the site', async () => {
+    const { files } = await run({ reader: { failMembers: { kind: 'transient', message: 'timeout' } }, files: { texts: { [MEMBERS_PATH]: 'an older page' } } });
+
+    expect(files.moves).toHaveLength(0);
+  });
+
   it('a dry run neither asks nor writes', async () => {
     const { files, reader } = await run({ dryRun: true, reader: { members: { [site.id]: people } } });
 
