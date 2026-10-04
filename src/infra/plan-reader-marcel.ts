@@ -8,9 +8,8 @@ import type { MarcelCall } from './drive-reader-marcel.ts';
 import { listOf, readString } from './mail-reader-marcel.ts';
 
 // Planner through the shared call. The plans a person can read are found two ways: the user's own
-// listing, and each group's, through a command the library is asked for in
-// `docs/request-group-planner-plans.md`; while the library lacks it, every group answers "unknown
-// command" and costs nothing but its own plans. Graph ignores paging on the plan endpoints, so
+// listing, and each group's (`list-group-planner-plans`); a group that refuses costs nothing but its
+// own plans. Graph ignores paging on the plan endpoints, so
 // the tasks follow `@odata.nextLink` only for the day it starts honouring it.
 
 const NAME_ONLY = 'displayName';
