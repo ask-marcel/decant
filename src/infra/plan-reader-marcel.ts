@@ -89,8 +89,7 @@ export const createPlanReaderFromCall = (call: MarcelCall): PlanReader => {
       const raw = await call('get-user', { userId, select: NAME_ONLY });
       return raw.ok ? ok(readString(raw.value, NAME_ONLY) ?? userId) : raw;
     },
-    // Through a command asked of the library beside the group route; until it lands the call is
-    // refused and the plan is synced without its labels.
+    // A refused read is not fatal: the plan is synced without its labels.
     labelNames: async (planId) => {
       const raw = await call('get-planner-plan-details', { plannerPlanId: planId });
       return raw.ok ? ok(parseLabelNames(raw.value)) : raw;

@@ -1,5 +1,11 @@
 # Request: let a consumer find the Planner plans it can read
 
+> **Resolved in `ask-marcel-office-cli` 2.8.0.** Both commands landed as asked:
+> `list-group-planner-plans --group-id` for the plans a group owns, and `get-planner-plan-details
+> --planner-plan-id` for the `categoryDescriptions` that name a plan's labels. `decant` had wired
+> both ahead of the release and took the dependency on 2026-09-28, so the picker fills from the
+> groups and labels carry their names. Kept as the record of what was asked for and why.
+
 **Package:** `ask-marcel-office-cli` 2.7.0
 **Category:** tasks
 **Kind:** missing commands. Nothing is broken. A plan can be read whole once its id is known; the

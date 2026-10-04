@@ -628,15 +628,15 @@ default), dates are days, and assignees are named through one directory read per
 Labels are named from the plan's details, read once a plan per run, on the page and in the board's
 last column; a label nobody named is a colour in Planner and is left out rather than shown as
 `category3`, and renaming one rewrites the pages that carry it. The details come through
-`get-planner-plan-details`, which the library is being asked for beside the group route; until it
-lands a plan syncs without its labels and the log says so (`labels.unnamed`).
+`get-planner-plan-details`; when that read is refused, the plan still syncs, without its labels,
+and the log says so (`labels.unnamed`).
 
 The plans offered are the ones Graph lists for you and those of every group you belong to, one
-call per group. On the tenant this was built against your own listing answers nothing and the
-groups hold the plans, and the group route is a command the library does not have yet
-([docs/request-group-planner-plans.md](docs/request-group-planner-plans.md)); until it lands the
-picker shows no plans, and `--plan <id>` reaches one all the same, the id being what the address
-bar shows.
+call per group through `list-group-planner-plans`. On the tenant this was built against your own
+listing answers nothing and the groups hold the plans, so the group route is the one that fills
+the picker. Both commands arrived in `ask-marcel-office-cli` 2.8.0
+([docs/request-group-planner-plans.md](docs/request-group-planner-plans.md)). `--plan <id>` reaches
+one plan without the picker, the id being what the address bar shows.
 
 Tasks have no delta, so every run lists the buckets and the tasks again and reads every task's
 details, the description having an etag of its own that the card does not carry; a task is
