@@ -141,6 +141,7 @@ kb/
   SharePoint sites/<Site>/
     .sync-state.json                what has been synced, and where the next run resumes
     _sync-report.md                 what did not make it in, and why (only when there is something)
+    _members.md                     who can open the site
     <Library>/
       2026-05-12/                   the day each document last changed at the source
         <SharePoint folders mirrored>/
@@ -312,6 +313,40 @@ replies, tracked insertions and deletions, hidden text, external hyperlinks, and
 macros. It arrives as a metadata section under the document's text. Office formats (and their
 macro-enabled and template variants) and OpenDocument carry one; on every other kind of file there
 is nothing to add and the request changes nothing.
+
+### Who can open a site
+
+Each SharePoint site gets one `_members.md` beside its libraries. The data comes from
+`list-sharepoint-site-members`. The page gives:
+
+- The Microsoft 365 group of the site, and the owners and members of that group.
+- The SharePoint groups on the document library, with their roles.
+- The sharing links on the document library, with their roles.
+
+```markdown
+# Who can open Espace Contoso
+
+## Owners
+
+- Jane Doe (jane@example.com)
+
+## Members
+
+- Jane Doe (jane@example.com)
+- Sam Lee, guest
+
+## SharePoint groups
+
+- Contoso Team Visitors: read
+```
+
+Graph does not list the persons in a SharePoint group. Thus the group members are the minimum set
+of persons who can open the site. Graph shows a caller who is not a site owner only the grants that
+apply to that caller. A file with unique permissions is not in this page.
+
+Loop workspaces and OneDrives do not get this page, because they have no Microsoft 365 group. If
+Graph does not give the data, the run writes no page and continues. If the answer does not change, the run does not
+write the page again.
 
 ### What did not make it in
 
