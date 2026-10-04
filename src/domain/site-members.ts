@@ -67,7 +67,7 @@ const personLine = (person: SitePerson): string => {
   return `- ${person.name}${mail}${person.guest ? ', guest' : ''}`;
 };
 
-const grantLine = (grant: SiteGrant): string => `- ${grant.name}: ${grant.roles.join(', ')}`;
+const grantLine = (grant: SiteGrant): string => (grant.roles.length === 0 ? `- ${grant.name}` : `- ${grant.name}: ${grant.roles.join(', ')}`);
 
 const section = (heading: string, lines: ReadonlyArray<string>): ReadonlyArray<string> => (lines.length === 0 ? [] : [`## ${heading}`, '', ...lines, '']);
 
