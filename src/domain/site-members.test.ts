@@ -128,6 +128,11 @@ describe('writing who can open a site', () => {
     expect(written).toContain('group: Contoso Team\n---');
   });
 
+  it('a grant with no roles is named alone', () => {
+    const written = renderSiteMembers(SITE, parseSiteMembers({ sharePointGroups: [{ name: 'Contoso Team Visitors', roles: [] }] }));
+    expect(written).toContain('- Contoso Team Visitors\n');
+  });
+
   it('a guest with a mail shows both', () => {
     const written = renderSiteMembers(SITE, parseSiteMembers({ members: [{ displayName: 'Ann Roe', mail: 'ann@partner.com', userType: 'Guest' }] }));
     expect(written).toContain('- Ann Roe (ann@partner.com), guest\n');
