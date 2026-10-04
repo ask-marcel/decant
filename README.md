@@ -699,15 +699,17 @@ The same, in a folder of its own:
 
 ```
 kb/
-  Leadership Team (group inbox)/
-    .sync-state.json                what has been filed, and the newest post it reaches
-    threads/2026-07-20-abc1234567-bi-monthly-leadership-meeting/
-      bi-monthly-leadership-meeting.md               every post, oldest first
+  Group inboxes/
+    Leadership Team/
+      .sync-state.json              what has been filed, and the newest post it reaches
+      threads/2026-07-20-abc1234567-bi-monthly-leadership-meeting/
+        bi-monthly-leadership-meeting.md             every post, oldest first
 ```
 
 A Microsoft 365 group is three things wearing one name: a SharePoint site holding files, an inbox
-holding conversations, and a Teams team. The picker offers the first two separately, and the
-`(group inbox)` suffix is what keeps them apart on disk, since both carry the group's name.
+holding conversations, and a Teams team. The picker offers the first two separately, and the shelf
+is what keeps them apart on disk: both carry the group's name, one under `SharePoint sites/`, the
+other under `Group inboxes/`.
 
 Only the groups you belong to can be read. Access is decided by membership rather than by any
 permission this tool can ask for, so a group the directory lists but you have not joined refuses
