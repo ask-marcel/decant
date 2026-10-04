@@ -5,7 +5,9 @@ import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
 import { archivePath, datedRoot, outputPrefix, recordedPrefix, remapOutputs } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
-import { hasMembers, renderSiteMembers } from '../domain/site-members.ts';
+import { PEOPLE_NAME, emptyPeopleState, parsePeopleState } from '../domain/people-state.ts';
+import type { PeopleState } from '../domain/people-state.ts';
+import { hasMembers, peopleLinksOf, renderSiteMembers } from '../domain/site-members.ts';
 import type { DriveState, SiteRef, SiteState } from '../domain/site-state.ts';
 import {
   belongsToAnotherSite,
@@ -182,9 +184,27 @@ export const writeReport = async (
 
 export const MEMBERS_FILE_NAME = '_members.md';
 
+// The People sync's own record of the pages it wrote. Without one, or with one that cannot be read,
+// the members page names people without linking them.
+const loadPeople = async (files: Files, kbRoot: string): Promise<PeopleState> => {
+  const text = await files.readText(`${kbRoot}/${PEOPLE_NAME}/${STATE_FILE_NAME}`);
+  const parsed = text.ok ? parseJson(text.value) : undefined;
+  const state = parsed?.ok ? parsePeopleState(parsed.value) : undefined;
+  return state?.ok ? state.value : emptyPeopleState();
+};
+
+// A site that answers with nobody no longer says who can open it, so its page goes where anything
+// the source no longer has goes. A refused read says nothing either way and keeps the page.
+const archiveMembers = async (deps: SyncSiteDeps, input: ResolvedInput, path: string): Promise<void> => {
+  const present = await deps.files.exists(path);
+  if (!present.ok || !present.value) return;
+  const moved = await deps.files.move(path, `${deps.kbRoot}/_archive/${input.segment}/${MEMBERS_FILE_NAME}`);
+  if (!moved.ok) deps.logger.warn('members.archive-failed', { siteId: input.site.id, cause: moved.error.kind });
+};
+
 // Who can open the site, read once a run after its libraries. Only a SharePoint site is asked: a Loop
 // workspace and a OneDrive have no group of people behind them. A read or a write that fails is
-// logged and costs the run nothing, and a site that answers with nobody keeps the page it had.
+// logged and costs the run nothing.
 const writeMembers = async (deps: SyncSiteDeps, input: ResolvedInput): Promise<void> => {
   if (input.dryRun || addressKindOf(input.site.webUrl) !== 'site') return;
   const found = await deps.reader.members(input.site.id);
@@ -192,9 +212,13 @@ const writeMembers = async (deps: SyncSiteDeps, input: ResolvedInput): Promise<v
     deps.logger.warn('members.unavailable', { siteId: input.site.id, cause: found.error.kind });
     return;
   }
-  if (!hasMembers(found.value)) return;
   const path = `${siteRoot(deps.kbRoot, input.segment)}/${MEMBERS_FILE_NAME}`;
-  const page = renderSiteMembers(input.site, found.value);
+  if (!hasMembers(found.value)) {
+    await archiveMembers(deps, input, path);
+    return;
+  }
+  const links = peopleLinksOf(await loadPeople(deps.files, deps.kbRoot), deps.kbRoot, input.segment);
+  const page = renderSiteMembers(input.site, found.value, links);
   const existing = await deps.files.readText(path);
   if (existing.ok && existing.value === page) return;
   const written = await deps.files.writeText(path, page);
