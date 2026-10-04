@@ -27,6 +27,7 @@ const registry = (
     'search-all-files',
     'get-sharepoint-site-by-path',
     'get-sharepoint-site',
+    'list-sharepoint-site-members',
     'list-sharepoint-site-drives',
     'get-drive-root-item',
     'get-drive-delta',
@@ -420,6 +421,24 @@ describe('reading SharePoint through the ask-marcel library', () => {
     const { reader } = readerFor({ 'get-drive-item': [ok({ id: '01ITEM' })] });
 
     expect(await reader.item({ driveId: 'b!one', itemId: '01ITEM' })).toEqual({ ok: false, error: { kind: 'permanent', message: 'Graph returned no drive item' } });
+  });
+});
+
+describe('reading who can open a site', () => {
+  it('asks for the members of the site by its id and reads the answer', async () => {
+    const { reader, recorded } = readerFor({
+      'list-sharepoint-site-members': [ok({ group: { displayName: 'Contoso Team' }, owners: [{ displayName: 'Jane Doe', userType: 'Member' }] })],
+    });
+    expect(await reader.members('contoso,1,2')).toStrictEqual({
+      ok: true,
+      value: { group: { name: 'Contoso Team', mail: '' }, owners: [{ name: 'Jane Doe', mail: '', guest: false }], members: [], sharePointGroups: [], sharingLinks: [], note: '' },
+    });
+    expect(recorded).toStrictEqual([{ name: 'list-sharepoint-site-members', params: { siteId: 'contoso,1,2' }, local: false }]);
+  });
+
+  it('a refused read comes back as the error', async () => {
+    const { reader } = readerFor({ 'list-sharepoint-site-members': [err({ type: 'api_error', status: 403, message: 'Access denied' })] });
+    expect(await reader.members('contoso,1,2')).toStrictEqual({ ok: false, error: { kind: 'permanent', status: 403, message: 'Access denied' } });
   });
 });
 

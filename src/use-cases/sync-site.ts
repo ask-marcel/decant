@@ -1,9 +1,11 @@
+import { addressKindOf } from '../domain/address-kind.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { categoryFolderOf } from '../domain/kb-category.ts';
 import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
 import { archivePath, datedRoot, outputPrefix, recordedPrefix, remapOutputs } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
+import { hasMembers, renderSiteMembers } from '../domain/site-members.ts';
 import type { DriveState, SiteRef, SiteState } from '../domain/site-state.ts';
 import {
   belongsToAnotherSite,
@@ -150,6 +152,7 @@ export const createSyncSite =
     const saved = await save(deps.files, statePath, finished, input.dryRun);
     if (!saved.ok) return saved;
     await writeReport(deps, input, siteRoot(deps.kbRoot, resolved.segment), input.site.name, summary, notes);
+    await writeMembers(deps, input);
     return ok({ id: input.site.id, source: input.site.name, summary, notes });
   };
 
@@ -175,6 +178,27 @@ export const writeReport = async (
   const existing = await deps.files.readText(path);
   const written = await deps.files.writeText(path, appendReportRun(existing.ok ? existing.value : undefined, run));
   if (!written.ok) deps.logger.warn('report.failed', { cause: written.error.kind });
+};
+
+export const MEMBERS_FILE_NAME = '_members.md';
+
+// Who can open the site, read once a run after its libraries. Only a SharePoint site is asked: a Loop
+// workspace and a OneDrive have no group of people behind them. A read or a write that fails is
+// logged and costs the run nothing, and a site that answers with nobody keeps the page it had.
+const writeMembers = async (deps: SyncSiteDeps, input: ResolvedInput): Promise<void> => {
+  if (input.dryRun || addressKindOf(input.site.webUrl) !== 'site') return;
+  const found = await deps.reader.members(input.site.id);
+  if (!found.ok) {
+    deps.logger.warn('members.unavailable', { siteId: input.site.id, cause: found.error.kind });
+    return;
+  }
+  if (!hasMembers(found.value)) return;
+  const path = `${siteRoot(deps.kbRoot, input.segment)}/${MEMBERS_FILE_NAME}`;
+  const page = renderSiteMembers(input.site, found.value);
+  const existing = await deps.files.readText(path);
+  if (existing.ok && existing.value === page) return;
+  const written = await deps.files.writeText(path, page);
+  if (!written.ok) deps.logger.warn('members.failed', { siteId: input.site.id, cause: written.error.kind });
 };
 
 const save = async (files: Files, path: string, state: SiteState, dryRun: boolean): Promise<Result<void, StepError>> => {

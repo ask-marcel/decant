@@ -930,3 +930,70 @@ describe('reaching back only as far as the day', () => {
     expect('since' in (stateAfter(everything.files).drives['b!one'] ?? {})).toBe(false);
   });
 });
+
+describe('writing down who can open a site', () => {
+  const MEMBERS_PATH = 'kb/SharePoint sites/Espace Contoso/_members.md';
+  const people = {
+    group: { name: 'Contoso Team', mail: '' },
+    owners: [{ name: 'Jane Doe', mail: 'jane@example.com', guest: false }],
+    members: [],
+    sharePointGroups: [],
+    sharingLinks: [],
+    note: '',
+  };
+
+  it('a SharePoint site gets one page naming who can open it, beside its libraries', async () => {
+    const { files } = await run({ reader: { members: { [site.id]: people } } });
+
+    expect(files.written.get(MEMBERS_PATH)).toContain('# Who can open Espace Contoso\n\n## Owners\n\n- Jane Doe (jane@example.com)\n');
+  });
+
+  it('a page that would not change is not written again', async () => {
+    const first = await run({ reader: { members: { [site.id]: people } } });
+    const again = await run({ reader: { members: { [site.id]: people } }, files: { texts: { [MEMBERS_PATH]: first.files.written.get(MEMBERS_PATH) ?? '' } } });
+
+    expect(again.files.writeLog).not.toContain(MEMBERS_PATH);
+  });
+
+  it('a page that no longer says who can open the site is written again', async () => {
+    const { files } = await run({ reader: { members: { [site.id]: people } }, files: { texts: { [MEMBERS_PATH]: 'an older page' } } });
+
+    expect(files.written.get(MEMBERS_PATH)).toContain('- Jane Doe (jane@example.com)');
+  });
+
+  it('a site that answers with nobody gets no page', async () => {
+    const { files } = await run();
+
+    expect(files.written.has(MEMBERS_PATH)).toBe(false);
+  });
+
+  it('a refused read is logged with its cause and costs nothing else', async () => {
+    const { files, logger, ok } = await run({ reader: { failMembers: { kind: 'permanent', status: 403, message: 'Access denied' } } });
+
+    expect(ok).toBe(true);
+    expect(files.written.has(MEMBERS_PATH)).toBe(false);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'members.unavailable', meta: { siteId: site.id, cause: 'permanent' } });
+  });
+
+  it('a page that cannot be written is logged rather than failing the run, since the documents landed', async () => {
+    const { ok, logger } = await run({ reader: { members: { [site.id]: people } }, files: { failWritesMatching: '_members.md' } });
+
+    expect(ok).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'members.failed', meta: { siteId: site.id, cause: 'write-failed' } });
+  });
+
+  it('a Loop workspace and a OneDrive are not asked, since no group of people owns them', async () => {
+    const loop = await run({ site: { ...site, webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_1' }, reader: { members: { [site.id]: people } } });
+    const drive = await run({ site: { ...site, webUrl: 'https://tenant-my.sharepoint.com/personal/jane' }, reader: { members: { [site.id]: people } } });
+
+    expect(loop.reader.calls).not.toContain(`members:${site.id}`);
+    expect(drive.reader.calls).not.toContain(`members:${site.id}`);
+  });
+
+  it('a dry run neither asks nor writes', async () => {
+    const { files, reader } = await run({ dryRun: true, reader: { members: { [site.id]: people } } });
+
+    expect(reader.calls).not.toContain(`members:${site.id}`);
+    expect(files.written.has(MEMBERS_PATH)).toBe(false);
+  });
+});

@@ -1,5 +1,6 @@
 import type { DriveDeltaPage, DriveItem } from '../domain/drive-item.ts';
 import type { Result } from '../domain/result.ts';
+import type { SiteMembers } from '../domain/site-members.ts';
 import { err, ok } from '../domain/result.ts';
 import type { ArchiveEntry, DriveReader, DriveReaderError, DriveSummary, EmbeddedImage, ItemRef, SiteSummary } from '../use-cases/ports/drive-reader.ts';
 
@@ -10,6 +11,9 @@ export type DriveReaderFake = DriveReader & {
 export type DriveReaderSeed = {
   readonly sites?: ReadonlyArray<SiteSummary>;
   readonly drives?: ReadonlyArray<DriveSummary>;
+  // Who can open each site, by site id. A site with no entry answers with nobody.
+  readonly members?: Readonly<Record<string, SiteMembers>>;
+  readonly failMembers?: DriveReaderError;
   readonly rootItemId?: string;
   // Items answered for by id, for the single-item read a linked file uses. An id with no entry is
   // reported missing, the way Graph answers for a file the caller cannot reach.
@@ -36,6 +40,8 @@ export type DriveReaderSeed = {
   // Fails only the calls that follow a cursor, so a sweep can break halfway through its pages.
   readonly failFrom?: DriveReaderError;
 };
+
+const NOBODY: SiteMembers = { owners: [], members: [], sharePointGroups: [], sharingLinks: [], note: '' };
 
 const missing = (what: string): Result<never, DriveReaderError> => err({ kind: 'permanent', status: 404, message: `fake has no ${what}` });
 
@@ -66,6 +72,10 @@ export const createDriveReaderFake = (seed: DriveReaderSeed = {}): DriveReaderFa
     siteById: async (siteId) => {
       const site = seed.sites?.find((candidate) => candidate.id === siteId);
       return site === undefined ? missing(`site ${siteId}`) : ok(site);
+    },
+    members: async (siteId) => {
+      calls.push(`members:${siteId}`);
+      return seed.failMembers ? err(seed.failMembers) : ok(seed.members?.[siteId] ?? NOBODY);
     },
     listDrives: async () => (seed.failWith ? err(seed.failWith) : ok(seed.drives ?? [])),
     rootItemId: async () => (seed.failWith ? err(seed.failWith) : ok(seed.rootItemId ?? '01ROOT')),
