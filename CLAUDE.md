@@ -17,3 +17,9 @@ Graph access goes through the `ask-marcel-office-cli` package used as a **librar
 (`commands['<name>'].execute(graph, params)`), never by shelling out to its CLI binary.
 
 `kb/` is generated output and is gitignored.
+
+## Language
+
+Write chat replies, `README.md` and `docs/` in Simplified Technical English (ASD-STE100). Load the
+`simplified-technical-english` skill for the rules. Code, identifiers, commands and file paths stay
+outside STE.
