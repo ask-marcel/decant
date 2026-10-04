@@ -1,10 +1,13 @@
 import { renderFrontMatter, withFrontMatter } from './front-matter.ts';
+import { linkDestination } from './markdown-link.ts';
+import type { PeopleState } from './people-state.ts';
 
 // Who can open a SharePoint site, as `list-sharepoint-site-members` answers it: the people of the
 // Microsoft 365 group that owns the site, and the grants on its document library. Graph does not
 // say who is inside a SharePoint group, so a SharePoint group and a sharing link are a name and its
 // roles, never a list of people.
-export type SitePerson = { readonly name: string; readonly mail: string; readonly guest: boolean };
+// `id` is the Graph user id, which is how the page of the person under People/ is found.
+export type SitePerson = { readonly id: string; readonly name: string; readonly mail: string; readonly guest: boolean };
 
 // A SharePoint group by its name, or a sharing link by its scope (`organization`, `anonymous`).
 export type SiteGrant = { readonly name: string; readonly roles: ReadonlyArray<string> };
@@ -32,7 +35,7 @@ const listOf = (value: unknown, key: string): ReadonlyArray<Record<string, unkno
 
 const personOf = (entry: Record<string, unknown>): SitePerson[] => {
   const name = textOf(entry, 'displayName');
-  return name === '' ? [] : [{ name, mail: textOf(entry, 'mail'), guest: textOf(entry, 'userType') === 'Guest' }];
+  return name === '' ? [] : [{ id: textOf(entry, 'id'), name, mail: textOf(entry, 'mail'), guest: textOf(entry, 'userType') === 'Guest' }];
 };
 
 const grantOf = (entry: Record<string, unknown>, key: string): SiteGrant[] => {
@@ -62,16 +65,27 @@ export const parseSiteMembers = (raw: unknown): SiteMembers => ({
 export const hasMembers = (found: SiteMembers): boolean =>
   found.group !== undefined || found.owners.length > 0 || found.members.length > 0 || found.sharePointGroups.length > 0 || found.sharingLinks.length > 0;
 
-const personLine = (person: SitePerson): string => {
+// The page of each person the People sync wrote, by user id, as a link from the site folder. A
+// record that points outside the knowledge base is left out rather than linked somewhere wrong.
+export const peopleLinksOf = (people: PeopleState, kbRoot: string, segment: string): ReadonlyMap<string, string> => {
+  const prefix = `${kbRoot}/`;
+  const up = '../'.repeat(segment.split('/').length);
+  return new Map(Object.entries(people.people).flatMap(([id, record]) => (record.file.startsWith(prefix) ? [[id, `${up}${record.file.slice(prefix.length)}`] as const] : [])));
+};
+
+const personLine = (person: SitePerson, links: ReadonlyMap<string, string>): string => {
+  const page = links.get(person.id);
+  const name = page === undefined ? person.name : `[${person.name}](${linkDestination(page)})`;
   const mail = person.mail === '' ? '' : ` (${person.mail})`;
-  return `- ${person.name}${mail}${person.guest ? ', guest' : ''}`;
+  return `- ${name}${mail}${person.guest ? ', guest' : ''}`;
 };
 
 const grantLine = (grant: SiteGrant): string => (grant.roles.length === 0 ? `- ${grant.name}` : `- ${grant.name}: ${grant.roles.join(', ')}`);
 
 const section = (heading: string, lines: ReadonlyArray<string>): ReadonlyArray<string> => (lines.length === 0 ? [] : [`## ${heading}`, '', ...lines, '']);
 
-export const renderSiteMembers = (site: { readonly name: string; readonly webUrl: string }, found: SiteMembers): string => {
+export const renderSiteMembers = (site: { readonly name: string; readonly webUrl: string }, found: SiteMembers, links: ReadonlyMap<string, string> = new Map()): string => {
+  const line = (person: SitePerson): string => personLine(person, links);
   const frontMatter = renderFrontMatter([
     ['source', site.webUrl],
     ['site', site.name],
@@ -81,8 +95,8 @@ export const renderSiteMembers = (site: { readonly name: string; readonly webUrl
   const body = [
     `# Who can open ${site.name}`,
     '',
-    ...section('Owners', found.owners.map(personLine)),
-    ...section('Members', found.members.map(personLine)),
+    ...section('Owners', found.owners.map(line)),
+    ...section('Members', found.members.map(line)),
     ...section('SharePoint groups', found.sharePointGroups.map(grantLine)),
     ...section('Sharing links', found.sharingLinks.map(grantLine)),
     ...(found.note === '' ? [] : [`> ${found.note}`]),

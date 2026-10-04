@@ -431,7 +431,14 @@ describe('reading who can open a site', () => {
     });
     expect(await reader.members('contoso,1,2')).toStrictEqual({
       ok: true,
-      value: { group: { name: 'Contoso Team', mail: '' }, owners: [{ name: 'Jane Doe', mail: '', guest: false }], members: [], sharePointGroups: [], sharingLinks: [], note: '' },
+      value: {
+        group: { name: 'Contoso Team', mail: '' },
+        owners: [{ id: '', name: 'Jane Doe', mail: '', guest: false }],
+        members: [],
+        sharePointGroups: [],
+        sharingLinks: [],
+        note: '',
+      },
     });
     expect(recorded).toStrictEqual([{ name: 'list-sharepoint-site-members', params: { siteId: 'contoso,1,2' }, local: false }]);
   });
