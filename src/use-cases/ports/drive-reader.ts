@@ -1,5 +1,6 @@
 import type { Result } from '../../domain/result.ts';
 import type { DriveDeltaPage, DriveItem } from '../../domain/drive-item.ts';
+import type { SiteMembers } from '../../domain/site-members.ts';
 
 // How a call against Microsoft Graph can fail, in the terms this sync reacts to: `throttled` and
 // `transient` are worth retrying, `permanent` is not, and `auth` ends the run. `protected` is not a
@@ -34,6 +35,8 @@ export type DriveReader = {
   // Named sites are looked up before syncing: the site's own name is the folder the knowledge base
   // uses, so taking the id for a name would file the same site twice.
   readonly siteById: (siteId: string) => Promise<Result<SiteSummary, DriveReaderError>>;
+  // Who can open the site: the owning group's people and the grants on its document library.
+  readonly members: (siteId: string) => Promise<Result<SiteMembers, DriveReaderError>>;
   readonly listDrives: (siteId: string) => Promise<Result<ReadonlyArray<DriveSummary>, DriveReaderError>>;
   readonly rootItemId: (driveId: string) => Promise<Result<string, DriveReaderError>>;
   // One item on its own, for a file reached by a link rather than by sweeping a library: the name,

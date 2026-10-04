@@ -2,6 +2,7 @@ import { parseDriveDelta, parseItem } from '../domain/drive-item.ts';
 import type { DriveDeltaPage } from '../domain/drive-item.ts';
 import type { Result } from '../domain/result.ts';
 import { unlistedSiteUrls } from '../domain/shared-site.ts';
+import { parseSiteMembers } from '../domain/site-members.ts';
 import { err, ok } from '../domain/result.ts';
 import { formatError } from '../domain/utilities/format-error.ts';
 import type { ArchiveEntry, DriveReader, DriveReaderError, DriveSummary, EmbeddedImage, ItemRef, SiteSummary } from '../use-cases/ports/drive-reader.ts';
@@ -228,6 +229,10 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
     },
     siteByUrl: siteAt,
     siteById: siteOf,
+    members: async (siteId) => {
+      const raw = await call('list-sharepoint-site-members', { siteId });
+      return raw.ok ? ok(parseSiteMembers(raw.value)) : raw;
+    },
     listDrives: async (siteId) => {
       const raw = await call('list-sharepoint-site-drives', { siteId });
       if (!raw.ok) return raw;
