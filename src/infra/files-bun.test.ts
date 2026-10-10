@@ -7,7 +7,6 @@ import { createBunFiles } from './files-bun.ts';
 const root = mkdtempSync(join(tmpdir(), 'contoso-kb-'));
 mkdirSync(join(root, 'Espace Contoso'));
 writeFileSync(join(root, 'Espace Contoso', 'state.json'), '{"version":1}');
-writeFileSync(join(root, 'loose.txt'), 'not a directory');
 
 afterAll(() => {
   rmSync(root, { recursive: true, force: true });
@@ -25,7 +24,13 @@ describe('reading the knowledge base from disk', () => {
   });
 
   it('listing the knowledge base returns its source folders and ignores loose files', async () => {
-    expect(await createBunFiles().listDirectoryNames(root)).toEqual({ ok: true, value: ['Espace Contoso'] });
+    // A folder of its own: the tests below write `Site/` and `Archive/` into root, and in a random
+    // order they can run first.
+    const kb = join(root, 'listed');
+    mkdirSync(join(kb, 'Espace Contoso'), { recursive: true });
+    writeFileSync(join(kb, 'loose.txt'), 'not a directory');
+
+    expect(await createBunFiles().listDirectoryNames(kb)).toEqual({ ok: true, value: ['Espace Contoso'] });
   });
 
   it('listing a knowledge base that does not exist yet reports it as missing', async () => {
