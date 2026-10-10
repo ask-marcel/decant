@@ -26,7 +26,7 @@ used as a library, which owns authentication, paging and document conversion. Se
 ## Requirements
 
 - [Bun](https://bun.sh) 1.2 or newer
-- A Microsoft 365 account already signed in: run `ask-marcel-office login` once (a browser opens)
+- A Microsoft 365 account. If you are not signed in, `decant` opens a browser where you sign in
 - Python 3 with [`rapidocr`](https://pypi.org/project/rapidocr/) installed, to read text out of images and scanned PDFs (optional; without it the files are still copied). It fetches the models it needs on first use, one per language it reads in
 
 ## Install
@@ -42,12 +42,13 @@ Or run it without installing anything:
 bunx decant
 ```
 
-To work on it instead, clone the repo and `bun install`; `bun test` runs the suite.
+To change the code, clone the repo and run `bun install`. In a clone, `bun run sync` replaces
+`decant` in the commands below. `bun test` runs the suite.
 
 ## Run
 
 ```bash
-bun run sync
+decant
 ```
 
 Lists what you can read, grouped by what it is: the SharePoint sites, the Loop workspaces, your
@@ -71,7 +72,7 @@ together is not being asked once per site. Each site is summarised as it finishe
 To refresh everything already synced, without being asked anything:
 
 ```bash
-bun run sync update
+decant update
 ```
 
 That form is safe to schedule: it never opens a browser, and a lapsed sign-in ends the run with a
@@ -94,7 +95,7 @@ Days are counted in UTC, the calendar's in the mailbox's zone.
 To move the day, run once with `--since`, which keeps the new day for every run after it:
 
 ```bash
-bun run sync update --since 2024-06-01
+decant update --since 2024-06-01
 ```
 
 Moving the day earlier fetches what the narrower reach left out, on each source's next run: a source
