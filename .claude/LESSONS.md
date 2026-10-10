@@ -458,3 +458,18 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   `people-state.ts`, `notebook-state.ts`) plans both onto that file and one page stays lost; a set
   built per item from the other records plus the files already handed out (`heldByOthers` in
   `sync-calendar.ts` and `sync-lists.ts`) gives each its own. The second is the one to reach for.
+
+## 2026-10-10
+
+- [gotcha] A push can fail after its pre-push hook passed. Git opens the SSH connection before it
+  runs the hook, and GitHub dropped it as idle while `verify-commits.sh` built four commits: the
+  push ended with "Connection to github.com closed by remote host" and nothing landed. Push again
+  with keepalives, `git -c core.sshCommand='ssh -o ServerAliveInterval=10' push`, or set
+  `ServerAliveInterval` for github.com in `~/.ssh/config`. Never `--no-verify`: the hook was not
+  what failed.
+
+- [gotcha] A peer range in the root `package.json` does not say which compiler the gates run.
+  typescript sat there as a `^5.0.0` peer, but eslint-plugin-sonarjs depends on typescript
+  `>=5 <6.1.0`, Bun resolved that to 6.0.3 and hoisted it to the root, so `tsc` and the type-aware
+  lint ran 6.0.3 while every install of the package pulled 5.9.3 for nothing. Read the compiler from
+  the lockfile's root entry or `bunx tsc --version`. typescript is now a dev dependency at `^6.0.3`.
