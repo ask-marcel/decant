@@ -31,15 +31,17 @@ used as a library, which owns authentication, paging and document conversion. Se
 
 ## Install
 
+The package on npm is `ask-marcel-decant`. The command that it installs is `decant`.
+
 ```bash
-bun add --global decant
+bun add --global ask-marcel-decant
 decant --help
 ```
 
 Or run it without installing anything:
 
 ```bash
-bunx decant
+bunx ask-marcel-decant
 ```
 
 To change the code, clone the repo and run `bun install`. In a clone, `bun run sync` replaces
