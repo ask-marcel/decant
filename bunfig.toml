@@ -1,4 +1,8 @@
 [test]
+# A new order on every run (hard rule 36), in CI, the hooks and Stryker alike, so a test that leans
+# on what another one left behind fails. A red run prints --seed=<n>, which `bun test --seed=<n>`
+# replays.
+randomize = true
 coverage = true
 coverageSkipTestFiles = true
 coverageReporter = ["text"]

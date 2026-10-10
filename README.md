@@ -928,7 +928,7 @@ This repo follows the atelier standard: Clean Architecture, TDD with hand-writte
 `Result<T, E>` at every IO boundary. See `CLAUDE.md`.
 
 ```bash
-bun test                       # test suite
+bun test                       # test suite, in a new random order on each run
 bun run lint                   # fast rules, zero warnings allowed
 bun run lint:strict            # adds the type-aware rules (pre-commit gate)
 bun run typecheck              # tsc --noEmit
@@ -937,6 +937,10 @@ bun run mutate                 # Stryker over everything, break threshold 90
 bun run mutate:changed         # Stryker over what changed since origin/main, each file held to 90
 bash scripts/verify-commits.sh # every commit since origin/main typechecked and tested on its own
 ```
+
+`bun test` runs the tests in a new random order each time, because `bunfig.toml` sets
+`randomize = true`. A run that fails prints `--seed=<n>`. `bun test --seed=<n>` runs the tests again
+in the same order.
 
 Stryker breaks on the total of the files it mutates, so one weak file passes while the others carry
 it. `mutate:changed` and `mutate:staged` follow the run with `scripts/check-mutation-files.ts`,
