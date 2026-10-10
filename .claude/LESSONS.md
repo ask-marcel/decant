@@ -473,3 +473,14 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   `>=5 <6.1.0`, Bun resolved that to 6.0.3 and hoisted it to the root, so `tsc` and the type-aware
   lint ran 6.0.3 while every install of the package pulled 5.9.3 for nothing. Read the compiler from
   the lockfile's root entry or `bunx tsc --version`. typescript is now a dev dependency at `^6.0.3`.
+
+- [gotcha] npm refuses a new unscoped name that is too close to an existing package, and says so
+  only at publish time: `bun publish` of `decant` got 403 Forbidden, "too similar to existing
+  packages dedent, recast", although the registry answered 404 for the name and for each of its
+  punctuation variants. A 404 on the registry proves a name is unused, not that a publish will take
+  it. Try the publish itself, or take a scope, which the refusal suggests. The package became
+  `ask-marcel-decant`, and its bin keeps the command `decant`.
+
+- [gotcha] npm answers a publish without a valid sign-in with 404 Not Found ("'decant@0.1.0' does
+  not exist in this registry"), never 401, so an expired token in `~/.npmrc` reads as a missing
+  package. `bun pm whoami` tells the two apart: a 401 there means `bunx npm login` again.
