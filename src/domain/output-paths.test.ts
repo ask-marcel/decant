@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { datedRoot, outputPrefix, recordedPrefix, remapOutputs } from './output-paths.ts';
+import { datedRoot, outputPrefix, recordedPrefix, refiledOutputs, remapOutputs } from './output-paths.ts';
 
 describe('naming the files a document produces', () => {
   it('a document in a folder produces files under that folder, named after it', () => {
@@ -57,5 +57,27 @@ describe('filing a document under the day it last changed', () => {
 
     expect(outputPrefix(day, 'A/report.docx')).toBe('kb/Site/Documents/2026-05-12/A/report.docx');
     expect(outputPrefix(day, 'B/report.docx')).toBe('kb/Site/Documents/2026-05-12/B/report.docx');
+  });
+});
+
+describe('filing a document by the folders it has in SharePoint alone', () => {
+  // An earlier layout filed each document under the day it last changed. Moved out of that day, the
+  // document and every file beside it keep their place under the library and their suffixes.
+  it('the files of a document filed under a day move to its folders in the library, each keeping what it is', () => {
+    const outputs = ['kb/S/D/2026-05-12/Projets/Contrat.docx.md', 'kb/S/D/2026-05-12/Projets/Contrat.docx.media/image-01.png'];
+
+    expect(refiledOutputs('kb/S/D', 'Projets/Contrat.docx', 'Projets/Contrat.docx', outputs)).toEqual([
+      'kb/S/D/Projets/Contrat.docx.md',
+      'kb/S/D/Projets/Contrat.docx.media/image-01.png',
+    ]);
+    expect(refiledOutputs('kb/S/D', 'Projets/Contrat.docx', 'Projets/Contrat.docx', ['kb/S/D/Projets/Contrat.docx.md'])).toEqual(['kb/S/D/Projets/Contrat.docx.md']);
+  });
+
+  it('a document renamed or moved in SharePoint takes its files to its new name and folders', () => {
+    expect(refiledOutputs('kb/S/D', 'Projets/Contrat.docx', 'Archive/Contrat signe.docx', ['kb/S/D/Projets/Contrat.docx.md', 'kb/S/D/Projets/Contrat.docx.pdf'])).toEqual([
+      'kb/S/D/Archive/Contrat signe.docx.md',
+      'kb/S/D/Archive/Contrat signe.docx.pdf',
+    ]);
+    expect(refiledOutputs('kb/S/D', 'a.docx', 'b.docx', [])).toHaveLength(0);
   });
 });

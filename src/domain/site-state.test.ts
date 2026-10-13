@@ -8,6 +8,7 @@ import {
   forgetItem,
   parseSiteState,
   recordItem,
+  refileDrive,
   rememberFailure,
   renameItem,
   serializeSiteState,
@@ -148,5 +149,42 @@ describe('remembering a document the run could not read', () => {
 
     expect(forgotten.items).toEqual({});
     expect(forgotten.retry).toEqual({});
+  });
+});
+
+describe('filing a library again in the layout without day folders', () => {
+  const drive = {
+    name: 'Documents',
+    pending: [],
+    items: {
+      '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/S/D/2026-05-12/Projets/Contrat.docx.md', 'kb/S/D/2026-05-12/Projets/Contrat.docx.pdf'] },
+      '01NEW': { path: 'Notes.txt', cTag: 'c1', outputs: ['kb/S/D/Notes.txt.md'] },
+    },
+    retry: {},
+  };
+
+  it('each document leaves the day folder for its folders in the library, and one already there stays put', () => {
+    const refiled = refileDrive('kb/S/D', drive);
+
+    expect(refiled.moves).toEqual([
+      { from: 'kb/S/D/2026-05-12/Projets/Contrat.docx.md', to: 'kb/S/D/Projets/Contrat.docx.md' },
+      { from: 'kb/S/D/2026-05-12/Projets/Contrat.docx.pdf', to: 'kb/S/D/Projets/Contrat.docx.pdf' },
+    ]);
+    expect(refiled.drive.items['01ABC']?.outputs).toEqual(['kb/S/D/Projets/Contrat.docx.md', 'kb/S/D/Projets/Contrat.docx.pdf']);
+    expect(refiled.drive.items['01NEW']).toEqual(drive.items['01NEW']);
+  });
+
+  // A path too long for Windows failed as a write, and the day folder was part of the length.
+  it('a document given up on because it could not be written gets its tries back, and one that failed otherwise does not', () => {
+    const item = { id: '01MOOV', name: 'Pre-read.docx', kind: 'file' as const, size: 1, path: 'Pre-read.docx', lastModified: '', cTag: 'c1', webUrl: '' };
+    const failing = {
+      ...drive,
+      retry: { '01MOOV': { item, attempts: 3, reason: 'write-failed: ENOENT' }, '01LOCK': { item: { ...item, id: '01LOCK' }, attempts: 3, reason: 'transient: busy' } },
+    };
+
+    const refiled = refileDrive('kb/S/D', failing);
+
+    expect(refiled.drive.retry['01MOOV']?.attempts).toBe(0);
+    expect(refiled.drive.retry['01LOCK']?.attempts).toBe(3);
   });
 });

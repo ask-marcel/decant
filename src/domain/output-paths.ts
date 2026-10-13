@@ -31,3 +31,13 @@ export const recordedPrefix = (output: string, name: string): string => {
   const at = output.lastIndexOf(name);
   return at < 0 ? output : output.slice(0, at + name.length);
 };
+
+// Where a document's files go once it is filed at `toPath`: under the folders it has in SharePoint,
+// named after it, each keeping its own suffix. Worked out from the files themselves, since the
+// prefix they carry may hold the name it had at `fromPath`, or the day an earlier layout filed it
+// under.
+export const refiledOutputs = (libraryRoot: string, fromPath: string, toPath: string, outputs: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const wasNamed = safeSegment(fromPath.split('/').at(-1) ?? '');
+  const before = outputs[0] === undefined ? '' : recordedPrefix(outputs[0], wasNamed);
+  return remapOutputs(outputs, before, outputPrefix(libraryRoot, toPath));
+};

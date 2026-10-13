@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
-import { putAside } from './put-aside.ts';
+import { putAside, putBack, setAside } from './put-aside.ts';
 
 const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md';
 const PICTURE = 'kb/SharePoint sites/Espace Contoso/Documents/Contrat.docx.media/image-01.png';
@@ -47,5 +47,28 @@ describe('putting aside what an item held', () => {
     await putAside({ files, clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb' }, ['elsewhere/Old.md']);
 
     expect(files.moves).toEqual([{ from: 'elsewhere/Old.md', to: 'kb/_archive/2026-10-13/elsewhere/Old.md' }]);
+  });
+
+  // Set aside before an edit writes over it, and put back when the edit does not land, so a failed
+  // conversion leaves the version before it where it was.
+  it('a set put aside goes back where it was, and a file that will not go back is named', async () => {
+    const files = createFilesFake({ texts: { [NOTE]: 'old', [PICTURE]: 'p' } });
+    const deps = { files, clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb' };
+    const aside = await setAside(deps, [NOTE, PICTURE]);
+
+    expect(aside.moved.map((move) => move.to)).toEqual([
+      'kb/_archive/2026-10-13/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md',
+      'kb/_archive/2026-10-13/SharePoint sites/Espace Contoso/Documents/Contrat.docx.media/image-01.png',
+    ]);
+    expect(await putBack(deps, aside)).toHaveLength(0);
+    expect(files.written.get(NOTE)).toBe('old');
+    expect(files.written.has(aside.moved[0]?.to ?? '')).toBe(false);
+
+    const stuck = createFilesFake({ failMoveWith: { kind: 'write-failed', path: NOTE, message: 'locked' } });
+
+    expect(await putBack({ files: stuck }, aside)).toEqual([
+      { path: NOTE, error: { kind: 'write-failed', path: NOTE, message: 'locked' } },
+      { path: PICTURE, error: { kind: 'write-failed', path: NOTE, message: 'locked' } },
+    ]);
   });
 });
