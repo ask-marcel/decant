@@ -75,4 +75,24 @@ describe('reading the knowledge base from disk', () => {
 
     expect(written.ok === false && written.error.kind).toBe('write-failed');
   });
+
+  // Windows answers a path that is too long with `ENOENT: no such file or directory`, which sent the
+  // reader of the report looking for a folder that was never missing.
+  it('on Windows, a write that fails on a path past what Windows accepts says how long the path is', async () => {
+    const tooLong = join(root, `${'x'.repeat(300)}.md`);
+
+    const onWindows = await createBunFiles('win32').writeText(tooLong, 'body');
+    const elsewhere = await createBunFiles('linux').writeText(tooLong, 'body');
+    const moved = await createBunFiles('win32').move(join(root, 'absent.md'), tooLong);
+
+    expect(onWindows.ok === false && onWindows.error.message).toContain(`the path has ${tooLong.length} characters, and Windows accepts at most 259`);
+    expect(elsewhere.ok === false && elsewhere.error.message).not.toContain('Windows accepts');
+    expect(moved.ok === false && moved.error.message).toContain('Windows accepts at most 259');
+  });
+
+  it('on Windows, a write that fails on a short path says nothing of its length', async () => {
+    const written = await createBunFiles('win32').writeText(join(root, 'Espace Contoso', 'state.json', 'nested.md'), 'body');
+
+    expect(written.ok === false && written.error.message).not.toContain('Windows accepts');
+  });
 });
