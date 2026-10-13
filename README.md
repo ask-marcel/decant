@@ -175,22 +175,23 @@ A dry run keeps nothing. The change does not move a thread folder that is alread
 kb/
   .decant.json                      how far back the runs reach (a day, or all), and the time zone
   _sync-report.md                   what the last run left behind, every source in one file
-  _archive/SharePoint sites/<Site>/<Library>/...
-                                    files whose source was deleted, renamed, or changed away
+  _archive/2026-10-13/...           the earlier copy of each file, under the day of the run that
+                                    moved it: deleted at the source, renamed, moved, or replaced by
+                                    an edit (a second copy of one path that day goes under 2026-10-13-2/)
   SharePoint sites/<Site>/
     .sync-state.json                what has been synced, and where the next run resumes
     .sync-cursor.json               when the last run ran, and the delta cursors (see Re-running)
     _sync-report.md                 what did not make it in, and why (only when there is something)
     _members.md                     who can open the site
     <Library>/
-      2026-05-12/                   the day each document last changed at the source
-        <SharePoint folders mirrored>/
-          Roadmap.pptx.md           slide text
-          Roadmap.pptx.pdf          the rendered deck
-          Contrat.pdf               the original
-          Contrat.pdf.md            its text layer
-          Contrat.docx.md           the text, plus a section listing the pictures inside
-          Contrat.docx.media/       those pictures, kept as files
+      _index.md                     every document, the one changed last first
+      <SharePoint folders mirrored>/
+        Roadmap.pptx.md             slide text
+        Roadmap.pptx.pdf            the rendered deck
+        Contrat.pdf                 the original
+        Contrat.pdf.md              its text layer
+        Contrat.docx.md             the text, plus a section listing the pictures inside
+        Contrat.docx.media/         those pictures, kept as files
   Loop workspaces/<Workspace>/      the same shape, for a Loop workspace
   OneDrive/<Owner>/                 the same shape, for a personal OneDrive
   Group inboxes/<Group>/            a group's conversations (see the mailbox layout below)
@@ -206,8 +207,10 @@ kb/
     Jane Doe.md                     one page per colleague
   To Do/<List>/
     .sync-state.json                which tasks are filed, and what each one last looked like
-    2026-09-08/                     the day each task last changed
+    _index.md                       the open tasks by due day, then the completed ones
+    2026-09-12/                     the day each task is due
       Book the venue.md             the task, its notes, its steps and what it links to
+    undated/                        the tasks with no due day
   OneNote/<Notebook>/
     .sync-state.json                every page filed, and what it last looked like
     <Section group>/<Section>/      the notebook's own structure
@@ -223,7 +226,8 @@ kb/
   Teams/<Team>/
     .sync-state.json                every post filed
     <Channel>/
-      2026-09-10/                   the day each post last changed, a reply counting as a change
+      _index.md                     every post, the latest activity first
+      2026-09-10/                   the day each post was first posted
         Venue for the offsite.md    the post and its replies, as one thread
 ```
 
@@ -233,14 +237,23 @@ and the two halves land on different shelves: its documents under `SharePoint si
 conversations under `Group inboxes/`. Reports and summaries still spell out `(group inbox)` after the
 name, where a bare name would leave a reader guessing which half they are reading.
 
-Every document is filed under the day it last changed at the source, not the day it was synced, with
-the folders it had in SharePoint underneath: the day is what you usually want to scan by, and the
-folders are what keep two same-named documents apart. A document whose source reports no date at all
-goes under `undated/`.
+Each document goes in the folders that it has in SharePoint. There is no day folder. Thus the path of
+a document changes only when you rename or move the document at the source, and links to it continue
+to work. The `_index.md` file of each library lists the documents, with the document that changed
+last at the top. Each line shows the day of the change, the path as a link, and the person who made
+the change.
 
-Because the day comes from the document itself, editing one at the source files it afresh under its
-new day. The copy under the old day is not left behind as a duplicate: it is moved into `_archive/`,
-where anything the source no longer has already goes.
+Before an edit replaces a document, a task or a Teams post, decant moves the earlier version to
+`_archive/<day of the run>/`. There, it keeps the path that it had in `kb/`. A file that you delete,
+rename or move at the source goes there too. If the folder of that day already holds the path,
+decant uses `<day>-2`, then `<day>-3`. Thus decant never writes over an archived copy, and the
+knowledge base keeps each earlier version without git. A move also deletes each folder that it makes
+empty.
+
+The first run after an update to this layout moves the files to their new places. This applies to
+each library, each To Do list and each Teams channel. These moves do not go to `_archive/`. A file
+can stay at its old place, for example because another program has the file open. Then the state
+keeps the file at that place, and the next run moves it. decant never moves a file over another file.
 
 Two different SharePoint sites can share a display name (most often an unedited template title). The
 picker shows each one's address alongside the name so they can be told apart before choosing, and if
@@ -457,6 +470,7 @@ kb/
   Mailbox/
     .sync-state.json                what every conversation produced
     _sync-report.md                 what did not make it in, and why
+    _index.md                       every thread, the newest message first
     _inline/                        pictures pasted into messages, stored once for the mailbox
                                     and named by content, since one signature logo rides on
                                     every message its sender ever wrote
@@ -471,9 +485,15 @@ kb/
     _meta/links.jsonl                                one line per document pointed at
 ```
 
+The `_index.md` file of the mailbox lists each thread, with the thread that has the newest message at
+the top. Each line shows the day of that message, the subject as a link, and the sender of that
+message. In `_meta/threads.jsonl`, `first_message` and `last_message` give the time of the first
+message and of the last message of each thread.
+
 ### What a To Do sync writes
 
-One markdown file per task, filed under the day the task last changed, the same way a document is:
+One markdown file per task. decant files each task under the day that it is due, or under `undated/`
+if it has no due day:
 
 ```yaml
 ---
@@ -516,9 +536,18 @@ An ordinary task says nothing about its importance, so the word only appears whe
 something. A task with no notes, no steps and nothing linked carries none of those headings rather
 than empty ones.
 
-Editing a task files it afresh under its new day, and the copy under the old day moves into
-`_archive/` rather than being left behind as a duplicate. A task deleted in To Do goes to `_archive/`
-too, and is named in the list's `_sync-report.md`.
+An edit that keeps the due day writes the task at the same path. Before the write, decant moves the
+earlier version to `_archive/<day of the run>/`. A new due day moves the task to the folder of that
+day, and the earlier version goes to `_archive/` too. A task that you delete in To Do goes to
+`_archive/`, and the `_sync-report.md` of the list names it.
+
+The `_index.md` file of each list shows the tasks in three groups:
+
+1. The open tasks by due day, with the nearest day first.
+2. The open tasks with no due day.
+3. The completed tasks, with the latest at the top.
+
+Each line shows the day, the title as a link, and the status of an open task.
 
 Each list is read whole every run. To Do does have a delta endpoint, but it answers with a task's
 own fields and leaves out its steps and its linked resources, which are navigation properties and
@@ -616,7 +645,7 @@ Graph offers no delta on people the library exposes, so every run reads every pr
 makes a run an update rather than a rewrite is a fingerprint per person in the state file, over the
 profile, the Teams and the reports: an unchanged person costs a call and no write, a changed title
 or manager rewrites that one page, a newcomer is written, and someone whose account is disabled or
-who has left every Team is moved to `_archive/People/` and named in the report. The org chart is
+who has left every Team is moved to `_archive/<day of the run>/People/` and named in the report. The org chart is
 drawn again whenever any page was.
 
 ### What a OneNote sync writes
@@ -793,11 +822,15 @@ resolved to links, each reply quoted beneath the post oldest first, with `_(edit
 `_message deleted_` and `_reactions: 👍 2_` markers where they apply. A picture pasted into a post
 is a placeholder; the bytes live in Graph's hosted content and are not fetched.
 
-A post is filed under the day it last changed, and a reply counts as a change: Graph moves the root
-post's `lastModifiedDateTime` when a reply lands, so a thread that gains a reply is written again
-whole under its new day and the copy under the old day moves to `_archive/`. A post deleted in Teams
-goes to `_archive/` too, and is named in the team's `_sync-report.md`. A post is named by its
-subject when it has one, which most do not, and otherwise by its first line.
+decant files a post under the day of the first post, which the id of the post also holds. A reply
+moves the `lastModifiedDateTime` of the root post, so decant writes the whole thread again at the
+same path. Before the write, decant moves the earlier version to `_archive/<day of the run>/`. A post
+that you delete in Teams goes to `_archive/` too, and the `_sync-report.md` of the team names it.
+decant names a post by its subject. Most posts have no subject, and then decant names the post by
+its first line.
+
+The `_index.md` file of each channel lists the posts, with the latest activity at the top. Each line
+shows the day of that activity, the title as a link, and the author.
 
 Each channel keeps a delta cursor of its own, so a re-run asks Graph only for what changed. The
 cursor moves only once every post the delta reported has landed: a post that would not render is
@@ -984,8 +1017,8 @@ Each run stores the cursor Graph gives it, so a second run reads only what chang
 library converts nothing. State is written after every single file, so stopping a run mid-way
 (Ctrl-C) loses at most the file in flight, and the next run picks up from the same place. A file
 renamed in SharePoint is moved on disk rather than converted again; a file deleted there has its
-markdown moved into `kb/_archive/`, as does the older copy of a file that was edited and so now
-belongs under a later day.
+markdown moved into `kb/_archive/<day of the run>/`, as does the earlier version of a file that an
+edit replaces.
 
 A run that finds nothing new at the source changes no file in `kb/`, with one exception: the
 `.sync-cursor.json` beside each `.sync-state.json`. That file holds the time of the last run and the
