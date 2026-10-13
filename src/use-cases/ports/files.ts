@@ -7,6 +7,7 @@ export type FilesError =
 
 export type Files = {
   readonly readText: (path: string) => Promise<Result<string, FilesError>>;
+  readonly readBytes: (path: string) => Promise<Result<Uint8Array, FilesError>>;
   readonly listDirectoryNames: (path: string) => Promise<Result<ReadonlyArray<string>, FilesError>>;
   readonly writeText: (path: string, content: string) => Promise<Result<void, FilesError>>;
   readonly writeBytes: (path: string, bytes: Uint8Array) => Promise<Result<void, FilesError>>;

@@ -35,4 +35,23 @@ describe('writing only what changed', () => {
     expect(disk.written.get('kb/Docs/notes.txt.md')).toBe('one\ntwo\n');
     expect(disk.written.get('kb/Mailbox/_meta/raw.txt')).toBe('one\r\ntwo\r\n');
   });
+
+  // A picture or an original fetched again holds the same bytes, and writing them again would change
+  // nothing but the time on the file, which a copy of the knowledge base still takes as news.
+  it('a file whose bytes did not change is not written again, and one whose bytes changed is', async () => {
+    const disk = createFilesFake();
+    const files = withSteadyWrites(disk);
+    const picture = 'kb/Docs/Plan.docx.media/image-01.png';
+    await files.writeBytes(picture, new Uint8Array([1, 2, 3]));
+    const first = disk.binary.get(picture);
+
+    await files.writeBytes(picture, new Uint8Array([1, 2, 3]));
+
+    expect(disk.binary.get(picture)).toBe(first);
+
+    await files.writeBytes(picture, new Uint8Array([1, 2, 4]));
+    await files.writeBytes(picture, new Uint8Array([1, 2]));
+
+    expect(disk.binary.get(picture)).toEqual(new Uint8Array([1, 2]));
+  });
 });

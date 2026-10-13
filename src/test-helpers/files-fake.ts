@@ -43,6 +43,11 @@ export const createFilesFake = (seed: FilesFakeSeed = {}): FilesFake => {
       const text = written.get(path);
       return text === undefined ? notFound(path) : ok(text);
     },
+    readBytes: async (path) => {
+      if (seed.failReadWith) return err(seed.failReadWith);
+      const bytes = binary.get(path);
+      return bytes === undefined ? notFound(path) : ok(bytes);
+    },
     listDirectoryNames: async (path) => {
       if (seed.failListWith) return err(seed.failListWith);
       const names = seed.directories?.[path];
