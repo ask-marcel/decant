@@ -81,7 +81,19 @@ decant update
 That form is safe to schedule: it never opens a browser, and a lapsed sign-in ends the run with a
 clear message instead of waiting for input. Any other source that fails is named as it fails, listed
 in `kb/_sync-report.md` under the ones to try again, and passed over, so the sources after it are
-still refreshed; the run then exits with a failure.
+still refreshed.
+
+The exit code tells a script how the run ended:
+
+| Code | Meaning |
+|---|---|
+| 0 | The run finished, and no item failed. |
+| 3 | The run finished, and one or more items failed. `kb/_sync-report.md` names them. |
+| 1 | The run stopped before the end, for example because the sign-in lapsed. |
+| 2 | decant did not accept the options. |
+
+A script that copies the knowledge base after each run (a backup, or a commit to git) can continue
+after 0 and after 3.
 
 ### How far back
 
