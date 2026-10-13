@@ -1,7 +1,7 @@
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { renderTaskDocument } from '../domain/todo-document.ts';
-import { TODO_STATE_VERSION, emptyTodoState, parseTodoState, planTaskFiles, serializeTodoState, todoRootName, todoWorklist, withTask, withoutTask } from '../domain/todo-state.ts';
+import { TODO_STATE_VERSION, emptyTodoState, parseTodoState, serializeTodoState, todoRootName, todoWorklist, withTask, withoutTask } from '../domain/todo-state.ts';
 import type { PlannedTask, TaskRecord, TodoState } from '../domain/todo-state.ts';
 import type { TodoTask } from '../domain/todo-task.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -15,7 +15,8 @@ import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
-import { putAside } from './put-aside.ts';
+import { putAside, putBack, setAside } from './put-aside.ts';
+import type { SetAside } from './put-aside.ts';
 
 export const TODO_STATE_FILE = '.sync-state.json';
 
@@ -62,28 +63,28 @@ const loadState = async (deps: SyncTodoDeps, path: string, list: TodoList): Prom
 
 type Done = { readonly apply: (state: TodoState) => TodoState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
 
-// The copy under the day the task used to carry, which the fresh one does not overwrite because it
-// sits under a different day. Put aside rather than deleted, where everything the source no longer
-// has already goes.
-const archiveSuperseded = async (deps: SyncTodoDeps, roots: Roots, before: TaskRecord | undefined, after: string): Promise<void> => {
-  if (before === undefined || before.file === after) return;
-  for (const missed of await putAside(deps, [before.file])) deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
+// The version a task had before this write, set aside under the day of the run so the knowledge base
+// keeps it, whether the task stays at its path or a new due day moved it. Put back when the write fails.
+const setAsideBefore = async (deps: SyncTodoDeps, before: TaskRecord | undefined): Promise<SetAside> => {
+  const aside = await setAside(deps, before === undefined ? [] : [before.file]);
+  for (const missed of aside.failed) deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
+  return aside;
 };
 
 type Roots = { readonly root: string };
 
-const writeOne = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, state: TodoState, planned: PlannedTask): Promise<Done> => {
+const writeOne = async (deps: SyncTodoDeps, input: SyncTodoInput, state: TodoState, planned: PlannedTask): Promise<Done> => {
   const { task, file } = planned;
-  const document = renderTaskDocument({ task, list: input.list.name, syncedAt: deps.clock.nowIso() });
-  const written = await deps.files.writeText(file, document);
+  const aside = await setAsideBefore(deps, state.tasks[task.id]);
+  const written = await deps.files.writeText(file, renderTaskDocument({ task, list: input.list.name, syncedAt: deps.clock.nowIso() }));
   if (!written.ok) {
+    for (const missed of await putBack(deps, aside)) deps.logger.warn('restore.failed', { path: missed.path, cause: missed.error.kind });
     deps.logger.warn('todo-task.failed', { task: task.id, cause: written.error.kind });
     const attempt = nextAttempt(state.retry?.[task.id], task.lastModified, task.title, written.error.message);
     // Out of tries now: named under its own heading, not as a failure the next run will try again.
     const notes = isGivenUp(attempt, task.lastModified) ? {} : { failed: [{ path: task.title, reason: written.error.message }] };
     return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, task.id, attempt) }), counted: { failed: 1 }, notes };
   }
-  await archiveSuperseded(deps, roots, state.tasks[task.id], file);
   const record: TaskRecord = { file, lastModified: task.lastModified, title: task.title };
   return { apply: (carried) => ({ ...withTask(carried, task.id, record), retry: clearAttempt(carried.retry, task.id) }), counted: { converted: 1 }, notes: {} };
 };
@@ -138,11 +139,11 @@ const holding = (progressing: Progressing, tasks: ReadonlyArray<TodoTask>): Prog
   state: { ...progressing.state, retry: heldAttempts(progressing.state.retry, new Set(tasks.map((task) => task.id))) },
 });
 
-const writeWindow = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, state: TodoState, window: ReadonlyArray<PlannedTask>): Promise<ReadonlyArray<Done>> =>
+const writeWindow = async (deps: SyncTodoDeps, input: SyncTodoInput, state: TodoState, window: ReadonlyArray<PlannedTask>): Promise<ReadonlyArray<Done>> =>
   Promise.all(
     window.map((planned) => {
       deps.progress.begin(planned.task.title);
-      return writeOne(deps, input, roots, state, planned).then((done) => {
+      return writeOne(deps, input, state, planned).then((done) => {
         deps.progress.step(planned.task.title);
         return done;
       });
@@ -158,7 +159,7 @@ const write = async (
 ): Promise<Result<Progressing, StepError>> => {
   let progressing = carried;
   for (let at = 0; at < planned.length; at += input.concurrency) {
-    const results = await writeWindow(deps, input, roots, progressing.state, planned.slice(at, at + input.concurrency));
+    const results = await writeWindow(deps, input, progressing.state, planned.slice(at, at + input.concurrency));
     progressing = fold(progressing, results);
     const saved = await save(deps, `${roots.root}/${TODO_STATE_FILE}`, progressing.state);
     if (!saved.ok) return saved;
@@ -167,10 +168,9 @@ const write = async (
 };
 
 const sweep = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, state: TodoState, tasks: ReadonlyArray<TodoTask>): Promise<Result<SourceRun, StepError>> => {
-  const work = todoWorklist(state, tasks);
+  const work = todoWorklist(roots.root, state, tasks, deps.pathBudget);
   deps.progress.start(work.write.length, input.list.name);
-  const planned = planTaskFiles(roots.root, work.write, state, deps.pathBudget);
-  const written = await write(deps, input, roots, { summary: EMPTY, notes: NO_NOTES, state }, planned);
+  const written = await write(deps, input, roots, { summary: EMPTY, notes: NO_NOTES, state }, work.write);
   deps.progress.done();
   if (!written.ok) return written;
   const gone = await Promise.all(work.archive.map((entry) => archiveGone(deps, roots, entry)));
@@ -193,7 +193,7 @@ export const createSyncTodo =
     const listed = await deps.reader.tasks(input.list.id);
     if (!listed.ok) return failed('listTasks', listed.error.kind, listed.error.message);
     if (input.dryRun) {
-      const work = todoWorklist(state, listed.value);
+      const work = todoWorklist(roots.root, state, listed.value, deps.pathBudget);
       return ok({ id: input.list.id, source: input.list.name, summary: { ...EMPTY, queued: work.write.length }, notes: NO_NOTES });
     }
     return sweep(deps, input, roots, { ...state, version: TODO_STATE_VERSION }, listed.value);

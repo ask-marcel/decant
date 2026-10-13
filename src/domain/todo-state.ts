@@ -86,15 +86,19 @@ export const withoutTask = (state: TodoState, taskId: string): TodoState => ({
 // changed but not what a task now holds (its steps and its links are navigation properties a delta
 // leaves out), so the list is read whole every run and the ledger says what is new. Reading it whole
 // is also what makes a deleted task visible, which a delta's removals report only once.
-export type TodoWork = { readonly write: ReadonlyArray<TodoTask>; readonly archive: ReadonlyArray<{ readonly id: string; readonly record: TaskRecord }> };
+// A task is written when it changed at the source, and when the file it belongs in is not the one it
+// is in, which a new due day does; one out of tries on this version is left alone.
+export type TodoWork = { readonly write: ReadonlyArray<PlannedTask>; readonly archive: ReadonlyArray<{ readonly id: string; readonly record: TaskRecord }> };
 
-export const todoWorklist = (state: TodoState, tasks: ReadonlyArray<TodoTask>): TodoWork => {
+// Oldest first, so a run that stops leaves a prefix of the list rather than a scattering of it, and so
+// every run plans the same names in the same order.
+const oldestFirst = (left: TodoTask, right: TodoTask): number => compareText(left.lastModified, right.lastModified);
+
+export const todoWorklist = (root: string, state: TodoState, tasks: ReadonlyArray<TodoTask>, budget?: number): TodoWork => {
   const listed = new Set(tasks.map((task) => task.id));
+  const tried = tasks.filter((task) => !isGivenUp(state.retry?.[task.id], task.lastModified)).toSorted(oldestFirst);
   return {
-    // Oldest first, so a run that stops leaves a prefix of the list rather than a scattering of it.
-    write: [...tasks.filter((task) => state.tasks[task.id]?.lastModified !== task.lastModified && !isGivenUp(state.retry?.[task.id], task.lastModified))].sort((left, right) =>
-      compareText(left.lastModified, right.lastModified)
-    ),
+    write: planTaskFiles(root, tried, state, budget).filter(({ task, file }) => state.tasks[task.id]?.lastModified !== task.lastModified || state.tasks[task.id]?.file !== file),
     archive: Object.entries(state.tasks).flatMap(([id, record]) => (listed.has(id) ? [] : [{ id, record }])),
   };
 };
@@ -109,9 +113,11 @@ const TITLE_LIMIT = 80;
 // there is no lookup that could miss and no fallback path for a miss that cannot happen.
 export type PlannedTask = { readonly task: TodoTask; readonly file: string };
 
-// Where each task about to be written goes. Two tasks can carry the same title and last change on
-// the same day, which would land them on one path and lose one of them silently; the second and any
-// after it take a suffix from their own id, the way two documents sharing a name in one library do.
+// Where each task about to be written goes: under the day it is due, or `undated/` when it has none,
+// so a list reads in the order its work falls due, and an edit that keeps the due day keeps the path.
+// Two tasks can carry the same title and be due the same day, which would land them on one path and
+// lose one of them silently; the second and any after it take a suffix from their own id, the way two
+// documents sharing a name in one library do.
 // A path another task's record holds counts as taken even when that task is rewritten this run too:
 // its file stays on disk until its own write lands and puts it aside, which can come after a second
 // task's write to the same path and put the second task's fresh file aside instead. A task's own
@@ -121,7 +127,7 @@ export const planTaskFiles = (root: string, tasks: ReadonlyArray<TodoTask>, stat
   const planned: PlannedTask[] = [];
   for (const task of tasks) {
     const name = `${safeSegment(cutToWord(task.title, TITLE_LIMIT, ' '))}${MARKDOWN}`;
-    const file = freePath(datedRoot(root, task.lastModified), name, task.id, taken, state.tasks[task.id]?.file, budget);
+    const file = freePath(datedRoot(root, task.due), name, task.id, taken, state.tasks[task.id]?.file, budget);
     taken.add(file);
     planned.push({ task, file });
   }
