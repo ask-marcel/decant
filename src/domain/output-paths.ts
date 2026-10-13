@@ -1,10 +1,8 @@
 import { safeRelPath, safeSegment } from './kb-path.ts';
 
-// A document is filed under the day it last changed, so the knowledge base reads in the order things
-// happened rather than in the order SharePoint's folders happen to be arranged. Its folders are kept
-// underneath that day: they are what holds two same-named documents apart, and they say where the
-// document lived. A source that gave no date still needs somewhere to go, and a named folder says
-// that plainly where an empty one would silently drop the file at the library root.
+// An item filed by a day goes under that day: a task under the day it is due, a post under the day it
+// was first posted. One with no day still needs somewhere to go, and a named folder says that
+// plainly where an empty one would silently drop the file at the root.
 const UNDATED = 'undated';
 
 const DAY = /^\d{4}-\d{2}-\d{2}/;
@@ -30,6 +28,23 @@ export const remapOutputs = (outputs: ReadonlyArray<string>, from: string, to: s
 export const recordedPrefix = (output: string, name: string): string => {
   const at = output.lastIndexOf(name);
   return at < 0 ? output : output.slice(0, at + name.length);
+};
+
+// The folder the first layout filed a document's files under: the day it last changed, or `undated`.
+const FIRST_LAYOUT_DAY = /^(\d{4}-\d{2}-\d{2}|undated)$/;
+
+// A file the first layout filed under the day its document last changed, given back its place under
+// the document's own SharePoint folders: `<library>/<day>/<folders>/<rest>` becomes
+// `<library>/<folders>/<rest>`. Only the day goes, so a name cut to fit a Windows path, the pictures
+// beside a note and the members of an archive keep theirs. Any other file stays where it is: one
+// already in place is not moved again, though its SharePoint folder is named like a day.
+export const undatedOutput = (libraryRoot: string, itemPath: string, output: string): string => {
+  if (!output.startsWith(`${libraryRoot}/`)) return output;
+  const [day = '', ...inside] = output.slice(libraryRoot.length + 1).split('/');
+  if (inside.length === 0 || !FIRST_LAYOUT_DAY.test(day)) return output;
+  const folders = safeRelPath(itemPath.split('/').slice(0, -1));
+  const rest = inside.join('/');
+  return folders.length === 0 || rest.startsWith(`${folders}/`) ? `${libraryRoot}/${rest}` : output;
 };
 
 // Where a document's files go once it is filed at `toPath`: under the folders it has in SharePoint,

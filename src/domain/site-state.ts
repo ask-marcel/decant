@@ -2,7 +2,7 @@ import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import type { RetryEntry, RetryLedger } from './retry-policy.ts';
 import type { Manifest, ManifestEntry, WorkItem } from './worklist.ts';
-import { refiledOutputs } from './output-paths.ts';
+import { undatedOutput } from './output-paths.ts';
 
 // What one run leaves behind so the next one, or a restart after a stop, picks up exactly where it
 // left off: the cursor Graph gave us, the queue still to process, what every item produced, and what
@@ -149,12 +149,9 @@ export const refileDrive = (libraryRoot: string, drive: DriveState): Refiled => 
   const moves: { from: string; to: string }[] = [];
   const items = Object.fromEntries(
     Object.entries(drive.items).map(([id, entry]) => {
-      const outputs = refiledOutputs(libraryRoot, entry.path, entry.path, entry.outputs);
-      for (const [at, to] of outputs.entries()) {
-        const from = entry.outputs[at];
-        if (from !== undefined && from !== to) moves.push({ from, to });
-      }
-      return [id, { ...entry, outputs }] as const;
+      const pairs = entry.outputs.map((from) => ({ from, to: undatedOutput(libraryRoot, entry.path, from) }));
+      moves.push(...pairs.filter((pair) => pair.from !== pair.to));
+      return [id, { ...entry, outputs: pairs.map((pair) => pair.to) }] as const;
     })
   );
   const retry = Object.fromEntries(Object.entries(drive.retry).map(([id, entry]) => [id, entry.reason.startsWith(WRITE_FAILED) ? { ...entry, attempts: 0 } : entry] as const));
