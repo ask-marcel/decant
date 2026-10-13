@@ -194,7 +194,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // Every part of the run writes through these two: a note is written only when its text changed, and
   // the run time and delta cursors of a sync go to a file beside its state. A run that found nothing
   // new then changes no file but those cursor files.
-  const files = withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())));
+  const files = withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())), logger);
   const clock = given(overrides.clock, () => createSystemClock());
   // Constructing the API reaches nothing: the sign-in ladder only runs on the first Graph call.
   const api = realApi(config.interactive);

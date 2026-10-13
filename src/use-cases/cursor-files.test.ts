@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
+import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import { withCursorFiles } from './cursor-files.ts';
 
 const STATE = 'kb/Mailbox/.sync-state.json';
@@ -61,6 +62,18 @@ describe('keeping the run time and the cursors of a sync beside its state', () =
 
     expect(disk.written.get(STATE)).toBe('not json');
     expect(disk.written.has(CURSOR)).toBe(false);
+  });
+
+  // The cursor left on disk belongs to the state before, so the next run reads the source whole once:
+  // a cost, never a reason to stop the source.
+  it('a cursor that cannot be saved is logged, and the state saved before it still counts as saved', async () => {
+    const refusing = createFilesFake({ failWritesMatching: '.sync-cursor.json' });
+    const logger = createLoggerFake();
+
+    expect(await withCursorFiles(refusing, logger).writeText(STATE, asText(saved))).toEqual({ ok: true, value: undefined });
+    expect(refusing.written.has(STATE)).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'cursor.unsaved', meta: { path: CURSOR, cause: 'write-failed' } });
+    expect((await withCursorFiles(refusing).writeText(STATE, asText(saved))).ok).toBe(true);
   });
 
   it('every other file is read and written as it is', async () => {
