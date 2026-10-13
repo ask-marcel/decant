@@ -7,6 +7,7 @@ import { datedRoot } from './output-paths.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { isBefore } from './sync-window.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 export const TEAM_STATE_VERSION = 1;
 
@@ -106,7 +107,7 @@ export const channelWork = (state: TeamState, channelId: string, posts: Readonly
   });
   const write = posts
     .filter((post) => !post.deleted && known[post.id]?.lastModified !== post.lastModified && !isBefore(post.lastModified, since))
-    .sort((left, right) => left.lastModified.localeCompare(right.lastModified));
+    .sort((left, right) => compareText(left.lastModified, right.lastModified));
   return { write, archive };
 };
 

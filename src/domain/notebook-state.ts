@@ -5,6 +5,7 @@ import type { Notebook, NotebookPage, NotebookSection } from './onenote.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { isBefore } from './sync-window.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 export const NOTEBOOK_STATE_VERSION = 1;
 
@@ -108,7 +109,7 @@ export const notebookWorklist = (state: NotebookState, listed: ReadonlyArray<Lis
   return {
     write: listed
       .filter((entry) => state.pages[entry.page.id]?.lastModified !== entry.page.lastModified && !isBefore(entry.page.lastModified, since))
-      .sort((left, right) => left.page.lastModified.localeCompare(right.page.lastModified)),
+      .sort((left, right) => compareText(left.page.lastModified, right.page.lastModified)),
     archive: Object.entries(state.pages).flatMap(([id, record]) => (present.has(id) || unread.has(record.section) ? [] : [{ id, record }])),
   };
 };

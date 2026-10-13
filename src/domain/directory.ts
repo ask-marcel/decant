@@ -3,6 +3,7 @@ import type { FrontMatterField } from './front-matter.ts';
 import { linkDestination } from './markdown-link.ts';
 import { isColleague, personFingerprint } from './person.ts';
 import type { Person } from './person.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 // A person as the directory holds them: their profile, the Teams they are in, and the people who
 // report to them, the last two worked out from everyone else rather than asked for. The fingerprint
@@ -14,7 +15,7 @@ export type Colleague = {
   readonly fingerprint: string;
 };
 
-const byName = <T extends { readonly name: string }>(left: T, right: T): number => left.name.localeCompare(right.name);
+const byName = <T extends { readonly name: string }>(left: T, right: T): number => compareText(left.name, right.name);
 
 // The rosters and the profiles, joined. A guest and a disabled account are left out here, once,
 // so nothing downstream has to ask again, and they count as nobody's report: a manager whose only
@@ -23,7 +24,7 @@ export const assembleDirectory = (people: ReadonlyArray<Person>, teamsOf: Readon
   const colleagues = people.filter(isColleague);
   return colleagues
     .map((person) => {
-      const teams = [...(teamsOf[person.id] ?? [])].sort((left, right) => left.localeCompare(right));
+      const teams = [...(teamsOf[person.id] ?? [])].sort(compareText);
       const reports = colleagues
         .filter((candidate) => candidate.manager?.id === person.id)
         .map((report) => ({ id: report.id, name: report.name }))

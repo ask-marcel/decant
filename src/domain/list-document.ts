@@ -2,6 +2,7 @@ import { renderFrontMatter, withFrontMatter } from './front-matter.ts';
 import type { FrontMatterField } from './front-matter.ts';
 import { renderListTable } from './sharepoint-list.ts';
 import type { ListColumn, ListItem, SharePointList } from './sharepoint-list.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 export type RenderListInput = {
   readonly list: SharePointList;
@@ -20,7 +21,7 @@ const newestOf = (rows: ReadonlyArray<ListItem>): string | undefined =>
   stated(
     rows
       .map((row) => row.lastModified)
-      .toSorted((left, right) => left.localeCompare(right))
+      .toSorted(compareText)
       .at(-1) ?? ''
   );
 
