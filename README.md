@@ -420,9 +420,17 @@ the old page to `_archive/`.
 Anything left behind is named in `_sync-report.md` beside the source it came from, newest run
 first: files of a kind this tool does not read, files above the size cap, files locked with a
 password, the stubs Office leaves beside an open document, files that could not be read, and files
-moved aside because the source no longer has them. A file that could not be read is written down and converted again on the next run, up to
-three tries in all; after that it is named under a heading of its own saying it will not be tried
-again, and it keeps that line in every report until the file changes at the source. A password is
+moved aside because the source no longer has them.
+
+An item that failed (a read, a conversion or a write) is tried again on the next run, three runs
+in all. This applies to each source. After the third run, the report of the source names the item
+one time, in a list of its own. decant does not try the item again until it changes at the source.
+The report of the whole run names each item that decant gave up on, on each run.
+
+decant reads some things on each run, for example a profile or a section of a notebook. After three
+failed runs, such a thing is still read, but it is not named as a failure again.
+
+A password is
 the one refusal that never becomes readable by trying again, so such a file is left out the way an
 unsupported type is, rather than queued afresh on every run. A `~$Budget.xlsx` sitting beside
 `Budget.xlsx` is the same case decided earlier: Office writes it while the workbook is open and it
@@ -431,8 +439,8 @@ the converter, failing as a malformed workbook, and coming back on every run. A 
 the runs that did leave something behind.
 
 `kb/_sync-report.md`, one level up, holds the same thing for the run as a whole, so twenty sources
-do not mean twenty files to open. It is rewritten on every run rather than appended to, and always
-covers every source: the ones the run touched get their counts and their lists, and every other
+do not mean twenty files to open. decant writes it again only when its content changes, the time
+aside, so its time is the time of the last run that changed it. It always covers every source: the ones the run touched get their counts and their lists, and every other
 source already in `kb/` is named with the date it last ran, so a source that was not rechecked is
 never mistaken for one with nothing wrong. A group inbox is named as one, `Northwind Projects 2026
 (group inbox)`, because the site of the same name is a separate source with its own section, and
