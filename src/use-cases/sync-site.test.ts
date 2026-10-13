@@ -46,6 +46,7 @@ const run = async (
     progress,
     clock,
     kbRoot: 'kb',
+    timezone: 'UTC',
     convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
   });
   const result = await syncSite({
@@ -67,7 +68,7 @@ const stateAfter = (
     {
       deltaLink?: string;
       pending: unknown[];
-      items: Record<string, { path: string; cTag: string; outputs: string[] }>;
+      items: Record<string, { path: string; cTag: string; outputs: string[]; modified?: string; modifiedBy?: string }>;
       retry: Record<string, { attempts: number; reason: string }>;
     }
   >;
@@ -117,7 +118,7 @@ describe('reporting what did not reach the knowledge base', () => {
 
     expect(summary).toEqual({ converted: 0, moved: 0, archived: 0, skipped: 1, failed: 0, queued: 0 });
     expect(report).toContain('- Projets/Contrat.docx: locked with a password, so nothing could be read from it');
-    expect(stateAfter(files).drives['b!one']?.items['01ABC']).toEqual({ path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [] });
+    expect(stateAfter(files).drives['b!one']?.items['01ABC']).toEqual({ path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [], modified: '2026-05-12T09:31:00Z' });
   });
 
   it('a document the source no longer has is named as moved aside', async () => {
@@ -170,6 +171,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       path: 'Projets/Contrat.docx',
       cTag: 'c1',
       outputs: ['kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md'],
+      modified: '2026-05-12T09:31:00Z',
     });
   });
 
@@ -419,6 +421,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       progress: createProgressFake(),
       clock,
       kbRoot: 'kb',
+      timezone: 'UTC',
       convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
@@ -607,6 +610,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
       progress: createProgressFake(),
       clock,
       kbRoot: 'kb',
+      timezone: 'UTC',
       convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
@@ -645,6 +649,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
       progress: createProgressFake(),
       clock,
       kbRoot: 'kb',
+      timezone: 'UTC',
       convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
@@ -767,6 +772,7 @@ describe('a site name that collides with another site already on disk', () => {
       progress: createProgressFake(),
       clock: createClockFake(),
       kbRoot: 'kb',
+      timezone: 'UTC',
       convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock: createClockFake(), logger: createLoggerFake(), progress: createProgressFake() }),
     });
 
@@ -1071,6 +1077,50 @@ describe('writing down who can open a site', () => {
 
 // The first layout filed each document under the day it last changed, so every edit moved it and
 // broke every link into the knowledge base. The first run of this layout files them by their folders.
+describe('the page a reader scans a library by', () => {
+  it('the library page lists every document on disk, the one changed last first, with who changed it, and leaves out what produced no file', async () => {
+    const pages = [
+      {
+        items: [
+          item({ id: '01OLD', name: 'Budget.xlsx', path: 'Finance/Budget.xlsx', lastModified: '2026-04-01T08:00:00Z', modifiedBy: 'Valerie FAIRBANKS' }),
+          item({ id: '01ABC', modifiedBy: 'Jane Doe' }),
+          item({ id: '01BIG', name: 'Video.mp4', path: 'Video.mp4', size: 900_000_000 }),
+        ],
+        skipped: 0,
+        deltaLink: 'c1',
+      },
+    ];
+    const { files } = await run({ reader: { pages } });
+
+    expect(files.written.get('kb/SharePoint sites/Espace Contoso/Documents/_index.md')).toBe(
+      [
+        '# Documents',
+        '',
+        '## By last change',
+        '',
+        '- 2026-05-12 · [Projets/Contrat.docx](Projets/Contrat.docx.md) · Jane Doe',
+        '- 2026-04-01 · [Finance/Budget.xlsx](Finance/Budget.xlsx.md) · Valerie FAIRBANKS',
+        '',
+      ].join('\n')
+    );
+  });
+
+  it('a dry run writes no library page, and a page that will not write leaves the run standing', async () => {
+    const dry = await run({ dryRun: true });
+
+    expect(dry.files.written.has('kb/SharePoint sites/Espace Contoso/Documents/_index.md')).toBe(false);
+
+    const refused = await run({ files: { failWritesMatching: '_index.md' } });
+
+    expect(refused.ok).toBe(true);
+    expect(refused.logger.calls).toContainEqual({
+      level: 'warn',
+      event: 'index.failed',
+      meta: { path: 'kb/SharePoint sites/Espace Contoso/Documents/_index.md', cause: 'write-failed' },
+    });
+  });
+});
+
 describe('moving a library out of the day folders once', () => {
   const dated = (outputs: ReadonlyArray<string>, retry = {}): string =>
     serializeSiteState({

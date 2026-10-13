@@ -9,6 +9,10 @@ export type ManifestEntry = {
   readonly path: string;
   readonly cTag: string;
   readonly outputs: ReadonlyArray<string>;
+  // When the document last changed and who changed it, which the library page lists it by. Absent
+  // from a document converted before they were kept, until it changes.
+  readonly modified?: string;
+  readonly modifiedBy?: string;
 };
 
 export type Manifest = Readonly<Record<string, ManifestEntry>>;
