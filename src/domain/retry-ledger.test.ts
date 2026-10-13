@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, parseAttempts, recordAttempt } from './retry-ledger.ts';
+import { UNREAD, clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, parseAttempts, recordAttempt, triedReads } from './retry-ledger.ts';
 
 describe('counting the runs that tried an item and failed', () => {
   it('each run that fails on the same version adds a try, and a new version of the item starts the count over', () => {
@@ -57,5 +57,30 @@ describe('counting the runs that tried an item and failed', () => {
     expect(parseAttempts({})).toBeUndefined();
     expect(parseAttempts(undefined)).toBeUndefined();
     expect(parseAttempts([1])).toBeUndefined();
+  });
+
+  // A profile or a section listing is read on every run, so it cannot be left alone like a document:
+  // after three runs it is still read, but no longer named as a failure, and its count stays put.
+  it('a thing read on every run is counted while it fails, given up after three runs without moving again, and cleared once read', () => {
+    const jane = { id: 'jane', name: 'Jane Doe', reason: 'no such user' };
+    const first = triedReads(undefined, [], [jane]);
+    const third = triedReads(triedReads(first.retry, [], [jane]).retry, [], [jane]);
+    const fourth = triedReads(third.retry, ['dana'], [jane]);
+
+    expect(first).toEqual({
+      retry: { jane: { attempts: 1, version: UNREAD, name: 'Jane Doe', reason: 'no such user' } },
+      tried: 1,
+      failed: [{ path: 'Jane Doe', reason: 'no such user' }],
+    });
+    expect(third.tried).toBe(1);
+    expect(third.failed).toHaveLength(0);
+    expect(fourth).toEqual({ retry: third.retry, tried: 0, failed: [] });
+    expect(triedReads(third.retry, ['jane'], []).retry).toBeUndefined();
+  });
+
+  it('a thing read again is cleared only when it was counted as unread, not when it failed in another way', () => {
+    const written = recordAttempt(undefined, 'jane', nextAttempt(undefined, 'fingerprint-1', 'Jane Doe', 'write-failed'));
+
+    expect(triedReads(written, ['jane'], []).retry).toEqual(written);
   });
 });

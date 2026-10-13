@@ -62,3 +62,28 @@ export const parseAttempts = (raw: unknown): Attempts | undefined => {
   });
   return kept.length === 0 ? undefined : Object.fromEntries(kept);
 };
+
+// Something read on every run whatever the ledger says, a profile or a section listing, has no
+// version to tell an edit by, so its runs are counted under this one.
+export const UNREAD = 'unread';
+
+export type Unread = { readonly id: string; readonly name: string; readonly reason: string };
+
+// `tried` counts the reads this run made and lost, the one that gives up included, as a library
+// counts the conversion that gives up; `failed` names those still worth another run.
+export type TriedReads = { readonly retry: Attempts | undefined; readonly tried: number; readonly failed: ReadonlyArray<ReportEntry> };
+
+// What a run that reads these things whole does with the ledger: what it read again leaves the
+// ledger, and what it could not read is counted. After three runs an item is given up on, and its
+// count stays where it is, so the state does not change from run to run.
+export const triedReads = (retry: Attempts | undefined, readAgain: ReadonlyArray<string>, unread: ReadonlyArray<Unread>): TriedReads => {
+  const cleared = readAgain.filter((id) => retry?.[id]?.version === UNREAD).reduce(clearAttempt, retry);
+  const fresh = unread
+    .filter((entry) => !isGivenUp(cleared?.[entry.id], UNREAD))
+    .map((entry) => ({ entry, attempt: nextAttempt(cleared?.[entry.id], UNREAD, entry.name, entry.reason) }));
+  return {
+    retry: fresh.reduce<Attempts | undefined>((ledger, { entry, attempt }) => recordAttempt(ledger, entry.id, attempt), cleared),
+    tried: fresh.length,
+    failed: fresh.filter(({ attempt }) => !isGivenUp(attempt, UNREAD)).map(({ entry }) => ({ path: entry.name, reason: entry.reason })),
+  };
+};
