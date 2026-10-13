@@ -212,6 +212,29 @@ picker shows each one's address alongside the name so they can be told apart bef
 a sync would otherwise land in a folder another site's `.sync-state.json` already claims, it is
 written under a disambiguated one instead (`<Site>-<hash>/`) rather than merging into it.
 
+### Names on disk
+
+decant makes each name safe on Windows, macOS and Linux:
+
+- A character that Windows does not accept in a name (`/ \ : * ? " < > |`) becomes `_`.
+- A name that Windows keeps for a device (`CON`, `PRN`, `AUX`, `NUL`, `COM1` to `COM9`, `LPT1` to
+  `LPT9`) gets `_` after it, also with an extension: `nul_.txt`.
+- A name that git reads as its own (`.git`, `.gitignore`, `.gitattributes`, `.gitmodules`) gets `_`
+  in front of it.
+- Windows and macOS read two names that differ only in letter case as one file, so the second name
+  gets a suffix. An item whose title changes only in letter case keeps its file.
+- The name of a To Do task is the first 80 characters of its title, cut at the end of a word. The
+  heading of the note has the full title.
+- The pictures of a document are numbered in sequence: `image-01.png`, `image-02.jpeg`.
+
+Windows does not accept a path longer than 259 characters, counted from the drive letter, unless
+long paths are on for the whole machine. decant measures where the export folder is on the disk and
+cuts a name when its path is too long. The cut name keeps its extension and gets 8 characters
+of a hash of the full name, for example `Contrat de service avec le fournis-4db6e62d.docx.md`.
+decant keeps room below each name for what it adds later, such as the pictures of a document and
+the `_archive/` folder. If a write still fails because its path is too long, the report gives the
+length of the path.
+
 Every generated markdown file opens with where it came from. A `source` that is a real SharePoint or
 OneDrive link carries `?web=1`, so clicking it opens the browser viewer directly instead of prompting
 to launch a desktop app; a mail conversation or a linked-drive-item source, neither a real URL, is
