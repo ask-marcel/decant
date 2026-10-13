@@ -182,7 +182,7 @@ export const parseOptions = (argv: ReadonlyArray<string>): Result<Options, Optio
 export const USAGE = [
   'Usage: decant [update] [options]',
   '',
-  '  update              sync every source already in kb/, without asking anything',
+  '  update              sync every source already in the export folder, without asking anything',
   '  --site-id <id>      sync this site without showing the picker',
   '  --site-url <url>    sync the site at this address (for sites the search index misses)',
   '  --drive-id <id>     sync only this library; repeat for several',
