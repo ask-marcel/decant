@@ -67,7 +67,8 @@ carries; from there a workspace is synced exactly like a site, and `update` refr
 rest. A workspace nobody has opened may be missing from the index for a while: sync it by container
 id with `--site-id` when that happens.
 
-Several sites can be taken at once: `1,3` for those two, or `all` for every site on the list. Taking
+Several sites can be taken at once: `1,3` for those two, or `all` for every source on the list. `all`
+also takes your mailbox, your calendar and the people directory, after the numbered sources. Taking
 more than one site takes every library in each without asking, since the point of choosing them
 together is not being asked once per site. Each site is summarised as it finishes.
 

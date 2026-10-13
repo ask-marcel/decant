@@ -414,20 +414,29 @@ type Sources = {
   // The sites whose lists were chosen, apart from the sites whose libraries were.
   readonly lists: ReadonlyArray<SiteRef>;
   readonly plans: ReadonlyArray<Plan>;
+  // The mailbox, the calendar and the people, taken by `all` beside every numbered row.
+  readonly standing: boolean;
 };
 
 type Chosen = Sources | 'update-all' | 'quit' | 'mailbox' | 'people' | 'calendar';
 
-const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [], notebooks: [], lists: [], plans: [] };
+const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [], notebooks: [], lists: [], plans: [], standing: false };
 
 const oneSite = (found: Result<SiteRef, StepError>): Result<Chosen, StepError> => (found.ok ? ok({ ...NOTHING, sites: [found.value] }) : found);
 
 // How many sources a choice came to, which is what decides whether a site is asked about its
 // libraries and a team about its channels: one source is asked, more than one is taken whole.
 const countOf = (sources: Sources): number =>
-  sources.sites.length + sources.groups.length + sources.todoLists.length + sources.teams.length + sources.notebooks.length + sources.lists.length + sources.plans.length;
+  sources.sites.length +
+  sources.groups.length +
+  sources.todoLists.length +
+  sources.teams.length +
+  sources.notebooks.length +
+  sources.lists.length +
+  sources.plans.length +
+  (sources.standing ? STANDING.length : 0);
 
-const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): Promise<Result<Chosen, StepError>> => {
+const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Omit<Sources, 'standing'>): Promise<Result<Chosen, StepError>> => {
   if (choice.kind === 'quit') return ok('quit');
   if (choice.kind === 'mailbox') return ok('mailbox');
   if (choice.kind === 'people') return ok('people');
@@ -445,7 +454,7 @@ const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Sources): 
   const notebooks = offered.notebooks.filter((_notebook, index) => choice.indices.includes(before + index));
   const lists = offered.lists.filter((_site, index) => choice.indices.includes(before + offered.notebooks.length + index));
   const plans = offered.plans.filter((_plan, index) => choice.indices.includes(before + offered.notebooks.length + offered.lists.length + index));
-  const chosen = { sites, groups, todoLists, teams, notebooks, lists, plans };
+  const chosen = { sites, groups, todoLists, teams, notebooks, lists, plans, standing: choice.everything === true };
   return countOf(chosen) === 0 ? failed('pickSite', 'bad-choice', 'choose at least one source') : ok(chosen);
 };
 
@@ -598,8 +607,14 @@ const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources):
     ...chosen.notebooks.map((notebook) => () => syncTheNotebook(deps, input, notebook)),
     ...chosen.lists.map((site) => () => syncTheLists(deps, input, site)),
     ...chosen.plans.map((plan) => () => syncThePlan(deps, input, plan)),
+    ...standingSteps(deps, input, chosen.standing),
   ]);
 };
+
+// The mailbox, the calendar and the people when `all` took them, after the numbered rows, as the
+// picker draws them.
+const standingSteps = (deps: RunSyncDeps, input: RunSyncInput, taken: boolean): ReadonlyArray<Step> =>
+  taken ? STANDING.map((source) => async () => source.refresh(deps, input)) : [];
 
 const siteWithLibraries = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, alone: boolean): Promise<Result<SourceRun, StepError>> => {
   const drives = await librariesFor(deps, site, input.driveIds, alone);

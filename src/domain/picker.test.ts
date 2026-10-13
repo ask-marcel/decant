@@ -37,8 +37,14 @@ describe('reading what the operator chose', () => {
     expect(parseSelection('1, 3', 5)).toEqual({ ok: true, value: { kind: 'rows', indices: [0, 2] } });
   });
 
-  it('asking for all takes every choice on offer', () => {
-    expect(parseSelection('all', 3)).toEqual({ ok: true, value: { kind: 'rows', indices: [0, 1, 2] } });
+  // `all` is every source on offer: each numbered row, and the mailbox, the calendar and the people
+  // beside them. Only the rows are numbered, so they alone are counted out in the indices.
+  it('asking for all takes every choice on offer, the lettered ones too', () => {
+    expect(parseSelection('all', 3)).toEqual({ ok: true, value: { kind: 'rows', indices: [0, 1, 2], everything: true } });
+  });
+
+  it('numbers chosen one by one take those rows and nothing lettered', () => {
+    expect(parseSelection('1,2,3', 3)).toEqual({ ok: true, value: { kind: 'rows', indices: [0, 1, 2] } });
   });
 
   it('pasting an address reaches a site the list does not show', () => {

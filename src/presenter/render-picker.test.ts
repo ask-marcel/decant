@@ -48,6 +48,10 @@ describe('showing the operator what there is to sync', () => {
     expect(renderSitePicker(rows, standing)).toContain('all');
   });
 
+  it('the site picker says that all takes the mailbox, the calendar and the people too', () => {
+    expect(renderSitePicker(rows, standing)).toContain('all for every source above, m, c and p included');
+  });
+
   it('the ways out of the picker are spelled out', () => {
     expect(renderSitePicker(rows, standing)).toContain('u = refresh everything already synced, q = quit.');
   });
