@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { UNREAD, clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, parseAttempts, recordAttempt, triedReads } from './retry-ledger.ts';
+import { UNREAD, clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, parseAttempts, recordAttempt, triedReads } from './retry-ledger.ts';
 
 describe('counting the runs that tried an item and failed', () => {
   it('each run that fails on the same version adds a try, and a new version of the item starts the count over', () => {
@@ -82,5 +82,27 @@ describe('counting the runs that tried an item and failed', () => {
     const written = recordAttempt(undefined, 'jane', nextAttempt(undefined, 'fingerprint-1', 'Jane Doe', 'write-failed'));
 
     expect(triedReads(written, ['jane'], []).retry).toEqual(written);
+  });
+});
+
+describe('forgetting the tries of an item the source no longer holds', () => {
+  const tries = { attempts: 3, version: 'v1', name: 'Budget', reason: 'locked' };
+  const ledger = { kept: tries, gone: { ...tries, name: 'Old budget' } };
+
+  it('a source read whole keeps the tries of what it still holds and forgets the rest', () => {
+    expect(heldAttempts(ledger, new Set(['kept']))).toEqual({ kept: tries });
+    expect(heldAttempts(ledger, new Set())).toBeUndefined();
+  });
+
+  it('a source read as changes forgets what the changes say is gone', () => {
+    expect(forgetAttempts(ledger, ['gone'])).toEqual({ kept: tries });
+    expect(forgetAttempts(ledger, ['gone', 'kept'])).toBeUndefined();
+  });
+
+  // The same ledger, not an equal copy: a run that forgot nothing has nothing to save.
+  it('a ledger that loses nothing is handed back as it was', () => {
+    expect(heldAttempts(ledger, new Set(['kept', 'gone']))).toBe(ledger);
+    expect(forgetAttempts(ledger, ['elsewhere'])).toBe(ledger);
+    expect(heldAttempts(undefined, new Set(['kept']))).toBeUndefined();
   });
 });

@@ -179,6 +179,25 @@ describe('syncing the calendar', () => {
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Cancelled call');
   });
 
+  // Given up on, then deleted: nobody can fix it now, and named as failed it would stay in every report.
+  it('an event given up on and then deleted from the calendar is no longer named as given up, written or not', async () => {
+    const tries = { attempts: 3, version: 'unread', name: 'never', reason: 'no such event: never' };
+    const written = withEvent(emptyCalendarState(), 'gone', { file: `${ROOT}/2026-09-01/Cancelled call.md`, lastModified: 'x', subject: 'Cancelled call', outputs: [] });
+    const state = { ...written, retry: { never: tries, gone: { ...tries, name: 'gone' }, kept: { ...tries, name: 'kept' } } };
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'never', removed: true },
+          { id: 'gone', removed: true },
+        ],
+      },
+      files: { texts: { [STATE_PATH]: serializeCalendarState(state) } },
+    });
+
+    expect(done.notes.givenUp).toEqual([{ path: 'kept', reason: 'no such event: never' }]);
+    expect(Object.keys(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry)).toEqual(['kept']);
+  });
+
   it('a removal the ledger never held is nothing, and a cancelled meeting stays, marked', async () => {
     const done = await run({
       reader: {

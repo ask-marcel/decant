@@ -304,4 +304,14 @@ describe('syncing a Microsoft To Do list', () => {
     expect(edited.summary.converted).toBe(1);
     expect(JSON.parse(edited.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
   });
+
+  // Given up on, then deleted: nobody can fix it now, and named as failed it would stay in every report.
+  it('a task given up on and then deleted from the list is no longer named as given up', async () => {
+    const tries = { attempts: 3, version: '2026-09-08T16:20:11Z', name: 'Book the venue', reason: 'cannot write' };
+    const state = { ...emptyTodoState('list-1', 'Tasks'), retry: { 'AAMkAGI-task': tries, 'AAMkAGI-gone': { ...tries, name: 'Cancel the order' } } };
+    const done = await run({ reader: { tasks: { 'list-1': [task()] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
+
+    expect(done.notes.givenUp).toEqual([{ path: 'Book the venue', reason: 'cannot write' }]);
+    expect(Object.keys(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry)).toEqual(['AAMkAGI-task']);
+  });
 });

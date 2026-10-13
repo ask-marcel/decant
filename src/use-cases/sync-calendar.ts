@@ -29,7 +29,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
-import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 
 export const CALENDAR_STATE_FILE = '.sync-state.json';
@@ -85,12 +85,15 @@ const moveAside = async (deps: SyncCalendarDeps, output: string, what: string): 
 };
 
 // A deleted event: what it wrote goes to the archive, and it is named in the report by its
-// subject, the only thing left to call it by. A removal the ledger never held is nothing.
+// subject, the only thing left to call it by. Its tries go with it, written or not: one given up on
+// would otherwise be named as failed in every report for good. A removal neither ledger held is
+// nothing.
 const archiveGone = async (deps: SyncCalendarDeps, state: CalendarState, id: string): Promise<Done> => {
   const record = state.events[id];
-  if (record === undefined) return NOTHING;
+  const forget = (carried: CalendarState): CalendarState => ({ ...carried, retry: forgetAttempts(carried.retry, [id]) });
+  if (record === undefined) return state.retry?.[id] === undefined ? NOTHING : { apply: forget, counted: {}, notes: {} };
   for (const output of record.outputs) await moveAside(deps, output, 'archive');
-  return { apply: (carried) => withoutEvent(carried, id), counted: { archived: 1 }, notes: { archived: [{ path: record.subject, reason: 'deleted from the calendar' }] } };
+  return { apply: (carried) => forget(withoutEvent(carried, id)), counted: { archived: 1 }, notes: { archived: [{ path: record.subject, reason: 'deleted from the calendar' }] } };
 };
 
 // The files an earlier version of the event wrote that this version did not write again: the copy

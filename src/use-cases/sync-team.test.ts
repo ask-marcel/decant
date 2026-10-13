@@ -194,6 +194,19 @@ describe('syncing the channels of a Microsoft Team', () => {
     expect(fourth.files.written.has(`${ROOT}/_sync-report.md`)).toBe(false);
   });
 
+  // Given up on, then deleted: nobody can fix it now, and named as failed it would stay in every report.
+  it('a post given up on and then deleted in Teams is no longer named as given up', async () => {
+    const tries = { attempts: 3, version: '2026-09-08T09:00:00Z', name: 'General/Post a', reason: 'cannot render a' };
+    const state = { ...emptyTeamState(TEAM.id, TEAM.name), retry: { a: tries, b: { ...tries, name: 'General/Post b' } } };
+    const done = await run({
+      reader: { posts: { [GENERAL.id]: [post('a', '2026-09-10T09:00:00Z', { deleted: true }), post('b', '2026-09-08T09:00:00Z')] } },
+      files: { texts: { [STATE_PATH]: serializeTeamState(state) } },
+    });
+
+    expect(done.notes.givenUp).toEqual([{ path: 'General/Post b', reason: 'cannot render a' }]);
+    expect(Object.keys(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry)).toEqual(['b']);
+  });
+
   it('a post that renders after a failed run leaves nothing behind to try again', async () => {
     const first = await run({ reader: { failPosts: ['a'] } });
     const second = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } } });

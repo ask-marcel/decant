@@ -14,7 +14,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { TodoList, TodoReader } from './ports/todo-reader.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
-import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 
 export const TODO_STATE_FILE = '.sync-state.json';
@@ -135,6 +135,13 @@ const fold = (carried: Progressing, results: ReadonlyArray<Done>): Progressing =
   state: results.reduce((state, done) => done.apply(state), carried.state),
 });
 
+// What the list no longer holds leaves the ledger as it leaves the disk: a task deleted after it was
+// given up on would otherwise be named as failed in every report for good.
+const holding = (progressing: Progressing, tasks: ReadonlyArray<TodoTask>): Progressing => ({
+  ...progressing,
+  state: { ...progressing.state, retry: heldAttempts(progressing.state.retry, new Set(tasks.map((task) => task.id))) },
+});
+
 const writeWindow = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, state: TodoState, window: ReadonlyArray<PlannedTask>): Promise<ReadonlyArray<Done>> =>
   Promise.all(
     window.map((planned) => {
@@ -171,7 +178,7 @@ const sweep = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, sta
   deps.progress.done();
   if (!written.ok) return written;
   const gone = await Promise.all(work.archive.map((entry) => archiveGone(deps, roots, entry)));
-  const done = fold(written.value, gone);
+  const done = holding(fold(written.value, gone), tasks);
   // Saved once at the end as well as per window, so a run that found nothing to write still stamps
   // its own file: without it the state carried the date of the last run that happened to find work,
   // and the run report called the list stale on the strength of that.
