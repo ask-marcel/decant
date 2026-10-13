@@ -129,7 +129,9 @@ decant uses one time zone for each knowledge base. The zone sets these values:
 - the day folder of a mail thread
 - the time of each message in a thread note
 - the start and the end of a calendar event
-- the due day and the completed day of a task.
+- the due day and the completed day of a task
+- the day folder of a Teams post
+- the days on each `_index.md` page.
 
 decant keeps the zone in `kb/.decant.json`, together with the day from How far back. Each later run
 uses the kept zone, also on a machine in a different zone. With no zone kept, a run uses the zone of
