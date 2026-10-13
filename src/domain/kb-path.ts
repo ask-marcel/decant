@@ -132,6 +132,16 @@ const freeSuffixed = (segment: string, hash: string, isTaken: (candidate: string
 export const freeSegment = (segment: string, itemId: string, isTaken: (candidate: string) => boolean): string =>
   isTaken(segment) ? freeSuffixed(segment, idHash(itemId), isTaken) : segment;
 
+// The file a zip member's text lands in: the member's own folders under the archive's, each made
+// safe, and its name, with `.md`, fitted to the budget. Its folders stay whole, so members that sat
+// together inside the archive sit together on disk.
+export const memberFile = (folder: string, entryPath: string, budget: number | undefined): string => {
+  const segments = safeRelPath(entryPath.split('/')).split('/');
+  const parent = [folder, ...segments.slice(0, -1)].join('/');
+  const name = `${segments.at(-1) ?? ''}.md`;
+  return `${parent}/${fitSegment(parent, name, budget)}`;
+};
+
 // Windows and macOS take `Report.md` and `report.md` for one file, so a name is held when a held
 // name matches it in either case: the second write would otherwise replace the first without a word.
 const sameIgnoringCase = (left: string, right: string): boolean => left.toLowerCase() === right.toLowerCase();
