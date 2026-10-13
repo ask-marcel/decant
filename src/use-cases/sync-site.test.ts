@@ -1203,14 +1203,14 @@ describe('moving a library out of the day folders once', () => {
 
   // A path one character too long for Windows failed as a write, and the day folder was part of it.
   it('a document given up on because it could not be written is tried again by the run that moves the library', async () => {
-    const MOOV = item({ id: '01MOOV', name: 'Pre-read.docx', path: 'Pre-read.docx' });
+    const LONG = item({ id: '01LONG', name: 'Long report.docx', path: 'Long report.docx' });
     const done = await run({
-      files: { texts: { [STATE_PATH]: dated([], { '01MOOV': { item: MOOV, attempts: 3, reason: 'write-failed: ENOENT' } }) } },
+      files: { texts: { [STATE_PATH]: dated([], { '01LONG': { item: LONG, attempts: 3, reason: 'write-failed: ENOENT' } }) } },
       reader: NOTHING_NEW,
     });
 
     expect(done.summary.converted).toBe(1);
-    expect(done.files.written.has('kb/SharePoint sites/Espace Contoso/Documents/Pre-read.docx.md')).toBe(true);
+    expect(done.files.written.has('kb/SharePoint sites/Espace Contoso/Documents/Long report.docx.md')).toBe(true);
   });
 
   it('a dry run moves nothing, and a file that will not move is logged and the run goes on', async () => {

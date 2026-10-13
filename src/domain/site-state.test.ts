@@ -194,15 +194,15 @@ describe('filing a library again in the layout without day folders', () => {
 
   // A path too long for Windows failed as a write, and the day folder was part of the length.
   it('a document given up on because it could not be written gets its tries back, and one that failed otherwise does not', () => {
-    const item = { id: '01MOOV', name: 'Pre-read.docx', kind: 'file' as const, size: 1, path: 'Pre-read.docx', lastModified: '', cTag: 'c1', webUrl: '' };
+    const item = { id: '01LONG', name: 'Long report.docx', kind: 'file' as const, size: 1, path: 'Long report.docx', lastModified: '', cTag: 'c1', webUrl: '' };
     const failing = {
       ...drive,
-      retry: { '01MOOV': { item, attempts: 3, reason: 'write-failed: ENOENT' }, '01LOCK': { item: { ...item, id: '01LOCK' }, attempts: 3, reason: 'transient: busy' } },
+      retry: { '01LONG': { item, attempts: 3, reason: 'write-failed: ENOENT' }, '01LOCK': { item: { ...item, id: '01LOCK' }, attempts: 3, reason: 'transient: busy' } },
     };
 
     const refiled = refileDrive('kb/S/D', failing);
 
-    expect(refiled.drive.retry['01MOOV']?.attempts).toBe(0);
+    expect(refiled.drive.retry['01LONG']?.attempts).toBe(0);
     expect(refiled.drive.retry['01LOCK']?.attempts).toBe(3);
   });
 });
