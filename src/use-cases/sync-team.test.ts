@@ -55,7 +55,7 @@ const run = async (
     deltaLinks: { [GENERAL.id]: 'https://graph/delta?token=next' },
     ...seeds.reader,
   });
-  const syncTeam = createSyncTeam({ reader, files, clock: createClockFake('2026-09-11T14:00:00Z'), logger, progress, kbRoot: 'kb' });
+  const syncTeam = createSyncTeam({ reader, files, clock: createClockFake('2026-09-11T14:00:00Z'), logger, progress, kbRoot: 'kb', timezone: 'UTC' });
   const outcome = await syncTeam({ team: TEAM, channels: seeds.channels ?? [GENERAL], dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4, since: seeds.since });
   const empty = {
     summary: { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 },
@@ -78,7 +78,10 @@ describe('syncing the channels of a Microsoft Team', () => {
 
     expect(done.summary.converted).toBe(2);
     expect(done.reader.calls).toContain(`postsDelta:${GENERAL.id}:fresh`);
-    expect(done.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/General/2026-09-08/Post a.md`, `${ROOT}/General/2026-09-09/Post b.md`]);
+    expect(done.files.writeLog.filter((path) => path.endsWith('.md') && !path.endsWith('/_index.md'))).toEqual([
+      `${ROOT}/General/2026-09-08/Post a.md`,
+      `${ROOT}/General/2026-09-09/Post b.md`,
+    ]);
     expect(done.files.written.get(`${ROOT}/General/2026-09-08/Post a.md`)).toContain('### rendered a');
     expect(stateOf(done.files).channels[GENERAL.id]).toMatchObject({
       name: 'General',
@@ -165,6 +168,40 @@ describe('syncing the channels of a Microsoft Team', () => {
 
     expect(next.files.moves).toEqual([{ from: OLD, to: `${ROOT}/General/2026-09-01/Kick-off.md` }]);
     expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
+  });
+
+  // The page a reader opens the channel by: every post the state holds, the latest activity first.
+  it('the channel page lists every post the channel holds, the latest activity first, with who wrote it', async () => {
+    const posted = String(Date.parse('2026-09-01T09:00:00Z'));
+    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, posted, {
+      file: `${ROOT}/General/2026-09-01/Kick-off.md`,
+      lastModified: '2026-09-01T09:00:00Z',
+      title: 'Kick-off',
+      from: 'Valerie FAIRBANKS',
+    });
+    const done = await run({
+      reader: { posts: { [GENERAL.id]: [post('a', '2026-09-08T16:00:00Z')] } },
+      files: { texts: { [STATE_PATH]: serializeTeamState({ ...state, layout: 2 }) } },
+    });
+
+    expect(done.files.written.get(`${ROOT}/General/_index.md`)).toBe(
+      [
+        '# General',
+        '',
+        '## By last activity',
+        '',
+        '- 2026-09-08 · [Post a](<2026-09-08/Post a.md>) · Jane Doe',
+        '- 2026-09-01 · [Kick-off](2026-09-01/Kick-off.md) · Valerie FAIRBANKS',
+        '',
+      ].join('\n')
+    );
+  });
+
+  it('a channel page that will not write is logged, and the run stands', async () => {
+    const done = await run({ files: { failWritesMatching: '_index.md' } });
+
+    expect(done.ok).toBe(true);
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'index.failed', meta: { path: `${ROOT}/General/_index.md`, cause: 'write-failed' } });
   });
 
   it('a post retitled in the same window as its namesake sets aside only the version each had, and the namesake is rewritten in the file its record names', async () => {
@@ -345,14 +382,17 @@ describe('reaching back only as far as the day', () => {
   it('posts last changed before the day are left out', async () => {
     const done = await run({ reader: POSTS, since: '2025-01-01' });
 
-    expect(done.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/General/2025-03-01/Post mid.md`, `${ROOT}/General/2026-09-08/Post new.md`]);
+    expect(done.files.writeLog.filter((path) => path.endsWith('.md') && !path.endsWith('/_index.md'))).toEqual([
+      `${ROOT}/General/2025-03-01/Post mid.md`,
+      `${ROOT}/General/2026-09-08/Post new.md`,
+    ]);
   });
 
   it('moving the day earlier reads the channel from the start again, and writes only the posts it had left out', async () => {
     const done = await run({ files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } }, reader: POSTS, since: '2025-01-01' });
 
     expect(done.reader.calls).toContain(`postsDelta:${GENERAL.id}:fresh`);
-    expect(done.files.writeLog.filter((path) => path.endsWith('.md'))).toEqual([`${ROOT}/General/2025-03-01/Post mid.md`]);
+    expect(done.files.writeLog.filter((path) => path.endsWith('.md') && !path.endsWith('/_index.md'))).toEqual([`${ROOT}/General/2025-03-01/Post mid.md`]);
     expect(stateOf(done.files).channels[GENERAL.id]).toMatchObject({ deltaLink: 'https://graph/delta?token=next', since: '2025-01-01' });
   });
 

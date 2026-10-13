@@ -18,7 +18,9 @@ export const teamRootName = (name: string): SafeRelPath => safeRelPath([CATEGORY
 // One post already written, and where. `lastModified` is what a later run compares against, since a
 // reply moves it as surely as an edit does; `file` is what moves aside when the post is refiled
 // under a later day or deleted; `title` is what is left to call it by once the channel has dropped it.
-export type PostRecord = { readonly file: string; readonly lastModified: string; readonly title: string };
+// `from` is who wrote the post, which the channel page lists it by. Absent from a post written before it
+// was kept, until the post changes.
+export type PostRecord = { readonly file: string; readonly lastModified: string; readonly title: string; readonly from?: string };
 
 // A channel is to a team what a library is to a site: it holds its own cursor and its own posts,
 // and a team's state is the set of them. The name is kept so `update` can refresh a channel without
@@ -62,6 +64,7 @@ const postOf = (entry: Record<string, unknown>): PostRecord => ({
   file: readString(entry, 'file') ?? '',
   lastModified: readString(entry, 'lastModified') ?? '',
   title: readString(entry, 'title') ?? '',
+  from: readString(entry, 'from'),
 });
 
 const channelOf = (entry: Record<string, unknown>): ChannelState => {
