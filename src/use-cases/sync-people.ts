@@ -27,7 +27,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { TeamReader } from './ports/team-reader.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
-import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { Unread } from '../domain/retry-ledger.ts';
 
@@ -248,7 +248,9 @@ export const createSyncPeople =
     const unread: RunNotes = { ...NO_NOTES, failed: tried.failed };
     const written = await writePages(deps, input, { summary: { ...EMPTY, failed: tried.tried }, notes: unread, state: { ...state, retry: tried.retry } }, planned, fileOf);
     if (!written.ok) return written;
-    const done = fold(written.value, await Promise.all(work.archive.map((entry) => archiveGone(deps, entry))));
+    const folded = fold(written.value, await Promise.all(work.archive.map((entry) => archiveGone(deps, entry))));
+    // Whoever left every roster leaves the ledger too: given up on, they would be named in every report.
+    const done = { ...folded, state: { ...folded.state, retry: heldAttempts(folded.state.retry, new Set(Object.keys(listed.value))) } };
     if (work.write.length + work.archive.length > 0) await writeOrgChart(deps, directory, fileOf);
     return finish(deps, input, state, done);
   };
