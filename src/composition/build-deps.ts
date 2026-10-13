@@ -62,6 +62,8 @@ import { parseSiteCache, serializeSiteCache } from '../domain/site-cache.ts';
 import { SINCE_SHAPE, parseSettings, serializeSettings } from '../domain/sync-window.ts';
 import { err, ok } from '../domain/result.ts';
 import type { RunSyncDeps } from '../use-cases/run-sync.ts';
+import { withCursorFiles } from '../use-cases/cursor-files.ts';
+import { withSteadyWrites } from '../use-cases/steady-files.ts';
 import type { Config } from './config.ts';
 import { SETTINGS_FILE, keepZone } from './kept-zone.ts';
 import { pickerView } from './picker-view.ts';
@@ -189,7 +191,10 @@ const given = <T>(override: T | undefined, build: () => T): T => override ?? bui
 
 export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDeps => {
   const logger = given(overrides.logger, () => createWinstonLogger(config.logLevel));
-  const files = given(overrides.files, () => createBunFiles());
+  // Every part of the run writes through these two: a note is written only when its text changed, and
+  // the run time and delta cursors of a sync go to a file beside its state. A run that found nothing
+  // new then changes no file but those cursor files.
+  const files = withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())));
   const clock = given(overrides.clock, () => createSystemClock());
   // Constructing the API reaches nothing: the sign-in ladder only runs on the first Graph call.
   const api = realApi(config.interactive);

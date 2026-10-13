@@ -50,3 +50,9 @@ export const renderGlobalReport = (run: GlobalRun): string => {
   const opening = run.stopped === undefined ? [] : [stoppedLine(run.stopped), ''];
   return [GLOBAL_REPORT_HEADING, '', `Written ${run.at}.`, '', ...opening, ...run.ran.flatMap(section), ...staleTail(run.stale)].join('\n').trimEnd().concat('\n');
 };
+
+// The time is the one line that changes on every run, so it is the one line two reports are compared
+// without: one that differs only there says nothing new.
+const WRITTEN = /^Written .*\.$/m;
+
+export const sameReport = (held: string, next: string): boolean => held.replace(WRITTEN, '') === next.replace(WRITTEN, '');

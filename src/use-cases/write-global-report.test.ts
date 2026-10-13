@@ -40,6 +40,23 @@ const write = async (
 };
 
 describe('one file naming what a whole run left behind', () => {
+  // The time at the top then says when a run last changed what the file says, and a run that found
+  // nothing new leaves the file, and every copy of it, as it was.
+  it('a run that would say what the file on disk says leaves it as it is, its time included', async () => {
+    const files = createFilesFake();
+    const writeAt = (at: string): ReturnType<typeof createWriteGlobalReport> =>
+      createWriteGlobalReport({ files, clock: createClockFake(at), logger: createLoggerFake(), listSyncedSources: async () => ok([]), kbRoot: 'kb' });
+    await writeAt('2026-08-27T21:00:00Z')({ ran: [contoso], dryRun: false });
+
+    expect(await writeAt('2026-08-28T21:00:00Z')({ ran: [contoso], dryRun: false })).toBe('kb/_sync-report.md');
+    expect(files.writeLog).toEqual(['kb/_sync-report.md']);
+
+    await writeAt('2026-08-29T21:00:00Z')({ ran: [{ ...contoso, notes: NOTHING }], dryRun: false });
+
+    expect(files.written.get('kb/_sync-report.md')).toContain('Written 2026-08-29T21:00:00Z.');
+    expect(files.writeLog).toHaveLength(2);
+  });
+
   it('a run over one source writes the file, so there is one place to look instead of one per source', async () => {
     const { written, path } = await write([contoso]);
 

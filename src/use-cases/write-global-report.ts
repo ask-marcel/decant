@@ -1,5 +1,5 @@
 import type { SourceSection, StaleSource } from '../domain/global-report.ts';
-import { renderGlobalReport } from '../domain/global-report.ts';
+import { renderGlobalReport, sameReport } from '../domain/global-report.ts';
 import { sourceLabel } from '../domain/sync-state.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
 import type { Clock } from './ports/clock.ts';
@@ -53,6 +53,9 @@ export const createWriteGlobalReport =
     const path = GLOBAL_REPORT_PATH(deps.kbRoot);
     const stale = await staleSources(deps, input.ran);
     const report = renderGlobalReport({ at: deps.clock.nowIso(), ran: input.ran.map(section), stale, stopped: input.stopped });
+    // Left as it is when it would say the same, so its time is that of the last run that changed it.
+    const held = await deps.files.readText(path);
+    if (held.ok && sameReport(held.value, report)) return path;
     const written = await deps.files.writeText(path, report);
     if (written.ok) return path;
     deps.logger.warn('global-report.failed', { cause: written.error.kind });
