@@ -106,7 +106,7 @@ describe('syncing the channels of a Microsoft Team', () => {
     const done = await run({ reader: { posts: { [GENERAL.id]: [post('a', '2026-09-08T09:00:00Z')] } }, files: { texts: { [STATE_PATH]: serializeTeamState(state) } } });
 
     expect(done.summary.converted).toBe(1);
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-01/Post a.md`, to: 'kb/_archive/Teams/Northwind Leadership/General/2026-09-01/Post a.md' }]);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-01/Post a.md`, to: 'kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-01/Post a.md' }]);
   });
 
   it('a post retitled in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
@@ -125,8 +125,8 @@ describe('syncing the channels of a Microsoft Team', () => {
 
     const recorded = stateOf(done.files).channels[GENERAL.id]?.posts['namesake']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('the venue is booked');
-    expect(done.files.moves).toEqual([{ from: retitled.file, to: 'kb/_archive/Teams/Northwind Leadership/General/2026-09-08/Venue.md' }]);
-    expect(done.files.written.get('kb/_archive/Teams/Northwind Leadership/General/2026-09-08/Venue.md')).toBe('the post as it was');
+    expect(done.files.moves).toEqual([{ from: retitled.file, to: 'kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-08/Venue.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-08/Venue.md')).toBe('the post as it was');
   });
 
   it('three posts sharing a subject, sent within the same minute, land in three files', async () => {
@@ -149,7 +149,7 @@ describe('syncing the channels of a Microsoft Team', () => {
 
     expect(done.summary.archived).toBe(1);
     expect(done.notes.archived).toEqual([{ path: 'General/Post a', reason: 'deleted in Teams' }]);
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-01/Post a.md`, to: 'kb/_archive/Teams/Northwind Leadership/General/2026-09-01/Post a.md' }]);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-01/Post a.md`, to: 'kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-01/Post a.md' }]);
     expect(stateOf(done.files).channels[GENERAL.id]?.posts).toEqual({});
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('General/Post a');
   });
@@ -304,7 +304,7 @@ describe('reaching back only as far as the day', () => {
     });
 
     expect(done.reader.calls).toEqual([`postsDelta:${GENERAL.id}:https://graph/delta?token=1`, `postsDelta:${GENERAL.id}:fresh`, 'postMarkdown:mid']);
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-08/Post new.md`, to: 'kb/_archive/Teams/Northwind Leadership/General/2026-09-08/Post new.md' }]);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-08/Post new.md`, to: 'kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-08/Post new.md' }]);
     expect(done.summary).toMatchObject({ converted: 1, archived: 1 });
   });
 

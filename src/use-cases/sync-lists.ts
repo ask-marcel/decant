@@ -1,7 +1,6 @@
 import { renderListDocument } from '../domain/list-document.ts';
 import { LISTS_STATE_VERSION, emptyListsState, goneLists, listFileFor, listsRootName, parseListsState, serializeListsState, withList, withoutList } from '../domain/lists-state.ts';
 import type { ListRecord, ListsState } from '../domain/lists-state.ts';
-import { archivePath } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { isPeopleList, isShownColumn, listFingerprint } from '../domain/sharepoint-list.ts';
@@ -18,6 +17,7 @@ import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
+import { putAside } from './put-aside.ts';
 
 export const LISTS_STATE_FILE = '.sync-state.json';
 
@@ -43,7 +43,7 @@ const NO_NOTES: RunNotes = { skipped: [], failed: [], givenUp: [], archived: [] 
 
 const failed = (step: string, cause: string, message: string): Result<never, StepError> => ({ ok: false, error: { step, cause, message } });
 
-type Roots = { readonly root: string; readonly archive: string };
+type Roots = { readonly root: string };
 
 // The run is keyed and named as a site's lists rather than as the site, so the picker's marks and
 // the global report tell it from the same site's libraries.
@@ -56,7 +56,6 @@ const runOf = (site: SyncListsInput['site'], summary: RunSummary, notes: RunNote
 
 const rootsOf = (deps: SyncListsDeps, site: SyncListsInput['site']): Roots => ({
   root: `${deps.kbRoot}/${listsRootName(site.name)}`,
-  archive: `${deps.kbRoot}/_archive/${listsRootName(site.name)}`,
 });
 
 // No state file is the first run; one that will not parse, as JSON or as a state, is started over
@@ -93,8 +92,7 @@ const readOne = async (deps: SyncListsDeps, siteId: string, list: SharePointList
 type Done = { readonly apply: (state: ListsState) => ListsState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
 
 const moveAside = async (deps: SyncListsDeps, roots: Roots, output: string, what: string): Promise<void> => {
-  const moved = await deps.files.move(output, archivePath(roots.archive, roots.root, output));
-  if (!moved.ok) deps.logger.warn(`${what}.failed`, { path: output, cause: moved.error.kind });
+  for (const missed of await putAside(deps, [output])) deps.logger.warn(`${what}.failed`, { path: missed.path, cause: missed.error.kind });
 };
 
 const writeOne = async (deps: SyncListsDeps, input: SyncListsInput, roots: Roots, state: ListsState, read: TableRead, file: string): Promise<Done> => {

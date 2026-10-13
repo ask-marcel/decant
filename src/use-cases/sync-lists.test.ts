@@ -135,7 +135,10 @@ describe('syncing the lists of a SharePoint site', () => {
     const done = await run({ files: { texts: { [STATE_PATH]: serializeListsState(state) } } });
 
     expect(done.summary).toMatchObject({ converted: 2, archived: 1 });
-    expect(done.files.moves.map((move) => move.to)).toEqual(['kb/_archive/SharePoint lists/Espace Contoso/Old name.md', 'kb/_archive/SharePoint lists/Espace Contoso/Retired.md']);
+    expect(done.files.moves.map((move) => move.to)).toEqual([
+      'kb/_archive/2026-09-12/SharePoint lists/Espace Contoso/Old name.md',
+      'kb/_archive/2026-09-12/SharePoint lists/Espace Contoso/Retired.md',
+    ]);
     expect(done.notes.archived).toEqual([{ path: 'Retired', reason: 'no longer on the site' }]);
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Retired');
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Espace Contoso (lists)');
@@ -164,8 +167,8 @@ describe('syncing the lists of a SharePoint site', () => {
 
     const recorded = stateOf(done.files).lists['twin']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('Osprey');
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/Projects.md`, to: 'kb/_archive/SharePoint lists/Espace Contoso/Projects.md' }]);
-    expect(done.files.written.get('kb/_archive/SharePoint lists/Espace Contoso/Projects.md')).toBe('the table as it was');
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/Projects.md`, to: 'kb/_archive/2026-09-12/SharePoint lists/Espace Contoso/Projects.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-12/SharePoint lists/Espace Contoso/Projects.md')).toBe('the table as it was');
   });
 
   it('a list renamed while its namesake changes puts only its own old table aside, and the namesake is rewritten in the file its record names', async () => {
@@ -184,8 +187,8 @@ describe('syncing the lists of a SharePoint site', () => {
 
     const recorded = stateOf(done.files).lists['namesake']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('| Falcon |');
-    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/SharePoint lists/Espace Contoso/Tracker.md' }]);
-    expect(done.files.written.get('kb/_archive/SharePoint lists/Espace Contoso/Tracker.md')).toBe('the table as it was');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/2026-09-12/SharePoint lists/Espace Contoso/Tracker.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-12/SharePoint lists/Espace Contoso/Tracker.md')).toBe('the table as it was');
   });
 
   it('a list whose columns or rows cannot be read is reported as failed and kept as it was', async () => {
