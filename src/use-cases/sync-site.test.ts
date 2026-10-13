@@ -1146,6 +1146,35 @@ describe('moving a library out of the day folders once', () => {
     expect(second.files.moves).toHaveLength(0);
   });
 
+  // The queue a stopped run left holds the paths of the earlier layout, so it is worked through first,
+  // and the run after it moves the library.
+  it('a run that resumes the work a stopped run queued leaves the move to the run after it', async () => {
+    const GONE = 'kb/SharePoint sites/Espace Contoso/Documents/2026-05-10/Old.docx.md';
+    const queued = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'c1',
+          pending: [{ kind: 'archive', itemId: '01OLD', outputs: [GONE] }],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [OLD] }, '01OLD': { path: 'Old.docx', cTag: 'c1', outputs: [GONE] } },
+          retry: {},
+        },
+      },
+    });
+    const resumed = await run({ files: { texts: { [STATE_PATH]: queued, [OLD]: 'the contract', [GONE]: 'the old one' } }, reader: NOTHING_NEW });
+
+    expect(resumed.files.moves).toEqual([{ from: GONE, to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/Documents/2026-05-10/Old.docx.md' }]);
+    expect(JSON.parse(resumed.files.written.get(STATE_PATH) ?? '{}').layout).toBeUndefined();
+
+    const next = await run({ files: { texts: { [STATE_PATH]: resumed.files.written.get(STATE_PATH) ?? '', [OLD]: 'the contract' } }, reader: NOTHING_NEW });
+
+    expect(next.files.moves).toEqual([{ from: OLD, to: NEW }]);
+    expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
+  });
+
   // A path one character too long for Windows failed as a write, and the day folder was part of it.
   it('a document given up on because it could not be written is tried again by the run that moves the library', async () => {
     const MOOV = item({ id: '01MOOV', name: 'Pre-read.docx', path: 'Pre-read.docx' });

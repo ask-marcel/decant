@@ -142,6 +142,10 @@ export const resolveSite = async (deps: ResolveSiteDeps, site: SiteRef): Promise
 
 export type ResolvedInput = SyncSiteInput & { readonly segment: string };
 
+// The work a stopped run queued holds the paths of the earlier layout, so it is worked through first,
+// and the run after it moves the library.
+const hasQueue = (state: SiteState): boolean => Object.values(state.drives).some((drive) => drive.pending.length > 0);
+
 // Each file a move left behind, recorded where it still is.
 const stayedAt = (drive: DriveState, stuck: ReadonlyMap<string, string>): DriveState => ({
   ...drive,
@@ -179,7 +183,7 @@ export const createSyncSite =
     const resolved = await resolveSite(deps, rawInput.site);
     const input: ResolvedInput = { ...rawInput, segment: resolved.segment };
     const statePath = `${siteRoot(deps.kbRoot, resolved.segment)}/${STATE_FILE_NAME}`;
-    let state = input.dryRun || resolved.state.layout === LIBRARY_LAYOUT ? resolved.state : await refile(deps, input, resolved.state);
+    let state = input.dryRun || resolved.state.layout === LIBRARY_LAYOUT || hasQueue(resolved.state) ? resolved.state : await refile(deps, input, resolved.state);
     let summary = EMPTY;
     let notes = NO_NOTES;
     for (const drive of input.drives) {
