@@ -19,6 +19,20 @@ describe('keeping what a conversation carried', () => {
     expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([stored]);
   });
 
+  // A thread folder sits three levels down, and a name a person typed can be long: on a deep disk the
+  // two together passed what Windows accepts, and the file was never written.
+  it('an attachment whose path would run past what Windows accepts is stored under a shorter name, its extension kept', async () => {
+    const long = 'Rahmenvertrag mit AEB und BEB Software bilingual Vorlage final.docx';
+    const reader = { ...withAttachment, attachments: { m1: [{ id: 'att1', name: long, contentType: 'application/vnd', size: 4096, isInline: false }] } };
+
+    const { outcome } = await run({ reader, pathBudget: 170 });
+    const stored = outcome?.kind === 'rendered' ? outcome.thread.record.attachments : [];
+
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toStartWith(`${ATTACHMENTS_STORE}/Rahmenvertrag mit AEB und BEB S-`);
+    expect(stored[0]).toMatch(/-[0-9a-f]{8}\.docx\.md$/);
+  });
+
   it('the head points at the shared store, climbing out of the thread folder to reach it', async () => {
     const { files } = await run({ reader: withAttachment });
     const written = files.written.get(THREAD_FILE) ?? '';

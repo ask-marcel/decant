@@ -14,7 +14,7 @@ import {
   withoutEvent,
 } from '../domain/calendar-state.ts';
 import type { CalendarState, EventRecord } from '../domain/calendar-state.ts';
-import { freeSegment, holdsIgnoringCase, safeSegment } from '../domain/kb-path.ts';
+import { fitSegment, freeSegment, holdsIgnoringCase, safeSegment } from '../domain/kb-path.ts';
 import { archivePath } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
@@ -109,8 +109,9 @@ type Attached = {
   readonly skipped: RunNotes['skipped'];
 };
 
-const attachmentName = (attachment: EventAttachment, taken: Set<string>): string => {
-  const name = freeSegment(`${safeSegment(attachment.name)}${MARKDOWN}`, attachment.id, (candidate) => holdsIgnoringCase(taken, candidate));
+const attachmentName = (attachment: EventAttachment, taken: Set<string>, folder: string, budget: number | undefined): string => {
+  const fitted = fitSegment(folder, `${safeSegment(attachment.name)}${MARKDOWN}`, budget);
+  const name = freeSegment(fitted, attachment.id, (candidate) => holdsIgnoringCase(taken, candidate));
   taken.add(name);
   return name;
 };
@@ -132,7 +133,7 @@ const attachmentsOf = async (deps: SyncCalendarDeps, event: CalendarEvent, file:
   const failures: RunNotes['failed'][number][] = [];
   const leftOut: RunNotes['skipped'][number][] = [];
   for (const attachment of listed.value) {
-    const name = attachmentName(attachment, taken);
+    const name = attachmentName(attachment, taken, folder, deps.pathBudget);
     const text = await deps.reader.attachmentMarkdown(event.id, attachment.id);
     const written = text.ok
       ? await deps.files.writeText(
