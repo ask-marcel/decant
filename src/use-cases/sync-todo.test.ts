@@ -36,7 +36,7 @@ const task = (over: Partial<TodoTask> = {}): TodoTask => ({
 });
 
 const run = async (
-  seeds: { reader?: TodoReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number } = {}
+  seeds: { reader?: TodoReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; pathBudget?: number } = {}
 ): Promise<{
   summary: RunSummary;
   source: string;
@@ -57,6 +57,7 @@ const run = async (
     logger,
     progress,
     kbRoot: 'kb',
+    pathBudget: seeds.pathBudget,
   });
   const outcome = await syncTodo({ list: LIST, dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4 });
   if (!outcome.ok) {
@@ -75,6 +76,14 @@ const run = async (
 };
 
 describe('syncing a Microsoft To Do list', () => {
+  // A knowledge base that sits deep on a Windows disk leaves fewer characters for each path: what
+  // stands in front of it is taken off the budget before any name is planned.
+  it('a task in a knowledge base deep on the disk is filed under a name cut to what Windows accepts', async () => {
+    const done = await run({ reader: { tasks: { 'list-1': [task({ title: 'Book the venue for the offsite in Rotterdam' })] } }, pathBudget: 100 });
+
+    expect([...done.files.written.keys()].filter((path) => path !== STATE_PATH)).toEqual([expect.stringMatching(/^kb\/To Do\/Tasks\/2026-09-08\/Book th-[0-9a-f]{8}\.md$/)]);
+  });
+
   it('a first run writes every task under the day it last changed, and remembers what it wrote', async () => {
     const done = await run({
       reader: { tasks: { 'list-1': [task(), task({ id: 'AAMkAGI-other', title: 'Water the plants', lastModified: '2026-09-01T08:00:00Z' })] } },

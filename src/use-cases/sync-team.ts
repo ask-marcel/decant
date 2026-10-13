@@ -37,6 +37,9 @@ export type SyncTeamDeps = {
   readonly logger: Logger;
   readonly progress: Progress;
   readonly kbRoot: string;
+  // How long a path may be as decant writes it: Windows' limit less what stands in front of the
+  // knowledge base on disk. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 // A team is synced channel by channel, the way a site is synced library by library, and for the
@@ -206,7 +209,7 @@ const syncChannel = async (deps: SyncTeamDeps, input: SyncTeamInput, carried: Pr
   const work = channelWork(carried.state, channel.id, delta.value.posts, input.since);
   if (input.dryRun) return ok({ ...carried, summary: { ...carried.summary, queued: carried.summary.queued + work.write.length } });
   deps.progress.start(work.write.length, `${input.team.name} / ${channel.name}`);
-  const written = await writePosts(context, carried, planPostFiles(context.roots.root, work.write, carried.state, channel.id));
+  const written = await writePosts(context, carried, planPostFiles(context.roots.root, work.write, carried.state, channel.id, context.deps.pathBudget));
   deps.progress.done();
   if (!written.ok) return written;
   const gone = await Promise.all(work.archive.map((entry) => archiveGone(context, entry)));

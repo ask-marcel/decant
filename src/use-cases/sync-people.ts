@@ -42,6 +42,9 @@ export type SyncPeopleDeps = {
   readonly logger: Logger;
   readonly progress: Progress;
   readonly kbRoot: string;
+  // How long a path may be as decant writes it: Windows' limit less what stands in front of the
+  // knowledge base on disk. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 export type SyncPeopleInput = { readonly dryRun: boolean; readonly concurrency: number };
@@ -227,7 +230,7 @@ export const createSyncPeople =
       read.unread.map((entry) => entry.id)
     );
     if (input.dryRun) return ok({ id: PEOPLE_ID, source: PEOPLE_NAME, summary: { ...EMPTY, queued: work.write.length }, notes: NO_NOTES });
-    const planned = planPersonFiles(peopleRoot(deps.kbRoot), work.write, state);
+    const planned = planPersonFiles(peopleRoot(deps.kbRoot), work.write, state, deps.pathBudget);
     const fileOf = filesOf(planned, directory, state);
     const unread: RunNotes = { ...NO_NOTES, failed: read.unread.map((entry) => ({ path: entry.name, reason: entry.reason })) };
     const written = await writePages(deps, input, { summary: { ...EMPTY, failed: read.unread.length }, notes: unread, state }, planned, fileOf);

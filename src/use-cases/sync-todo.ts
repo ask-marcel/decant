@@ -24,6 +24,9 @@ export type SyncTodoDeps = {
   readonly logger: Logger;
   readonly progress: Progress;
   readonly kbRoot: string;
+  // How long a path may be as decant writes it: Windows' limit less what stands in front of the
+  // knowledge base on disk. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 // No size cap and no concurrency question worth asking about the bytes: a task is a few hundred
@@ -158,7 +161,7 @@ const write = async (
 const sweep = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, state: TodoState, tasks: ReadonlyArray<TodoTask>): Promise<Result<SourceRun, StepError>> => {
   const work = todoWorklist(state, tasks);
   deps.progress.start(work.write.length, input.list.name);
-  const planned = planTaskFiles(roots.root, work.write, state);
+  const planned = planTaskFiles(roots.root, work.write, state, deps.pathBudget);
   const written = await write(deps, input, roots, { summary: EMPTY, notes: NO_NOTES, state }, planned);
   deps.progress.done();
   if (!written.ok) return written;

@@ -28,6 +28,9 @@ export type SyncPlanDeps = {
   readonly logger: Logger;
   readonly progress: Progress;
   readonly kbRoot: string;
+  // How long a path may be as decant writes it: Windows' limit less what stands in front of the
+  // knowledge base on disk. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 export type SyncPlanInput = { readonly plan: Plan; readonly dryRun: boolean; readonly concurrency: number };
@@ -247,7 +250,7 @@ export const createSyncPlan =
     if (!plan.ok) return plan;
     const labels = await labelNamesOf(deps, input.plan);
     // Every task is placed, so the board can link each page and a bucket renamed is noticed.
-    const placed = planTaskFiles(roots.root, plan.value.tasks, plan.value.buckets, state);
+    const placed = planTaskFiles(roots.root, plan.value.tasks, plan.value.buckets, state, deps.pathBudget);
     const entries = await inWindows(placed, input.concurrency, async (planned): Promise<Writing> => ({ read: await readOne(deps, planned.task), planned }));
     const work = owed(state, entries, labels);
     if (input.dryRun)

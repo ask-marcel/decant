@@ -35,6 +35,9 @@ export type SyncNotebookDeps = {
   readonly logger: Logger;
   readonly progress: Progress;
   readonly kbRoot: string;
+  // How long a path may be as decant writes it: Windows' limit less what stands in front of the
+  // knowledge base on disk. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 // Only pages last changed on or after `since` are written; absent, every page is.
@@ -194,7 +197,7 @@ export const createSyncNotebook =
     if (input.dryRun) return ok({ id: input.notebook.id, source: input.notebook.name, summary: { ...EMPTY, queued: work.write.length }, notes: NO_NOTES });
     deps.progress.start(work.write.length, input.notebook.name);
     const opening: Progressing = { summary: { ...EMPTY, failed: listing.failed.length }, notes: { ...NO_NOTES, failed: listing.failed }, state };
-    const written = await writePages(deps, input, roots, opening, planPageFiles(roots.root, work.write, state));
+    const written = await writePages(deps, input, roots, opening, planPageFiles(roots.root, work.write, state, deps.pathBudget));
     deps.progress.done();
     if (!written.ok) return written;
     const done = fold(written.value, await Promise.all(work.archive.map((entry) => archiveGone(deps, roots, entry))));

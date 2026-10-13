@@ -26,6 +26,9 @@ export type SyncListsDeps = {
   readonly logger: Logger;
   readonly progress: Progress;
   readonly kbRoot: string;
+  // How long a path may be as decant writes it: Windows' limit less what stands in front of the
+  // knowledge base on disk. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 export type SyncListsInput = { readonly site: { readonly id: string; readonly name: string }; readonly dryRun: boolean; readonly concurrency: number };
@@ -155,11 +158,11 @@ const heldByOthers = (state: ListsState, id: string): ReadonlyArray<string> =>
 
 // Paths settled one list at a time before the window's writes run side by side: two lists sharing a
 // name must not both be handed the same file.
-const planned = (roots: Roots, state: ListsState, reads: ReadonlyArray<Read>): ReadonlyArray<{ readonly read: Read; readonly file: string }> => {
+const planned = (roots: Roots, state: ListsState, reads: ReadonlyArray<Read>, budget: number | undefined): ReadonlyArray<{ readonly read: Read; readonly file: string }> => {
   const handedOut = new Set<string>();
   return reads.map((read) => {
     const taken = new Set([...heldByOthers(state, read.list.id), ...handedOut]);
-    const file = listFileFor(roots.root, read.list, taken, state.lists[read.list.id]?.file);
+    const file = listFileFor(roots.root, read.list, taken, state.lists[read.list.id]?.file, budget);
     handedOut.add(file);
     return { read, file };
   });
@@ -167,7 +170,7 @@ const planned = (roots: Roots, state: ListsState, reads: ReadonlyArray<Read>): R
 
 const writeTables = async (deps: SyncListsDeps, input: SyncListsInput, roots: Roots, carried: Progressing, reads: ReadonlyArray<Read>): Promise<Result<Progressing, StepError>> => {
   let progressing = carried;
-  const plan = planned(roots, carried.state, reads);
+  const plan = planned(roots, carried.state, reads, deps.pathBudget);
   for (let at = 0; at < plan.length; at += input.concurrency) {
     const window = plan.slice(at, at + input.concurrency);
     const results = await Promise.all(window.map((entry) => writeOne(deps, input, roots, progressing.state, entry.read, entry.file)));
