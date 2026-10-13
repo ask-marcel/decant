@@ -43,6 +43,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import { putAside, putBack, setAside } from './put-aside.ts';
 import type { SetAside } from './put-aside.ts';
+import { refileAll } from './refile.ts';
 
 export const STATE_FILE_NAME = '.sync-state.json';
 
@@ -137,19 +138,25 @@ export const resolveSite = async (deps: ResolveSiteDeps, site: SiteRef): Promise
 
 export type ResolvedInput = SyncSiteInput & { readonly segment: string };
 
+// Each file a move left behind, recorded where it still is.
+const stayedAt = (drive: DriveState, stuck: ReadonlyMap<string, string>): DriveState => ({
+  ...drive,
+  items: Object.fromEntries(Object.entries(drive.items).map(([id, entry]) => [id, { ...entry, outputs: entry.outputs.map((output) => stuck.get(output) ?? output) }] as const)),
+});
+
 // The first run of this layout moves every document out of the day folder the first layout filed it
-// under, once. The moves are not put aside: nothing is superseded, only filed again.
+// under, once. The moves are not put aside: nothing is superseded, only filed again. A file that will
+// not move keeps the library in the earlier layout, so the next run moves what is left.
 const refile = async (deps: SyncSiteDeps, input: ResolvedInput, state: SiteState): Promise<SiteState> => {
   const drives: Record<string, DriveState> = {};
+  let settled = true;
   for (const [id, drive] of Object.entries(state.drives)) {
     const refiled = refileDrive(libraryRootOf(deps.kbRoot, input.segment, { id, name: drive.name }), drive);
-    for (const move of refiled.moves) {
-      const moved = await deps.files.move(move.from, move.to);
-      if (!moved.ok) deps.logger.warn('refile.failed', { path: move.from, cause: moved.error.kind });
-    }
-    drives[id] = refiled.drive;
+    const stuck = await refileAll(deps, refiled.moves);
+    settled &&= stuck.size === 0;
+    drives[id] = stayedAt(refiled.drive, stuck);
   }
-  return { ...state, drives, layout: LIBRARY_LAYOUT };
+  return { ...state, drives, layout: settled ? LIBRARY_LAYOUT : state.layout };
 };
 
 export const createSyncSite =

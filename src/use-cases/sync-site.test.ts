@@ -1118,4 +1118,22 @@ describe('moving a library out of the day folders once', () => {
     expect(stuck.ok).toBe(true);
     expect(stuck.logger.calls).toContainEqual({ level: 'warn', event: 'refile.failed', meta: { path: OLD, cause: 'write-failed' } });
   });
+
+  // Recorded at its new place, the file left behind would never be found again, and the place would
+  // name a file that is not there.
+  it('a document that will not move stays recorded where it is, and the next run moves it', async () => {
+    const stuck = await run({
+      files: { texts: { [STATE_PATH]: dated([OLD]), [OLD]: 'the contract' }, failMoveWith: { kind: 'write-failed', path: NEW, message: 'locked' } },
+      reader: NOTHING_NEW,
+    });
+
+    expect(stateAfter(stuck.files).drives['b!one']?.items['01ABC']?.outputs).toEqual([OLD]);
+    expect(JSON.parse(stuck.files.written.get(STATE_PATH) ?? '{}').layout).toBeUndefined();
+
+    const next = await run({ files: { texts: { [STATE_PATH]: stuck.files.written.get(STATE_PATH) ?? '', [OLD]: 'the contract' } }, reader: NOTHING_NEW });
+
+    expect(next.files.moves).toEqual([{ from: OLD, to: NEW }]);
+    expect(stateAfter(next.files).drives['b!one']?.items['01ABC']?.outputs).toEqual([NEW]);
+    expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
+  });
 });

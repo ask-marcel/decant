@@ -147,6 +147,26 @@ describe('syncing the channels of a Microsoft Team', () => {
     expect(second.files.moves).toHaveLength(0);
   });
 
+  it('a post that will not move stays recorded where it is, and the next run moves it', async () => {
+    const posted = String(Date.parse('2026-09-01T09:00:00Z'));
+    const OLD = `${ROOT}/General/2026-09-08/Kick-off.md`;
+    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, posted, { file: OLD, lastModified: '2026-09-08T09:00:00Z', title: 'Kick-off' });
+    const quiet = { posts: { [GENERAL.id]: [] }, deltaLinks: { [GENERAL.id]: 'next' } };
+    const stuck = await run({
+      reader: quiet,
+      files: { texts: { [STATE_PATH]: serializeTeamState(state), [OLD]: 'the post' }, failMoveWith: { kind: 'write-failed', path: OLD, message: 'locked' } },
+    });
+    const kept = JSON.parse(stuck.files.written.get(STATE_PATH) ?? '{}');
+
+    expect(kept.channels[GENERAL.id].posts[posted].file).toBe(OLD);
+    expect(kept.layout).toBeUndefined();
+
+    const next = await run({ reader: quiet, files: { texts: { [STATE_PATH]: stuck.files.written.get(STATE_PATH) ?? '', [OLD]: 'the post' } } });
+
+    expect(next.files.moves).toEqual([{ from: OLD, to: `${ROOT}/General/2026-09-01/Kick-off.md` }]);
+    expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
+  });
+
   it('a post retitled in the same window as its namesake sets aside only the version each had, and the namesake is rewritten in the file its record names', async () => {
     const retitled = { file: `${ROOT}/General/2026-09-08/Venue.md`, lastModified: '2026-09-08T09:00:00Z', title: 'Venue' };
     // Where the namesake was put while the retitled post held the plain name.

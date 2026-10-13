@@ -33,6 +33,7 @@ import type { ChannelPost } from '../domain/channel-post.ts';
 import { withGaveUp } from '../domain/report.ts';
 import { putAside, putBack, setAside } from './put-aside.ts';
 import type { SetAside } from './put-aside.ts';
+import { refileAll } from './refile.ts';
 
 export const TEAM_STATE_FILE = '.sync-state.json';
 
@@ -252,19 +253,25 @@ const syncChannels = async (deps: SyncTeamDeps, input: SyncTeamInput, state: Tea
   return ok(progressing);
 };
 
+// Each post a move left behind, recorded where it still is.
+const stayedAt = (channel: ChannelState, stuck: ReadonlyMap<string, string>): ChannelState => ({
+  ...channel,
+  posts: Object.fromEntries(Object.entries(channel.posts).map(([id, record]) => [id, { ...record, file: stuck.get(record.file) ?? record.file }] as const)),
+});
+
 // The first run of this layout moves every post from the day it last changed to the day it was first
-// posted, once. The moves are not put aside: nothing is superseded, only filed again.
+// posted, once. The moves are not put aside: nothing is superseded, only filed again. A post that will
+// not move keeps the team in the earlier layout, so the next run moves what is left.
 const refile = async (deps: SyncTeamDeps, input: SyncTeamInput, state: TeamState): Promise<TeamState> => {
   const channels: Record<string, ChannelState> = {};
+  let settled = true;
   for (const [id, channel] of Object.entries(state.channels)) {
     const refiled = refileChannel(`${teamRoot(deps.kbRoot, input.team.name)}/${safeSegment(channel.name)}`, channel, deps.pathBudget);
-    for (const move of refiled.moves) {
-      const moved = await deps.files.move(move.from, move.to);
-      if (!moved.ok) deps.logger.warn('refile.failed', { path: move.from, cause: moved.error.kind });
-    }
-    channels[id] = refiled.channel;
+    const stuck = await refileAll(deps, refiled.moves);
+    settled &&= stuck.size === 0;
+    channels[id] = stayedAt(refiled.channel, stuck);
   }
-  return { ...state, channels, layout: TEAMS_LAYOUT };
+  return { ...state, channels, layout: settled ? TEAMS_LAYOUT : state.layout };
 };
 
 export const createSyncTeam =
