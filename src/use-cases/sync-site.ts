@@ -2,7 +2,7 @@ import { addressKindOf } from '../domain/address-kind.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { categoryFolderOf } from '../domain/kb-category.ts';
 import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
-import { datedRoot, outputPrefix, recordedPrefix, remapOutputs } from '../domain/output-paths.ts';
+import { refiledOutputs } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { PEOPLE_NAME, emptyPeopleState, parsePeopleState } from '../domain/people-state.ts';
@@ -10,12 +10,14 @@ import type { PeopleState } from '../domain/people-state.ts';
 import { hasMembers, peopleLinksOf, renderSiteMembers } from '../domain/site-members.ts';
 import type { DriveState, SiteRef, SiteState } from '../domain/site-state.ts';
 import {
+  LIBRARY_LAYOUT,
   belongsToAnotherSite,
   emptySiteState,
   forgetFailure,
   forgetItem,
   parseSiteState,
   recordItem,
+  refileDrive,
   rememberFailure,
   renameItem,
   serializeSiteState,
@@ -39,7 +41,8 @@ import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
-import { putAside } from './put-aside.ts';
+import { putAside, putBack, setAside } from './put-aside.ts';
+import type { SetAside } from './put-aside.ts';
 
 export const STATE_FILE_NAME = '.sync-state.json';
 
@@ -134,13 +137,28 @@ export const resolveSite = async (deps: ResolveSiteDeps, site: SiteRef): Promise
 
 export type ResolvedInput = SyncSiteInput & { readonly segment: string };
 
+// The first run of this layout moves every document out of the day folder the first layout filed it
+// under, once. The moves are not put aside: nothing is superseded, only filed again.
+const refile = async (deps: SyncSiteDeps, input: ResolvedInput, state: SiteState): Promise<SiteState> => {
+  const drives: Record<string, DriveState> = {};
+  for (const [id, drive] of Object.entries(state.drives)) {
+    const refiled = refileDrive(libraryRootOf(deps.kbRoot, input.segment, { id, name: drive.name }), drive);
+    for (const move of refiled.moves) {
+      const moved = await deps.files.move(move.from, move.to);
+      if (!moved.ok) deps.logger.warn('refile.failed', { path: move.from, cause: moved.error.kind });
+    }
+    drives[id] = refiled.drive;
+  }
+  return { ...state, drives, layout: LIBRARY_LAYOUT };
+};
+
 export const createSyncSite =
   (deps: SyncSiteDeps): SyncSite =>
   async (rawInput) => {
     const resolved = await resolveSite(deps, rawInput.site);
     const input: ResolvedInput = { ...rawInput, segment: resolved.segment };
     const statePath = `${siteRoot(deps.kbRoot, resolved.segment)}/${STATE_FILE_NAME}`;
-    let state = resolved.state;
+    let state = input.dryRun || resolved.state.layout === LIBRARY_LAYOUT ? resolved.state : await refile(deps, input, resolved.state);
     let summary = EMPTY;
     let notes = NO_NOTES;
     for (const drive of input.drives) {
@@ -362,18 +380,17 @@ const applyWork = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveS
   return convertOne(deps, input, drive, driveState, work.item);
 };
 
-// A document converted again after an edit is filed under the day it now carries, which is not the
-// day it carried before, so the files from the earlier day would otherwise be left behind as a
-// second copy. Anything the fresh conversion did not write again is put aside rather than deleted.
-const archiveSuperseded = async (deps: SyncSiteDeps, before: ReadonlyArray<string>, after: ReadonlyArray<string>): Promise<void> => {
-  for (const missed of await putAside(
-    deps,
-    before.filter((path) => !after.includes(path))
-  ))
-    deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
+// A document converted again after an edit lands at the paths it had, so the version before it is
+// set aside first, under the day of the run: the knowledge base keeps its old versions without any
+// help from git. A conversion that fails puts that version back, and it stays the current one.
+const setAsideBefore = async (deps: SyncSiteDeps, held: ReadonlyArray<string>): Promise<SetAside> => {
+  const aside = await setAside(deps, held);
+  for (const missed of aside.failed) deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
+  return aside;
 };
 
 const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, driveState: DriveState, item: DriveItem): Promise<WorkOutcome> => {
+  const aside = await setAsideBefore(deps, driveState.items[item.id]?.outputs ?? []);
   const outcome = await deps.convertFile({
     item,
     driveId: drive.id,
@@ -384,6 +401,7 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   });
   if (outcome.kind === 'failed') {
     deps.logger.warn('convert.failed', { itemId: item.id, reason: outcome.reason });
+    for (const missed of await putBack(deps, aside)) deps.logger.warn('restore.failed', { path: missed.path, cause: missed.error.kind });
     const entry = nextFailure(driveState.retry[item.id], item, outcome.reason);
     // The ledger's own list names an item that has run out of tries, so reporting it here as well
     // would print it twice under headings promising opposite things.
@@ -394,18 +412,12 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   // A conversion, and a decision to leave the file alone, both settle what an earlier failure was
   // waiting on: the ledger entry goes with them.
   const update = (manifest: DriveState): DriveState => forgetFailure(recordItem(manifest, item.id, { path: item.path, cTag: item.cTag, outputs }), item.id);
-  if (outcome.kind === 'converted') {
-    await archiveSuperseded(deps, driveState.items[item.id]?.outputs ?? [], outputs);
-    return { update, counted: { converted: 1 } };
-  }
+  if (outcome.kind === 'converted') return { update, counted: { converted: 1 } };
   return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason: skipReason(outcome.reason, input.maxBytes, item.name) }] } };
 };
 
 const moveOutputs = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, item: DriveItem, from: string, outputs: ReadonlyArray<string>): Promise<WorkOutcome> => {
-  const libraryRoot = libraryRootOf(deps.kbRoot, input.segment, drive);
-  const wasNamed = safeSegment(from.split('/').slice(-1)[0] ?? '');
-  const before = outputs[0] === undefined ? '' : recordedPrefix(outputs[0], wasNamed);
-  const moved = remapOutputs(outputs, before, outputPrefix(datedRoot(libraryRoot, item.lastModified), item.path));
+  const moved = refiledOutputs(libraryRootOf(deps.kbRoot, input.segment, drive), from, item.path, outputs);
   for (const [index, target] of moved.entries()) {
     const source = outputs[index];
     if (source === undefined || source === target) continue;

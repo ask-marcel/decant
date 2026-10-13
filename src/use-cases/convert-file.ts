@@ -8,7 +8,6 @@ import { readMime } from '../domain/mime.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_SLIDES_NOTE, NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { fitSegment, memberFile, safeRelPath, safeSegment } from '../domain/kb-path.ts';
-import { datedRoot } from '../domain/output-paths.ts';
 import type { SkipReason } from '../domain/report.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
@@ -73,12 +72,13 @@ const saying = (context: Context, what: string): void => {
 const failure = (error: DriveReaderError | FilesError): ConvertOutcome =>
   error.kind === 'protected' ? { kind: 'skipped', reason: 'protected' } : { kind: 'failed', reason: `${error.kind}: ${error.message}` };
 
-// The day the document last changed, then the folders it had in SharePoint underneath it.
+// The folders the document has in SharePoint, under the library. No day folder: a path that changed
+// with every edit broke every link into the knowledge base and every copy of it, and the day a
+// document last changed is in its front matter.
 const targetDir = (input: ConvertFileInput): string => {
   if (input.libraryRoot === undefined) return input.into;
-  const day = datedRoot(input.libraryRoot, input.item.lastModified);
   const relative = safeRelPath(input.item.path.split('/').slice(0, -1));
-  return relative.length === 0 ? day : `${day}/${relative}`;
+  return relative.length === 0 ? input.libraryRoot : `${input.libraryRoot}/${relative}`;
 };
 
 const stampFor = (input: ConvertFileInput, clock: Clock): DocumentStamp => ({
