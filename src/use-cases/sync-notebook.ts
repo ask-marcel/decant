@@ -25,6 +25,9 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import type { Unread } from '../domain/retry-ledger.ts';
+import { withGaveUp } from '../domain/report.ts';
 
 export const NOTEBOOK_STATE_FILE = '.sync-state.json';
 
@@ -84,7 +87,15 @@ const resolve = async (deps: SyncNotebookDeps, notebook: Notebook): Promise<Reso
   return { roots: plain, state: emptyNotebookState(notebook) };
 };
 
-type Listing = { readonly pages: ReadonlyArray<ListedPage>; readonly unreadSections: ReadonlyArray<string>; readonly failed: RunNotes['failed'] };
+type Listing = {
+  readonly pages: ReadonlyArray<ListedPage>;
+  readonly unreadSections: ReadonlyArray<string>;
+  readonly listed: ReadonlyArray<string>;
+  readonly unread: ReadonlyArray<Unread>;
+};
+
+// A section has no version to tell an edit by, and its key sits apart from every page id.
+const sectionKey = (section: NotebookSection): string => `section:${section.id}`;
 
 const placeOf = (section: NotebookSection): string => [section.group, section.name].filter((part) => part.length > 0).join('/');
 
@@ -93,17 +104,19 @@ const placeOf = (section: NotebookSection): string => [section.group, section.na
 const listPages = async (deps: SyncNotebookDeps, notebook: Notebook, sections: ReadonlyArray<NotebookSection>): Promise<Listing> => {
   const pages: ListedPage[] = [];
   const unreadSections: string[] = [];
-  const failures: RunNotes['failed'][number][] = [];
+  const listed: string[] = [];
+  const unread: Unread[] = [];
   for (const section of sections) {
-    const listed = await deps.reader.pages(notebook, section.id);
-    if (!listed.ok) {
+    const answer = await deps.reader.pages(notebook, section.id);
+    if (!answer.ok) {
       unreadSections.push(section.id);
-      failures.push({ path: placeOf(section), reason: listed.error.message });
+      unread.push({ id: sectionKey(section), name: placeOf(section), reason: answer.error.message });
       continue;
     }
-    pages.push(...listed.value.map((page) => ({ page, section })));
+    listed.push(sectionKey(section));
+    pages.push(...answer.value.map((page) => ({ page, section })));
   }
-  return { pages, unreadSections, failed: failures };
+  return { pages, unreadSections, listed, unread };
 };
 
 type Done = { readonly apply: (state: NotebookState) => NotebookState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
@@ -121,14 +134,18 @@ const writeOne = async (deps: SyncNotebookDeps, input: SyncNotebookInput, roots:
   const written = markdown.ok
     ? await deps.files.writeText(file, renderNotebookPage({ entry, notebook: input.notebook.name, markdown: markdown.value, syncedAt: deps.clock.nowIso() }))
     : markdown;
+  const id = entry.page.id;
   if (!written.ok) {
-    deps.logger.warn('page.failed', { page: entry.page.id, cause: written.error.kind });
-    return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: reportName(entry), reason: written.error.message }] } };
+    deps.logger.warn('page.failed', { page: id, cause: written.error.kind });
+    const attempt = nextAttempt(state.retry?.[id], entry.page.lastModified, reportName(entry), written.error.message);
+    // Out of tries now: named under its own heading, not as a failure the next run will try again.
+    const notes = isGivenUp(attempt, entry.page.lastModified) ? {} : { failed: [{ path: reportName(entry), reason: written.error.message }] };
+    return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, id, attempt) }), counted: { failed: 1 }, notes };
   }
-  const before = state.pages[entry.page.id];
+  const before = state.pages[id];
   if (before !== undefined && before.file !== file) await moveAside(deps, roots, before.file, 'supersede');
   const record: PageRecord = { file, lastModified: entry.page.lastModified, title: entry.page.title, section: entry.section.id };
-  return { apply: (carried) => withPage(carried, entry.page.id, record), counted: { converted: 1 }, notes: {} };
+  return { apply: (carried) => ({ ...withPage(carried, id, record), retry: clearAttempt(carried.retry, id) }), counted: { converted: 1 }, notes: {} };
 };
 
 const archiveGone = async (deps: SyncNotebookDeps, roots: Roots, gone: { readonly id: string; readonly record: PageRecord }): Promise<Done> => {
@@ -196,13 +213,17 @@ export const createSyncNotebook =
     deps.logger.info('notebook.listed', { notebook: input.notebook.id, sections: sections.value.length, pages: listing.pages.length, changed: work.write.length });
     if (input.dryRun) return ok({ id: input.notebook.id, source: input.notebook.name, summary: { ...EMPTY, queued: work.write.length }, notes: NO_NOTES });
     deps.progress.start(work.write.length, input.notebook.name);
-    const opening: Progressing = { summary: { ...EMPTY, failed: listing.failed.length }, notes: { ...NO_NOTES, failed: listing.failed }, state };
+    // A section whose pages cannot be listed is asked for on every run: named as a failure for three
+    // runs, then given up on.
+    const tried = triedReads(state.retry, listing.listed, listing.unread);
+    const opening: Progressing = { summary: { ...EMPTY, failed: tried.tried }, notes: { ...NO_NOTES, failed: tried.failed }, state: { ...state, retry: tried.retry } };
     const written = await writePages(deps, input, roots, opening, planPageFiles(roots.root, work.write, state, deps.pathBudget));
     deps.progress.done();
     if (!written.ok) return written;
     const done = fold(written.value, await Promise.all(work.archive.map((entry) => archiveGone(deps, roots, entry))));
     const saved = await save(deps, roots, done.state);
     if (!saved.ok) return saved;
-    await writeReport(deps, input, roots.root, input.notebook.name, done.summary, done.notes);
-    return ok({ id: input.notebook.id, source: input.notebook.name, summary: done.summary, notes: done.notes });
+    const notes = withGaveUp({ ...done.notes, givenUp: givenUpNotes(done.state.retry) }, gaveUpNotes(state.retry, done.state.retry));
+    await writeReport(deps, input, roots.root, input.notebook.name, done.summary, notes);
+    return ok({ id: input.notebook.id, source: input.notebook.name, summary: done.summary, notes });
   };

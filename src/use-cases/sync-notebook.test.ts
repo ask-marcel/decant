@@ -214,6 +214,41 @@ describe('syncing a OneNote notebook', () => {
     expect(stateOf(unlisted.files).pages['c']).toBeDefined();
   });
 
+  // Three runs on the same version of a page, then it is left alone until it changes; a section whose
+  // pages cannot be listed is asked for on every run, and after three it is named once as given up.
+  it('a page that cannot be read three runs running is left alone by the fourth, and named once in the notebook report', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ reader: { failMarkdownOf: ['b'] }, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' } } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+    const retro = [{ path: 'Meetings/Retro', reason: 'cannot read b' }];
+
+    expect(third.notes.gaveUp).toEqual(retro);
+    expect(third.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Failed 3 times');
+    expect(fourth.reader.calls).not.toContain('pageMarkdown:b');
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.notes.givenUp).toEqual(retro);
+    expect(fourth.files.written.has(`${ROOT}/_sync-report.md`)).toBe(false);
+  });
+
+  it('a section whose pages cannot be listed three runs running is named once as given up, its count staying put', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ reader: { failPagesOf: ['sec-b'] }, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' } } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+    const budget = [{ path: '2026/Budget', reason: 'Graph is busy' }];
+
+    expect(third.notes.gaveUp).toEqual(budget);
+    expect(third.summary.failed).toBe(1);
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.notes.givenUp).toEqual(budget);
+    expect(fourth.files.written.get(STATE_PATH)).toBe(third.files.written.get(STATE_PATH));
+
+    const listed = await run({ files: { texts: { [STATE_PATH]: fourth.files.written.get(STATE_PATH) ?? '' } } });
+
+    expect(JSON.parse(listed.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
   it('a notebook whose sections cannot be listed ends the run naming the step', async () => {
     const done = await run({ reader: { failSections: { kind: 'auth', message: 'sign-in has lapsed' } } });
 
