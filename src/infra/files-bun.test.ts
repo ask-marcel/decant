@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, it } from 'bun:test';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { linkSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBunFiles } from './files-bun.ts';
@@ -68,6 +68,42 @@ describe('reading the knowledge base from disk', () => {
     const moved = await createBunFiles().move(join(root, 'absent.md'), join(root, 'target.md'));
 
     expect(moved.ok === false && moved.error.kind).toBe('write-failed');
+  });
+
+  // A run stopped halfway through a write leaves the old file or the new one, never half of one, so
+  // each file is written beside its place first and then renamed over it.
+  it('a write over a file replaces it whole and leaves nothing beside it, text or bytes', async () => {
+    const folder = join(root, 'Replaced');
+    await createBunFiles().writeText(join(folder, 'state.json'), 'first');
+
+    expect(await createBunFiles().writeText(join(folder, 'state.json'), 'second')).toEqual({ ok: true, value: undefined });
+    expect(await createBunFiles().writeBytes(join(folder, 'logo.png'), new Uint8Array([1, 2]))).toEqual({ ok: true, value: undefined });
+    expect(await Bun.file(join(folder, 'state.json')).text()).toBe('second');
+    expect(new Set(readdirSync(folder))).toEqual(new Set(['logo.png', 'state.json']));
+  });
+
+  // A second name for the same file sees what happens to the file itself: written where it lies, both
+  // names would show the new text, half written for as long as the write took.
+  it('a write puts a new file in place of the old one rather than writing into the old one', async () => {
+    const folder = join(root, 'Linked');
+    mkdirSync(folder);
+    writeFileSync(join(folder, 'state.json'), 'old');
+    linkSync(join(folder, 'state.json'), join(folder, 'held.json'));
+
+    await createBunFiles().writeText(join(folder, 'state.json'), 'new');
+
+    expect(await Bun.file(join(folder, 'state.json')).text()).toBe('new');
+    expect(await Bun.file(join(folder, 'held.json')).text()).toBe('old');
+  });
+
+  it('a write that fails leaves nothing of itself behind', async () => {
+    const folder = join(root, 'Refused');
+    mkdirSync(folder);
+    writeFileSync(join(folder, 'state.json'), '{"version":1}');
+
+    await createBunFiles().writeText(join(folder, 'state.json', 'nested.md'), 'body');
+
+    expect(readdirSync(folder)).toEqual(['state.json']);
   });
 
   it('a knowledge base that cannot be written to is reported rather than thrown', async () => {
