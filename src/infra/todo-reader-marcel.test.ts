@@ -30,6 +30,15 @@ const TASK = {
 };
 
 describe('reading Microsoft To Do through the ask-marcel library', () => {
+  it('a due day that Graph gives in UTC is read in the zone the reader was given', async () => {
+    const due = { ...TASK, dueDateTime: { dateTime: '2027-06-01T16:00:00.0000000', timeZone: 'UTC' } };
+    const reader = createTodoReaderFromCall(async () => ok({ value: [due] }), 'Asia/Shanghai');
+
+    const listed = await reader.tasks('list-1');
+
+    expect(listed.ok && listed.value[0]?.due).toBe('2027-06-02');
+  });
+
   it('the lists Graph answers with become the lists the picker can offer', async () => {
     const { reader } = readerFor({
       'list-todo-task-lists': [

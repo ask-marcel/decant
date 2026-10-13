@@ -31,12 +31,13 @@ const listsOf = (raw: unknown): ReadonlyArray<TodoList> =>
 
 type TaskPage = { readonly tasks: ReadonlyArray<TodoTask>; readonly next?: string };
 
-export const createTodoReaderFromCall = (call: MarcelCall): TodoReader => {
+// `zone` is the one the run counts its days in, which a due day Graph gives in UTC is read in.
+export const createTodoReaderFromCall = (call: MarcelCall, zone?: string): TodoReader => {
   const page = async (name: string, params: Record<string, string>): Promise<Result<TaskPage, TodoReaderError>> => {
     const raw = await call(name, params);
     if (!raw.ok) return raw;
     const tasks = listOf(raw.value).flatMap((entry: unknown) => {
-      const task = parseTodoTask(entry);
+      const task = parseTodoTask(entry, zone);
       return task === undefined ? [] : [task];
     });
     const next = canonicalCursor(readString(raw.value, '@odata.nextLink'));
