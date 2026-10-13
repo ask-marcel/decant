@@ -13,7 +13,6 @@ import {
 } from '../domain/notebook-state.ts';
 import type { ListedPage, NotebookState, PageRecord, PlannedPage } from '../domain/notebook-state.ts';
 import type { Notebook, NotebookSection } from '../domain/onenote.ts';
-import { archivePath } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -28,6 +27,7 @@ import { writeReport } from './sync-site.ts';
 import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import type { Unread } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
+import { putAside } from './put-aside.ts';
 
 export const NOTEBOOK_STATE_FILE = '.sync-state.json';
 
@@ -54,9 +54,9 @@ const NO_NOTES: RunNotes = { skipped: [], failed: [], givenUp: [], archived: [] 
 
 const failed = (step: string, cause: string, message: string): Result<never, StepError> => ({ ok: false, error: { step, cause, message } });
 
-type Roots = { readonly root: string; readonly archive: string };
+type Roots = { readonly root: string };
 
-const rootsFor = (kbRoot: string, segment: string): Roots => ({ root: `${kbRoot}/${segment}`, archive: `${kbRoot}/_archive/${segment}` });
+const rootsFor = (kbRoot: string, segment: string): Roots => ({ root: `${kbRoot}/${segment}` });
 
 const readState = async (deps: SyncNotebookDeps, root: string): Promise<Result<NotebookState, StepError> | undefined> => {
   const text = await deps.files.readText(`${root}/${NOTEBOOK_STATE_FILE}`);
@@ -122,8 +122,7 @@ const listPages = async (deps: SyncNotebookDeps, notebook: Notebook, sections: R
 type Done = { readonly apply: (state: NotebookState) => NotebookState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
 
 const moveAside = async (deps: SyncNotebookDeps, roots: Roots, output: string, what: string): Promise<void> => {
-  const moved = await deps.files.move(output, archivePath(roots.archive, roots.root, output));
-  if (!moved.ok) deps.logger.warn(`${what}.failed`, { path: output, cause: moved.error.kind });
+  for (const missed of await putAside(deps, [output])) deps.logger.warn(`${what}.failed`, { path: missed.path, cause: missed.error.kind });
 };
 
 const reportName = (entry: ListedPage): string => `${placeOf(entry.section)}/${entry.page.title}`;

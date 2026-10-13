@@ -31,6 +31,3 @@ export const recordedPrefix = (output: string, name: string): string => {
   const at = output.lastIndexOf(name);
   return at < 0 ? output : output.slice(0, at + name.length);
 };
-
-export const archivePath = (archiveRoot: string, libraryRoot: string, output: string): string =>
-  output.startsWith(`${libraryRoot}/`) ? `${archiveRoot}/${output.slice(libraryRoot.length + 1)}` : `${archiveRoot}/${output}`;
