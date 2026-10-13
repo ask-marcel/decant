@@ -203,6 +203,44 @@ describe('syncing the calendar', () => {
     expect(stateOf(done.files).deltaLink).toBeUndefined();
   });
 
+  // The cursor holds while an event fails, so the delta names it again on every run. After three runs
+  // it is still fetched, since nothing else says whether it changed, but no longer counts as a
+  // failure, and the cursor moves on.
+  it('an event that cannot be fetched three runs running is named once as given up, and the run after moves the cursor on', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ reader: { failEvents: ['a'] }, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' } } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+    const unreadable = [{ path: 'a', reason: 'no such event: a' }];
+
+    expect(third.notes.gaveUp).toEqual(unreadable);
+    expect(third.summary.failed).toBe(1);
+    expect(stateOf(third.files).deltaLink).toBeUndefined();
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.notes.givenUp).toEqual(unreadable);
+    expect(stateOf(fourth.files).deltaLink).toBe('https://graph/delta?token=next');
+  });
+
+  it('an event whose file will not write three runs running is left alone by the fourth, which moves the cursor on', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' }, failWritesMatching: 'Offsite planning.md' } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+
+    expect(third.notes.gaveUp).toEqual([{ path: 'a', reason: `cannot write ${ROOT}/2026-09-12/Offsite planning.md` }]);
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.logger.calls.some((call) => call.event === 'event.failed')).toBe(false);
+    expect(stateOf(fourth.files).deltaLink).toBe('https://graph/delta?token=next');
+
+    const fetched = await run({
+      files: { texts: { [STATE_PATH]: fourth.files.written.get(STATE_PATH) ?? '' } },
+      reader: { events: { a: { ...OFFSITE, lastModified: '2026-09-13T08:00:00Z' }, b: STANDUP } },
+    });
+
+    expect(fetched.summary.converted).toBe(1);
+    expect(JSON.parse(fetched.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
   it('an attachment the library will not render, a picture, is left out and said to be, and the event lands without it with its cursor kept', async () => {
     const done = await run({ reader: { failAttachments: ['att-1'] } });
 
