@@ -2,6 +2,8 @@ import type { Colleague } from './directory.ts';
 import { freePath, safeSegment } from './kb-path.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
+import { isGivenUp, parseAttempts } from './retry-ledger.ts';
+import type { Attempts } from './retry-ledger.ts';
 
 export const PEOPLE_STATE_VERSION = 1;
 
@@ -21,6 +23,9 @@ export type PeopleState = {
   readonly source: { readonly kind: 'people'; readonly id: typeof PEOPLE_ID; readonly name: typeof PEOPLE_NAME };
   readonly lastRun: string;
   readonly people: Readonly<Record<string, PersonRecord>>;
+  // The profiles that could not be read and the pages that could not be written, by person id,
+  // three runs at most on the same version.
+  readonly retry?: Attempts;
 };
 
 export type PeopleStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -52,7 +57,7 @@ export const parsePeopleState = (raw: unknown): Result<PeopleState, PeopleStateE
   const source = raw['source'];
   if (!isRecord(source) || readString(source, 'kind') !== 'people') return err({ kind: 'malformed', message: 'state is not the people directory' });
   if (raw['version'] !== PEOPLE_STATE_VERSION) return err({ kind: 'malformed', message: `state is version ${String(raw['version'])}, not ${PEOPLE_STATE_VERSION}` });
-  return ok({ ...emptyPeopleState(), lastRun: readString(raw, 'lastRun') ?? '', people: peopleOf(raw['people']) });
+  return ok({ ...emptyPeopleState(), lastRun: readString(raw, 'lastRun') ?? '', people: peopleOf(raw['people']), retry: parseAttempts(raw['retry']) });
 };
 
 export const withPerson = (state: PeopleState, id: string, record: PersonRecord): PeopleState => ({ ...state, people: { ...state.people, [id]: record } });
@@ -72,7 +77,9 @@ export type PeopleWork = { readonly write: ReadonlyArray<Colleague>; readonly ar
 export const peopleWorklist = (state: PeopleState, directory: ReadonlyArray<Colleague>, unread: ReadonlyArray<string> = []): PeopleWork => {
   const present = new Set([...directory.map((colleague) => colleague.person.id), ...unread]);
   return {
-    write: directory.filter((colleague) => state.people[colleague.person.id]?.fingerprint !== colleague.fingerprint),
+    write: directory.filter(
+      (colleague) => state.people[colleague.person.id]?.fingerprint !== colleague.fingerprint && !isGivenUp(state.retry?.[colleague.person.id], colleague.fingerprint)
+    ),
     archive: Object.entries(state.people).flatMap(([id, record]) => (present.has(id) ? [] : [{ id, record }])),
   };
 };

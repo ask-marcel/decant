@@ -27,6 +27,9 @@ import type { StepError } from './ports/step-error.ts';
 import type { TeamReader } from './ports/team-reader.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { withGaveUp } from '../domain/report.ts';
+import type { Unread } from '../domain/retry-ledger.ts';
 
 export const PEOPLE_STATE_FILE = '.sync-state.json';
 
@@ -92,8 +95,6 @@ const rosters = async (deps: SyncPeopleDeps): Promise<Result<Rosters, StepError>
   return ok(listed);
 };
 
-type Unread = { readonly id: string; readonly name: string; readonly reason: string };
-
 type Profiles = { readonly people: ReadonlyArray<Person>; readonly unread: ReadonlyArray<Unread> };
 
 // One call per person, a window at a time. A profile that cannot be read costs that person and not
@@ -140,13 +141,17 @@ const archiveSuperseded = async (deps: SyncPeopleDeps, before: PersonRecord | un
 const writeOne = async (deps: SyncPeopleDeps, state: PeopleState, planned: PlannedPerson, fileOf: FileOf): Promise<Done> => {
   const { colleague, file } = planned;
   const written = await deps.files.writeText(file, renderPersonDocument({ colleague, fileOf, syncedAt: deps.clock.nowIso() }));
+  const id = colleague.person.id;
   if (!written.ok) {
-    deps.logger.warn('person.failed', { person: colleague.person.id, cause: written.error.kind });
-    return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: colleague.person.name, reason: written.error.message }] } };
+    deps.logger.warn('person.failed', { person: id, cause: written.error.kind });
+    const attempt = nextAttempt(state.retry?.[id], colleague.fingerprint, colleague.person.name, written.error.message);
+    // Out of tries now: named under its own heading, not as a failure the next run will try again.
+    const notes = isGivenUp(attempt, colleague.fingerprint) ? {} : { failed: [{ path: colleague.person.name, reason: written.error.message }] };
+    return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, id, attempt) }), counted: { failed: 1 }, notes };
   }
-  await archiveSuperseded(deps, state.people[colleague.person.id], file);
+  await archiveSuperseded(deps, state.people[id], file);
   const record: PersonRecord = { file, name: colleague.person.name, fingerprint: colleague.fingerprint };
-  return { apply: (carried) => withPerson(carried, colleague.person.id, record), counted: { converted: 1 }, notes: {} };
+  return { apply: (carried) => ({ ...withPerson(carried, id, record), retry: clearAttempt(carried.retry, id) }), counted: { converted: 1 }, notes: {} };
 };
 
 const archiveGone = async (deps: SyncPeopleDeps, gone: { readonly id: string; readonly record: PersonRecord }): Promise<Done> => {
@@ -209,11 +214,12 @@ const writeOrgChart = async (deps: SyncPeopleDeps, directory: ReadonlyArray<Coll
   if (!written.ok) deps.logger.warn('org-chart.failed', { cause: written.error.kind });
 };
 
-const finish = async (deps: SyncPeopleDeps, input: SyncPeopleInput, done: Progressing): Promise<Result<SourceRun, StepError>> => {
+const finish = async (deps: SyncPeopleDeps, input: SyncPeopleInput, before: PeopleState, done: Progressing): Promise<Result<SourceRun, StepError>> => {
   const saved = await save(deps, done.state);
   if (!saved.ok) return saved;
-  await writeReport(deps, input, peopleRoot(deps.kbRoot), PEOPLE_NAME, done.summary, done.notes);
-  return ok({ id: PEOPLE_ID, source: PEOPLE_NAME, summary: done.summary, notes: done.notes });
+  const notes = withGaveUp({ ...done.notes, givenUp: givenUpNotes(done.state.retry) }, gaveUpNotes(before.retry, done.state.retry));
+  await writeReport(deps, input, peopleRoot(deps.kbRoot), PEOPLE_NAME, done.summary, notes);
+  return ok({ id: PEOPLE_ID, source: PEOPLE_NAME, summary: done.summary, notes });
 };
 
 export const createSyncPeople =
@@ -232,10 +238,17 @@ export const createSyncPeople =
     if (input.dryRun) return ok({ id: PEOPLE_ID, source: PEOPLE_NAME, summary: { ...EMPTY, queued: work.write.length }, notes: NO_NOTES });
     const planned = planPersonFiles(peopleRoot(deps.kbRoot), work.write, state, deps.pathBudget);
     const fileOf = filesOf(planned, directory, state);
-    const unread: RunNotes = { ...NO_NOTES, failed: read.unread.map((entry) => ({ path: entry.name, reason: entry.reason })) };
-    const written = await writePages(deps, input, { summary: { ...EMPTY, failed: read.unread.length }, notes: unread, state }, planned, fileOf);
+    // Every profile is read on every run, since the rosters are read whole: one Graph will not hand
+    // over is named as a failure for three runs, then given up on.
+    const tried = triedReads(
+      state.retry,
+      read.people.map((person) => person.id),
+      read.unread
+    );
+    const unread: RunNotes = { ...NO_NOTES, failed: tried.failed };
+    const written = await writePages(deps, input, { summary: { ...EMPTY, failed: tried.tried }, notes: unread, state: { ...state, retry: tried.retry } }, planned, fileOf);
     if (!written.ok) return written;
     const done = fold(written.value, await Promise.all(work.archive.map((entry) => archiveGone(deps, entry))));
     if (work.write.length + work.archive.length > 0) await writeOrgChart(deps, directory, fileOf);
-    return finish(deps, input, done);
+    return finish(deps, input, state, done);
   };

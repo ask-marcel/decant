@@ -262,6 +262,44 @@ describe('syncing the people directory', () => {
     expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'person.failed', meta: { person: 'jane', cause: 'write-failed' } });
   });
 
+  // Every profile is read on every run, since the rosters are read whole. One that Graph will not hand
+  // over is named as a failure for three runs, then once as given up, and the state stays as it is.
+  it('a profile that cannot be read three runs running is named once as given up, and every run after hands it on', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ reader: { failProfiles: ['jane'] }, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' } } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+    const jane = [{ path: 'Jane Doe', reason: 'no such user: jane' }];
+
+    expect(third.notes.gaveUp).toEqual(jane);
+    expect(third.notes.failed).toHaveLength(0);
+    expect(third.summary.failed).toBe(1);
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.notes.givenUp).toEqual(jane);
+    expect(fourth.notes.gaveUp).toBeUndefined();
+    expect(fourth.files.written.get(STATE_PATH)).toBe(third.files.written.get(STATE_PATH));
+  });
+
+  it('a profile read again after a failed run leaves nothing behind to count', async () => {
+    const first = await run({ reader: { failProfiles: ['jane'] } });
+    const second = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } } });
+
+    expect(JSON.parse(first.files.written.get(STATE_PATH) ?? '{}').retry).toEqual({ jane: { attempts: 1, version: 'unread', name: 'Jane Doe', reason: 'no such user: jane' } });
+    expect(JSON.parse(second.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
+  it('a page that will not write three runs running is left alone by the fourth', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' }, failWritesMatching: 'Jane Doe' } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+
+    expect(third.notes.gaveUp).toEqual([{ path: 'Jane Doe', reason: `cannot write ${ROOT}/Jane Doe.md` }]);
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.logger.calls.some((call) => call.event === 'person.failed')).toBe(false);
+    expect(fourth.notes.givenUp).toEqual([{ path: 'Jane Doe', reason: `cannot write ${ROOT}/Jane Doe.md` }]);
+  });
+
   it('the progress line counts everyone the rosters named, once, by name', async () => {
     const done = await run({ concurrency: 2 });
 
