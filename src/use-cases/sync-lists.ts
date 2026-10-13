@@ -16,6 +16,8 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { withGaveUp } from '../domain/report.ts';
 
 export const LISTS_STATE_FILE = '.sync-state.json';
 
@@ -73,8 +75,11 @@ const loadState = async (deps: SyncListsDeps, roots: Roots, site: SyncListsInput
 // disk is behind. Either read failing costs the list and not the run.
 type Table = { readonly columns: ReadonlyArray<ListColumn>; readonly rows: ReadonlyArray<ListItem>; readonly fingerprint: string };
 
-type Read =
-  { readonly list: SharePointList; readonly table: Table; readonly failed?: undefined } | { readonly list: SharePointList; readonly table?: undefined; readonly failed: string };
+type TableRead = { readonly list: SharePointList; readonly table: Table; readonly failed?: undefined };
+
+type Read = TableRead | { readonly list: SharePointList; readonly table?: undefined; readonly failed: string };
+
+const hasTable = (read: Read): read is TableRead => read.table !== undefined;
 
 const readOne = async (deps: SyncListsDeps, siteId: string, list: SharePointList): Promise<Read> => {
   const columns = await deps.reader.columns(siteId, list.id);
@@ -92,20 +97,23 @@ const moveAside = async (deps: SyncListsDeps, roots: Roots, output: string, what
   if (!moved.ok) deps.logger.warn(`${what}.failed`, { path: output, cause: moved.error.kind });
 };
 
-const writeOne = async (deps: SyncListsDeps, input: SyncListsInput, roots: Roots, state: ListsState, read: Read, file: string): Promise<Done> => {
-  if (read.table === undefined) return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: read.list.name, reason: read.failed }] } };
+const writeOne = async (deps: SyncListsDeps, input: SyncListsInput, roots: Roots, state: ListsState, read: TableRead, file: string): Promise<Done> => {
   const written = await deps.files.writeText(
     file,
     renderListDocument({ list: read.list, site: input.site.name, columns: read.table.columns, rows: read.table.rows, syncedAt: deps.clock.nowIso() })
   );
+  const id = read.list.id;
   if (!written.ok) {
-    deps.logger.warn('list.failed', { list: read.list.id, cause: written.error.kind });
-    return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: read.list.name, reason: written.error.message }] } };
+    deps.logger.warn('list.failed', { list: id, cause: written.error.kind });
+    const attempt = nextAttempt(state.retry?.[id], read.table.fingerprint, read.list.name, written.error.message);
+    // Out of tries now: named under its own heading, not as a failure the next run will try again.
+    const notes = isGivenUp(attempt, read.table.fingerprint) ? {} : { failed: [{ path: read.list.name, reason: written.error.message }] };
+    return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, id, attempt) }), counted: { failed: 1 }, notes };
   }
-  const before = state.lists[read.list.id];
+  const before = state.lists[id];
   if (before !== undefined && before.file !== file) await moveAside(deps, roots, before.file, 'supersede');
   const record: ListRecord = { file, fingerprint: read.table.fingerprint, name: read.list.name };
-  return { apply: (carried) => withList(carried, read.list.id, record), counted: { converted: 1 }, notes: {} };
+  return { apply: (carried) => ({ ...withList(carried, id, record), retry: clearAttempt(carried.retry, id) }), counted: { converted: 1 }, notes: {} };
 };
 
 const archiveGone = async (deps: SyncListsDeps, roots: Roots, gone: { readonly id: string; readonly record: ListRecord }): Promise<Done> => {
@@ -143,10 +151,10 @@ const save = async (deps: SyncListsDeps, roots: Roots, state: ListsState): Promi
   return written.ok ? ok(undefined) : failed('saveState', written.error.kind, written.error.message);
 };
 
-// A list is worth writing when its fingerprint moved or it was never written; one that could not
-// be read is carried through so it is reported, and one unchanged is dropped here.
-const owed = (state: ListsState, reads: ReadonlyArray<Read>): ReadonlyArray<Read> =>
-  reads.filter((read) => read.table === undefined || state.lists[read.list.id]?.fingerprint !== read.table.fingerprint);
+// A list is worth writing when its fingerprint moved or it was never written, and it has not run out
+// of tries on this fingerprint. One that could not be read is counted apart, before any is written.
+const owed = (state: ListsState, reads: ReadonlyArray<Read>): ReadonlyArray<TableRead> =>
+  reads.filter(hasTable).filter((read) => state.lists[read.list.id]?.fingerprint !== read.table.fingerprint && !isGivenUp(state.retry?.[read.list.id], read.table.fingerprint));
 
 // Every table a list other than this one holds, rewritten in this run or not. A rewritten list still
 // holds its old table until its own write lands and puts it aside; handed to a namesake, that file
@@ -158,7 +166,12 @@ const heldByOthers = (state: ListsState, id: string): ReadonlyArray<string> =>
 
 // Paths settled one list at a time before the window's writes run side by side: two lists sharing a
 // name must not both be handed the same file.
-const planned = (roots: Roots, state: ListsState, reads: ReadonlyArray<Read>, budget: number | undefined): ReadonlyArray<{ readonly read: Read; readonly file: string }> => {
+const planned = (
+  roots: Roots,
+  state: ListsState,
+  reads: ReadonlyArray<TableRead>,
+  budget: number | undefined
+): ReadonlyArray<{ readonly read: TableRead; readonly file: string }> => {
   const handedOut = new Set<string>();
   return reads.map((read) => {
     const taken = new Set([...heldByOthers(state, read.list.id), ...handedOut]);
@@ -168,7 +181,13 @@ const planned = (roots: Roots, state: ListsState, reads: ReadonlyArray<Read>, bu
   });
 };
 
-const writeTables = async (deps: SyncListsDeps, input: SyncListsInput, roots: Roots, carried: Progressing, reads: ReadonlyArray<Read>): Promise<Result<Progressing, StepError>> => {
+const writeTables = async (
+  deps: SyncListsDeps,
+  input: SyncListsInput,
+  roots: Roots,
+  carried: Progressing,
+  reads: ReadonlyArray<TableRead>
+): Promise<Result<Progressing, StepError>> => {
   let progressing = carried;
   const plan = planned(roots, carried.state, reads, deps.pathBudget);
   for (let at = 0; at < plan.length; at += input.concurrency) {
@@ -194,14 +213,24 @@ export const createSyncLists =
     const reads: Read[] = [];
     for (const list of lists) reads.push(await readOne(deps, input.site.id, list));
     const work = owed(state, reads);
-    if (input.dryRun) return ok(runOf(input.site, { ...EMPTY, queued: work.filter((read) => read.table !== undefined).length }, NO_NOTES));
+    if (input.dryRun) return ok(runOf(input.site, { ...EMPTY, queued: work.length }, NO_NOTES));
+    // Every list is read whole on every run, so one that could not be read is asked for again each
+    // time: named as a failure for three runs, then given up on.
+    const unread = reads.flatMap((read) => (read.failed === undefined ? [] : [{ id: read.list.id, name: read.list.name, reason: read.failed }]));
+    const tried = triedReads(
+      state.retry,
+      reads.filter(hasTable).map((read) => read.list.id),
+      unread
+    );
     deps.progress.start(work.length, input.site.name);
-    const written = await writeTables(deps, input, roots, { summary: EMPTY, notes: NO_NOTES, state }, work);
+    const opening = { summary: { ...EMPTY, failed: tried.tried }, notes: { ...NO_NOTES, failed: tried.failed }, state: { ...state, retry: tried.retry } };
+    const written = await writeTables(deps, input, roots, opening, work);
     deps.progress.done();
     if (!written.ok) return written;
     const done = fold(written.value, await Promise.all(goneLists(state, lists).map((entry) => archiveGone(deps, roots, entry))));
     const saved = await save(deps, roots, done.state);
     if (!saved.ok) return saved;
-    await writeReport(deps, input, roots.root, sourceLabel({ kind: 'lists', name: input.site.name }), done.summary, done.notes);
-    return ok(runOf(input.site, done.summary, done.notes));
+    const notes = withGaveUp({ ...done.notes, givenUp: givenUpNotes(done.state.retry) }, gaveUpNotes(state.retry, done.state.retry));
+    await writeReport(deps, input, roots.root, sourceLabel({ kind: 'lists', name: input.site.name }), done.summary, notes);
+    return ok(runOf(input.site, done.summary, notes));
   };
