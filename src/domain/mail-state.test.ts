@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import type { AttachmentRecord } from './mail-state.ts';
 import {
   countThreads,
   emptyMailboxState,
@@ -74,6 +75,26 @@ describe('remembering where a mailbox sync got to', () => {
     const state = withAttachment(emptyMailboxState(), 'ba7816bf8f01', record);
 
     expect(state.attachments['ba7816bf8f01']).toEqual(record);
+  });
+
+  // Each thread keeps its own copy, and the index names one: the copy whose path sorts first, the
+  // thread that began first. Named by the thread written last, the index changed with the order the
+  // threads happened to render in.
+  it('a file sent in two threads is named by the thread that began first, whichever thread was written last', () => {
+    const copy = (folder: string, text?: string): AttachmentRecord => ({
+      name: 'Scan.pdf',
+      paths: [`${folder}/_attachments/Scan.pdf`],
+      primary: `${folder}/_attachments/Scan.pdf.md`,
+      media: [],
+      text,
+    });
+    const first = copy('threads/2026-05-12-a1b2c3d4e5-scan');
+    const later = copy('threads/2026-06-01-f6a7b8c9d0-scan');
+    const hash = 'ba7816bf8f01';
+
+    expect(withAttachment(withAttachment(emptyMailboxState(), hash, first), hash, later).attachments[hash]).toEqual(first);
+    expect(withAttachment(withAttachment(emptyMailboxState(), hash, later), hash, first).attachments[hash]).toEqual(first);
+    expect(withAttachment(withAttachment(emptyMailboxState(), hash, first), hash, copy('threads/2026-05-12-a1b2c3d4e5-scan', 'read')).attachments[hash]?.text).toBe('read');
   });
 
   it('a folder swept for the first time is recorded even before it has a cursor', () => {

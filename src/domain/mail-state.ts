@@ -221,7 +221,15 @@ export const threadOfConversation = (state: MailboxState, conversationId: string
 
 export const withLinked = (state: MailboxState, key: string, record: LinkedRecord): MailboxState => ({ ...state, linked: { ...state.linked, [key]: record } });
 
-export const withAttachment = (state: MailboxState, hash: string, record: AttachmentRecord): MailboxState => ({ ...state, attachments: { ...state.attachments, [hash]: record } });
+// A file sent in two threads is stored in each, and the index names one copy: the one whose path
+// sorts first, which is the thread that began first. Named by the thread written last, the index
+// changed with the order the threads happened to render in. A copy at the same path is the same
+// thread written again, and its record is the newer one.
+export const withAttachment = (state: MailboxState, hash: string, record: AttachmentRecord): MailboxState => {
+  const held = state.attachments[hash];
+  const kept = held !== undefined && compareText(held.primary, record.primary) < 0 ? held : record;
+  return { ...state, attachments: { ...state.attachments, [hash]: kept } };
+};
 
 export const withPending = (state: MailboxState, pending: ReadonlyArray<string>): MailboxState => ({ ...state, pending });
 
