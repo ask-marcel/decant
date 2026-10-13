@@ -41,6 +41,17 @@ describe('reading the run configuration', () => {
     expect(readConfig({ env: {}, out: 'export', ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'UTC' })).toMatchObject({ kbRoot: 'export' });
   });
 
+  // Every path under the knowledge base is joined with `/`, so a Windows folder named with `\` would
+  // leave one path holding both. Elsewhere a backslash is an ordinary character and is kept.
+  it('on Windows, a folder named with backslashes is written with forward slashes, from the command line or the environment', () => {
+    const on = (platform: string, out: string | undefined, env: Readonly<Record<string, string>>): ReturnType<typeof readConfig> =>
+      readConfig({ env, out, platform, ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'UTC' });
+
+    expect(on('win32', 'C:\\Users\\me\\KB\\raw', {})).toMatchObject({ kbRoot: 'C:/Users/me/KB/raw' });
+    expect(on('win32', undefined, { KB_ROOT: 'D:\\kb' })).toMatchObject({ kbRoot: 'D:/kb' });
+    expect(on('linux', 'odd\\name', {})).toMatchObject({ kbRoot: 'odd\\name' });
+  });
+
   // The zone a run was told to count in wins; with none given, the machine's own is what it gets.
   it('a zone named for the run is what its days are counted in', () => {
     expect(readConfig({ env: {}, ocrLang: 'en', interactive: true, timezone: 'Asia/Shanghai', machineTimezone: 'Europe/Paris' })).toMatchObject({ timezone: 'Asia/Shanghai' });
