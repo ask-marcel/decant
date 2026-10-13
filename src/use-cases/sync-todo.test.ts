@@ -237,4 +237,36 @@ describe('syncing a Microsoft To Do list', () => {
     expect(done.notes.failed).toEqual([{ path: 'Book the venue', reason: 'cannot write kb/To Do/Tasks/2026-09-08/Book the venue.md' }]);
     expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks).toEqual({});
   });
+
+  it('a task whose file will not write is logged by its id and the kind of failure', async () => {
+    const done = await run({ reader: { tasks: { 'list-1': [task()] } }, files: { failWritesMatching: 'Book the venue' } });
+
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'todo-task.failed', meta: { task: 'AAMkAGI-task', cause: 'write-failed' } });
+  });
+
+  // A copy that will not move stays where it was, and the run goes on: the log says which one.
+  it('a copy that cannot be put aside is logged with its path, whether the task moved to another day or left the list', async () => {
+    const moved = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', {
+      file: 'kb/To Do/Tasks/2026-09-01/Book the venue.md',
+      lastModified: '2026-09-01T09:00:00Z',
+      title: 'Book the venue',
+    });
+    const state = withTask(moved, 'AAMkAGI-gone', { file: 'kb/To Do/Tasks/2026-09-01/Cancel the order.md', lastModified: '2026-09-01T09:00:00Z', title: 'Cancel the order' });
+    const refused = { kind: 'write-failed' as const, path: 'kb/_archive', message: 'locked' };
+    const done = await run({ reader: { tasks: { 'list-1': [task()] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) }, failMoveWith: refused } });
+
+    expect(done.summary).toMatchObject({ converted: 1, archived: 1 });
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'supersede.failed', meta: { path: 'kb/To Do/Tasks/2026-09-01/Book the venue.md', cause: 'write-failed' } });
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'archive.failed', meta: { path: 'kb/To Do/Tasks/2026-09-01/Cancel the order.md', cause: 'write-failed' } });
+  });
+
+  it('the counter is told how many tasks the run writes, and which one it is on', async () => {
+    const done = await run({ reader: { tasks: { 'list-1': [task(), task({ id: 'b', title: 'Second' })] } } });
+
+    expect(done.progress.started).toEqual([{ total: 2, what: 'Tasks' }]);
+    expect(new Set(done.progress.begins)).toEqual(new Set(['Book the venue', 'Second']));
+    expect(new Set(done.progress.steps)).toEqual(new Set(['Book the venue', 'Second']));
+    expect(done.progress.steps).toHaveLength(2);
+    expect(done.progress.dones).toHaveLength(1);
+  });
 });

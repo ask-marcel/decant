@@ -716,6 +716,24 @@ describe('keeping the pictures a document embeds', () => {
     ]);
   });
 
+  // Pinned whole: the section is what a reader scrolls to. A picture nothing was read out of is a bare
+  // link, with no empty lines under it, and a reading that failed is the same.
+  it('each picture is a link under one heading, with the text read out of it below, and one with nothing read is a bare link', async () => {
+    const images = {
+      '01ABC': [
+        { path: 'word/media/image1.png', bytes: new Uint8Array([1]) },
+        { path: 'word/media/image2.png', bytes: new Uint8Array([2]) },
+      ],
+    };
+    const document = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md';
+    const section = '## Images\n\n![image-01.png](./Contrat.docx.media/image-01.png)';
+    const read = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: '  Scope of work  ' } } });
+    const refused = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { failWith: { kind: 'failed', message: 'no reader' } } });
+
+    expect(read.files.written.get(document)).toEndWith(`${section}\n\nScope of work\n\n![image-02.png](./Contrat.docx.media/image-02.png)\n`);
+    expect(refused.files.written.get(document)).toEndWith(`${section}\n\n![image-02.png](./Contrat.docx.media/image-02.png)\n`);
+  });
+
   it('a document with a hundred pictures or more numbers them wide enough to sort as numbers', async () => {
     const images = { '01ABC': Array.from({ length: 100 }, (_, at) => ({ path: `word/media/image${at + 1}.png`, bytes: new Uint8Array([at]) })) };
     const { outcome } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
