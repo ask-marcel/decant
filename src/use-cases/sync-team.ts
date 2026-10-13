@@ -1,4 +1,6 @@
 import { renderPostDocument } from '../domain/channel-document.ts';
+import { channelIndexPage } from '../domain/channel-index.ts';
+import { INDEX_FILE } from '../domain/index-page.ts';
 import { postTitle } from '../domain/channel-post.ts';
 import { safeSegment } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
@@ -47,6 +49,8 @@ export type SyncTeamDeps = {
   // How long a path may be as decant writes it: Windows' limit less what stands in front of the
   // knowledge base on disk. Absent, names are not cut for length.
   readonly pathBudget?: number;
+  // The zone the knowledge base counts its days in, which the channel page lists each post under.
+  readonly timezone: string;
 };
 
 // A team is synced channel by channel, the way a site is synced library by library, and for the
@@ -124,7 +128,7 @@ const writeOne = async (context: ChannelContext, state: TeamState, planned: Plan
     const notes = isGivenUp(attempt, post.lastModified) ? {} : { failed: [{ path: reportName(channel, title), reason: written.error.message }] };
     return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, post.id, attempt) }), counted: { failed: 1 }, notes };
   }
-  const record: PostRecord = { file, lastModified: post.lastModified, title };
+  const record: PostRecord = { file, lastModified: post.lastModified, title, from: post.author };
   return {
     apply: (carried) => ({ ...withPost(carried, channel.id, channel.name, post.id, record), retry: clearAttempt(carried.retry, post.id) }),
     counted: { converted: 1 },
@@ -228,6 +232,15 @@ const postsFor = async (deps: SyncTeamDeps, input: SyncTeamInput, channel: Chann
   return whole.ok ? ok({ ...whole.value, posts: latestById([...drained.value.posts, ...whole.value.posts]) }) : whole;
 };
 
+// The channel as a reader scans it, made from what the run holds. A page that will not write is logged
+// and leaves the run standing: the posts themselves already landed.
+const writeIndex = async (context: ChannelContext, state: TeamState): Promise<void> => {
+  const { deps, channel, roots } = context;
+  const path = `${roots.root}/${INDEX_FILE}`;
+  const written = await deps.files.writeText(path, channelIndexPage(channel.name, roots.root, state.channels[channel.id], deps.timezone));
+  if (!written.ok) deps.logger.warn('index.failed', { path, cause: written.error.kind });
+};
+
 const syncChannel = async (deps: SyncTeamDeps, input: SyncTeamInput, carried: Progressing, channel: ChannelSummary): Promise<Result<Progressing, StepError>> => {
   const context: ChannelContext = { deps, input, channel, roots: channelRoots(deps, input.team, channel) };
   const delta = await postsFor(deps, input, channel, carried.state.channels[channel.id]);
@@ -240,6 +253,7 @@ const syncChannel = async (deps: SyncTeamDeps, input: SyncTeamInput, carried: Pr
   if (!written.ok) return written;
   const gone = await Promise.all(work.archive.map((entry) => archiveGone(context, entry)));
   const done = forgetting(fold(written.value, gone), delta.value.posts);
+  await writeIndex(context, done.state);
   return ok({ ...done, state: withChannelCursor(done.state, channel.id, channel.name, cursorAfter(carried, done, delta.value.deltaLink), input.since) });
 };
 

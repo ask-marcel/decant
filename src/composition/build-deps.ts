@@ -259,7 +259,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // A channel post renders through the library, the way a mail message does, so a team needs the
   // reader, somewhere to write, and a clock, and none of the conversion machinery.
   const team = given(overrides.team, () => createTeamReaderFromCall(createMarcelCall(api)));
-  const syncTeam = createSyncTeam({ reader: team, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
+  const syncTeam = createSyncTeam({ reader: team, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget, timezone: config.timezone });
   // The directory is enumerated through the Teams, so it borrows the team reader's listing.
   const people = given(overrides.people, () => createPeopleReaderFromCall(createMarcelCall(api)));
   const syncPeople = createSyncPeople({ reader: people, teams: team, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
