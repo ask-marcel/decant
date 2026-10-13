@@ -64,8 +64,8 @@ export type RenderThreadInput = {
   // Files already pulled from SharePoint by an earlier thread, so one link is fetched once.
   readonly linked: Readonly<Record<string, LinkedRecord>>;
   // The attachment store as earlier threads left it, keyed by content address. Carried through and
-  // handed back so the index in `_meta` names every file the mailbox holds; no longer consulted
-  // before converting, since a thread now keeps its own copy of what it carried.
+  // handed back so the index in `_meta` names every file the mailbox holds. Consulted before
+  // converting only for the files this thread already holds, since each thread keeps its own copy.
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
 };
 
