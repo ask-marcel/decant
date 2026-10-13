@@ -79,6 +79,7 @@ describe('filing a document by the folders it has in SharePoint alone', () => {
       'kb/S/D/Archive/Contrat signe.docx.pdf',
     ]);
     expect(refiledOutputs('kb/S/D', 'a.docx', 'b.docx', [])).toHaveLength(0);
+    expect(refiledOutputs('kb/S/D', 'A/B/notes.md', 'A/B/notes v2.md', ['kb/S/D/A/B/notes.md.md'])).toEqual(['kb/S/D/A/B/notes v2.md.md']);
   });
 });
 
@@ -112,6 +113,8 @@ describe('taking a document out of the day folder the first layout filed it unde
     expect(undatedOutput('kb/S/D', 'Projets/Contrat.docx', 'kb/elsewhere/2026-05-12/Projets/Contrat.docx.md')).toBe('kb/elsewhere/2026-05-12/Projets/Contrat.docx.md');
     expect(undatedOutput('kb/S/D', 'Projets/Contrat.docx', 'kb/S/D/2026-05-12/Archive/Contrat.docx.md')).toBe('kb/S/D/2026-05-12/Archive/Contrat.docx.md');
     expect(undatedOutput('kb/S/D', 'Projets/Contrat.docx', 'kb/S/D/2026-05-12')).toBe('kb/S/D/2026-05-12');
+    expect(undatedOutput('kb/S/D', 'Roadmap.pptx', 'kb/S/D/undated')).toBe('kb/S/D/undated');
+    expect(undatedOutput('kb/S/D', 'Projets/Contrat.docx', 'kb/X/Y/2026-05-12/Projets/Contrat.docx.md')).toBe('kb/X/Y/2026-05-12/Projets/Contrat.docx.md');
     expect(undatedOutput('kb/S/D', 'Projets/Contrat.docx', 'kb/S/D/Q3 2026-05-12/Projets/Contrat.docx.md')).toBe('kb/S/D/Q3 2026-05-12/Projets/Contrat.docx.md');
     expect(undatedOutput('kb/S/D', 'Projets/Contrat.docx', 'kb/S/D/2026-05-12x/Projets/Contrat.docx.md')).toBe('kb/S/D/2026-05-12x/Projets/Contrat.docx.md');
   });
