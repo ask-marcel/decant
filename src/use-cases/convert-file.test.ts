@@ -53,24 +53,24 @@ describe('converting one document out of a library', () => {
   it('a document whose path would run past what Windows accepts lands under a shorter name, its extension kept', async () => {
     const { outcome } = await run(
       { name: 'Contrat de service avec le fournisseur principal.docx', path: 'Projets/Contrat de service avec le fournisseur principal.docx' },
-      { reader: { markdown: { '01ABC': 'Clause one.' } }, pathBudget: 150 }
+      { reader: { markdown: { '01ABC': 'Clause one.' } }, pathBudget: 139 }
     );
 
     expect(outcome.kind === 'converted' && outcome.outputs).toEqual([
-      expect.stringMatching(/^kb\/Espace Contoso\/Documents\/2026-05-12\/Projets\/Contrat de service avec le fournis-[0-9a-f]{8}\.docx\.md$/),
+      expect.stringMatching(/^kb\/Espace Contoso\/Documents\/Projets\/Contrat de service avec le fournis-[0-9a-f]{8}\.docx\.md$/),
     ]);
   });
 
   it('a Word document lands as markdown under the same folders it had in SharePoint', async () => {
     const { outcome, files } = await run({}, { reader: { markdown: { '01ABC': '# Contrat\n\nClause one.' } } });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md'] });
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain('# Contrat');
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Projets/Contrat.docx.md'] });
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toContain('# Contrat');
   });
 
   it('a workbook in a library is kept as it came, beside the text read out of it', async () => {
     const { outcome, files } = await run({ name: 'Budget.xlsx' }, { reader: { markdown: { '01ABC': '| Q1 | 12 |' } } });
-    const folder = 'kb/Espace Contoso/Documents/2026-05-12/Projets';
+    const folder = 'kb/Espace Contoso/Documents/Projets';
 
     expect(outcome).toEqual({ kind: 'converted', outputs: [`${folder}/Budget.xlsx`, `${folder}/Budget.xlsx.md`] });
     expect(files.binary.has(`${folder}/Budget.xlsx`)).toBe(true);
@@ -94,7 +94,7 @@ describe('converting one document out of a library', () => {
       '--B--',
     ].join('\r\n');
     const { outcome, files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } } });
-    const folder = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Fwd';
+    const folder = 'kb/Espace Contoso/Documents/Projets/Fwd';
 
     expect(outcome).toEqual({ kind: 'converted', outputs: [`${folder}/Fwd.eml.md`, `${folder}/x.pdf`, `${folder}/x.pdf.md`] });
     expect(files.written.get(`${folder}/Fwd.eml.md`)).toContain('the body');
@@ -110,7 +110,7 @@ describe('converting one document out of a library', () => {
   it('a saved email in a library holding no message of its own still lands, saying so', async () => {
     const { files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode('') } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Fwd/Fwd.eml.md')).toContain(NO_TEXT_NOTE);
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd/Fwd.eml.md')).toContain(NO_TEXT_NOTE);
   });
 
   it('a saved email in a library whose message cannot be written is reported', async () => {
@@ -138,7 +138,7 @@ describe('converting one document out of a library', () => {
     );
 
     expect(outcome.kind).toBe('failed');
-    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Projets/Fwd/x.pdf')).toBe(false);
+    expect(files.binary.has('kb/Espace Contoso/Documents/Projets/Fwd/x.pdf')).toBe(false);
   });
 
   it('a file inside a saved email in a library that cannot be written is reported', async () => {
@@ -161,7 +161,7 @@ describe('converting one document out of a library', () => {
   it('a workbook in a library the source read as empty says so', async () => {
     const { files } = await run({ name: 'Budget.xlsx' }, { reader: { markdown: { '01ABC': '   ' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Budget.xlsx.md')).toContain(NO_TEXT_NOTE);
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Budget.xlsx.md')).toContain(NO_TEXT_NOTE);
   });
 
   it('a workbook in a library that cannot be written is reported rather than left as text alone', async () => {
@@ -173,26 +173,26 @@ describe('converting one document out of a library', () => {
   it('a meeting invitation in a library is read down to the meeting', async () => {
     const ics = ['BEGIN:VCALENDAR', 'BEGIN:VEVENT', 'SUMMARY:Kick-off', 'DTSTART:20260812T060000Z', 'END:VEVENT', 'END:VCALENDAR'].join('\r\n');
     const { outcome, files } = await run({ name: 'invite.ics' }, { reader: { markdown: { '01ABC': ics } } });
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/invite.ics.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Projets/invite.ics.md') ?? '';
 
     expect(written).toContain('## Kick-off');
     expect(written).not.toContain('BEGIN:VEVENT');
     // The one document it produces, named. An invitation keeps no copy of the file it came from:
     // the fields are the whole of it, and the `.ics` around them says nothing a reader wants.
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets/invite.ics.md'] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Projets/invite.ics.md'] });
   });
 
   // An invitation the library passes through with nothing in it still gets a document saying so,
   // rather than a file holding an empty string, which reads as a conversion that worked.
   it('an invitation with no fields to read is written as a note, not as an empty document', async () => {
     const { files } = await run({ name: 'invite.ics' }, { reader: { markdown: { '01ABC': 'BEGIN:VCALENDAR\nEND:VCALENDAR' } } });
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/invite.ics.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Projets/invite.ics.md') ?? '';
 
     expect(written).toContain('No text could be read from this file');
   });
 
   const SHORTCUT = { name: 'Plan de projet v1.2.url', path: 'Projets/Plan de projet v1.2.url' };
-  const SHORTCUT_DOCUMENT = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Plan de projet v1.2.url.md';
+  const SHORTCUT_DOCUMENT = 'kb/Espace Contoso/Documents/Projets/Plan de projet v1.2.url.md';
   const shortcutTo = (target: string): DriveReaderSeed => ({ bytes: { '01ABC': new TextEncoder().encode(`[InternetShortcut]\r\nURL=${target}\r\n`) } });
 
   it('a shortcut in a library becomes a document linking where it goes', async () => {
@@ -228,7 +228,7 @@ describe('converting one document out of a library', () => {
 
   it('the markdown carries where it came from, when it changed and who changed it', async () => {
     const { files } = await run({});
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md') ?? '';
 
     expect(written).toContain('source: https://tenant.sharepoint.com/sites/X/Contrat.docx');
     expect(written).toContain('path: Projets/Contrat.docx');
@@ -239,27 +239,27 @@ describe('converting one document out of a library', () => {
   it('a document at the top of the library lands directly in the library folder', async () => {
     const { outcome } = await run({ name: 'Note.docx', path: 'Note.docx' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Note.docx.md'] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Note.docx.md'] });
   });
 
   it('a name the filesystem cannot hold is made safe before anything is written', async () => {
     const { outcome } = await run({ name: 'Q1/Q2.docx', path: 'Projets: 2026/Q1/Q2.docx' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Projets_ 2026/Q1/Q1_Q2.docx.md'] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Projets_ 2026/Q1/Q1_Q2.docx.md'] });
   });
 
   it('a document that converted to nothing still lands, with a note in place of the text', async () => {
     const { files } = await run({}, { reader: { markdown: { '01ABC': '   ' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toContain('No text could be read');
   });
 
   it('a deck lands as markdown for its text and a PDF for its slides, each pointing at the other', async () => {
     const { outcome, files } = await run({ name: 'Roadmap.pptx', path: 'Roadmap.pptx' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.pdf', 'kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md'] });
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md')).toContain('pdf: ./Roadmap.pptx.pdf');
-    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.pdf')).toBe(true);
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Roadmap.pptx.pdf', 'kb/Espace Contoso/Documents/Roadmap.pptx.md'] });
+    expect(files.written.get('kb/Espace Contoso/Documents/Roadmap.pptx.md')).toContain('pdf: ./Roadmap.pptx.pdf');
+    expect(files.binary.has('kb/Espace Contoso/Documents/Roadmap.pptx.pdf')).toBe(true);
   });
 
   it('a deck the source will not render as a PDF still lands as its text, saying why the slides are missing', async () => {
@@ -267,13 +267,13 @@ describe('converting one document out of a library', () => {
       { name: 'Roadmap.pptx', path: 'Roadmap.pptx' },
       { reader: { markdown: { '01ABC': '## Slide 1' }, failPdf: { kind: 'unrenderable', message: 'HTTP 406 with no error body (path: /transform/pdf)' } } }
     );
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Roadmap.pptx.md') ?? '';
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md'] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Roadmap.pptx.md'] });
     expect(written).toContain('## Slide 1');
     expect(written).toContain('could not be rendered');
     expect(written).not.toContain('pdf: ./Roadmap.pptx.pdf');
-    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.pdf')).toBe(false);
+    expect(files.binary.has('kb/Espace Contoso/Documents/Roadmap.pptx.pdf')).toBe(false);
   });
 
   it('a deck the source refused to render says so in the log, since nothing on disk records the refusal', async () => {
@@ -292,7 +292,7 @@ describe('converting one document out of a library', () => {
     );
 
     expect(outcome).toEqual({ kind: 'failed', reason: 'permanent: cannot convert' });
-    expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md')).toBe(false);
+    expect(files.written.has('kb/Espace Contoso/Documents/Roadmap.pptx.md')).toBe(false);
   });
 
   it('the note about missing slides sits against the text, with no blank run between them', async () => {
@@ -300,7 +300,7 @@ describe('converting one document out of a library', () => {
       { name: 'Roadmap.pptx', path: 'Roadmap.pptx' },
       { reader: { markdown: { '01ABC': '   \n## Slide 1\n   ' }, failPdf: { kind: 'unrenderable', message: 'HTTP 406' } } }
     );
-    const body = (files.written.get('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md') ?? '').split('---').slice(2).join('---').trim();
+    const body = (files.written.get('kb/Espace Contoso/Documents/Roadmap.pptx.md') ?? '').split('---').slice(2).join('---').trim();
 
     expect(body.endsWith('## Slide 1')).toBe(true);
   });
@@ -309,27 +309,27 @@ describe('converting one document out of a library', () => {
     const { outcome, files } = await run({ name: 'Vieux.ppt', path: 'Vieux.ppt' }, { reader: { failPdf: { kind: 'unrenderable', message: 'HTTP 406' } } });
 
     expect(outcome).toEqual({ kind: 'failed', reason: 'unrenderable: HTTP 406' });
-    expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/Vieux.ppt.md')).toBe(false);
+    expect(files.written.has('kb/Espace Contoso/Documents/Vieux.ppt.md')).toBe(false);
   });
 
   it('a deck in the old format has its text read back from the PDF, since nothing else can read it', async () => {
     const { outcome, files } = await run({ name: 'Vieux.ppt', path: 'Vieux.ppt' });
-    const reader = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Vieux.ppt.md') ?? '';
+    const reader = files.written.get('kb/Espace Contoso/Documents/Vieux.ppt.md') ?? '';
 
     expect(outcome.kind).toBe('converted');
-    expect(reader).toContain('converted kb/Espace Contoso/Documents/2026-05-12/Vieux.ppt.pdf');
+    expect(reader).toContain('converted kb/Espace Contoso/Documents/Vieux.ppt.pdf');
   });
 
   it('a PDF is kept as it is, with its text beside it and a pointer back to the file', async () => {
     const { outcome, files } = await run({ name: 'Contrat.pdf', path: 'Contrat.pdf' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Contrat.pdf', 'kb/Espace Contoso/Documents/2026-05-12/Contrat.pdf.md'] });
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Contrat.pdf.md')).toContain('pdf: ./Contrat.pdf');
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Contrat.pdf', 'kb/Espace Contoso/Documents/Contrat.pdf.md'] });
+    expect(files.written.get('kb/Espace Contoso/Documents/Contrat.pdf.md')).toContain('pdf: ./Contrat.pdf');
   });
 
   it('a scanned PDF says so, so a reader knows to look at the pages rather than the text', async () => {
     const { files } = await run({ name: 'Scan.pdf', path: 'Scan.pdf' }, { reader: { markdown: { '01ABC': '' } } });
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md') ?? '';
 
     expect(written).toContain('carries no text layer');
     expect(written).not.toContain('## Images');
@@ -340,13 +340,13 @@ describe('converting one document out of a library', () => {
       { name: 'Scan.pdf', path: 'Scan.pdf' },
       {
         reader: { markdown: { '01ABC': '' }, images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] } },
-        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png': 'Invoice total 1200 EUR' } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/Scan.pdf.media/image-01.png': 'Invoice total 1200 EUR' } },
       }
     );
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md') ?? '';
 
     expect(written).toContain('Invoice total 1200 EUR');
-    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png')).toBe(true);
+    expect(files.binary.has('kb/Espace Contoso/Documents/Scan.pdf.media/image-01.png')).toBe(true);
     expect(progress.details).toContainEqual({ label: 'Scan.pdf', what: 'reading picture 1/1' });
   });
 
@@ -359,7 +359,7 @@ describe('converting one document out of a library', () => {
       }
     );
 
-    expect(outcome).toEqual({ kind: 'failed', reason: 'write-failed: cannot write kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png' });
+    expect(outcome).toEqual({ kind: 'failed', reason: 'write-failed: cannot write kb/Espace Contoso/Documents/Scan.pdf.media/image-01.png' });
   });
 
   it('a scanned PDF the source refuses to read as text still has its pages read by OCR', async () => {
@@ -370,18 +370,14 @@ describe('converting one document out of a library', () => {
           failMarkdown: { kind: 'unrenderable', message: 'pdf has no extractable text layer' },
           images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] },
         },
-        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png': 'Invoice total 1200 EUR' } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/Scan.pdf.media/image-01.png': 'Invoice total 1200 EUR' } },
       }
     );
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md') ?? '';
 
     expect(outcome).toEqual({
       kind: 'converted',
-      outputs: [
-        'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf',
-        'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png',
-        'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md',
-      ],
+      outputs: ['kb/Espace Contoso/Documents/Scan.pdf', 'kb/Espace Contoso/Documents/Scan.pdf.media/image-01.png', 'kb/Espace Contoso/Documents/Scan.pdf.md'],
     });
     expect(written).toContain('Invoice total 1200 EUR');
   });
@@ -391,9 +387,9 @@ describe('converting one document out of a library', () => {
       { name: 'Scan.pdf', path: 'Scan.pdf' },
       { reader: { failMarkdown: { kind: 'unrenderable', message: 'pdf has no extractable text layer' }, failImages: { kind: 'permanent', message: 'no pages here' } } }
     );
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md') ?? '';
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Scan.pdf', 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md'] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Scan.pdf', 'kb/Espace Contoso/Documents/Scan.pdf.md'] });
     expect(written).toContain('carries no text layer');
     expect(written).not.toContain('## Images');
   });
@@ -402,15 +398,15 @@ describe('converting one document out of a library', () => {
     const { outcome, files } = await run({ name: 'Scan.pdf', path: 'Scan.pdf' }, { reader: { failMarkdown: { kind: 'permanent', status: 404, message: 'item not found' } } });
 
     expect(outcome).toEqual({ kind: 'failed', reason: 'permanent: item not found' });
-    expect(files.written.has('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md')).toBe(false);
+    expect(files.written.has('kb/Espace Contoso/Documents/Scan.pdf.md')).toBe(false);
   });
 
   it('a PDF that already has a text layer is not sent to OCR', async () => {
     const { files } = await run(
       { name: 'Contrat.pdf', path: 'Contrat.pdf' },
-      { reader: { markdown: { '01ABC': 'The real text layer.' } }, ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Contrat.pdf': 'OCR fallback text' } } }
+      { reader: { markdown: { '01ABC': 'The real text layer.' } }, ocr: { texts: { 'kb/Espace Contoso/Documents/Contrat.pdf': 'OCR fallback text' } } }
     );
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Contrat.pdf.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Contrat.pdf.md') ?? '';
 
     expect(written).toContain('The real text layer.');
     expect(written).not.toContain('OCR fallback text');
@@ -422,11 +418,11 @@ describe('converting one document out of a library', () => {
       { name: 'Scan.pdf', path: 'Scan.pdf' },
       {
         reader: { markdown: { '01ABC': '   ' }, images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] } },
-        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png': 'Read by OCR' } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/Scan.pdf.media/image-01.png': 'Read by OCR' } },
       }
     );
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '').toContain('Read by OCR');
+    expect(files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md') ?? '').toContain('Read by OCR');
   });
 
   it('a page whose OCR finds only whitespace is still linked, so a reader can look at it themselves', async () => {
@@ -434,21 +430,18 @@ describe('converting one document out of a library', () => {
       { name: 'Scan.pdf', path: 'Scan.pdf' },
       {
         reader: { markdown: { '01ABC': '' }, images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] } },
-        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png': '   ' } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/Scan.pdf.media/image-01.png': '   ' } },
       }
     );
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md') ?? '';
 
     expect(written).toContain('![image-01.png](./Scan.pdf.media/image-01.png)');
-    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png')).toBe(true);
+    expect(files.binary.has('kb/Espace Contoso/Documents/Scan.pdf.media/image-01.png')).toBe(true);
   });
 
   it('a photo is kept as it is, with the text read out of it beside it', async () => {
-    const { outcome, files } = await run(
-      { name: 'Tableau.jpg', path: 'Tableau.jpg' },
-      { ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Tableau.jpg': 'Sprint 4 backlog' } } }
-    );
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Tableau.jpg.md') ?? '';
+    const { outcome, files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace Contoso/Documents/Tableau.jpg': 'Sprint 4 backlog' } } });
+    const written = files.written.get('kb/Espace Contoso/Documents/Tableau.jpg.md') ?? '';
 
     expect(outcome.kind).toBe('converted');
     expect(written).toContain('image: ./Tableau.jpg');
@@ -459,20 +452,20 @@ describe('converting one document out of a library', () => {
   it('a photo holding no readable text still lands, with a note instead', async () => {
     const { files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Tableau.jpg.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Tableau.jpg.md')).toContain('No text could be read');
   });
 
   it('a photo whose text could not be read at all still lands, without claiming it was read', async () => {
     const { files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { failWith: { kind: 'unavailable', message: 'paddleocr not installed' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Tableau.jpg.md')).not.toContain('ocr:');
+    expect(files.written.get('kb/Espace Contoso/Documents/Tableau.jpg.md')).not.toContain('ocr:');
   });
 
   it('a drawing is kept as it is, with a note telling a reader to open the file', async () => {
     const { outcome, files } = await run({ name: 'Logo.svg', path: 'Logo.svg' });
 
     expect(outcome.kind).toBe('converted');
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Logo.svg.md')).toContain('Open the file beside this note');
+    expect(files.written.get('kb/Espace Contoso/Documents/Logo.svg.md')).toContain('Open the file beside this note');
   });
 
   it('an archive becomes a folder holding one markdown file per document inside it', async () => {
@@ -483,40 +476,40 @@ describe('converting one document out of a library', () => {
     const { outcome, files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: entries } });
 
     expect(outcome.kind).toBe('converted');
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Livraison/notes.docx.md')).toContain('# Notes');
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Livraison/sous-dossier/deck.pptx.md')).toContain('## Slide 1');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/notes.docx.md')).toContain('# Notes');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/sous-dossier/deck.pptx.md')).toContain('## Slide 1');
   });
 
   it('a file inside an archive records where it sat in the archive', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Livraison/notes.docx.md')).toContain('zip_entry: notes.docx');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/notes.docx.md')).toContain('zip_entry: notes.docx');
   });
 
   it('a file inside an archive that could not be converted keeps the reason in its place', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'video.mp4', note: 'unsupported entry' }] } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Livraison/video.mp4.md')).toContain('unsupported entry');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/video.mp4.md')).toContain('unsupported entry');
   });
 
   it('a rich-text document is rendered to PDF first, then read back from it', async () => {
     const { outcome, files } = await run({ name: 'Note.rtf', path: 'Note.rtf' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Note.rtf.pdf', 'kb/Espace Contoso/Documents/2026-05-12/Note.rtf.md'] });
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Note.rtf.md')).toContain('converted kb/Espace Contoso/Documents/2026-05-12/Note.rtf.pdf');
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Note.rtf.pdf', 'kb/Espace Contoso/Documents/Note.rtf.md'] });
+    expect(files.written.get('kb/Espace Contoso/Documents/Note.rtf.md')).toContain('converted kb/Espace Contoso/Documents/Note.rtf.pdf');
   });
 
   it('a deck whose text is read straight from SharePoint does not go through the PDF', async () => {
     const { files } = await run({ name: 'Roadmap.pptx', path: 'Roadmap.pptx' }, { reader: { markdown: { '01ABC': '## Slide 1' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md')).toContain('## Slide 1');
+    expect(files.written.get('kb/Espace Contoso/Documents/Roadmap.pptx.md')).toContain('## Slide 1');
   });
 
   it('a deck that produced no text at all still lands, with a note and its PDF', async () => {
     const { outcome, files } = await run({ name: 'Vide.pptx', path: 'Vide.pptx' }, { reader: { markdown: { '01ABC': '' } } });
 
     expect(outcome.kind).toBe('converted');
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Vide.pptx.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Vide.pptx.md')).toContain('No text could be read');
   });
 
   it('a deck whose PDF cannot be rendered is reported, and no markdown claims to describe it', async () => {
@@ -571,14 +564,14 @@ describe('converting one document out of a library', () => {
   it('the archive itself is kept beside what was unpacked from it', async () => {
     const { outcome, files } = await run({ name: 'Livraison.zip', path: 'Projets/Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
-    expect(outcome.kind === 'converted' && outcome.outputs[0]).toBe('kb/Espace Contoso/Documents/2026-05-12/Projets/Livraison/Livraison.zip');
-    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Projets/Livraison/Livraison.zip')).toBe(true);
+    expect(outcome.kind === 'converted' && outcome.outputs[0]).toBe('kb/Espace Contoso/Documents/Projets/Livraison/Livraison.zip');
+    expect(files.binary.has('kb/Espace Contoso/Documents/Projets/Livraison/Livraison.zip')).toBe(true);
   });
 
   it('an entry with neither text nor reason still lands, so nothing inside an archive disappears', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'mystere.bin' }] } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Livraison/mystere.bin.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/mystere.bin.md')).toContain('No text could be read');
   });
 
   it('an archive that cannot be unpacked is reported after its bytes were kept', async () => {
@@ -610,32 +603,32 @@ describe('converting one document out of a library', () => {
   it('a deck reads its text back from the file it named, not from an empty request', async () => {
     const { files } = await run({ name: 'Roadmap.pptx', path: 'Roadmap.pptx' });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Roadmap.pptx.md')).toContain('converted 01ABC');
+    expect(files.written.get('kb/Espace Contoso/Documents/Roadmap.pptx.md')).toContain('converted 01ABC');
   });
 
   it('a deck whose text is only whitespace still lands with a note beside its PDF', async () => {
     const { files } = await run({ name: 'Vide.pptx', path: 'Vide.pptx' }, { reader: { markdown: { '01ABC': '   ' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Vide.pptx.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Vide.pptx.md')).toContain('No text could be read');
   });
 
   it('a photo lands with exactly the picture and its read-out text, nothing more', async () => {
-    const { outcome } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Tableau.jpg': 'Sprint 4 backlog' } } });
+    const { outcome } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace Contoso/Documents/Tableau.jpg': 'Sprint 4 backlog' } } });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Tableau.jpg', 'kb/Espace Contoso/Documents/2026-05-12/Tableau.jpg.md'] });
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Tableau.jpg', 'kb/Espace Contoso/Documents/Tableau.jpg.md'] });
   });
 
   it('a photo whose OCR reads only whitespace lands with a note instead of blank text', async () => {
-    const { files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Tableau.jpg': '   ' } } });
+    const { files } = await run({ name: 'Tableau.jpg', path: 'Tableau.jpg' }, { ocr: { texts: { 'kb/Espace Contoso/Documents/Tableau.jpg': '   ' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Tableau.jpg.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Tableau.jpg.md')).toContain('No text could be read');
   });
 
   it('a drawing lands with exactly the file and its note, each named for the drawing', async () => {
     const { outcome, files } = await run({ name: 'Logo.svg', path: 'Logo.svg' });
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/2026-05-12/Logo.svg', 'kb/Espace Contoso/Documents/2026-05-12/Logo.svg.md'] });
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Logo.svg.md')).toContain('image: ./Logo.svg');
+    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Logo.svg', 'kb/Espace Contoso/Documents/Logo.svg.md'] });
+    expect(files.written.get('kb/Espace Contoso/Documents/Logo.svg.md')).toContain('image: ./Logo.svg');
   });
 
   it('an archive lands with the archive file and one markdown per entry, in order', async () => {
@@ -643,7 +636,7 @@ describe('converting one document out of a library', () => {
 
     expect(outcome).toEqual({
       kind: 'converted',
-      outputs: ['kb/Espace Contoso/Documents/2026-05-12/Livraison/Livraison.zip', 'kb/Espace Contoso/Documents/2026-05-12/Livraison/notes.docx.md'],
+      outputs: ['kb/Espace Contoso/Documents/Livraison/Livraison.zip', 'kb/Espace Contoso/Documents/Livraison/notes.docx.md'],
     });
   });
 });
@@ -676,20 +669,20 @@ describe('saying what a conversion is doing while it does it', () => {
 });
 
 describe('keeping the pictures a document embeds', () => {
-  const MEDIA = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.media/image-01.png';
+  const MEDIA = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.media/image-01.png';
 
   it('a document holding pictures keeps them beside its markdown, so a diagram is not lost to a placeholder', async () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }] };
     const { outcome, files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body [image] here.' } } });
 
     expect(files.binary.has(MEDIA)).toBe(true);
-    expect(outcome.kind === 'converted' && outcome.outputs).toEqual(['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md', MEDIA]);
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual(['kb/Espace Contoso/Documents/Projets/Contrat.docx.md', MEDIA]);
   });
 
   it('the text read out of an embedded picture is written under the document that held it', async () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
     const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: 'smartRoute\nExternal\nDB' } } });
-    const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md') ?? '';
+    const written = files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md') ?? '';
 
     expect(written).toContain('## Images');
     expect(written).toContain('smartRoute');
@@ -706,10 +699,10 @@ describe('keeping the pictures a document embeds', () => {
       ],
     };
     const { outcome } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
-    const media = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.media';
+    const media = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.media';
 
     expect(outcome.kind === 'converted' && outcome.outputs).toEqual([
-      'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md',
+      'kb/Espace Contoso/Documents/Projets/Contrat.docx.md',
       `${media}/image-01.png`,
       `${media}/image-02.jpeg`,
       `${media}/image-03`,
@@ -725,7 +718,7 @@ describe('keeping the pictures a document embeds', () => {
         { path: 'word/media/image2.png', bytes: new Uint8Array([2]) },
       ],
     };
-    const document = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md';
+    const document = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.md';
     const section = '## Images\n\n![image-01.png](./Contrat.docx.media/image-01.png)';
     const read = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: '  Scope of work  ' } } });
     const refused = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { failWith: { kind: 'failed', message: 'no reader' } } });
@@ -746,7 +739,7 @@ describe('keeping the pictures a document embeds', () => {
   it('a document holding no pictures gains no folder and no section', async () => {
     const { files } = await run({}, { reader: { markdown: { '01ABC': 'Body.' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).not.toContain('## Images');
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).not.toContain('## Images');
   });
 
   it('a kind that cannot hold pictures is never asked for them', async () => {
@@ -759,21 +752,21 @@ describe('keeping the pictures a document embeds', () => {
     const { outcome, files } = await run({}, { reader: { failImages: { kind: 'permanent', message: 'no media' }, markdown: { '01ABC': 'Body.' } } });
 
     expect(outcome.kind).toBe('converted');
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain('Body.');
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toContain('Body.');
   });
 
   it('a picture nothing could be read from is still linked, with no empty caption beneath it', async () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
     const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain('\n\n## Images\n\n![image-01.png](./Contrat.docx.media/image-01.png)\n');
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toContain('\n\n## Images\n\n![image-01.png](./Contrat.docx.media/image-01.png)\n');
   });
 
   it('the picture of a document whose name holds a space is linked in a form that a viewer follows past the space', async () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
     const { files } = await run({ name: 'ASN Spec.docx', path: 'Projets/ASN Spec.docx' }, { reader: { images, markdown: { '01ABC': 'Body.' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/ASN Spec.docx.md')).toContain('![image-01.png](<./ASN Spec.docx.media/image-01.png>)');
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/ASN Spec.docx.md')).toContain('![image-01.png](<./ASN Spec.docx.media/image-01.png>)');
   });
 
   it('a picture that cannot be written stops the document rather than leaving half of it', async () => {
@@ -787,7 +780,7 @@ describe('keeping the pictures a document embeds', () => {
   it('pictures that could not be read are logged and none are claimed as written', async () => {
     const { outcome, logger } = await run({}, { reader: { failImages: { kind: 'permanent', message: 'no media' }, markdown: { '01ABC': 'Body.' } } });
 
-    expect(outcome.kind === 'converted' && outcome.outputs).toEqual(['kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md']);
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual(['kb/Espace Contoso/Documents/Projets/Contrat.docx.md']);
     expect(logger.calls.some((call) => call.event === 'images.failed')).toBe(true);
   });
 
@@ -795,6 +788,6 @@ describe('keeping the pictures a document embeds', () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
     const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: '  \n smartRoute \n  ' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain(')\n\nsmartRoute\n');
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toContain(')\n\nsmartRoute\n');
   });
 });
