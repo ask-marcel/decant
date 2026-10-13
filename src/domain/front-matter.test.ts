@@ -73,8 +73,15 @@ describe('stamping a generated markdown file with where it came from', () => {
     expect(renderFrontMatter([['name', 'Rapport 2026-05-12']])).toBe(['---', 'name: Rapport 2026-05-12', '---'].join('\n'));
   });
 
-  it('a run of spaces inside a name is collapsed to one, and the changed value is quoted', () => {
-    expect(renderFrontMatter([['name', 'Espace  Contoso']])).toBe(['---', 'name: "Espace Contoso"', '---'].join('\n'));
+  it('a run of spaces inside a name is kept, so a path in the stamp names the file that is on disk', () => {
+    expect(renderFrontMatter([['name', 'Espace  Contoso']])).toBe(['---', 'name: Espace  Contoso', '---'].join('\n'));
+    expect(renderFrontMatter([['attachments', ['_attachments/Guest  AP.docx.md']]])).toBe(['---', 'attachments:', '  - _attachments/Guest  AP.docx.md', '---'].join('\n'));
+  });
+
+  it('a subject broken by a Windows line end, an old Mac one or a blank line is folded the same way, with the space around each break trimmed', () => {
+    expect(renderFrontMatter([['subject', 'Contrat\r\nsigné']])).toBe(['---', 'subject: "Contrat signé"', '---'].join('\n'));
+    expect(renderFrontMatter([['subject', 'Contrat\rsigné']])).toBe(['---', 'subject: "Contrat signé"', '---'].join('\n'));
+    expect(renderFrontMatter([['subject', 'Contrat \n\n  signé']])).toBe(['---', 'subject: "Contrat signé"', '---'].join('\n'));
   });
 
   it('a name that opens with a digit is quoted, since a reader would take it for a number or a date', () => {
