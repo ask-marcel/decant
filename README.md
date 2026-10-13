@@ -125,6 +125,7 @@ than syncing everything; `--since` sets it again.
 | `--lists <site>` | Sync the lists of one SharePoint site without the picker, by its name, its id or its address |
 | `--plan <title>` | Sync one Planner plan without the picker, by its title among the plans listed or by its id |
 | `--since <day\|all>` | Reach back to this day (`2026-01-31`), or through everything, and keep it for every later run (see How far back) |
+| `--out <folder>` | Write the knowledge base to this folder (default `kb`). This option has priority over `KB_ROOT`. Use the same folder for each run, because the sync state is in that folder |
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
 | `--concurrency <n>` | How many items to convert at once (default 4); `1` is strictly sequential |
@@ -921,7 +922,7 @@ Read once at startup, in `src/composition/config.ts`:
 
 | Variable | Meaning | Default |
 |---|---|---|
-| `KB_ROOT` | Folder the knowledge base is written to | `kb` |
+| `KB_ROOT` | Folder the knowledge base is written to. `--out` has priority over it | `kb` |
 | `KB_LOG_LEVEL` | Winston level; logs go to stderr, output to stdout | `error` |
 
 ## Development

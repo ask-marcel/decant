@@ -35,6 +35,12 @@ describe('reading the run configuration', () => {
     expect(configFor({ KB_LOG_LEVEL: 'debug', KB_ROOT: 'other-kb' })).toMatchObject({ logLevel: 'debug', kbRoot: 'other-kb' });
   });
 
+  // `--out` is asked for on this run, so it wins over a folder the environment keeps for every run.
+  it('a folder named for the run is where the knowledge base goes, over the environment', () => {
+    expect(readConfig({ env: { KB_ROOT: 'other-kb' }, out: 'export', ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'UTC' })).toMatchObject({ kbRoot: 'export' });
+    expect(readConfig({ env: {}, out: 'export', ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'UTC' })).toMatchObject({ kbRoot: 'export' });
+  });
+
   // The zone a run was told to count in wins; with none given, the machine's own is what it gets.
   it('a zone named for the run is what its days are counted in', () => {
     expect(readConfig({ env: {}, ocrLang: 'en', interactive: true, timezone: 'Asia/Shanghai', machineTimezone: 'Europe/Paris' })).toMatchObject({ timezone: 'Asia/Shanghai' });

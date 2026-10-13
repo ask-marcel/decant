@@ -76,6 +76,25 @@ describe('reading what the operator asked for', () => {
     expect(parse('--since 2026-01-31T00:00:00Z').ok).toBe(false);
   });
 
+  it('the folder the export goes to can be named, and no name leaves it to the configuration', () => {
+    expect(parse('--out export')).toMatchObject({ value: { out: 'export' } });
+    expect(parse('--out /data/m365-kb')).toMatchObject({ value: { out: '/data/m365-kb' } });
+    expect(parse('')).not.toHaveProperty('value.out');
+  });
+
+  // `export/` and `export` are one folder; a slash kept on the end would write `export//Mailbox`
+  // and break the links that are made relative to the folder.
+  it('a slash at the end of the folder is dropped', () => {
+    expect(parse('--out export/')).toMatchObject({ value: { out: 'export' } });
+    expect(parse('--out export//')).toMatchObject({ value: { out: 'export' } });
+  });
+
+  it('a folder with no name is refused rather than writing into the root', () => {
+    expect(parseOptions(['--out', ''])).toEqual({ ok: false, error: { kind: 'bad-option', message: '--out expects a folder, got: ' } });
+    expect(parse('--out /')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--out expects a folder, got: /' } });
+    expect(parse('--out').ok).toBe(false);
+  });
+
   it('--since all reaches back through everything', () => {
     expect(parse('--since all')).toMatchObject({ value: { since: 'all' } });
   });
