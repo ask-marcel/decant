@@ -199,10 +199,22 @@ describe('filing a list again under the day each task is due', () => {
     expect(refiled.state.layout).toBe(2);
   });
 
-  it('a task keeps the name it has, though its title changed since it was written, which its next write takes care of', () => {
-    const refiled = refileTasks(ROOT, byChange(), [{ ...task('a', '2026-09-05T09:00:00Z'), title: 'Renamed' }]);
+  // Moved to the name a write would give it, the task needs no write in the same run: a name from
+  // before titles were cut, or a suffix a namesake no longer forces, would otherwise be written again
+  // and its copy put aside, though nothing changed.
+  it('a task moves to the name its title gives now, so the run that moves it does not write it again', () => {
+    const long = `${'Long title '.repeat(10)}end`;
+    const state = withTask(byChange(), 'l', { file: `kb/To Do/Tasks/2026-09-03/${long}.md`, lastModified: '2026-09-03T09:00:00Z', title: long });
+    const refiled = refileTasks(ROOT, state, [
+      { ...task('a', '2026-09-05T09:00:00Z'), title: 'Renamed' },
+      { ...task('l', '2026-09-03T09:00:00Z'), title: long },
+    ]);
 
-    expect(refiled.moves).toEqual([{ from: 'kb/To Do/Tasks/2026-09-01/a.md', to: 'kb/To Do/Tasks/undated/a.md' }]);
+    expect(refiled.moves).toEqual([
+      { from: `kb/To Do/Tasks/2026-09-03/${long}.md`, to: `kb/To Do/Tasks/undated/${'Long title '.repeat(7).trimEnd()}.md` },
+      { from: 'kb/To Do/Tasks/2026-09-01/a.md', to: 'kb/To Do/Tasks/undated/Renamed.md' },
+    ]);
+    expect(todoWorklist(ROOT, refiled.state, [{ ...task('l', '2026-09-03T09:00:00Z'), title: long }]).write).toHaveLength(0);
   });
 
   it('a task already under its due day stays, and one the list no longer holds or the state never recorded moves nowhere', () => {

@@ -142,21 +142,16 @@ export const planTaskFiles = (root: string, tasks: ReadonlyArray<TodoTask>, stat
 
 export type RefiledTasks = { readonly state: TodoState; readonly moves: ReadonlyArray<{ readonly from: string; readonly to: string }> };
 
-const baseName = (file: string): string => file.slice(file.lastIndexOf('/') + 1);
-
 // A list as the current layout files it, and the files to move to get there: each task from the day
-// it last changed to the day it is due, or to `undated/` when it has none, under the name it already
-// has. A task the list no longer holds stays where it is, for the run to put aside.
+// it last changed to the day it is due, or to `undated/` when it has none, under the name a write
+// would give it now, so the run that moves it does not write it again. A task the list no longer
+// holds stays where it is, for the run to put aside.
 export const refileTasks = (root: string, state: TodoState, tasks: ReadonlyArray<TodoTask>, budget?: number): RefiledTasks => {
-  const taken = new Set(Object.values(state.tasks).map((record) => record.file));
   const moves: { from: string; to: string }[] = [];
   const records: Record<string, TaskRecord> = { ...state.tasks };
-  for (const task of tasks.toSorted(oldestFirst)) {
+  for (const { task, file } of planTaskFiles(root, tasks.toSorted(oldestFirst), state, budget)) {
     const record = state.tasks[task.id];
-    if (record === undefined) continue;
-    const file = freePath(datedRoot(root, task.due), baseName(record.file), task.id, taken, record.file, budget);
-    taken.add(file);
-    if (file === record.file) continue;
+    if (record === undefined || record.file === file) continue;
     moves.push({ from: record.file, to: file });
     records[task.id] = { ...record, file };
   }
