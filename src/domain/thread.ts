@@ -3,6 +3,7 @@ import { bareSubject } from './thread-subject.ts';
 import { unwrapSafelinks } from './safelink.ts';
 import { timeIn } from './zoned-day.ts';
 import { inReceivedOrder } from './mail-message.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 export type ThreadPart = {
   readonly message: MailMessage;
@@ -95,5 +96,5 @@ const asWritten = (who: Correspondent): string => (who.address.length === 0 ? wh
 
 export const participantsOf = (parts: ReadonlyArray<ThreadPart>): ReadonlyArray<string> => {
   const everyone = parts.flatMap((part) => [...(part.message.from === undefined ? [] : [part.message.from]), ...part.message.to]);
-  return [...new Set(everyone.map(asWritten))].sort((left, right) => left.localeCompare(right));
+  return [...new Set(everyone.map(asWritten))].sort(compareText);
 };
