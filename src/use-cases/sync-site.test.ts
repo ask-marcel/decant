@@ -309,6 +309,32 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     expect(stateAfter(files).drives['b!one']?.items['01ABC']?.path).toBe('Archive/Contrat signe.docx');
   });
 
+  // A file already at the new place belongs to another document, and the move is refused rather than
+  // written over it. Recorded at the new place, the document would name a file that is not its own.
+  it('a rename whose move is refused keeps the document recorded at the files it still has', async () => {
+    const known = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md'] } },
+          retry: {},
+        },
+      },
+      layout: 2,
+    });
+    const renamed = item({ path: 'Archive/Contrat signe.docx', name: 'Contrat signe.docx' });
+    const refused = { kind: 'write-failed' as const, path: 'kb/SharePoint sites/Espace Contoso/Documents/Archive/Contrat signe.docx.md', message: 'a file is already there' };
+
+    const { files } = await run({ files: { texts: { [STATE_PATH]: known }, failMoveWith: refused }, reader: { pages: [{ items: [renamed], skipped: 0, deltaLink: 'cursor-2' }] } });
+
+    expect(stateAfter(files).drives['b!one']?.items['01ABC']?.outputs).toEqual(['kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md']);
+  });
+
   it('a document deleted in SharePoint has its files put aside and is forgotten', async () => {
     const known = serializeSiteState({
       version: 1,
