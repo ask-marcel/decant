@@ -25,17 +25,38 @@ const folderFor = async (deps: PutAsideDeps, outputs: ReadonlyArray<string>): Pr
   return folder;
 };
 
+export type Move = { readonly from: string; readonly to: string };
+
+// What a set put aside became: where each file went, and the ones that would not move.
+export type SetAside = { readonly moved: ReadonlyArray<Move>; readonly failed: ReadonlyArray<NotPutAside> };
+
 // What an item held goes under `_archive/<day of the run>/`, at the path it had in the knowledge
 // base: an old copy is found by its own path one level down, and the day says when it stopped being
 // current. A day that already holds one of these paths sends the whole set to the next free folder,
 // so nothing put aside is ever written over, and a document stays beside its pictures.
-export const putAside = async (deps: PutAsideDeps, outputs: ReadonlyArray<string>): Promise<ReadonlyArray<NotPutAside>> => {
-  if (outputs.length === 0) return [];
+export const setAside = async (deps: PutAsideDeps, outputs: ReadonlyArray<string>): Promise<SetAside> => {
+  if (outputs.length === 0) return { moved: [], failed: [] };
   const folder = await folderFor(deps, outputs);
+  const moved: Move[] = [];
   const failed: NotPutAside[] = [];
   for (const output of outputs) {
-    const moved = await deps.files.move(output, `${folder}/${relativeOf(deps.kbRoot, output)}`);
-    if (!moved.ok) failed.push({ path: output, error: moved.error });
+    const to = `${folder}/${relativeOf(deps.kbRoot, output)}`;
+    const done = await deps.files.move(output, to);
+    if (done.ok) moved.push({ from: output, to });
+    else failed.push({ path: output, error: done.error });
+  }
+  return { moved, failed };
+};
+
+export const putAside = async (deps: PutAsideDeps, outputs: ReadonlyArray<string>): Promise<ReadonlyArray<NotPutAside>> => (await setAside(deps, outputs)).failed;
+
+// The files a set put aside go back where they were: the edit they made room for did not land, and
+// the version before it is still the current one.
+export const putBack = async (deps: Pick<PutAsideDeps, 'files'>, aside: SetAside): Promise<ReadonlyArray<NotPutAside>> => {
+  const failed: NotPutAside[] = [];
+  for (const move of aside.moved) {
+    const done = await deps.files.move(move.to, move.from);
+    if (!done.ok) failed.push({ path: move.from, error: done.error });
   }
   return failed;
 };
