@@ -192,8 +192,13 @@ const messageFileOf = (attachment: MailAttachment, placed: Placed): MessageFile 
   note: placed.skipped?.reason ?? placed.failed?.reason,
 });
 
+// The files this thread already holds, as the run that wrote it last recorded them. A thread written
+// again for a reply then converts only what it did not carry before.
+const heldBy = (stored: Readonly<Record<string, AttachmentRecord>>, here: string): Record<string, AttachmentRecord> =>
+  Object.fromEntries(Object.entries(stored).filter(([, record]) => record.primary.startsWith(`${here}/`)));
+
 export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: ReadonlyArray<ThreadPart>, stamp: DocumentStamp): Promise<AttachmentTally> => {
-  const store: Record<string, AttachmentRecord> = {};
+  const store = heldBy(place.stored, place.here);
   // Pictures shown inside message bodies, which the whole mailbox shares, seeded with what earlier
   // threads stored so a signature logo is written once rather than once per conversation.
   const shared: Record<string, AttachmentRecord> = { ...place.stored };

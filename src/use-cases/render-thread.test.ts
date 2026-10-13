@@ -99,6 +99,21 @@ describe('writing one conversation as one file', () => {
     expect(card).toContain('Carried by Jane Doe on 2026-05-13.');
   });
 
+  // A reply rewrites the thread, and the files it already holds stay as the run before left them:
+  // read again for their address, never converted again.
+  it('a thread written again for a new message converts only the files it did not hold before', async () => {
+    const attachments = { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 10, isInline: false }] };
+    const first = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments } });
+    const held = first.outcome?.kind === 'rendered' ? first.outcome.thread.attachments : {};
+    const conversations = { [CONV]: [message({ hasAttachments: true }), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })] };
+
+    const second = await run({ reader: { conversations, attachments }, attachments: held, files: { texts: Object.fromEntries(first.files.written) } });
+
+    expect(second.reader.calls).toContain('attachmentBytes:att1:m1');
+    expect(second.reader.calls).not.toContain('attachmentMarkdown:att1:m1');
+    expect(second.files.written.get(`${ATTACHMENTS_STORE}/${storedName('Contrat.docx')}.md`)).toContain('converted att1');
+  });
+
   it('a conversation whose body cannot be read is left for the next run rather than written half empty', async () => {
     const conversations = { [CONV]: [message()] };
     const { ok: succeeded, files } = await run({ reader: { conversations, failCalls: { messageMarkdown: { kind: 'transient', message: 'throttled' } } } });
