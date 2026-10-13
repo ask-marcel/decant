@@ -1,4 +1,4 @@
-import { relative as pathBetween } from 'node:path';
+import { relative as pathBetween } from 'node:path/posix';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailMessage } from '../domain/mail-message.ts';

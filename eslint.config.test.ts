@@ -63,6 +63,13 @@ describe('keeping every layer to what it may import', () => {
     expect(await rulesBrokenBy(importing('../test-helpers/files-fake.ts'), 'src/use-cases/fixture.test.ts')).not.toContain('no-restricted-imports');
   });
 
+  it('node:path is refused where a path is written into a note, since on Windows it joins with a backslash, and its posix form is let through', async () => {
+    expect(await rulesBrokenBy(importing('node:path'), 'src/use-cases/fixture.ts')).toContain('no-restricted-imports');
+    expect(await rulesBrokenBy(importing('path'), 'src/domain/fixture.ts')).toContain('no-restricted-imports');
+    expect(await rulesBrokenBy(importing('node:path/posix'), 'src/use-cases/fixture.ts')).not.toContain('no-restricted-imports');
+    expect(await rulesBrokenBy(importing('node:path'), 'src/infra/fixture.ts')).not.toContain('no-restricted-imports');
+  });
+
   it('inside a layer, `mock` from bun:test is refused all the same', async () => {
     expect(await rulesBrokenBy("import { mock } from 'bun:test';\n\nexport const used = mock;\n", 'src/use-cases/fixture.ts')).toContain('no-restricted-imports');
   });

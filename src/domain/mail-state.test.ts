@@ -149,6 +149,35 @@ describe('remembering where a mailbox sync got to', () => {
     expect(parsed.ok && parsed.value.pending).toEqual(['conv-1']);
   });
 
+  it('a state written on Windows reads back with forward slashes in every path it holds, so the next run compares like with like', () => {
+    const parsed = parseMailboxState({
+      version: 2,
+      source: { kind: 'mailbox' },
+      threads: { 'conv-1': { ...thread, file: 'threads\\T\\contrat.md', attachments: ['kb\\Mailbox\\_inline\\logo.gif'], inlineImages: ['kb\\Mailbox\\_inline\\logo.gif'] } },
+      linked: { 'b!one:01ABC': { paths: ['kb\\Mailbox\\threads\\T\\_linked\\Rapport.docx.md'] } },
+      attachments: {
+        ba7816bf8f01: {
+          name: 'Contrat.docx',
+          paths: ['kb\\T\\_attachments\\Contrat.docx.md'],
+          primary: 'kb\\T\\_attachments\\Contrat.docx.md',
+          media: ['kb\\T\\_attachments\\Contrat.docx.media\\image1.png'],
+        },
+      },
+    });
+
+    expect(parsed.ok && parsed.value.threads['conv-1']).toMatchObject({
+      file: 'threads/T/contrat.md',
+      attachments: ['kb/Mailbox/_inline/logo.gif'],
+      inlineImages: ['kb/Mailbox/_inline/logo.gif'],
+    });
+    expect(parsed.ok && parsed.value.linked['b!one:01ABC']).toEqual({ paths: ['kb/Mailbox/threads/T/_linked/Rapport.docx.md'] });
+    expect(parsed.ok && parsed.value.attachments['ba7816bf8f01']).toMatchObject({
+      paths: ['kb/T/_attachments/Contrat.docx.md'],
+      primary: 'kb/T/_attachments/Contrat.docx.md',
+      media: ['kb/T/_attachments/Contrat.docx.media/image1.png'],
+    });
+  });
+
   it('the queue can be replaced as conversations are finished', () => {
     expect(withPending(emptyMailboxState(), ['conv-1', 'conv-2']).pending).toEqual(['conv-1', 'conv-2']);
   });

@@ -1,4 +1,4 @@
-import { join as pathUnder, relative as pathBetween } from 'node:path';
+import { join as pathUnder, relative as pathBetween } from 'node:path/posix';
 import { withoutFrontMatter } from '../domain/front-matter.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
 import type { CarriedFile } from '../domain/mail-body.ts';
