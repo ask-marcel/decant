@@ -1,6 +1,7 @@
 import { renderFrontMatter, withFrontMatter } from './front-matter.ts';
 import { linkDestination } from './markdown-link.ts';
 import type { PeopleState } from './people-state.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 // Who can open a SharePoint site, as `list-sharepoint-site-members` answers it: the people of the
 // Microsoft 365 group that owns the site, and the grants on its document library. Graph does not
@@ -84,6 +85,15 @@ const grantLine = (grant: SiteGrant): string => (grant.roles.length === 0 ? `- $
 
 const section = (heading: string, lines: ReadonlyArray<string>): ReadonlyArray<string> => (lines.length === 0 ? [] : [`## ${heading}`, '', ...lines, '']);
 
+// Graph promises no order, and a page whose rows moved reads as changed with nobody added or taken
+// away. Each list is put in order by name, a person with two addresses by the address after it.
+const byName = <T extends { readonly name: string }>(entries: ReadonlyArray<T>, then: (entry: T) => string): ReadonlyArray<T> =>
+  entries.toSorted((left, right) => compareText(left.name, right.name) || compareText(then(left), then(right)));
+
+const mailOf = (person: SitePerson): string => person.mail;
+
+const rolesOf = (grant: SiteGrant): string => grant.roles.join(', ');
+
 export const renderSiteMembers = (site: { readonly name: string; readonly webUrl: string }, found: SiteMembers, links: ReadonlyMap<string, string> = new Map()): string => {
   const line = (person: SitePerson): string => personLine(person, links);
   const frontMatter = renderFrontMatter([
@@ -95,10 +105,10 @@ export const renderSiteMembers = (site: { readonly name: string; readonly webUrl
   const body = [
     `# Who can open ${site.name}`,
     '',
-    ...section('Owners', found.owners.map(line)),
-    ...section('Members', found.members.map(line)),
-    ...section('SharePoint groups', found.sharePointGroups.map(grantLine)),
-    ...section('Sharing links', found.sharingLinks.map(grantLine)),
+    ...section('Owners', byName(found.owners, mailOf).map(line)),
+    ...section('Members', byName(found.members, mailOf).map(line)),
+    ...section('SharePoint groups', byName(found.sharePointGroups, rolesOf).map(grantLine)),
+    ...section('Sharing links', byName(found.sharingLinks, rolesOf).map(grantLine)),
     ...(found.note === '' ? [] : [`> ${found.note}`]),
   ];
   return withFrontMatter(frontMatter, body.join('\n'));

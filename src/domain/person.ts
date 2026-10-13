@@ -1,4 +1,5 @@
 import { contentHash } from './content-hash.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 // One person in the directory, as `get-user` answers with the manager expanded. What a colleague
 // would want to know about them and nothing else: no preferred language, no photo, no licence.
@@ -73,6 +74,4 @@ export const parseMember = (raw: unknown): Member | undefined => {
 // who did not without reading the file back. The teams and the reports are part of it because they
 // are part of the document, and both are lists whose order means nothing.
 export const personFingerprint = (person: Person, teams: ReadonlyArray<string>, reportIds: ReadonlyArray<string>): string =>
-  contentHash(
-    new TextEncoder().encode(JSON.stringify([person, [...teams].sort((left, right) => left.localeCompare(right)), [...reportIds].sort((left, right) => left.localeCompare(right))]))
-  );
+  contentHash(new TextEncoder().encode(JSON.stringify([person, [...teams].sort(compareText), [...reportIds].sort(compareText)])));

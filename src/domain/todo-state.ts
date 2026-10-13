@@ -5,6 +5,7 @@ import { datedRoot } from './output-paths.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import type { TodoTask } from './todo-task.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 export const TODO_STATE_VERSION = 1;
 
@@ -87,7 +88,7 @@ export const todoWorklist = (state: TodoState, tasks: ReadonlyArray<TodoTask>): 
   const listed = new Set(tasks.map((task) => task.id));
   return {
     // Oldest first, so a run that stops leaves a prefix of the list rather than a scattering of it.
-    write: [...tasks.filter((task) => state.tasks[task.id]?.lastModified !== task.lastModified)].sort((left, right) => left.lastModified.localeCompare(right.lastModified)),
+    write: [...tasks.filter((task) => state.tasks[task.id]?.lastModified !== task.lastModified)].sort((left, right) => compareText(left.lastModified, right.lastModified)),
     archive: Object.entries(state.tasks).flatMap(([id, record]) => (listed.has(id) ? [] : [{ id, record }])),
   };
 };

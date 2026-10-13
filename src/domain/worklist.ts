@@ -3,6 +3,7 @@ import type { DriveItem } from './drive-item.ts';
 import type { RetryLedger } from './retry-policy.ts';
 import { forgetSwept, givenUp } from './retry-policy.ts';
 import { isBefore } from './sync-window.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 export type ManifestEntry = {
   readonly path: string;
@@ -45,5 +46,5 @@ const sortKey = (work: WorkItem): string => (work.kind === 'archive' ? ` ${work.
 // last time is queued alongside, sorted by the same key: a retry is ordinary work, not a tail.
 export const buildWorklist = (items: ReadonlyArray<DriveItem>, manifest: Manifest, retry: RetryLedger = {}, since?: string): ReadonlyArray<WorkItem> =>
   [...items.map((item) => workFor(item, manifest[item.id], since)).filter((work): work is WorkItem => work !== undefined), ...retriedWork(retry, items)].sort((left, right) =>
-    sortKey(left).localeCompare(sortKey(right))
+    compareText(sortKey(left), sortKey(right))
   );

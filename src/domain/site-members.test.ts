@@ -105,6 +105,29 @@ describe('writing who can open a site', () => {
     );
   });
 
+  // Graph does not promise an order, and a page whose rows moved would read as changed with nobody
+  // added or taken away.
+  it('each list comes in the same order, whatever order the site gave its people and grants in', () => {
+    const namesake = { id: 'u-3', displayName: 'Jane Doe', mail: 'jane@archive.example.com', userType: 'Member' };
+    const shuffled = {
+      ...RAW,
+      members: [...RAW.members, namesake].reverse(),
+      sharePointGroups: [
+        { name: 'Visitors', roles: ['read'] },
+        { name: 'Owners', roles: ['full control'] },
+      ],
+      sharingLinks: [
+        { scope: 'organization', roles: ['write'] },
+        { scope: 'organization', roles: ['read'] },
+      ],
+    };
+    const page = renderSiteMembers(SITE, parseSiteMembers(shuffled));
+
+    expect(page).toContain('- Jane Doe (jane@archive.example.com)\n- Jane Doe (jane@example.com)\n- Sam Lee, guest');
+    expect(page).toContain('- Owners: full control\n- Visitors: read');
+    expect(page).toContain('- organization: read\n- organization: write');
+  });
+
   it('a list with nobody in it is left out, and so is an empty note', () => {
     const written = renderSiteMembers(SITE, parseSiteMembers({ sharingLinks: [{ scope: 'anonymous', roles: ['read', 'write'] }] }));
     expect(written).toBe(

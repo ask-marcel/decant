@@ -1,4 +1,5 @@
 import { contentHash } from './content-hash.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 // A SharePoint list, its columns and its rows, as Graph answers for them. A list here is the kind a
 // person makes and fills in, a tracker; a document library is a list too in Graph's eyes and is
@@ -139,6 +140,6 @@ export const renderListTable = (columns: ReadonlyArray<ListColumn>, rows: Readon
 // What a list's table is made of, hashed: which rows at which times under which columns, so a run
 // can tell a list that changed from one that did not without reading the table back.
 export const listFingerprint = (columnNames: ReadonlyArray<string>, rows: ReadonlyArray<ListItem>): string => {
-  const stamps = rows.map((row) => ({ id: row.id, at: row.lastModified })).sort((left, right) => left.id.localeCompare(right.id));
+  const stamps = rows.map((row) => ({ id: row.id, at: row.lastModified })).sort((left, right) => compareText(left.id, right.id));
   return contentHash(new TextEncoder().encode(JSON.stringify([columnNames, stamps])));
 };
