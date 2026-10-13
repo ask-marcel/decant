@@ -64,6 +64,12 @@ describe('what a lists run remembers between runs', () => {
     expect(second).not.toBe('kb/SharePoint lists/Espace Contoso/Projects.md');
     expect(second).toContain('Projects-');
   });
+
+  it('a list renamed only in letter case keeps the file it has, as it is', () => {
+    const own = 'kb/SharePoint lists/Espace Contoso/projects.md';
+
+    expect(listFileFor('kb/SharePoint lists/Espace Contoso', list('a', 'Projects'), new Set(), own)).toBe(own);
+  });
 });
 
 describe('writing a list as a document', () => {

@@ -158,7 +158,8 @@ const heldByOthers = (state: ListsState, id: string): ReadonlyArray<string> =>
 const planned = (roots: Roots, state: ListsState, reads: ReadonlyArray<Read>): ReadonlyArray<{ readonly read: Read; readonly file: string }> => {
   const handedOut = new Set<string>();
   return reads.map((read) => {
-    const file = listFileFor(roots.root, read.list, new Set([...heldByOthers(state, read.list.id), ...handedOut]));
+    const taken = new Set([...heldByOthers(state, read.list.id), ...handedOut]);
+    const file = listFileFor(roots.root, read.list, taken, state.lists[read.list.id]?.file);
     handedOut.add(file);
     return { read, file };
   });
