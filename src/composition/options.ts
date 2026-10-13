@@ -176,6 +176,7 @@ export const USAGE = [
   '  --people            sync the people directory, everyone in your Teams, without the picker',
   '  --calendar          sync your Outlook calendar without showing the picker',
   '  --since <day|all>   reach back to this day, or through everything, and keep it for every later run',
+  '                      a date as YYYY-MM-DD, not a count of days: --since 2026-01-31, or --since all',
   '  --dry-run           show what would be done, write nothing',
   '  --max-size-mb <n>   skip files larger than this (default 50)',
   '  --concurrency <n>   how many items to convert at once (default 4)',
