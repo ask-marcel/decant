@@ -859,8 +859,9 @@ describe('choosing what to sync', () => {
   it('every site is reported as it finishes, not only once the whole run is over', async () => {
     const { prompt } = await run(['all']);
 
-    // Two sites, each reported once for its libraries and once for its lists: `all` takes every row.
-    expect(prompt.shown.filter((text) => text.includes('converted'))).toHaveLength(4);
+    // Two sites, each reported once for its libraries and once for its lists, then the mailbox, the
+    // calendar and the people: `all` takes every row and every letter.
+    expect(prompt.shown.filter((text) => text.includes('converted'))).toHaveLength(7);
   });
 
   it('pasting a site address reaches a site the list does not show', async () => {
@@ -883,6 +884,12 @@ describe('choosing what to sync', () => {
     expect(calls[0]?.drives).toEqual([{ id: 'b!two', name: 'Site Assets' }]);
     // Strictly: `toEqual` would take a run recorded as `undefined` for no run at all.
     expect([groupRuns, todoRuns, teamRuns, notebookRuns, listsRuns, planRuns]).toStrictEqual([[], [], [], [], [], []]);
+  });
+
+  it('naming a site outright syncs no mailbox, calendar or people beside it', async () => {
+    const { mailboxRuns, calendarRuns, peopleRuns } = await run([], { siteId: 'contoso,1,2', driveIds: ['b!two'] });
+
+    expect([mailboxRuns, calendarRuns, peopleRuns]).toStrictEqual([[], [], []]);
   });
 
   it('a site named by id is filed under its real name, not under the id', async () => {
@@ -1541,8 +1548,9 @@ describe('stopping where a source fails, and nowhere else', () => {
   ];
   // The runs carried back, in the order an update takes the kinds.
   const UPDATED = ['me', 'calendar', 'people', 'site!one', GROUP.id, TODO.id, TEAM.id, NOTEBOOK.id, 'lists:contoso,3,4', PLAN.id];
-  // The runs `all` at the picker carries back: both sites for their libraries, one of every other kind, both sites for their lists.
-  const PICKED = ['site!one', 'site!one', GROUP.id, TODO.id, TEAM.id, NOTEBOOK.id, 'lists:contoso,1,2', 'lists:contoso,3,4', PLAN.id];
+  // The runs `all` at the picker carries back: both sites for their libraries, one of every other kind, both sites for their lists,
+  // then the mailbox, the calendar and the people, drawn after the numbered rows.
+  const PICKED = ['site!one', 'site!one', GROUP.id, TODO.id, TEAM.id, NOTEBOOK.id, 'lists:contoso,1,2', 'lists:contoso,3,4', PLAN.id, 'me', 'calendar', 'people'];
   const RUN_OF: Readonly<Record<FailingKind, string>> = { calendar: 'calendar', people: 'people', group: GROUP.id, todo: TODO.id, team: TEAM.id, notebook: NOTEBOOK.id };
   const finishedBefore = (order: ReadonlyArray<string>, kind: FailingKind): string[] => order.slice(0, order.indexOf(RUN_OF[kind]));
 
@@ -1586,6 +1594,17 @@ describe('stopping where a source fails, and nowhere else', () => {
       expect(step).toBe(kind);
       expect(reported[0]?.ran.map((ran) => ran.id)).toEqual(finishedBefore(PICKED, kind));
       expect(planRuns).toStrictEqual([]);
+    });
+  }
+
+  for (const kind of ['calendar', 'people'] as const) {
+    it(`all at the picker stops at a ${kind} that fails, after every numbered source has run`, async () => {
+      const { ok: succeeded, step, reported, planRuns } = await run(['all'], {}, { ...ALL_OFFERED, failing: [kind] });
+
+      expect(succeeded).toBe(false);
+      expect(step).toBe(kind);
+      expect(reported[0]?.ran.map((ran) => ran.id)).toEqual(finishedBefore(PICKED, kind));
+      expect(planRuns).toEqual([PLAN.title]);
     });
   }
 });
