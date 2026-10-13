@@ -1,4 +1,3 @@
-import { archivePath } from '../domain/output-paths.ts';
 import { renderPlanBoard, renderPlanTaskDocument } from '../domain/plan-document.ts';
 import type { BoardRow } from '../domain/plan-document.ts';
 import { PLAN_STATE_VERSION, emptyPlanState, goneTasks, parsePlanState, planRootName, planTaskFiles, serializePlanState, withTask, withoutTask } from '../domain/plan-state.ts';
@@ -18,6 +17,7 @@ import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
+import { putAside } from './put-aside.ts';
 
 export const PLAN_STATE_FILE = '.sync-state.json';
 
@@ -45,9 +45,9 @@ const NO_NOTES: RunNotes = { skipped: [], failed: [], givenUp: [], archived: [] 
 
 const failed = (step: string, cause: string, message: string): Result<never, StepError> => ({ ok: false, error: { step, cause, message } });
 
-type Roots = { readonly root: string; readonly archive: string };
+type Roots = { readonly root: string };
 
-const rootsOf = (deps: SyncPlanDeps, plan: Plan): Roots => ({ root: `${deps.kbRoot}/${planRootName(plan.title)}`, archive: `${deps.kbRoot}/_archive/${planRootName(plan.title)}` });
+const rootsOf = (deps: SyncPlanDeps, plan: Plan): Roots => ({ root: `${deps.kbRoot}/${planRootName(plan.title)}` });
 
 // No state file is the first run; one that will not parse, as JSON or as a state, is started over
 // with a warning. The plan travels in from the run, so a renamed plan is recorded under its name.
@@ -107,8 +107,7 @@ type Names = { readonly people: ReadonlyMap<string, string>; readonly labels: La
 type Done = { readonly apply: (state: PlanState) => PlanState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
 
 const moveAside = async (deps: SyncPlanDeps, roots: Roots, output: string, what: string): Promise<void> => {
-  const moved = await deps.files.move(output, archivePath(roots.archive, roots.root, output));
-  if (!moved.ok) deps.logger.warn(`${what}.failed`, { path: output, cause: moved.error.kind });
+  for (const missed of await putAside(deps, [output])) deps.logger.warn(`${what}.failed`, { path: missed.path, cause: missed.error.kind });
 };
 
 type Writing = { readonly read: Read; readonly planned: PlannedTask };

@@ -2,7 +2,7 @@ import { addressKindOf } from '../domain/address-kind.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { categoryFolderOf } from '../domain/kb-category.ts';
 import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
-import { archivePath, datedRoot, outputPrefix, recordedPrefix, remapOutputs } from '../domain/output-paths.ts';
+import { datedRoot, outputPrefix, recordedPrefix, remapOutputs } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { PEOPLE_NAME, emptyPeopleState, parsePeopleState } from '../domain/people-state.ts';
@@ -39,6 +39,7 @@ import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
+import { putAside } from './put-aside.ts';
 
 export const STATE_FILE_NAME = '.sync-state.json';
 
@@ -96,8 +97,6 @@ const add = (left: RunSummary, right: Partial<RunSummary>): RunSummary => ({
 const siteRoot = (kbRoot: string, segment: string): string => `${kbRoot}/${segment}`;
 
 const libraryRootOf = (kbRoot: string, segment: string, drive: DriveSummary): string => `${siteRoot(kbRoot, segment)}/${safeSegment(drive.name)}`;
-
-const archiveRootOf = (kbRoot: string, segment: string, drive: DriveSummary): string => `${kbRoot}/_archive/${segment}/${safeSegment(drive.name)}`;
 
 export const loadState = async (files: Files, path: string, site: SiteRef, logger: Logger): Promise<SiteState> => {
   const text = await files.readText(path);
@@ -201,8 +200,7 @@ const loadPeople = async (files: Files, kbRoot: string): Promise<PeopleState> =>
 const archiveMembers = async (deps: SyncSiteDeps, input: ResolvedInput, path: string): Promise<void> => {
   const present = await deps.files.exists(path);
   if (!present.ok || !present.value) return;
-  const moved = await deps.files.move(path, `${deps.kbRoot}/_archive/${input.segment}/${MEMBERS_FILE_NAME}`);
-  if (!moved.ok) deps.logger.warn('members.archive-failed', { siteId: input.site.id, cause: moved.error.kind });
+  for (const missed of await putAside(deps, [path])) deps.logger.warn('members.archive-failed', { siteId: input.site.id, cause: missed.error.kind });
 };
 
 // Who can open the site, read once a run after its libraries. Only a SharePoint site is asked: a Loop
@@ -367,13 +365,12 @@ const applyWork = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveS
 // A document converted again after an edit is filed under the day it now carries, which is not the
 // day it carried before, so the files from the earlier day would otherwise be left behind as a
 // second copy. Anything the fresh conversion did not write again is put aside rather than deleted.
-const archiveSuperseded = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, before: ReadonlyArray<string>, after: ReadonlyArray<string>): Promise<void> => {
-  const libraryRoot = libraryRootOf(deps.kbRoot, input.segment, drive);
-  const archiveRoot = archiveRootOf(deps.kbRoot, input.segment, drive);
-  for (const output of before.filter((path) => !after.includes(path))) {
-    const done = await deps.files.move(output, archivePath(archiveRoot, libraryRoot, output));
-    if (!done.ok) deps.logger.warn('supersede.failed', { path: output, cause: done.error.kind });
-  }
+const archiveSuperseded = async (deps: SyncSiteDeps, before: ReadonlyArray<string>, after: ReadonlyArray<string>): Promise<void> => {
+  for (const missed of await putAside(
+    deps,
+    before.filter((path) => !after.includes(path))
+  ))
+    deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
 };
 
 const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, driveState: DriveState, item: DriveItem): Promise<WorkOutcome> => {
@@ -398,7 +395,7 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   // waiting on: the ledger entry goes with them.
   const update = (manifest: DriveState): DriveState => forgetFailure(recordItem(manifest, item.id, { path: item.path, cTag: item.cTag, outputs }), item.id);
   if (outcome.kind === 'converted') {
-    await archiveSuperseded(deps, input, drive, driveState.items[item.id]?.outputs ?? [], outputs);
+    await archiveSuperseded(deps, driveState.items[item.id]?.outputs ?? [], outputs);
     return { update, counted: { converted: 1 } };
   }
   return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason: skipReason(outcome.reason, input.maxBytes, item.name) }] } };
@@ -426,12 +423,7 @@ const archiveOutputs = async (
   itemId: string,
   outputs: ReadonlyArray<string>
 ): Promise<WorkOutcome> => {
-  const libraryRoot = libraryRootOf(deps.kbRoot, input.segment, drive);
-  const archiveRoot = archiveRootOf(deps.kbRoot, input.segment, drive);
-  for (const output of outputs) {
-    const done = await deps.files.move(output, archivePath(archiveRoot, libraryRoot, output));
-    if (!done.ok) deps.logger.warn('archive.failed', { itemId, cause: done.error.kind });
-  }
+  for (const missed of await putAside(deps, outputs)) deps.logger.warn('archive.failed', { itemId, cause: missed.error.kind });
   const known = driveState.items[itemId];
   return {
     update: (manifest) => forgetItem(manifest, itemId),

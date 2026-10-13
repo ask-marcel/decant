@@ -189,7 +189,10 @@ describe('syncing a Planner plan', () => {
     const done = await run({ reader: { tasks: { 'plan-1': moved } }, files: { texts: { [STATE_PATH]: serializePlanState(settled()) } } });
 
     expect(done.summary).toMatchObject({ converted: 1, archived: 1 });
-    expect(done.files.moves.map((move) => move.to)).toEqual(['kb/_archive/Planner/Offsite 2026/To do/Book the venue.md', 'kb/_archive/Planner/Offsite 2026/Done/Pick a date.md']);
+    expect(done.files.moves.map((move) => move.to)).toEqual([
+      'kb/_archive/2026-09-12/Planner/Offsite 2026/To do/Book the venue.md',
+      'kb/_archive/2026-09-12/Planner/Offsite 2026/Done/Pick a date.md',
+    ]);
     expect(done.notes.archived).toEqual([{ path: 'Pick a date', reason: 'no longer in the plan' }]);
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Pick a date');
     expect(Object.keys(stateOf(done.files).tasks)).toEqual(['t-venue']);
@@ -240,8 +243,8 @@ describe('syncing a Planner plan', () => {
 
     const recorded = stateOf(done.files).tasks['namesake']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('Ask about the menu.');
-    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/Planner/Offsite 2026/To do/Call the caterer.md' }]);
-    expect(done.files.written.get('kb/_archive/Planner/Offsite 2026/To do/Call the caterer.md')).toBe('the task as it was');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/2026-09-12/Planner/Offsite 2026/To do/Call the caterer.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-12/Planner/Offsite 2026/To do/Call the caterer.md')).toBe('the task as it was');
   });
 
   it('a task whose details cannot be read is reported as failed and kept as it was, still on the board; an assignee who cannot be named is shown by id', async () => {

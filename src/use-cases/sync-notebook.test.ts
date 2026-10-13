@@ -139,8 +139,8 @@ describe('syncing a OneNote notebook', () => {
 
     expect(done.summary).toMatchObject({ converted: 3, archived: 1 });
     expect(done.files.moves.map((move) => move.to)).toEqual([
-      'kb/_archive/OneNote/Northwind Leadership Notebook/Old section/Kick-off.md',
-      'kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Deleted.md',
+      'kb/_archive/2026-09-12/OneNote/Northwind Leadership Notebook/Old section/Kick-off.md',
+      'kb/_archive/2026-09-12/OneNote/Northwind Leadership Notebook/Meetings/Deleted.md',
     ]);
     expect(done.notes.archived).toEqual([{ path: 'Deleted', reason: 'no longer in the notebook' }]);
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Deleted');
@@ -171,8 +171,8 @@ describe('syncing a OneNote notebook', () => {
 
     const recorded = stateOf(done.files).pages['b']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('the kick-off, moved to Monday');
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/Meetings/Kick-off.md`, to: 'kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md' }]);
-    expect(done.files.written.get('kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md')).toBe('the page as it was');
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/Meetings/Kick-off.md`, to: 'kb/_archive/2026-09-12/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-12/OneNote/Northwind Leadership Notebook/Meetings/Kick-off.md')).toBe('the page as it was');
   });
 
   it('a page renamed while its namesake changes puts only its own old copy aside, and the namesake is rewritten in the file its record names', async () => {
@@ -191,8 +191,8 @@ describe('syncing a OneNote notebook', () => {
 
     const recorded = stateOf(done.files).pages['namesake']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('What went well');
-    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Retro.md' }]);
-    expect(done.files.written.get('kb/_archive/OneNote/Northwind Leadership Notebook/Meetings/Retro.md')).toBe('the page as it was');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/2026-09-12/OneNote/Northwind Leadership Notebook/Meetings/Retro.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-12/OneNote/Northwind Leadership Notebook/Meetings/Retro.md')).toBe('the page as it was');
   });
 
   it('three pages sharing a title in one section land in three files, even when their ids open alike', async () => {

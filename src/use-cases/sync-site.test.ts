@@ -197,7 +197,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     expect(files.moves).toEqual([
       {
         from: 'kb/SharePoint sites/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md',
-        to: 'kb/_archive/SharePoint sites/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md',
+        to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md',
       },
     ]);
   });
@@ -304,7 +304,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     expect(files.moves).toEqual([
       {
         from: 'kb/SharePoint sites/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md',
-        to: 'kb/_archive/SharePoint sites/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md',
+        to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md',
       },
     ]);
     expect(stateAfter(files).drives['b!one']?.items).toEqual({});
@@ -1018,7 +1018,7 @@ describe('writing down who can open a site', () => {
   it('a page whose site now answers with nobody is put aside, since it no longer says who can open the site', async () => {
     const { files } = await run({ files: { texts: { [MEMBERS_PATH]: 'an older page' } } });
 
-    expect(files.moves).toContainEqual({ from: MEMBERS_PATH, to: 'kb/_archive/SharePoint sites/Espace Contoso/_members.md' });
+    expect(files.moves).toContainEqual({ from: MEMBERS_PATH, to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/_members.md' });
   });
 
   it('a page that cannot be put aside is logged with its cause', async () => {

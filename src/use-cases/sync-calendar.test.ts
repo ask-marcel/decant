@@ -158,8 +158,8 @@ describe('syncing the calendar', () => {
 
     expect(done.summary.converted).toBe(1);
     expect(done.files.moves.map((move) => move.to)).toEqual([
-      'kb/_archive/Calendar/2026-09-05/Offsite planning.md',
-      'kb/_archive/Calendar/2026-09-05/Offsite planning.attachments/Old.docx.md',
+      'kb/_archive/2026-09-12/Calendar/2026-09-05/Offsite planning.md',
+      'kb/_archive/2026-09-12/Calendar/2026-09-05/Offsite planning.attachments/Old.docx.md',
     ]);
   });
 
@@ -174,7 +174,7 @@ describe('syncing the calendar', () => {
 
     expect(done.summary.archived).toBe(1);
     expect(done.notes.archived).toEqual([{ path: 'Cancelled call', reason: 'deleted from the calendar' }]);
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/2026-09-01/Cancelled call.md`, to: 'kb/_archive/Calendar/2026-09-01/Cancelled call.md' }]);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/2026-09-01/Cancelled call.md`, to: 'kb/_archive/2026-09-12/Calendar/2026-09-01/Cancelled call.md' }]);
     expect(stateOf(done.files).events).toEqual({});
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Cancelled call');
   });
@@ -382,8 +382,8 @@ describe('syncing the calendar', () => {
 
     const recorded = stateOf(done.files).events['b']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('Bring the contract');
-    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/Calendar/2026-09-10/Call.md' }]);
-    expect(done.files.written.get('kb/_archive/Calendar/2026-09-10/Call.md')).toBe('the call as it was');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/2026-09-12/Calendar/2026-09-10/Call.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-12/Calendar/2026-09-10/Call.md')).toBe('the call as it was');
   });
 
   it('three events sharing a subject and a day land in three files, though Graph opens all their ids alike', async () => {
@@ -462,7 +462,7 @@ describe('syncing the calendar', () => {
     });
 
     expect(done.reader.calls.filter((call) => call.startsWith('eventsDelta'))).toEqual(['eventsDelta:https://graph/delta?token=1', 'eventsDelta:fresh']);
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/2026-09-11/Cancelled call.md`, to: 'kb/_archive/Calendar/2026-09-11/Cancelled call.md' }]);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/2026-09-11/Cancelled call.md`, to: 'kb/_archive/2026-09-12/Calendar/2026-09-11/Cancelled call.md' }]);
     expect(done.summary).toMatchObject({ converted: 2, archived: 1 });
   });
 

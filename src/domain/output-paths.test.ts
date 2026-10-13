@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { archivePath, datedRoot, outputPrefix, recordedPrefix, remapOutputs } from './output-paths.ts';
+import { datedRoot, outputPrefix, recordedPrefix, remapOutputs } from './output-paths.ts';
 
 describe('naming the files a document produces', () => {
   it('a document in a folder produces files under that folder, named after it', () => {
@@ -24,16 +24,6 @@ describe('following a document that was renamed in SharePoint', () => {
 
   it('a file recorded somewhere unexpected is left where it is rather than moved wrongly', () => {
     expect(remapOutputs(['kb/elsewhere/x.md'], 'kb/S/D/Old.pptx', 'kb/S/D/New.pptx')).toEqual(['kb/elsewhere/x.md']);
-  });
-});
-
-describe('putting aside what SharePoint no longer has', () => {
-  it('an archived file keeps the place it had inside the library', () => {
-    expect(archivePath('kb/_archive/Site/Documents', 'kb/Site/Documents', 'kb/Site/Documents/Projets/Old.docx.md')).toBe('kb/_archive/Site/Documents/Projets/Old.docx.md');
-  });
-
-  it('a file recorded outside the library is still put aside rather than left behind', () => {
-    expect(archivePath('kb/_archive/Site/Documents', 'kb/Site/Documents', 'kb/other/Old.md')).toBe('kb/_archive/Site/Documents/kb/other/Old.md');
   });
 });
 

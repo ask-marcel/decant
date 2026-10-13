@@ -15,7 +15,6 @@ import {
 } from '../domain/calendar-state.ts';
 import type { CalendarState, EventRecord } from '../domain/calendar-state.ts';
 import { fitSegment, freeSegment, holdsIgnoringCase, safeSegment } from '../domain/kb-path.ts';
-import { archivePath } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -31,6 +30,7 @@ import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
+import { putAside } from './put-aside.ts';
 
 export const CALENDAR_STATE_FILE = '.sync-state.json';
 
@@ -62,8 +62,6 @@ const failed = (step: string, cause: string, message: string): Result<never, Ste
 
 export const calendarRoot = (kbRoot: string): string => `${kbRoot}/${CALENDAR_NAME}`;
 
-const archiveRootOf = (kbRoot: string): string => `${kbRoot}/_archive/${CALENDAR_NAME}`;
-
 const loadState = async (deps: SyncCalendarDeps, path: string): Promise<CalendarState> => {
   const text = await deps.files.readText(path);
   if (!text.ok) return emptyCalendarState();
@@ -80,8 +78,7 @@ type Done = { readonly apply: (state: CalendarState) => CalendarState; readonly 
 const NOTHING: Done = { apply: (carried) => carried, counted: {}, notes: {} };
 
 const moveAside = async (deps: SyncCalendarDeps, output: string, what: string): Promise<void> => {
-  const moved = await deps.files.move(output, archivePath(archiveRootOf(deps.kbRoot), calendarRoot(deps.kbRoot), output));
-  if (!moved.ok) deps.logger.warn(`${what}.failed`, { path: output, cause: moved.error.kind });
+  for (const missed of await putAside(deps, [output])) deps.logger.warn(`${what}.failed`, { path: missed.path, cause: missed.error.kind });
 };
 
 // A deleted event: what it wrote goes to the archive, and it is named in the report by its
