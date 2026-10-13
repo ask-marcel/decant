@@ -16,6 +16,8 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { withGaveUp } from '../domain/report.ts';
 
 export const PLAN_STATE_FILE = '.sync-state.json';
 
@@ -60,8 +62,9 @@ const loadState = async (deps: SyncPlanDeps, roots: Roots, plan: Plan): Promise<
 };
 
 // A task read whole: its card and its details. The details failing costs the task and not the run.
-type Read =
-  { readonly task: PlanTask; readonly details: TaskDetails; readonly failed?: undefined } | { readonly task: PlanTask; readonly details?: undefined; readonly failed: string };
+type DetailedRead = { readonly task: PlanTask; readonly details: TaskDetails; readonly failed?: undefined };
+
+type Read = DetailedRead | { readonly task: PlanTask; readonly details?: undefined; readonly failed: string };
 
 const readOne = async (deps: SyncPlanDeps, task: PlanTask): Promise<Read> => {
   const details = await deps.reader.details(task.id);
@@ -110,9 +113,12 @@ const moveAside = async (deps: SyncPlanDeps, roots: Roots, output: string, what:
 
 type Writing = { readonly read: Read; readonly planned: PlannedTask };
 
-const writeOne = async (deps: SyncPlanDeps, input: SyncPlanInput, roots: Roots, state: PlanState, names: Names, entry: Writing): Promise<Done> => {
+type DetailedWriting = { readonly read: DetailedRead; readonly planned: PlannedTask };
+
+const hasDetails = (entry: Writing): entry is DetailedWriting => entry.read.details !== undefined;
+
+const writeOne = async (deps: SyncPlanDeps, input: SyncPlanInput, roots: Roots, state: PlanState, names: Names, entry: DetailedWriting): Promise<Done> => {
   const { read, planned } = entry;
-  if (read.details === undefined) return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: read.task.title, reason: read.failed }] } };
   const labels = labelsOf(read.task, names.labels);
   const page = renderPlanTaskDocument({
     task: read.task,
@@ -124,14 +130,19 @@ const writeOne = async (deps: SyncPlanDeps, input: SyncPlanInput, roots: Roots, 
     syncedAt: deps.clock.nowIso(),
   });
   const written = await deps.files.writeText(planned.file, page);
+  const id = read.task.id;
+  const fingerprint = taskFingerprint(read.task, read.details, labels);
   if (!written.ok) {
-    deps.logger.warn('task.failed', { task: read.task.id, cause: written.error.kind });
-    return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: read.task.title, reason: written.error.message }] } };
+    deps.logger.warn('task.failed', { task: id, cause: written.error.kind });
+    const attempt = nextAttempt(state.retry?.[id], fingerprint, read.task.title, written.error.message);
+    // Out of tries now: named under its own heading, not as a failure the next run will try again.
+    const notes = isGivenUp(attempt, fingerprint) ? {} : { failed: [{ path: read.task.title, reason: written.error.message }] };
+    return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, id, attempt) }), counted: { failed: 1 }, notes };
   }
-  const before = state.tasks[read.task.id];
+  const before = state.tasks[id];
   if (before !== undefined && before.file !== planned.file) await moveAside(deps, roots, before.file, 'supersede');
-  const record: TaskRecord = { file: planned.file, fingerprint: taskFingerprint(read.task, read.details, labels), title: read.task.title };
-  return { apply: (carried) => withTask(carried, read.task.id, record), counted: { converted: 1 }, notes: {} };
+  const record: TaskRecord = { file: planned.file, fingerprint, title: read.task.title };
+  return { apply: (carried) => ({ ...withTask(carried, id, record), retry: clearAttempt(carried.retry, id) }), counted: { converted: 1 }, notes: {} };
 };
 
 const archiveGone = async (deps: SyncPlanDeps, roots: Roots, gone: { readonly id: string; readonly record: TaskRecord }): Promise<Done> => {
@@ -169,18 +180,14 @@ const save = async (deps: SyncPlanDeps, roots: Roots, state: PlanState): Promise
   return written.ok ? ok(undefined) : failed('saveState', written.error.kind, written.error.message);
 };
 
-// A task is owed when its details could not be read (so it is reported), when the card or the
-// details moved, or when its page belongs somewhere else now, which a bucket renamed does without
-// touching the card.
-const owed = (state: PlanState, entries: ReadonlyArray<Writing>, labels: LabelNames): ReadonlyArray<Writing> =>
-  entries.filter(({ read, planned }) => {
+// A task is owed when the card or the details moved, or when its page belongs somewhere else now,
+// which a bucket renamed does without touching the card, unless it ran out of tries on this version.
+// A task whose details could not be read is counted apart, before any page is written.
+const owed = (state: PlanState, entries: ReadonlyArray<Writing>, labels: LabelNames): ReadonlyArray<DetailedWriting> =>
+  entries.filter(hasDetails).filter(({ read, planned }) => {
     const record = state.tasks[read.task.id];
-    return (
-      read.details === undefined ||
-      record === undefined ||
-      record.fingerprint !== taskFingerprint(read.task, read.details, labelsOf(read.task, labels)) ||
-      record.file !== planned.file
-    );
+    const fingerprint = taskFingerprint(read.task, read.details, labelsOf(read.task, labels));
+    return (record === undefined || record.fingerprint !== fingerprint || record.file !== planned.file) && !isGivenUp(state.retry?.[read.task.id], fingerprint);
   });
 
 const writePages = async (
@@ -188,7 +195,7 @@ const writePages = async (
   input: SyncPlanInput,
   roots: Roots,
   carried: Progressing,
-  work: ReadonlyArray<Writing>,
+  work: ReadonlyArray<DetailedWriting>,
   names: Names
 ): Promise<Result<Progressing, StepError>> => {
   let progressing = carried;
@@ -234,11 +241,24 @@ const listed = async (deps: SyncPlanDeps, plan: Plan): Promise<Result<Listed, St
   return ok({ buckets: buckets.value, tasks: tasks.value });
 };
 
-const finish = async (deps: SyncPlanDeps, input: SyncPlanInput, roots: Roots, done: Progressing): Promise<Result<SourceRun, StepError>> => {
+const finish = async (deps: SyncPlanDeps, input: SyncPlanInput, roots: Roots, before: PlanState, done: Progressing): Promise<Result<SourceRun, StepError>> => {
   const saved = await save(deps, roots, done.state);
   if (!saved.ok) return saved;
-  await writeReport(deps, input, roots.root, input.plan.title, done.summary, done.notes);
-  return ok({ id: input.plan.id, source: input.plan.title, summary: done.summary, notes: done.notes });
+  const notes = withGaveUp({ ...done.notes, givenUp: givenUpNotes(done.state.retry) }, gaveUpNotes(before.retry, done.state.retry));
+  await writeReport(deps, input, roots.root, input.plan.title, done.summary, notes);
+  return ok({ id: input.plan.id, source: input.plan.title, summary: done.summary, notes });
+};
+
+// Every task's details are read on every run, so one that could not be read is asked for again each
+// time: named as a failure for three runs, then given up on.
+const triedDetails = (state: PlanState, entries: ReadonlyArray<Writing>): Progressing => {
+  const unread = entries.flatMap(({ read }) => (read.failed === undefined ? [] : [{ id: read.task.id, name: read.task.title, reason: read.failed }]));
+  const tried = triedReads(
+    state.retry,
+    entries.filter(hasDetails).map(({ read }) => read.task.id),
+    unread
+  );
+  return { summary: { ...EMPTY, failed: tried.tried }, notes: { ...NO_NOTES, failed: tried.failed }, state: { ...state, retry: tried.retry } };
 };
 
 export const createSyncPlan =
@@ -253,15 +273,16 @@ export const createSyncPlan =
     const placed = planTaskFiles(roots.root, plan.value.tasks, plan.value.buckets, state, deps.pathBudget);
     const entries = await inWindows(placed, input.concurrency, async (planned): Promise<Writing> => ({ read: await readOne(deps, planned.task), planned }));
     const work = owed(state, entries, labels);
-    if (input.dryRun)
-      return ok({ id: input.plan.id, source: input.plan.title, summary: { ...EMPTY, queued: work.filter((entry) => entry.read.details !== undefined).length }, notes: NO_NOTES });
+    if (input.dryRun) return ok({ id: input.plan.id, source: input.plan.title, summary: { ...EMPTY, queued: work.length }, notes: NO_NOTES });
     const names: Names = { people: await namesOf(deps, plan.value.tasks, input.concurrency), labels };
     deps.progress.start(work.length, input.plan.title);
-    const written = await writePages(deps, input, roots, { summary: EMPTY, notes: NO_NOTES, state }, work, names);
+    const opening = triedDetails(state, entries);
+    const written = await writePages(deps, input, roots, opening, work, names);
     deps.progress.done();
     if (!written.ok) return written;
     const gone = goneTasks(state, plan.value.tasks);
     const done = fold(written.value, await Promise.all(gone.map((entry) => archiveGone(deps, roots, entry))));
-    if (work.length + gone.length > 0 || state.lastRun.length === 0) await writeBoard(deps, input, roots, entries, plan.value.buckets, names);
-    return finish(deps, input, roots, done);
+    // A task whose details failed this run still has its card, and the board is drawn again with it.
+    if (work.length + gone.length + opening.summary.failed > 0 || state.lastRun.length === 0) await writeBoard(deps, input, roots, entries, plan.value.buckets, names);
+    return finish(deps, input, roots, state, done);
   };
