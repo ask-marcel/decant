@@ -23,6 +23,9 @@ const rowLine = (row: IndexRow): string => {
   return `- ${[row.day, link, row.note].filter((part) => part.length > 0).join(' · ')}`;
 };
 
+// A file named from the folder the page sits in, which is where a link on the page starts from.
+export const relativeTo = (folder: string, file: string): string => (file.startsWith(`${folder}/`) ? file.slice(folder.length + 1) : file);
+
 // The day an instant falls on where the knowledge base counts its days, and nothing for an item that
 // gave no instant, rather than a day nobody lived.
 export const indexDay = (instantIso: string, zone: string): string => (instantIso.length === 0 ? '' : dayIn(instantIso, zone));

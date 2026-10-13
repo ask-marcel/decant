@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { indexDay, renderIndexPage } from './index-page.ts';
+import { indexDay, relativeTo, renderIndexPage } from './index-page.ts';
 
 describe('listing what a source holds on one page', () => {
   it('each item is one line: its day, its title linked to its file, and the field a reader picks it out by', () => {
@@ -38,6 +38,11 @@ describe('listing what a source holds on one page', () => {
 
   it('a source that holds nothing yet says so, rather than leaving a page with a title alone', () => {
     expect(renderIndexPage('Mailbox', [{ heading: 'By last message', rows: [] }])).toBe('# Mailbox\n\nNothing here yet.\n');
+  });
+
+  it('a file is linked from the folder the page sits in, and one outside it as it was recorded', () => {
+    expect(relativeTo('kb/To Do/Tasks', 'kb/To Do/Tasks/undated/a.md')).toBe('undated/a.md');
+    expect(relativeTo('kb/To Do/Tasks', 'kb/To Do/Tasks archive/a.md')).toBe('kb/To Do/Tasks archive/a.md');
   });
 
   it('an instant is listed under the day it falls on in the zone of the knowledge base, and no instant under no day', () => {
