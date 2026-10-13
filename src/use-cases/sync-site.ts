@@ -443,13 +443,16 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason: skipReason(outcome.reason, input.maxBytes, item.name) }] } };
 };
 
+// A file that will not move to its new place, one already there or held open, stays recorded where it
+// is: recorded at the new place, the document would name a file that is not its own.
 const moveOutputs = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, item: DriveItem, from: string, outputs: ReadonlyArray<string>): Promise<WorkOutcome> => {
-  const moved = refiledOutputs(libraryRootOf(deps.kbRoot, input.segment, drive), from, item.path, outputs);
-  for (const [index, target] of moved.entries()) {
-    const source = outputs[index];
-    if (source === undefined || source === target) continue;
-    const done = await deps.files.move(source, target);
-    if (!done.ok) deps.logger.warn('move.failed', { itemId: item.id, cause: done.error.kind });
+  const targets = refiledOutputs(libraryRootOf(deps.kbRoot, input.segment, drive), from, item.path, outputs);
+  const moved: string[] = [];
+  for (const [index, target] of targets.entries()) {
+    const source = outputs[index] ?? target;
+    const done = source === target ? undefined : await deps.files.move(source, target);
+    if (done !== undefined && !done.ok) deps.logger.warn('move.failed', { itemId: item.id, cause: done.error.kind });
+    moved.push(done === undefined || done.ok ? target : source);
   }
   return { update: (manifest) => renameItem(manifest, item.id, item.path, moved), counted: { moved: 1 } };
 };
