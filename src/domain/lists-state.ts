@@ -4,6 +4,8 @@ import type { SafeRelPath } from './kb-path.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import type { SharePointList } from './sharepoint-list.ts';
+import { parseAttempts } from './retry-ledger.ts';
+import type { Attempts } from './retry-ledger.ts';
 
 export const LISTS_STATE_VERSION = 1;
 
@@ -20,6 +22,8 @@ export type ListsState = {
   readonly source: { readonly kind: 'lists'; readonly id: string; readonly name: string };
   readonly lastRun: string;
   readonly lists: Readonly<Record<string, ListRecord>>;
+  // The lists that could not be read or written, by list id, three runs at most on the same version.
+  readonly retry?: Attempts;
 };
 
 export type ListsStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -61,6 +65,7 @@ export const parseListsState = (raw: unknown): Result<ListsState, ListsStateErro
     source: { kind: 'lists', id: readString(source, 'id') ?? '', name: readString(source, 'name') ?? '' },
     lastRun: readString(raw, 'lastRun') ?? '',
     lists: listsOf(raw['lists']),
+    retry: parseAttempts(raw['retry']),
   });
 };
 

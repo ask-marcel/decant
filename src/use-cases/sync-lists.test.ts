@@ -200,6 +200,44 @@ describe('syncing the lists of a SharePoint site', () => {
     expect(stateOf(done.files).lists['issues']).toBeDefined();
   });
 
+  // Every list is read whole on every run, so one whose rows cannot be read is asked for again each
+  // time: named as a failure for three runs, then once as given up, its count staying put.
+  it('a list that cannot be read three runs running is named once as given up, and a list read again leaves nothing behind', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ reader: { failRowsOf: ['issues'] }, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' } } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+    const issues = [{ path: 'Issues', reason: 'Graph is busy' }];
+
+    expect(third.notes.gaveUp).toEqual(issues);
+    expect(third.summary.failed).toBe(1);
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.notes.givenUp).toEqual(issues);
+    expect(fourth.files.written.get(STATE_PATH)).toBe(third.files.written.get(STATE_PATH));
+
+    const read = await run({ files: { texts: { [STATE_PATH]: fourth.files.written.get(STATE_PATH) ?? '' } } });
+
+    expect(JSON.parse(read.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
+  it('a table that will not write three runs running is left alone by the fourth, until its rows change', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' }, failWritesMatching: 'Issues.md' } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+
+    expect(third.notes.gaveUp).toEqual([{ path: 'Issues', reason: `cannot write ${ROOT}/Issues.md` }]);
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.progress.started).toEqual([{ total: 0, what: SITE.name }]);
+
+    const changed = await run({
+      reader: { rows: { ...ROWS, issues: [row('7', '2026-09-20T10:00:00Z', 'Leak fixed')] } },
+      files: { texts: { [STATE_PATH]: fourth.files.written.get(STATE_PATH) ?? '' } },
+    });
+
+    expect(changed.summary.converted).toBe(1);
+  });
+
   it('a site whose lists cannot be listed ends the run naming the step', async () => {
     const done = await run({ reader: { failLists: { kind: 'auth', message: 'sign-in has lapsed' } } });
 
