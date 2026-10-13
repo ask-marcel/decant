@@ -22,6 +22,7 @@ const run = async (): Promise<number> => {
   const config = readConfig({
     env: process.env,
     out: options.value.out,
+    platform: process.platform,
     ocrLang: options.value.ocrLang,
     ocr: options.value.ocr,
     interactive: options.value.command === 'sync',
