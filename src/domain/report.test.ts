@@ -52,7 +52,7 @@ describe('telling the operator what did not reach the knowledge base', () => {
         '- Documents/Demo.mp4: a .mp4 file, which this tool does not read',
         '- Documents/Enorme.pptx: larger than the 50 MB cap',
         '',
-        'Could not be read, and will be tried again on the next run:',
+        'Failed, and will be tried again on the next run:',
         '- Documents/Contrat.docx: permanent: file is locked',
         '',
       ].join('\n')
@@ -62,7 +62,7 @@ describe('telling the operator what did not reach the knowledge base', () => {
   it('a file given up on is named under its own heading, not the one promising another try', () => {
     const rendered = renderReportRun(run({ givenUp: [{ path: 'Annexes/appendix_9.1.pdf', reason: 'permanent: locked' }] }));
 
-    expect(rendered).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
+    expect(rendered).toContain('Failed 3 times, and will not be tried again unless the file changes:');
     expect(rendered).toContain('- Annexes/appendix_9.1.pdf: permanent: locked');
     expect(rendered).not.toContain('will be tried again on the next run');
   });
@@ -92,7 +92,7 @@ describe('telling the operator what did not reach the knowledge base', () => {
   it('a heading with nothing under it is left out entirely', () => {
     const rendered = renderReportRun(run({ skipped: [{ path: 'a.mp4', reason: unsupportedReason('Demo.mp4') }] }));
 
-    expect(rendered).not.toContain('Could not be read');
+    expect(rendered).not.toContain('Failed');
     expect(rendered).not.toContain('No longer at the source');
   });
 

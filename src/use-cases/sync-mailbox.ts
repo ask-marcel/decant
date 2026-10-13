@@ -42,6 +42,8 @@ import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
+import { withGaveUp } from '../domain/report.ts';
+import type { ReportEntry } from '../domain/report.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 
@@ -460,6 +462,18 @@ const noted = (notes: RunNotes, results: ReadonlyArray<Rendered>): RunNotes =>
     notes
   );
 
+// Added to, never replacing: a run reports the files a rendered thread has stopped owing as well as
+// the threads the ledger still holds, and the two lists are filled from different places. The files
+// stopped owing in this run, and a thread joins the list in the run that gave up on it: those two
+// are what the mailbox's own report names.
+const abandonedNotes = (notes: RunNotes, before: MailboxState, finished: MailboxState): RunNotes => {
+  const named = (entry: { readonly threadId: string; readonly reason: string }): ReportEntry => ({ path: reportedAs(finished.titles, entry.threadId), reason: entry.reason });
+  const already = new Set(abandonedThreads(before.retry).map((entry) => entry.threadId));
+  const abandoned = abandonedThreads(finished.retry);
+  const gaveUp = abandoned.filter((entry) => !already.has(entry.threadId)).map(named);
+  return withGaveUp({ ...notes, givenUp: [...notes.givenUp, ...abandoned.map(named)] }, [...notes.givenUp, ...gaveUp]);
+};
+
 const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<SourceRun, StepError>> => {
   let current = state;
   let summary = EMPTY;
@@ -494,12 +508,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
   const saved = await save(deps.files, statePath, finished, input.dryRun);
   if (!saved.ok) return saved;
   await writeIndexes(deps, input, finished);
-  // Added to, never replacing: a run reports the files a rendered thread has stopped owing as well as
-  // the threads the ledger still holds, and the two lists are filled from different places.
-  const withAbandoned = {
-    ...notes,
-    givenUp: [...notes.givenUp, ...abandonedThreads(finished.retry).map((entry) => ({ path: reportedAs(finished.titles, entry.threadId), reason: entry.reason }))],
-  };
+  const withAbandoned = abandonedNotes(notes, state, finished);
   await writeReport(deps, input, mailboxRoot(deps.kbRoot), MAILBOX_NAME, summary, withAbandoned);
   return ok({ id: MAILBOX_ID, source: MAILBOX_NAME, summary, notes: withAbandoned });
 };

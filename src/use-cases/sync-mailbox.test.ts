@@ -15,7 +15,7 @@ import { createProgressFake } from '../test-helpers/progress-fake.ts';
 import type { ProgressFake } from '../test-helpers/progress-fake.ts';
 import type { RenderThreadInput, RenderThreadOutcome } from './render-thread.ts';
 import { createSyncMailbox } from './sync-mailbox.ts';
-import type { RunSummary } from './sync-site.ts';
+import type { RunNotes, RunSummary } from './sync-site.ts';
 import type { StepError } from './ports/step-error.ts';
 
 const STATE_PATH = 'kb/Mailbox/.sync-state.json';
@@ -70,6 +70,7 @@ const run = async (
   } = {}
 ): Promise<{
   summary: RunSummary;
+  notes?: RunNotes;
   files: FilesFake;
   logger: LoggerFake;
   progress: ProgressFake;
@@ -107,6 +108,7 @@ const run = async (
   });
   return {
     summary: result.ok ? result.value.summary : ({} as RunSummary),
+    notes: result.ok ? result.value.notes : undefined,
     files,
     logger,
     progress,
@@ -934,7 +936,7 @@ describe('a conversation the run could not write', () => {
     const first = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, failThread: 'conv-1' });
     const report = first.files.written.get(REPORT_PATH) ?? '';
 
-    expect(report).toContain('Could not be read, and will be tried again on the next run:');
+    expect(report).toContain('Failed, and will be tried again on the next run:');
     expect(report).not.toContain('will not be tried again');
   });
 
@@ -967,17 +969,21 @@ describe('a conversation the run could not write', () => {
     const third = await again(second.files.written.get(STATE_PATH) ?? '', true);
     const report = third.files.written.get(REPORT_PATH) ?? '';
 
-    expect(report).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
+    expect(report).toContain('Failed 3 times, and will not be tried again unless the file changes:');
     expect(report).toContain('- thread Contrat Contoso: thread refused');
     expect(report).not.toContain('will be tried again on the next run');
   });
 
-  it('a conversation given up on before subjects were kept is named in the report by its id, all there is to call it', async () => {
+  // Given up by an earlier run, so the mailbox's own report named it then and does not again. The
+  // run still hands it on to the report of the whole run.
+  it('a conversation given up on before subjects were kept is handed on by its id, all there is to call it', async () => {
     const givenUp = serializeMailboxState({ ...emptyMailboxState(), retry: { [THREAD]: { attempts: 3, reason: 'thread refused' } } });
 
-    const { files } = await run({ files: { texts: { [STATE_PATH]: givenUp } }, reader: NOTHING_NEW });
+    const { files, notes } = await run({ files: { texts: { [STATE_PATH]: givenUp } }, reader: NOTHING_NEW });
 
-    expect(files.written.get(REPORT_PATH)).toContain(`- thread ${THREAD}: thread refused`);
+    expect(notes?.givenUp).toEqual([{ path: `thread ${THREAD}`, reason: 'thread refused' }]);
+    expect(notes?.gaveUp).toBeUndefined();
+    expect(files.written.has(REPORT_PATH)).toBe(false);
   });
 
   it('a conversation that gained a reply after it was given up on is written again from scratch', async () => {
@@ -1023,7 +1029,7 @@ describe('a thread that renders while one of its files does not', () => {
     const first = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome: () => OWING });
     const report = first.files.written.get(REPORT_PATH) ?? '';
 
-    expect(report).toContain('Could not be read, and will be tried again on the next run:');
+    expect(report).toContain('Failed, and will be tried again on the next run:');
     expect(report).toContain('- threads/2026-05-12/thread.md: c.docx: locked');
     expect(report).not.toContain('will not be tried again');
   });
@@ -1055,7 +1061,7 @@ describe('a thread that renders while one of its files does not', () => {
     const third = await again(second.files.written.get(STATE_PATH) ?? '', OWING);
     const report = third.files.written.get(REPORT_PATH) ?? '';
 
-    expect(report).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
+    expect(report).toContain('Failed 3 times, and will not be tried again unless the file changes:');
     expect(report).toContain('- threads/2026-05-12/thread.md: c.docx: locked');
     expect(report).not.toContain(`- thread ${THREAD}`);
   });

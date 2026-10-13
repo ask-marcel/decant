@@ -14,6 +14,10 @@ export type ReportNotes = {
   // Held apart from `failed` because the two promise a reader different things, and one heading
   // covering both would go on saying "next run" about a file no run will pick up again.
   readonly givenUp: ReadonlyArray<ReportEntry>;
+  // The part of `givenUp` that ran out of tries in this run, absent when none did. A source's own
+  // report is a log of runs, so it names an item once, in the run that gave up on it. The report
+  // of the whole run names every item still given up, from `givenUp`, so the list stays current.
+  readonly gaveUp?: ReadonlyArray<ReportEntry>;
   readonly archived: ReadonlyArray<ReportEntry>;
 };
 
@@ -64,17 +68,21 @@ const list = (title: string, entries: ReadonlyArray<ReportEntry>): ReadonlyArray
   return lines.length === 0 ? [] : ['', title, ...lines];
 };
 
+// Present only when something gave up in this run, so a run with nothing to say carries nothing.
+export const withGaveUp = (notes: ReportNotes, gaveUp: ReadonlyArray<ReportEntry>): ReportNotes => (gaveUp.length === 0 ? notes : { ...notes, gaveUp });
+
 // A run that converted everything writes nothing: the state file already records when it ran, and a
 // report that repeats "all good" every night buries the runs that did leave something behind.
 export const hasSomethingToReport = (run: ReportRun): boolean => run.skipped.length + run.failed.length + run.givenUp.length + run.archived.length > 0;
 
-// The four lists, in the order a reader wants them: what was left out on purpose, what could not be
-// read and is worth another run, what has run out of runs, then what the source no longer has.
+// The four lists, in the order a reader wants them: what was left out on purpose, what failed and is
+// worth another run, what has run out of runs, then what the source no longer has. A failure can be
+// a read, a conversion or a write, and each reason starts with the kind of error that stopped it.
 // Shared with the global report, so the same entry reads the same way whichever file it is opened in.
 export const renderNoteLists = (notes: ReportNotes): ReadonlyArray<string> => [
   ...list('Left in place, nothing was written for these:', notes.skipped),
-  ...list('Could not be read, and will be tried again on the next run:', notes.failed),
-  ...list(`Could not be read after ${MAX_CONVERSION_ATTEMPTS} tries, and will not be tried again unless the file changes:`, notes.givenUp),
+  ...list('Failed, and will be tried again on the next run:', notes.failed),
+  ...list(`Failed ${MAX_CONVERSION_ATTEMPTS} times, and will not be tried again unless the file changes:`, notes.givenUp),
   ...list('No longer at the source, moved aside:', notes.archived),
 ];
 
