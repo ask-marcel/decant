@@ -24,9 +24,11 @@ export type ConfigInput = {
   readonly ocrLang: string;
   readonly ocr?: boolean;
   readonly interactive: boolean;
-  // What `--timezone` asked for, empty when it asked for nothing, and the zone this machine keeps.
-  // Both arrive as parameters so nothing here reads the clock or the environment for itself.
+  // What `--timezone` asked for, empty when it asked for nothing, the zone the knowledge base keeps,
+  // and the zone this machine keeps. They arrive as parameters so nothing here reads the clock, the
+  // environment or the disk for itself.
   readonly timezone: string;
+  readonly storedTimezone?: string;
   readonly machineTimezone: string;
 };
 
@@ -51,6 +53,6 @@ export const readConfig = (input: ConfigInput): Config => {
     ocrLang: input.ocrLang,
     ocr: input.ocr ?? true,
     interactive: input.interactive,
-    timezone: input.timezone === '' ? input.machineTimezone : input.timezone,
+    timezone: input.timezone === '' ? (input.storedTimezone ?? input.machineTimezone) : input.timezone,
   };
 };

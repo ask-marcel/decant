@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { dayOf, isBefore, latestById, parseSettings, parseSince, serializeSettings, widens } from './sync-window.ts';
+import { dayOf, isBefore, latestById, parseKeptZone, parseSettings, parseSince, serializeSettings, widens } from './sync-window.ts';
 
 describe('how far back a run reaches', () => {
   it('a day, or the word all, is a reach; anything else is refused', () => {
@@ -61,6 +61,22 @@ describe('keeping the reach for the runs after', () => {
     expect(serializeSettings('2025-01-01')).toBe('{\n  "since": "2025-01-01"\n}\n');
     expect(parseSettings(serializeSettings('2025-01-01'))).toEqual({ ok: true, value: '2025-01-01' });
     expect(parseSettings(serializeSettings('all'))).toEqual({ ok: true, value: 'all' });
+  });
+
+  // A run in Germany counted its days in Berlin time and a run in Shanghai would count them there, so
+  // one knowledge base held days counted two ways. The zone is kept beside the reach instead.
+  it('the zone a run counts its days in is kept beside the reach, and read back when it is a zone the machine knows', () => {
+    const kept = serializeSettings('2025-01-01', 'Asia/Shanghai');
+
+    expect(kept).toBe('{\n  "since": "2025-01-01",\n  "timezone": "Asia/Shanghai"\n}\n');
+    expect(parseSettings(kept)).toEqual({ ok: true, value: '2025-01-01' });
+    expect(parseKeptZone(kept)).toBe('Asia/Shanghai');
+    expect(parseKeptZone(serializeSettings('2025-01-01'))).toBeUndefined();
+    expect(parseKeptZone('{ "since": "all", "timezone": "China Standard Time" }')).toBeUndefined();
+    expect(parseKeptZone('{ "since": "all", "timezone": 8 }')).toBeUndefined();
+    expect(parseKeptZone('null')).toBeUndefined();
+    expect(parseKeptZone('8')).toBeUndefined();
+    expect(parseKeptZone('not json')).toBeUndefined();
   });
 
   it('a file saying anything else is refused rather than read as everything', () => {

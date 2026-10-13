@@ -1,9 +1,10 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path';
 import { buildDeps } from './composition/build-deps.ts';
-import { readConfig } from './composition/config.ts';
+import { readKeptConfig } from './composition/kept-zone.ts';
 import { parseOptions, USAGE } from './composition/options.ts';
 import { formatError } from './domain/utilities/format-error.ts';
+import { createBunFiles } from './infra/files-bun.ts';
 import { printLine } from './infra/output.ts';
 
 const MB = 1024 * 1024;
@@ -20,17 +21,20 @@ const run = async (): Promise<number> => {
     printLine(USAGE);
     return 0;
   }
-  const config = readConfig({
-    env: process.env,
-    out: options.value.out,
-    platform: process.platform,
-    resolvePath: resolve,
-    ocrLang: options.value.ocrLang,
-    ocr: options.value.ocr,
-    interactive: options.value.command === 'sync',
-    timezone: options.value.timezone,
-    machineTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-  });
+  const config = await readKeptConfig(
+    {
+      env: process.env,
+      out: options.value.out,
+      platform: process.platform,
+      resolvePath: resolve,
+      ocrLang: options.value.ocrLang,
+      ocr: options.value.ocr,
+      interactive: options.value.command === 'sync',
+      timezone: options.value.timezone,
+      machineTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    },
+    createBunFiles()
+  );
   const deps = buildDeps(config);
   const summaries = await deps.runSync({
     command: options.value.command,

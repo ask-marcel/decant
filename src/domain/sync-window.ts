@@ -1,6 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { parseJson } from './utilities/parse-json.ts';
+import { isKnownZone } from './zoned-day.ts';
 
 // How far back a run reaches: everything, or what happened on or after one day. Asked once, on the
 // first run that has work to do, and kept beside the knowledge base, so every run after reaches back
@@ -46,7 +47,9 @@ export const widens = (recorded: string | undefined, day: string | undefined): b
 // have it, since it is the later of the two. What only the cursor saw, a deletion, stays.
 export const latestById = <T extends { readonly id: string }>(items: ReadonlyArray<T>): ReadonlyArray<T> => [...new Map(items.map((item) => [item.id, item])).values()];
 
-export const serializeSettings = (since: string): string => `${JSON.stringify({ since }, undefined, 2)}\n`;
+// The zone goes beside the reach, so every run counts its days where the first one did: a run from
+// a laptop in another country would otherwise file the same day's mail under a second folder.
+export const serializeSettings = (since: string, timezone?: string): string => `${JSON.stringify({ since, timezone }, undefined, 2)}\n`;
 
 // Refused rather than read as everything: a day mistyped by hand would otherwise sync the whole
 // history on the next `update`, which is the one thing the day was set to stop.
@@ -54,4 +57,12 @@ export const parseSettings = (text: string): Result<string, SinceError> => {
   const raw = parseJson(text);
   const since = raw.ok && typeof raw.value === 'object' && raw.value !== null && 'since' in raw.value ? raw.value.since : undefined;
   return typeof since === 'string' ? parseSince(since) : err({ kind: 'bad-since' });
+};
+
+// Read leniently, unlike the reach: a zone that is missing, mistyped or unknown to this machine is
+// none, and the run counts in the zone it would have used anyway.
+export const parseKeptZone = (text: string): string | undefined => {
+  const raw = parseJson(text);
+  const zone = raw.ok && typeof raw.value === 'object' && raw.value !== null && 'timezone' in raw.value ? raw.value.timezone : undefined;
+  return typeof zone === 'string' && isKnownZone(zone) ? zone : undefined;
 };

@@ -34,8 +34,9 @@ export type Options = {
   // The folder the knowledge base is written to. None means the configuration decides, which reads
   // `KB_ROOT` and falls back to `kb`.
   readonly out?: string;
-  // Empty means the machine's own zone, resolved where the run is composed rather than here: a
-  // default read at module load would be a runtime value frozen into a constant.
+  // Empty means the zone the knowledge base keeps, else the machine's own, resolved where the run is
+  // composed rather than here: a default read at module load would be a runtime value frozen into a
+  // constant.
   readonly timezone: string;
 };
 
@@ -204,7 +205,8 @@ export const USAGE = [
   '  --plan <title>      sync one Planner plan, by its title or its id, without the picker',
   '  --refresh           list the sites afresh instead of showing the ones last seen',
   '  --ocr-lang <code>   force one language for images and scanned PDFs (default auto, per image)',
-  "  --timezone <zone>   IANA zone the mailbox counts its days in (default this machine's)",
+  '  --timezone <zone>   IANA zone the knowledge base counts its days in, and keep it for every later run',
+  "                      (default the zone an earlier run kept, else this machine's)",
   '  --yes, -y           take the saved choices instead of asking',
   '  --help, -h          print this and do nothing else',
 ].join('\n');
