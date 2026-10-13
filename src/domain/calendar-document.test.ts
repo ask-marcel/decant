@@ -39,6 +39,7 @@ describe('writing one calendar event as a document', () => {
         'subject: Offsite planning',
         'start: "2026-09-12 15:00"',
         'end: "2026-09-12 16:30"',
+        'timezone: Asia/Shanghai',
         'organizer: Valerie',
         'attendees:',
         '  - Jane Doe (accepted)',

@@ -41,6 +41,8 @@ const fieldsOf = (input: RenderEventInput): ReadonlyArray<FrontMatterField> => [
   ['subject', input.event.subject],
   ['start', whenOf(input.event, input.event.start, input.zone)],
   ['end', whenOf(input.event, input.event.end, input.zone)],
+  // The zone the two times above are told in, so they read the same from any other zone.
+  ['timezone', input.zone],
   ['all_day', input.event.allDay ? true : undefined],
   ['organizer', input.event.organizer?.name],
   ['attendees', input.event.attendees.map(attendeeLine)],
