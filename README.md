@@ -179,6 +179,7 @@ kb/
                                     files whose source was deleted, renamed, or changed away
   SharePoint sites/<Site>/
     .sync-state.json                what has been synced, and where the next run resumes
+    .sync-cursor.json               when the last run ran, and the delta cursors (see Re-running)
     _sync-report.md                 what did not make it in, and why (only when there is something)
     _members.md                     who can open the site
     <Library>/
@@ -195,7 +196,7 @@ kb/
   Group inboxes/<Group>/            a group's conversations (see the mailbox layout below)
   Mailbox/                          your own Outlook mailbox
   Calendar/
-    .sync-state.json                the delta cursor, and every event filed
+    .sync-state.json                every event filed
     2026-09-12/                     the day each event starts
       Offsite planning.md           the event: when, where, who, how to join, what it is about
       Offsite planning.attachments/ what the invitation carried, as markdown
@@ -220,7 +221,7 @@ kb/
     <Bucket>/
       Book the venue.md             one task, under the lane it sits in
   Teams/<Team>/
-    .sync-state.json                one delta cursor per channel, and every post filed
+    .sync-state.json                every post filed
     <Channel>/
       2026-09-10/                   the day each post last changed, a reply counting as a change
         Venue for the offsite.md    the post and its replies, as one thread
@@ -444,7 +445,7 @@ view. A dry run writes neither.
 ```
 kb/
   Mailbox/
-    .sync-state.json                a cursor per folder, and what every conversation produced
+    .sync-state.json                what every conversation produced
     _sync-report.md                 what did not make it in, and why
     _inline/                        pictures pasted into messages, stored once for the mailbox
                                     and named by content, since one signature logo rides on
@@ -976,7 +977,45 @@ renamed in SharePoint is moved on disk rather than converted again; a file delet
 markdown moved into `kb/_archive/`, as does the older copy of a file that was edited and so now
 belongs under a later day.
 
+A run that finds nothing new at the source changes no file in `kb/`, with one exception: the
+`.sync-cursor.json` beside each `.sync-state.json`. That file holds the time of the last run and the
+delta cursors, which change on each run. If the cursor file is lost or does not agree with the
+state, the next run reads the source whole one time.
+
+decant writes a file only when its content changes. The `synced_at` line does not count, so
+`synced_at` gives the time of the last real change. decant writes each file beside its place and
+then renames it over the old file. Thus a stopped run leaves no half file.
+
 `kb/` is generated content and is gitignored.
+
+## Keep a copy in git (optional)
+
+decant does not need git and does not read git. The old versions are in `_archive/`, and the
+reports are in `_sync-report.md`. To keep a history of each change, you can make the export folder a
+git repository:
+
+1. In the export folder, run `git init`.
+2. Add a `.gitattributes` file with the line `* -text`. Then git keeps each file as decant wrote it.
+3. Add a `.gitignore` file with the line `.sync-cursor.json`. This file changes on each run.
+4. On Windows, run `git config core.longpaths true` and `git config core.quotepath false`.
+5. For the originals and the pictures, use Git LFS, for example
+   `git lfs track "*.pdf" "*.docx" "*.xlsx" "*.pptx" "*.png" "*.jpg" "*.gif" "*.zip"`.
+
+Then make a commit after each run that finished, with exit code 0 or 3. In PowerShell:
+
+```powershell
+decant update
+if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq 3) { git add -A; git commit -q -m "decant update $(Get-Date -Format yyyy-MM-dd)" }
+```
+
+In a POSIX shell:
+
+```bash
+decant update; code=$?
+if [ "$code" -eq 0 ] || [ "$code" -eq 3 ]; then git add -A && git commit -q -m "decant update $(date +%F)"; fi
+```
+
+A run that found nothing new changes no file that git keeps, so git has nothing to commit.
 
 ## Configuration
 
