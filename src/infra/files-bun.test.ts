@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, it } from 'bun:test';
 import { linkSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBunFiles } from './files-bun.ts';
@@ -115,6 +116,60 @@ describe('reading the knowledge base from disk', () => {
     await createBunFiles().writeText(join(folder, 'state.json', 'nested.md'), 'body');
 
     expect(readdirSync(folder)).toEqual(['state.json']);
+  });
+
+  // OneDrive or a virus scanner holds a file open for a moment, and Windows refuses a rename over it
+  // meanwhile.
+  it('a rename refused while another program holds the file is tried again, a little later each time, and lands once the file is free', async () => {
+    const waits: number[] = [];
+    let refusals = 2;
+    const holding = {
+      rename: async (from: string, to: string): Promise<void> => {
+        refusals -= 1;
+        if (refusals >= 0) throw Object.assign(new Error('resource busy or locked'), { code: 'EBUSY' });
+        await rename(from, to);
+      },
+      sleep: async (ms: number): Promise<void> => {
+        waits.push(ms);
+      },
+    };
+    const path = join(root, 'Held', 'state.json');
+
+    expect(await createBunFiles('win32', holding).writeText(path, 'saved')).toEqual({ ok: true, value: undefined });
+    expect(await Bun.file(path).text()).toBe('saved');
+    expect(waits).toEqual([50, 100]);
+  });
+
+  it('a file held for good fails its write after five tries, and leaves nothing beside it', async () => {
+    let tries = 0;
+    const holding = {
+      rename: async (): Promise<void> => {
+        tries += 1;
+        throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
+      },
+      sleep: async (): Promise<void> => undefined,
+    };
+    const folder = join(root, 'HeldForGood');
+
+    const written = await createBunFiles('win32', holding).writeText(join(folder, 'state.json'), 'saved');
+
+    expect(written.ok === false && written.error.kind).toBe('write-failed');
+    expect(tries).toBe(5);
+    expect(readdirSync(folder)).toHaveLength(0);
+  });
+
+  it('a rename refused for a reason other than a held file fails at once', async () => {
+    let tries = 0;
+    const refusing = {
+      rename: async (): Promise<void> => {
+        tries += 1;
+        throw Object.assign(new Error('no space left on device'), { code: 'ENOSPC' });
+      },
+      sleep: async (): Promise<void> => undefined,
+    };
+
+    expect((await createBunFiles('linux', refusing).writeText(join(root, 'Full', 'state.json'), 'saved')).ok).toBe(false);
+    expect(tries).toBe(1);
   });
 
   it('a knowledge base that cannot be written to is reported rather than thrown', async () => {
