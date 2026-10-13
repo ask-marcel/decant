@@ -5,6 +5,8 @@ import { datedRoot } from './output-paths.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import type { TodoTask } from './todo-task.ts';
+import { isGivenUp, parseAttempts } from './retry-ledger.ts';
+import type { Attempts } from './retry-ledger.ts';
 import { compareText } from './utilities/compare-text.ts';
 
 export const TODO_STATE_VERSION = 1;
@@ -20,13 +22,14 @@ export const todoRootName = (name: string): SafeRelPath => safeRelPath([CATEGORY
 export type TaskRecord = { readonly file: string; readonly lastModified: string; readonly title: string };
 
 // What a To Do list run leaves behind. Smaller than either inbox's state: a task is one document
-// with nothing hanging off it, so there is no attachment store, no linked-file store, and no retry
-// ledger, a task that failed being one the next run finds unchanged and writes again.
+// with nothing hanging off it, so there is no attachment store and no linked-file store. A task whose
+// file could not be written is tried again by the next run, three runs at most on the same version.
 export type TodoState = {
   readonly version: typeof TODO_STATE_VERSION;
   readonly source: { readonly kind: 'todo'; readonly id: string; readonly name: string };
   readonly lastRun: string;
   readonly tasks: Readonly<Record<string, TaskRecord>>;
+  readonly retry?: Attempts;
 };
 
 export type TodoStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -68,6 +71,7 @@ export const parseTodoState = (raw: unknown): Result<TodoState, TodoStateError> 
     source: { kind: 'todo', id: readString(source, 'id') ?? '', name: readString(source, 'name') ?? '' },
     lastRun: readString(raw, 'lastRun') ?? '',
     tasks: tasksOf(raw['tasks']),
+    retry: parseAttempts(raw['retry']),
   });
 };
 
@@ -88,7 +92,9 @@ export const todoWorklist = (state: TodoState, tasks: ReadonlyArray<TodoTask>): 
   const listed = new Set(tasks.map((task) => task.id));
   return {
     // Oldest first, so a run that stops leaves a prefix of the list rather than a scattering of it.
-    write: [...tasks.filter((task) => state.tasks[task.id]?.lastModified !== task.lastModified)].sort((left, right) => compareText(left.lastModified, right.lastModified)),
+    write: [...tasks.filter((task) => state.tasks[task.id]?.lastModified !== task.lastModified && !isGivenUp(state.retry?.[task.id], task.lastModified))].sort((left, right) =>
+      compareText(left.lastModified, right.lastModified)
+    ),
     archive: Object.entries(state.tasks).flatMap(([id, record]) => (listed.has(id) ? [] : [{ id, record }])),
   };
 };

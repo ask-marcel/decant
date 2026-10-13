@@ -14,6 +14,8 @@ import type { StepError } from './ports/step-error.ts';
 import type { TodoList, TodoReader } from './ports/todo-reader.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
+import { withGaveUp } from '../domain/report.ts';
 
 export const TODO_STATE_FILE = '.sync-state.json';
 
@@ -79,11 +81,14 @@ const writeOne = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, 
   const written = await deps.files.writeText(file, document);
   if (!written.ok) {
     deps.logger.warn('todo-task.failed', { task: task.id, cause: written.error.kind });
-    return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: task.title, reason: written.error.message }] } };
+    const attempt = nextAttempt(state.retry?.[task.id], task.lastModified, task.title, written.error.message);
+    // Out of tries now: named under its own heading, not as a failure the next run will try again.
+    const notes = isGivenUp(attempt, task.lastModified) ? {} : { failed: [{ path: task.title, reason: written.error.message }] };
+    return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, task.id, attempt) }), counted: { failed: 1 }, notes };
   }
   await archiveSuperseded(deps, roots, state.tasks[task.id], file);
   const record: TaskRecord = { file, lastModified: task.lastModified, title: task.title };
-  return { apply: (carried) => withTask(carried, task.id, record), counted: { converted: 1 }, notes: {} };
+  return { apply: (carried) => ({ ...withTask(carried, task.id, record), retry: clearAttempt(carried.retry, task.id) }), counted: { converted: 1 }, notes: {} };
 };
 
 // A task the list no longer holds. Named in the report by its title, which is the only thing left to
@@ -172,8 +177,9 @@ const sweep = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, sta
   // and the run report called the list stale on the strength of that.
   const saved = await save(deps, `${roots.root}/${TODO_STATE_FILE}`, done.state);
   if (!saved.ok) return saved;
-  await writeReport(deps, input, roots.root, input.list.name, done.summary, done.notes);
-  return ok({ id: input.list.id, source: input.list.name, summary: done.summary, notes: done.notes });
+  const notes = withGaveUp({ ...done.notes, givenUp: givenUpNotes(done.state.retry) }, gaveUpNotes(state.retry, done.state.retry));
+  await writeReport(deps, input, roots.root, input.list.name, done.summary, notes);
+  return ok({ id: input.list.id, source: input.list.name, summary: done.summary, notes });
 };
 
 export const createSyncTodo =
