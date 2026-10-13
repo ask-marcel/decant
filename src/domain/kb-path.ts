@@ -87,17 +87,35 @@ const extensionStart = (segment: string): number => {
 // The suffix is what tells two documents of the same name apart, so the length limit is spent on
 // the name and never on the suffix or the extension: trimming the tail of a long name would drop
 // both and land two different files on one path, silently overwriting one with the other.
-export const disambiguateSegment = (segment: string, itemId: string): SafeSegment => {
+export const disambiguateSegment = (segment: string, itemId: string, limit = MAX_SEGMENT_LENGTH): SafeSegment => {
   const cut = extensionStart(segment);
   const suffix = `-${itemId.slice(0, SUFFIX_LENGTH)}`;
   const extension = segment.slice(cut);
-  const room = Math.max(0, MAX_SEGMENT_LENGTH - suffix.length - extension.length);
-  return safeSegment(`${segment.slice(0, Math.min(cut, room))}${suffix}${extension}`);
+  const room = Math.max(0, limit - suffix.length - extension.length);
+  return safeSegment(`${cutAt(segment.slice(0, cut), room)}${suffix}${extension}`);
 };
 
 // SHA-256 of an id, hex-encoded. Every suffix cut from an id is cut from this instead, since ids open
 // alike: a namesake's (below), and the folder of a site or notebook sharing another's name.
 export const idHash = (id: string): string => new Bun.CryptoHasher('sha256').update(id).digest('hex');
+
+// Windows refuses a longer path, counted from the drive letter, unless long paths are turned on for
+// the whole machine. The export the audit read lost one document to a picture path of 260.
+export const WINDOWS_PATH_LIMIT = 259;
+
+// What decant can still add below a name it plans: `.md` (3), a picture under `<name>.media/` (20),
+// the `_archive/<day>/` an old copy moves under (20), a namesake's suffix (9), and 3 to spare.
+const ROOM_FOR_LATER = 55;
+
+// A name cut until its path fits, its extension kept and 8 characters of a hash of the whole name
+// added, so two names cut alike stay apart. The budget counts the path as decant writes it: what
+// stands in front of the knowledge base on disk is taken off it already. With no budget, nothing
+// is cut, which is how a caller that was never told one keeps working as it did.
+export const fitSegment = (folder: string, segment: string, budget: number | undefined): string => {
+  if (budget === undefined) return segment;
+  const over = folder.length + 1 + segment.length + ROOM_FOR_LATER - budget;
+  return over <= 0 ? segment : disambiguateSegment(segment, idHash(segment), segment.length - over);
+};
 
 // A namesake's suffix is cut from a hash of its id, never from the id itself: ids often open alike
 // (every item in one mailbox shares a long run, and a Teams post id is the millisecond it was sent),
@@ -127,9 +145,11 @@ export const holdsIgnoringCase = (taken: Iterable<string>, name: string): boolea
 // when it already has one, never stands in its way. When only the letter case of its name changed,
 // the file is kept as it is: renamed, the old path would be put aside next, and on a disk that
 // ignores case that path is the fresh note.
-export const freePath = (folder: string, segment: string, itemId: string, taken: ReadonlySet<string>, own?: string): string => {
+// A budget, when one is given, fits the name to it before anything else is decided.
+export const freePath = (folder: string, segment: string, itemId: string, taken: ReadonlySet<string>, own?: string, budget?: number): string => {
   const within = (name: string): string => `${folder}/${name}`;
-  if (own !== undefined && sameIgnoringCase(within(segment), own)) return own;
+  const fitted = fitSegment(folder, segment, budget);
+  if (own !== undefined && sameIgnoringCase(within(fitted), own)) return own;
   const held = (path: string): boolean => path !== own && holdsIgnoringCase(taken, path);
-  return within(freeSegment(segment, itemId, (candidate) => held(within(candidate))));
+  return within(freeSegment(fitted, itemId, (candidate) => held(within(candidate))));
 };

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { disambiguateSegment, freePath, safeRelPath, safeSegment } from './kb-path.ts';
+import { disambiguateSegment, fitSegment, freePath, safeRelPath, safeSegment } from './kb-path.ts';
 
 // The factories return branded strings; the assertions compare them as the text they are.
 const text = (value: string): string => value;
@@ -173,5 +173,38 @@ describe('telling names apart the way the disk does', () => {
     const own = 'kb/To Do/Tasks/2026-09-08/Call Mark.md';
 
     expect(freePath('kb/To Do/Tasks/2026-09-09', 'call mark.md', 'id-1', new Set([own]), own)).toBe('kb/To Do/Tasks/2026-09-09/call mark.md');
+  });
+});
+
+// Windows refuses a path longer than 259 characters. The budget counts the path as decant writes it,
+// and room is left below each name for what comes later: `.md`, a picture under `.media/`, the
+// `_archive/<day>/` an old copy moves under, and a namesake's suffix.
+describe('keeping a path short enough for Windows', () => {
+  const folder = `kb/${'f'.repeat(97)}`;
+
+  it('a name whose path fits is kept as it is, and so is any name when no budget is given', () => {
+    expect(fitSegment('kb/To Do/Tasks/2026-09-08', 'Call Mark.md', 259)).toBe('Call Mark.md');
+    expect(fitSegment(folder, `${'a'.repeat(300)}.docx`, undefined)).toBe(`${'a'.repeat(300)}.docx`);
+  });
+
+  it('a name that would carry its path past the budget is cut, keeping its extension and taking a hash of the whole name', () => {
+    const fitted = fitSegment(folder, `${'a'.repeat(150)}.docx`, 259);
+
+    expect(fitted).toHaveLength(103);
+    expect(fitted).toMatch(/^a{89}-[0-9a-f]{8}\.docx$/);
+  });
+
+  it('a name that fills the budget exactly is kept, and one a character longer is cut', () => {
+    expect(fitSegment(folder, `${'a'.repeat(98)}.docx`, 259)).toBe(`${'a'.repeat(98)}.docx`);
+    expect(fitSegment(folder, `${'a'.repeat(99)}.docx`, 259)).toHaveLength(103);
+  });
+
+  it('two long names cut alike stay apart', () => {
+    expect(fitSegment(folder, `${'a'.repeat(150)} v1.docx`, 259)).not.toBe(fitSegment(folder, `${'a'.repeat(150)} v2.docx`, 259));
+  });
+
+  it('a planned file is fitted to the budget it is given, and planned as before when none is given', () => {
+    expect(freePath(folder, `${'a'.repeat(150)}.md`, 'id-1', new Set(), undefined, 259)).toHaveLength(204);
+    expect(freePath(folder, `${'a'.repeat(150)}.md`, 'id-1', new Set())).toBe(`${folder}/${'a'.repeat(150)}.md`);
   });
 });
