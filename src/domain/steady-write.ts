@@ -16,3 +16,6 @@ const linesWithoutStamp = (text: string): ReadonlyArray<string> => {
 export const sameWrite = (held: string, next: string): boolean => Bun.deepEquals(linesWithoutStamp(held), linesWithoutStamp(next));
 
 export const withLineFeeds = (text: string): string => text.replaceAll(/\r\n?/g, '\n');
+
+// The same for a file kept as bytes: a picture or an original fetched again holds the same bytes.
+export const sameBytes = (held: Uint8Array, next: Uint8Array): boolean => held.length === next.length && held.every((byte, at) => byte === next[at]);

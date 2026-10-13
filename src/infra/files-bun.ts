@@ -29,6 +29,16 @@ const readTextAt = async (path: string): Promise<Result<string, FilesError>> => 
   }
 };
 
+const readBytesAt = async (path: string): Promise<Result<Uint8Array, FilesError>> => {
+  const file = Bun.file(path);
+  if (!(await file.exists())) return err({ kind: 'not-found', path, message: `no such file: ${path}` });
+  try {
+    return ok(await file.bytes());
+  } catch (error) {
+    return err({ kind: 'read-failed', path, message: formatError(error) });
+  }
+};
+
 const listDirectoryNamesAt = async (path: string): Promise<Result<ReadonlyArray<string>, FilesError>> => {
   try {
     const entries = await readdir(path, { withFileTypes: true });
@@ -89,6 +99,7 @@ const moveTo = async (from: string, to: string, platform: string): Promise<Resul
 // The platform is the one a failed write is explained for; a test names it, a run takes this one's.
 export const createBunFiles = (platform: string = process.platform): Files => ({
   readText: readTextAt,
+  readBytes: readBytesAt,
   listDirectoryNames: listDirectoryNamesAt,
   writeText: async (path, content) => write(path, content, platform),
   writeBytes: async (path, bytes) => write(path, bytes, platform),

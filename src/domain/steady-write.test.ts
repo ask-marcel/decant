@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { sameWrite, withLineFeeds } from './steady-write.ts';
+import { sameBytes, sameWrite, withLineFeeds } from './steady-write.ts';
 
 const note = (syncedAt: string, body: string): string => `---\nsubject: Offsite\nsynced_at: "${syncedAt}"\n---\n\n${body}\n`;
 
@@ -28,5 +28,12 @@ describe('telling a note that changed from one that was only written again', () 
   // changed on every line to a copy that keeps one kind.
   it('a note is written with line feeds alone', () => {
     expect(withLineFeeds('one\r\ntwo\rthree\n')).toBe('one\ntwo\nthree\n');
+  });
+
+  it('two files hold the same bytes only when every byte and the length agree', () => {
+    expect(sameBytes(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 3]))).toBe(true);
+    expect(sameBytes(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2, 4]))).toBe(false);
+    expect(sameBytes(new Uint8Array([1, 2, 3]), new Uint8Array([1, 2]))).toBe(false);
+    expect(sameBytes(new Uint8Array([1, 2]), new Uint8Array([1, 2, 0]))).toBe(false);
   });
 });

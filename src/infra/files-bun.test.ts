@@ -17,6 +17,17 @@ describe('reading the knowledge base from disk', () => {
     expect(await createBunFiles().readText(join(root, 'Espace Contoso', 'state.json'))).toEqual({ ok: true, value: '{"version":1}' });
   });
 
+  it('a picture written by an earlier run is read back as the bytes it was, and one never written is missing', async () => {
+    const path = join(root, 'Espace Contoso', 'logo.png');
+    writeFileSync(path, new Uint8Array([137, 80, 78, 71]));
+
+    expect(await createBunFiles().readBytes(path)).toEqual({ ok: true, value: new Uint8Array([137, 80, 78, 71]) });
+
+    const missing = await createBunFiles().readBytes(join(root, 'absent.png'));
+
+    expect(missing.ok === false && missing.error.kind).toBe('not-found');
+  });
+
   it('asking for a file that was never written reports it as missing', async () => {
     const read = await createBunFiles().readText(join(root, 'absent.json'));
 
