@@ -109,11 +109,12 @@ export type PlannedTask = { readonly task: TodoTask; readonly file: string };
 // its file stays on disk until its own write lands and puts it aside, which can come after a second
 // task's write to the same path and put the second task's fresh file aside instead. A task's own
 // copy never stands in its way.
-export const planTaskFiles = (root: string, tasks: ReadonlyArray<TodoTask>, state: TodoState): ReadonlyArray<PlannedTask> => {
+export const planTaskFiles = (root: string, tasks: ReadonlyArray<TodoTask>, state: TodoState, budget?: number): ReadonlyArray<PlannedTask> => {
   const taken = new Set(Object.values(state.tasks).map((record) => record.file));
   const planned: PlannedTask[] = [];
   for (const task of tasks) {
-    const file = freePath(datedRoot(root, task.lastModified), `${safeSegment(cutToWord(task.title, TITLE_LIMIT, ' '))}${MARKDOWN}`, task.id, taken, state.tasks[task.id]?.file);
+    const name = `${safeSegment(cutToWord(task.title, TITLE_LIMIT, ' '))}${MARKDOWN}`;
+    const file = freePath(datedRoot(root, task.lastModified), name, task.id, taken, state.tasks[task.id]?.file, budget);
     taken.add(file);
     planned.push({ task, file });
   }

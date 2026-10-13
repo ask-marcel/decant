@@ -86,11 +86,11 @@ const MARKDOWN = '.md';
 // in one library do. A file another person's record holds is taken even when that person is
 // rewritten this run too: their old page is put aside only once their own write lands, which can
 // come after a namesake's write to the same path. A person's own page never stands in their way.
-export const planPersonFiles = (root: string, directory: ReadonlyArray<Colleague>, state: PeopleState): ReadonlyArray<PlannedPerson> => {
+export const planPersonFiles = (root: string, directory: ReadonlyArray<Colleague>, state: PeopleState, budget?: number): ReadonlyArray<PlannedPerson> => {
   const taken = new Set(Object.values(state.people).map((record) => record.file));
   const planned: PlannedPerson[] = [];
   for (const colleague of directory) {
-    const file = freePath(root, `${safeSegment(colleague.person.name)}${MARKDOWN}`, colleague.person.id, taken, state.people[colleague.person.id]?.file);
+    const file = freePath(root, `${safeSegment(colleague.person.name)}${MARKDOWN}`, colleague.person.id, taken, state.people[colleague.person.id]?.file, budget);
     taken.add(file);
     planned.push({ colleague, file });
   }
