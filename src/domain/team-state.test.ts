@@ -134,6 +134,16 @@ describe('deciding where each post about to be written goes', () => {
     expect(planned?.file).toBe('kb/Teams/Northwind Leadership/General/2026-09-08/Venue.md');
   });
 
+  // Mail, the calendar and To Do count their days in the zone of the knowledge base; a post sent at
+  // 00:30 in Paris belongs to that Paris day, not to the UTC day before it.
+  it('a post is filed under the day it was first posted where the knowledge base counts its days, and one with no time under undated/', () => {
+    const late = post('a', '2026-09-08T08:00:00Z', { subject: 'Venue', created: '2026-09-07T22:30:00Z' });
+    const timeless = post('b', '2026-09-08T08:00:00Z', { subject: 'Draft', created: '' });
+    const files = planPostFiles('kb/Teams/T/General', [late, timeless], emptyTeamState('t', 'n'), CHANNEL, undefined, 'Europe/Paris').map((planned) => planned.file);
+
+    expect(files).toEqual(['kb/Teams/T/General/2026-09-08/Venue.md', 'kb/Teams/T/General/undated/Draft.md']);
+  });
+
   it('two posts sharing a title and a day take different files, and a path a post nobody is rewriting holds is not handed out', () => {
     const twins = [post('one', '2026-09-08T16:20:11Z', { subject: 'Update' }), post('two', '2026-09-08T16:20:11Z', { subject: 'Update' })];
     const files = planPostFiles('kb/Teams/T/General', twins, emptyTeamState('t', 'n'), CHANNEL).map((planned) => planned.file);
@@ -164,6 +174,17 @@ describe('filing a channel again under the day each post was first posted', () =
 
     expect(refiled.moves).toEqual([{ from: 'kb/Teams/T/General/2026-09-20/Venue.md', to: 'kb/Teams/T/General/2025-09-08/Venue.md' }]);
     expect(refiled.channel.posts['1757347211000']?.file).toBe('kb/Teams/T/General/2025-09-08/Venue.md');
+  });
+
+  it('a post moves to the day it was first posted where the knowledge base counts its days', () => {
+    const refiled = refileChannel(
+      'kb/Teams/T/General',
+      channel({ '1757284200000': { file: 'kb/Teams/T/General/2026-09-20/Venue.md', lastModified: '2026-09-20T08:00:00Z', title: 'Venue' } }),
+      undefined,
+      'Europe/Paris'
+    );
+
+    expect(refiled.moves).toEqual([{ from: 'kb/Teams/T/General/2026-09-20/Venue.md', to: 'kb/Teams/T/General/2025-09-08/Venue.md' }]);
   });
 
   it('a post already on its day stays, one whose id says no moment stays, and two landing on one name are kept apart', () => {
