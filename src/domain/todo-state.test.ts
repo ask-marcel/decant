@@ -126,14 +126,14 @@ describe('deciding where each task about to be written goes', () => {
   it('a task with a long title is filed under its first words, at most 80 characters, ending on a whole word', () => {
     const story = {
       ...task('a', '2026-09-08T16:20:11Z'),
-      title: 'Write the story about IT in Rotterdam that does something manual that can be automated and fixed, and put it in my decision for Mark and Tom',
+      title: 'Write the note about the team in Lyon that does something by hand that can be automated and fixed, and put it in the decision for the board',
     };
     const oneWord = { ...task('b', '2026-09-08T16:20:11Z'), title: 'x'.repeat(100) };
 
     const files = planTaskFiles('kb/To Do/Tasks', [story, oneWord], emptyTodoState('list-1', 'Tasks')).map((planned) => planned.file);
 
     expect(files).toEqual([
-      'kb/To Do/Tasks/2026-09-08/Write the story about IT in Rotterdam that does something manual that can be.md',
+      'kb/To Do/Tasks/2026-09-08/Write the note about the team in Lyon that does something by hand that can be.md',
       `kb/To Do/Tasks/2026-09-08/${'x'.repeat(80)}.md`,
     ]);
   });
