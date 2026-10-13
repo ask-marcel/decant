@@ -102,7 +102,7 @@ The turndown rules give these faults in the mail notes:
 
 | Fault | Count in the export |
 |---|---|
-| Bold that starts on one line and ends on another (`**Mark Frans  \nManaging Director  \n**`) | 93 notes, mail and Word |
+| Bold that starts on one line and ends on another (`**Jane Doe  \nManaging Director  \n**`) | 93 notes, mail and Word |
 | Link text on two lines | 8 of the 140 cases (the other 132 come from decant's own calendar text) |
 | Text such as `<font color=red>` written as raw HTML, because `<` is not escaped | 1 note |
 
