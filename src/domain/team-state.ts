@@ -119,12 +119,12 @@ const MARKDOWN = '.md';
 // a document sharing a name in one library does. A path another post's record holds is taken, even
 // when that post is rewritten this run too: its file is put aside only once its own write lands,
 // which can come after a namesake's write to the same path. A post's own copy never stands in its way.
-export const planPostFiles = (channelRoot: string, posts: ReadonlyArray<ChannelPost>, state: TeamState, channelId: string): ReadonlyArray<PlannedPost> => {
+export const planPostFiles = (channelRoot: string, posts: ReadonlyArray<ChannelPost>, state: TeamState, channelId: string, budget?: number): ReadonlyArray<PlannedPost> => {
   const known = state.channels[channelId]?.posts ?? {};
   const taken = new Set(Object.values(known).map((record) => record.file));
   const planned: PlannedPost[] = [];
   for (const post of posts) {
-    const file = freePath(datedRoot(channelRoot, post.lastModified), `${safeSegment(postTitle(post))}${MARKDOWN}`, post.id, taken, known[post.id]?.file);
+    const file = freePath(datedRoot(channelRoot, post.lastModified), `${safeSegment(postTitle(post))}${MARKDOWN}`, post.id, taken, known[post.id]?.file, budget);
     taken.add(file);
     planned.push({ post, file });
   }

@@ -124,11 +124,11 @@ const folderOf = (root: string, section: NotebookSection): string => `${root}/${
 // suffix from its own id. A file another page's record holds is taken even when that page is
 // rewritten this run too: its old copy is put aside only once its own write lands, which can come
 // after a namesake's write to the same path. A page's own copy never stands in its way.
-export const planPageFiles = (root: string, listed: ReadonlyArray<ListedPage>, state: NotebookState): ReadonlyArray<PlannedPage> => {
+export const planPageFiles = (root: string, listed: ReadonlyArray<ListedPage>, state: NotebookState, budget?: number): ReadonlyArray<PlannedPage> => {
   const taken = new Set(Object.values(state.pages).map((record) => record.file));
   const planned: PlannedPage[] = [];
   for (const entry of listed) {
-    const file = freePath(folderOf(root, entry.section), `${safeSegment(entry.page.title)}${MARKDOWN}`, entry.page.id, taken, state.pages[entry.page.id]?.file);
+    const file = freePath(folderOf(root, entry.section), `${safeSegment(entry.page.title)}${MARKDOWN}`, entry.page.id, taken, state.pages[entry.page.id]?.file, budget);
     taken.add(file);
     planned.push({ entry, file });
   }

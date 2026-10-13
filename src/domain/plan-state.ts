@@ -99,14 +99,14 @@ const NO_BUCKET = '_no bucket';
 // record holds is taken even when that task is placed in this run too: its old page is put aside
 // only once its own write lands, which can come after a namesake's write to the same path. A task's
 // own page never stands in its way.
-export const planTaskFiles = (root: string, tasks: ReadonlyArray<PlanTask>, buckets: ReadonlyArray<Bucket>, state: PlanState): ReadonlyArray<PlannedTask> => {
+export const planTaskFiles = (root: string, tasks: ReadonlyArray<PlanTask>, buckets: ReadonlyArray<Bucket>, state: PlanState, budget?: number): ReadonlyArray<PlannedTask> => {
   const names = new Map(buckets.map((bucket) => [bucket.id, bucket.name] as const));
   const taken = new Set(Object.values(state.tasks).map((record) => record.file));
   const planned: PlannedTask[] = [];
   for (const task of tasks) {
     const bucket = names.get(task.bucketId) ?? '';
     const folder = `${root}/${safeSegment(bucket.length === 0 ? NO_BUCKET : bucket)}`;
-    const file = freePath(folder, `${safeSegment(task.title)}${MARKDOWN}`, task.id, taken, state.tasks[task.id]?.file);
+    const file = freePath(folder, `${safeSegment(task.title)}${MARKDOWN}`, task.id, taken, state.tasks[task.id]?.file, budget);
     taken.add(file);
     planned.push({ task, bucket, file });
   }
