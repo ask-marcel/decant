@@ -425,7 +425,9 @@ moved aside because the source no longer has them.
 An item that failed (a read, a conversion or a write) is tried again on the next run, three runs
 in all. This applies to each source. After the third run, the report of the source names the item
 one time, in a list of its own. decant does not try the item again until it changes at the source.
-The report of the whole run names each item that decant gave up on, on each run.
+The report of the whole run names each item that decant gave up on, on each run. Attachments and
+linked files in the mailbox and in group inboxes are different: the report names such a file one
+time, when decant gives up on it.
 
 decant reads some things on each run, for example a profile or a section of a notebook. After three
 failed runs, such a thing is still read, but it is not named as a failure again.
@@ -992,7 +994,9 @@ state, the next run reads the source whole one time.
 
 decant writes a file only when its content changes. The `synced_at` line does not count, so
 `synced_at` gives the time of the last real change. decant writes each file beside its place and
-then renames it over the old file. Thus a stopped run leaves no half file.
+then renames it over the old file. Thus a stopped run leaves no half file in the place of a file. If
+a run stops during a write, a file with a name that ends in `.~` and six characters can stay beside
+the file. You can delete this file.
 
 `kb/` is generated content and is gitignored.
 
@@ -1004,7 +1008,8 @@ git repository:
 
 1. In the export folder, run `git init`.
 2. Add a `.gitattributes` file with the line `* -text`. Then git keeps each file as decant wrote it.
-3. Add a `.gitignore` file with the line `.sync-cursor.json`. This file changes on each run.
+3. Add a `.gitignore` file with the lines `.sync-cursor.json` and `*.~??????`. The cursor file
+   changes on each run. The pattern is for a file that can stay after a stopped write.
 4. On Windows, run `git config core.longpaths true` and `git config core.quotepath false`.
 5. For the originals and the pictures, use Git LFS, for example
    `git lfs track "*.pdf" "*.docx" "*.xlsx" "*.pptx" "*.png" "*.jpg" "*.gif" "*.zip"`.
