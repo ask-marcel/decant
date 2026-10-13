@@ -380,6 +380,17 @@ describe('writing one conversation as one file', () => {
     });
   });
 
+  it('the conversation is recorded with its subject, when it began and who wrote last, which the mailbox page lists it by', async () => {
+    const reply = message({ id: 'm2', received: '2026-05-13T10:00:00Z', from: { name: 'Valerie FAIRBANKS', address: 'v@example.com' } });
+    const { outcome } = await run({ reader: { conversations: { [CONV]: [message(), reply] } } });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.record).toMatchObject({
+      subject: 'Contrat Contoso',
+      firstMessage: '2026-05-12T09:31:00Z',
+      lastFrom: 'Valerie FAIRBANKS',
+    });
+  });
+
   it('a message deleted from the thread is left out, and the rest still reads', async () => {
     const conversations = { [CONV]: [message(), message({ id: 'm2', received: '2026-05-13T10:00:00Z', isDeleted: true })] };
     const { outcome, files } = await run({ reader: { conversations, bodies: { m1: 'Only me left.' } } });
