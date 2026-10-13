@@ -269,4 +269,39 @@ describe('syncing a Microsoft To Do list', () => {
     expect(done.progress.steps).toHaveLength(2);
     expect(done.progress.dones).toHaveLength(1);
   });
+
+  // Three runs on the same version of a task, then the task is left alone until it changes, so a file
+  // that cannot be written does not cost a try and a report section on every run for good.
+  it('a task whose file fails to write three runs running is left alone by the fourth, and named once in the list report', async () => {
+    const listing = { tasks: { 'list-1': [task()] } };
+    const failing = (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ reader: listing, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' }, failWritesMatching: 'Book the venue' } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+    const venue = [{ path: 'Book the venue', reason: 'cannot write kb/To Do/Tasks/2026-09-08/Book the venue.md' }];
+
+    expect(third.notes.gaveUp).toEqual(venue);
+    expect(third.notes.failed).toHaveLength(0);
+    expect(third.files.written.get('kb/To Do/Tasks/_sync-report.md')).toContain('Failed 3 times');
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.progress.started).toEqual([{ total: 0, what: 'Tasks' }]);
+    expect(fourth.notes.givenUp).toEqual(venue);
+    expect(fourth.notes.gaveUp).toBeUndefined();
+    expect(fourth.files.written.has('kb/To Do/Tasks/_sync-report.md')).toBe(false);
+  });
+
+  it('a task given up on is written again once it changes, and leaves nothing behind to try again', async () => {
+    const listing = { tasks: { 'list-1': [task()] } };
+    const failing = (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ reader: listing, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' }, failWritesMatching: 'Book the venue' } });
+    const third = await failing(await failing(await failing()));
+
+    const edited = await run({
+      reader: { tasks: { 'list-1': [task({ lastModified: '2026-09-10T08:00:00Z' })] } },
+      files: { texts: { [STATE_PATH]: third.files.written.get(STATE_PATH) ?? '' } },
+    });
+
+    expect(edited.summary.converted).toBe(1);
+    expect(JSON.parse(edited.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
 });
