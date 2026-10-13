@@ -11,6 +11,7 @@ export type Files = {
   readonly listDirectoryNames: (path: string) => Promise<Result<ReadonlyArray<string>, FilesError>>;
   readonly writeText: (path: string, content: string) => Promise<Result<void, FilesError>>;
   readonly writeBytes: (path: string, bytes: Uint8Array) => Promise<Result<void, FilesError>>;
+  // Refuses when a file is already at `to`, and takes away the folders it leaves empty.
   readonly move: (from: string, to: string) => Promise<Result<void, FilesError>>;
   readonly exists: (path: string) => Promise<Result<boolean, FilesError>>;
 };

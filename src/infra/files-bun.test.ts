@@ -82,6 +82,36 @@ describe('reading the knowledge base from disk', () => {
     expect(moved.ok === false && moved.error.kind).toBe('write-failed');
   });
 
+  // What stands at the new place belongs to another item. A move refused is tried again by a later
+  // run; a file written over is gone.
+  it('a move never takes the place of a file already there, and names the file in the way', async () => {
+    const folder = join(root, 'Taken');
+    mkdirSync(folder);
+    writeFileSync(join(folder, 'mine.md'), 'mine');
+    writeFileSync(join(folder, 'theirs.md'), 'theirs');
+
+    const moved = await createBunFiles().move(join(folder, 'mine.md'), join(folder, 'theirs.md'));
+
+    expect(moved).toEqual({ ok: false, error: { kind: 'write-failed', path: join(folder, 'theirs.md'), message: `a file is already at ${join(folder, 'theirs.md')}` } });
+    expect(await Bun.file(join(folder, 'mine.md')).text()).toBe('mine');
+    expect(await Bun.file(join(folder, 'theirs.md')).text()).toBe('theirs');
+  });
+
+  it('the folders a move leaves empty go with it, up to the one both paths share, and a folder still holding a file stays', async () => {
+    const library = join(root, 'Refiled');
+    mkdirSync(join(library, '2026-05-12', 'Projets'), { recursive: true });
+    mkdirSync(join(library, '2026-05-13'));
+    writeFileSync(join(library, '2026-05-12', 'Projets', 'Contrat.docx.md'), 'contrat');
+    writeFileSync(join(library, '2026-05-13', 'Budget.xlsx.md'), 'budget');
+    writeFileSync(join(library, '2026-05-13', 'Plan.pptx.md'), 'plan');
+
+    await createBunFiles().move(join(library, '2026-05-12', 'Projets', 'Contrat.docx.md'), join(library, 'Projets', 'Contrat.docx.md'));
+    await createBunFiles().move(join(library, '2026-05-13', 'Budget.xlsx.md'), join(library, 'Budget.xlsx.md'));
+
+    expect(new Set(readdirSync(library))).toEqual(new Set(['2026-05-13', 'Budget.xlsx.md', 'Projets']));
+    expect(readdirSync(join(library, '2026-05-13'))).toEqual(['Plan.pptx.md']);
+  });
+
   // A run stopped halfway through a write leaves the old file or the new one, never half of one, so
   // each file is written beside its place first and then renamed over it.
   it('a write over a file replaces it whole and leaves nothing beside it, text or bytes', async () => {
