@@ -9,6 +9,7 @@ const card = {
   filename: 'Contrat.docx',
   sender: 'Jane Doe',
   received: '2026-05-12T09:31:00Z',
+  zone: 'UTC',
   bytes: 412887,
   body: '## 1. Scope\n\nPOS terminals, back office switch…',
   original: '../../../_attachments/Contrat-a1b2c3d4.docx',
@@ -66,6 +67,12 @@ describe('standing for a file a thread carried', () => {
 
   it('a file nothing was read from and nothing explains still says so plainly', () => {
     expect(renderThreadCard({ ...card, body: undefined, original: undefined })).toContain('Nothing was read out of it.');
+  });
+
+  // Told where the knowledge base counts its days, as the thread's folder is: a file that arrived at
+  // 17:31 UTC arrived on the 13th in Shanghai.
+  it('the day a file arrived is the day in the zone of the knowledge base', () => {
+    expect(renderThreadCard({ ...card, received: '2026-05-12T17:31:00Z', zone: 'Asia/Shanghai' })).toContain('Carried by Jane Doe on 2026-05-13.');
   });
 });
 

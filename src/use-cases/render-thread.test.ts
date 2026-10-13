@@ -88,6 +88,17 @@ describe('writing one conversation as one file', () => {
     expect(written).toContain('converted att1');
   });
 
+  // The card tells its day where the knowledge base counts its days, as the folder it sits in does:
+  // a file that arrived at 22:31 UTC on the 12th arrived on the 13th in Paris.
+  it('a card says the day its file arrived in the zone of the knowledge base', async () => {
+    const conversations = { [CONV]: [message({ received: '2026-05-12T22:31:00Z', hasAttachments: true })] };
+    const attachments = { m1: [{ id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 10, isInline: false }] };
+    const { files } = await run({ reader: { conversations, attachments } });
+    const card = [...files.written].find(([path]) => path.endsWith('/_attachments/Contrat.docx.md'))?.[1] ?? '';
+
+    expect(card).toContain('Carried by Jane Doe on 2026-05-13.');
+  });
+
   it('a conversation whose body cannot be read is left for the next run rather than written half empty', async () => {
     const conversations = { [CONV]: [message()] };
     const { ok: succeeded, files } = await run({ reader: { conversations, failCalls: { messageMarkdown: { kind: 'transient', message: 'throttled' } } } });

@@ -14,6 +14,8 @@ import type { MessageFile } from './thread-files.ts';
 export type DocumentDeps = {
   readonly files: Pick<Files, 'readText' | 'writeText'>;
   readonly logger: Logger;
+  // The zone the knowledge base counts its days in, which a card tells its day in.
+  readonly timezone: string;
 };
 
 // Who the cards are written for, and where. `threadId` is what a card says it belongs to; `here` is
@@ -117,6 +119,7 @@ const writeCard = async (deps: DocumentDeps, cards: CardsFor, part: ThreadPart, 
     filename: file.attachment.name,
     sender: part.message.from?.name,
     received: part.message.received,
+    zone: deps.timezone,
     bytes: file.attachment.size,
     body: stored?.ok === true ? unwrapSafelinks(withoutFrontMatter(stored.value)) : undefined,
     original: raw === undefined ? undefined : pathBetween(folder, raw),

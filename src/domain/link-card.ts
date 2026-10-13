@@ -1,4 +1,5 @@
 import { renderFrontMatter } from './front-matter.ts';
+import { dayIn } from './zoned-day.ts';
 
 // A link is an attachment that happens to live elsewhere, so it gets the same treatment: one
 // document per thing the thread pointed at, in the thread's own folder, holding the text the
@@ -13,6 +14,8 @@ export type LinkCard = {
   readonly title: string;
   readonly url: string;
   readonly inMessage: string;
+  // The zone the knowledge base counts its days in, so the card tells the same day as the folder.
+  readonly zone: string;
   // When the document last changed at the source, and who changed it. The card stands where the
   // converter's own stamp used to, so it carries the provenance that stamp held or the vault loses
   // it: a thread can then be traced to a version of a document, not merely to its address.
@@ -27,9 +30,7 @@ export type LinkCard = {
   readonly note?: string;
 };
 
-const DAY_LENGTH = 10;
-
-const pointedAt = (card: LinkCard): string => `Pointed at on ${card.inMessage.slice(0, DAY_LENGTH)}.`;
+const pointedAt = (card: LinkCard): string => `Pointed at on ${dayIn(card.inMessage, card.zone)}.`;
 
 const bodyOf = (card: LinkCard): string => {
   const pointed = card.body === undefined ? `${pointedAt(card)} ${card.note ?? 'It was not pulled into the knowledge base.'}` : pointedAt(card);
