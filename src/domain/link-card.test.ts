@@ -6,6 +6,7 @@ const card = {
   title: 'Rapport.docx',
   url: 'https://tenant.sharepoint.com/sites/team/Shared%20Documents/Rapport.docx',
   inMessage: '2026-05-12T09:31:00Z',
+  zone: 'UTC',
   lastModified: '2026-05-11T08:00:00Z',
   modifiedBy: 'Jane Doe',
   body: 'Q3 was ahead of plan.',
@@ -72,5 +73,10 @@ describe('standing for a file a thread pointed at', () => {
   // converter can read whole. The card is then the only copy, and there is nothing to name.
   it('a document read but not kept names no original, there being no file beside the card', () => {
     expect(renderLinkCard({ ...card, original: undefined })).not.toContain('original:');
+  });
+
+  // Told where the knowledge base counts its days, as the thread's folder is.
+  it('the day a message pointed at the file is the day in the zone of the knowledge base', () => {
+    expect(renderLinkCard({ ...card, inMessage: '2026-05-12T17:31:00Z', zone: 'Asia/Shanghai' })).toContain('Pointed at on 2026-05-13.');
   });
 });

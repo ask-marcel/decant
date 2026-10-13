@@ -2,6 +2,7 @@ import { linkDestination } from './markdown-link.ts';
 import { renderFrontMatter } from './front-matter.ts';
 import { holdsIgnoringCase, safeSegment } from './kb-path.ts';
 import type { SafeSegment } from './kb-path.ts';
+import { dayIn } from './zoned-day.ts';
 
 // What one thread carried, standing beside that thread rather than in the store the file itself
 // lives in. The card is small on purpose: the bytes and the text read out of them are held once,
@@ -14,6 +15,8 @@ export type ThreadCard = {
   readonly filename: string;
   readonly sender?: string;
   readonly received: string;
+  // The zone the knowledge base counts its days in, so the card tells the same day as the folder.
+  readonly zone: string;
   readonly bytes?: number;
   // The text read out of the file, carried here rather than pointed at, so a thread folder reads on
   // its own without following a path three levels up. Absent when nothing could be read: a file past
@@ -25,11 +28,9 @@ export type ThreadCard = {
   readonly note?: string;
 };
 
-const DAY_LENGTH = 10;
-
 const carriedLine = (card: ThreadCard): string => {
   const who = card.sender === undefined ? 'Carried' : `Carried by ${card.sender}`;
-  return `${who} on ${card.received.slice(0, DAY_LENGTH)}.`;
+  return `${who} on ${dayIn(card.received, card.zone)}.`;
 };
 
 // The file itself, linked from the card standing for it. The front matter already names it, but a

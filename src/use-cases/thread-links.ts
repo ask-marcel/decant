@@ -26,6 +26,8 @@ export type LinkDeps = {
   // holds a mailbox and any number of group inboxes, and a document naming the wrong one sends a
   // reader looking in a folder it never came from.
   readonly sourceName: string;
+  // The zone the knowledge base counts its days in, which a card tells its day in.
+  readonly timezone: string;
 };
 
 // The folder a thread keeps what it pointed at in, holding the documents and the cards standing for
@@ -195,6 +197,7 @@ export const writeLinkCards = async (deps: LinkDeps, threadId: string, here: str
       title: entry.link.name,
       url: entry.link.url,
       inMessage: entry.received,
+      zone: deps.timezone,
       lastModified: entry.lastModified,
       modifiedBy: entry.modifiedBy,
       body: stored?.ok === true ? unwrapSafelinks(withoutFrontMatter(stored.value)) : undefined,
