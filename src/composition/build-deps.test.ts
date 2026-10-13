@@ -70,6 +70,15 @@ describe('reading the run configuration', () => {
     expect(readConfig({ env: {}, ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'Europe/Paris' })).toMatchObject({ timezone: 'Europe/Paris' });
   });
 
+  // One knowledge base counts its days in one zone: the zone it keeps wins over the machine's, and a
+  // zone named for the run wins over both, since naming one is how a person moves it.
+  it('a zone the knowledge base keeps is what its days are counted in, unless the run names another', () => {
+    const kept = { env: {}, ocrLang: 'en', interactive: true, storedTimezone: 'Asia/Shanghai', machineTimezone: 'Europe/Berlin' };
+
+    expect(readConfig({ ...kept, timezone: '' })).toMatchObject({ timezone: 'Asia/Shanghai' });
+    expect(readConfig({ ...kept, timezone: 'Europe/Paris' })).toMatchObject({ timezone: 'Europe/Paris' });
+  });
+
   it('the language chosen for the run reaches the configuration', () => {
     expect(readConfig({ env: {}, ocrLang: 'fr', interactive: false, timezone: '', machineTimezone: 'UTC' })).toMatchObject({ ocrLang: 'fr', interactive: false });
   });
@@ -374,7 +383,7 @@ describe('keeping how far back the runs reach', () => {
 
     await wired(files, createPromptFake(['m', '2025-01-01'])).runSync(RUN);
 
-    expect(files.written.get('kb/.decant.json')).toBe('{\n  "since": "2025-01-01"\n}\n');
+    expect(files.written.get('kb/.decant.json')).toBe('{\n  "since": "2025-01-01",\n  "timezone": "UTC"\n}\n');
 
     const next = createPromptFake(['m']);
     await wired(files, next).runSync(RUN);
@@ -396,6 +405,38 @@ describe('keeping how far back the runs reach', () => {
       ok: false,
       error: { step: 'readSince', cause: 'read-failed', message: 'permission denied' },
     });
+  });
+
+  // Made before the zone was kept, a knowledge base holds a reach and no zone. Its next run keeps the
+  // zone it counts in, and from then on only a zone named for a run moves it. A dry run keeps nothing,
+  // and a reach that cannot be read is left for the person to mend.
+  it('a knowledge base that keeps a reach keeps the zone of its runs beside it, once', async () => {
+    const files = createFilesFake({ directories: { kb: [] }, texts: { 'kb/.decant.json': '{\n  "since": "2025-01-01"\n}\n' } });
+
+    await wired(files, createPromptFake()).runSync({ ...RUN, command: 'update', dryRun: true });
+
+    expect(files.writeLog).not.toContain('kb/.decant.json');
+
+    await wired(files, createPromptFake()).runSync({ ...RUN, command: 'update' });
+    await wired(files, createPromptFake()).runSync({ ...RUN, command: 'update' });
+
+    expect(files.written.get('kb/.decant.json')).toBe('{\n  "since": "2025-01-01",\n  "timezone": "UTC"\n}\n');
+    expect(files.writeLog.filter((path) => path === 'kb/.decant.json')).toHaveLength(1);
+
+    const mistyped = createFilesFake({ directories: { kb: [] }, texts: { 'kb/.decant.json': '{ "since": "2025/01/01" }' } });
+    await wired(mistyped, createPromptFake()).runSync({ ...RUN, command: 'update' });
+
+    expect(mistyped.writeLog).not.toContain('kb/.decant.json');
+  });
+
+  it('a zone that cannot be kept is logged and the run goes on in it', async () => {
+    const files = createFilesFake({ directories: { kb: [] }, texts: { 'kb/.decant.json': '{ "since": "2025-01-01" }' }, failWritesMatching: '.decant.json' });
+    const logger = createLoggerFake();
+
+    const outcome = await wired(files, createPromptFake(), logger).runSync({ ...RUN, command: 'update' });
+
+    expect(outcome.ok).toBe(true);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'zone.unkept', meta: { cause: 'write-failed' } });
   });
 
   it('a reach that cannot be kept is logged and the run goes on with it', async () => {

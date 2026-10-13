@@ -63,6 +63,7 @@ import { SINCE_SHAPE, parseSettings, serializeSettings } from '../domain/sync-wi
 import { err, ok } from '../domain/result.ts';
 import type { RunSyncDeps } from '../use-cases/run-sync.ts';
 import type { Config } from './config.ts';
+import { SETTINGS_FILE, keepZone } from './kept-zone.ts';
 import { pickerView } from './picker-view.ts';
 
 export type BuiltDeps = {
@@ -164,11 +165,9 @@ const siteCacheAt = (files: Files, kbRoot: string, clock: Clock): SiteCacheStore
 
 // Kept beside the knowledge base, like the list of sites: clearing `kb/` starts over, and the next run
 // asks again how far back to reach. Unlike that list it is read strictly, since a day mistyped by
-// hand must stop a run rather than let it sync everything.
-const SINCE_FILE = '.decant.json';
-
-const sinceAt = (files: Files, logger: Logger, kbRoot: string): Pick<RunSyncDeps, 'storedSince' | 'rememberSince'> => {
-  const path = `${kbRoot}/${SINCE_FILE}`;
+// hand must stop a run rather than let it sync everything. The zone of the run is kept with it.
+const sinceAt = (files: Files, logger: Logger, kbRoot: string, zone: string): Pick<RunSyncDeps, 'storedSince' | 'rememberSince'> => {
+  const path = `${kbRoot}/${SETTINGS_FILE}`;
   return {
     storedSince: async () => {
       const text = await files.readText(path);
@@ -178,7 +177,7 @@ const sinceAt = (files: Files, logger: Logger, kbRoot: string): Pick<RunSyncDeps
     },
     // A reach that cannot be kept is asked for again next run, so the run itself goes on.
     rememberSince: async (since) => {
-      const written = await files.writeText(path, serializeSettings(since));
+      const written = await files.writeText(path, serializeSettings(since, zone));
       if (!written.ok) logger.warn('since.unkept', { cause: written.error.kind });
     },
   };
@@ -274,7 +273,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // expression as never executed, so spreading this call out reads as a third of the file going
   // uncovered. See the journal entry for the same trap in `progress-bar.ts`.
   const writeGlobalReport = createWriteGlobalReport({ files, clock, logger, listSyncedSources, kbRoot: config.kbRoot });
-  const runSync = createRunSync({
+  const run = createRunSync({
     reader,
     prompt,
     view: pickerView,
@@ -301,8 +300,14 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     savedChannels: createSavedChannels(files, config.kbRoot),
     cachedSites,
     rememberSites,
-    ...sinceAt(files, logger, config.kbRoot),
+    ...sinceAt(files, logger, config.kbRoot, config.timezone),
     writeGlobalReport,
   });
+  // Kept before the run starts, so a knowledge base made before the zone was kept keeps it from the
+  // next run on, whatever that run does. A dry run keeps nothing.
+  const runSync: RunSync = async (input) => {
+    if (!input.dryRun) await keepZone(files, logger, config.kbRoot, config.timezone);
+    return run(input);
+  };
   return { logger, runSync };
 };
