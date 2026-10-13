@@ -711,6 +711,15 @@ describe('keeping the pictures a document embeds', () => {
     );
   });
 
+  it('the picture of a document whose name holds a space is linked in a form that a viewer follows past the space', async () => {
+    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
+    const { files } = await run({ name: 'ASN Spec.docx', path: 'Projets/ASN Spec.docx' }, { reader: { images, markdown: { '01ABC': 'Body.' } } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/ASN Spec.docx.md')).toContain(
+      '![word_media_image1.png](<./ASN Spec.docx.media/word_media_image1.png>)'
+    );
+  });
+
   it('a picture that cannot be written stops the document rather than leaving half of it', async () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
     // A docx writes no bytes of its own, so failing byte writes fails exactly the pictures.

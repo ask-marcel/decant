@@ -91,6 +91,17 @@ describe('taking away a marker nothing could be placed for', () => {
   it('a body with nothing left over is untouched', () => {
     expect(withoutPlaceholders('Hi,\n\nRegards,')).toBe('Hi,\n\nRegards,');
   });
+
+  // A signature logo links to the sender's site. With the logo gone, `[](https://www.pepco.pl)` shows
+  // nothing, so a reader never knew the link was there.
+  it('a marker that was the only text of a link leaves the link with its address as its text', () => {
+    expect(withoutPlaceholders('Pepco [\\[inline image: logo.png\\]](https://www.pepco.pl)')).toBe('Pepco [https://www.pepco.pl](https://www.pepco.pl)');
+    expect(withoutPlaceholders('See [ \\[inline image: x\\] ](https://x.example)')).toBe('See [https://x.example](https://x.example)');
+  });
+
+  it('a picture with no description is left as it is, since it is not a link', () => {
+    expect(withoutPlaceholders('![](../../_inline/logo.png)')).toBe('![](../../_inline/logo.png)');
+  });
 });
 
 describe('putting the picture back where the message showed it', () => {

@@ -1,4 +1,5 @@
 import { safeSegment } from '../domain/kb-path.ts';
+import { linkDestination } from '../domain/markdown-link.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { EmbeddedImage } from './ports/drive-reader.ts';
@@ -49,5 +50,6 @@ const entryFor = async (deps: PlaceImagesDeps, folder: string, name: string, ima
   const read = await deps.ocr.read(`${folder}/${mediaName(image)}`);
   const text = read.ok ? read.value.text.trim() : '';
   const caption = text.length === 0 ? '' : `\n\n${text}`;
-  return `![${mediaName(image)}](./${name}${MEDIA_SUFFIX}/${mediaName(image)})${caption}`;
+  const target = linkDestination(`./${name}${MEDIA_SUFFIX}/${mediaName(image)}`);
+  return `![${mediaName(image)}](${target})${caption}`;
 };

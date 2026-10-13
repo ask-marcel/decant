@@ -92,7 +92,13 @@ const WRAPPED_ALONE = /(\*\*|__|\*|_)(\\?\[inline image: [^\\\]]+\\?\])\1/g;
 // cells behind it.
 const ORPHANED_LINE = /^[ \t>|-]*(?:\\?\[inline image: [^\\\]]+\\?\][ \t|]*)+$\n?/gm;
 
-export const withoutPlaceholders = (body: string): string => body.replace(ORPHANED_LINE, '').replace(PLACEHOLDER, '').replace(WIDENED_GAP, '\n\n');
+// A signature logo usually links to the sender's site. Once its marker is gone the link has no text,
+// and `[](https://…)` shows nothing at all, so the address stands in for the picture. A picture with
+// no description, `![](…)`, is not a link and stays as it is.
+const EMPTIED_LINK = /(?<!!)\[[ \t]*\]\(([^()\s]+)\)/g;
+
+export const withoutPlaceholders = (body: string): string =>
+  body.replace(ORPHANED_LINE, '').replace(PLACEHOLDER, '').replace(EMPTIED_LINK, '[$1]($1)').replace(WIDENED_GAP, '\n\n');
 
 // Taking a marker out leaves the blank lines that surrounded it next to each other.
 const WIDENED_GAP = /\n{3,}/g;
