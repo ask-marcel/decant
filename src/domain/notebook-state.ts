@@ -6,6 +6,8 @@ import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { isBefore } from './sync-window.ts';
 import { compareText } from './utilities/compare-text.ts';
+import { isGivenUp, parseAttempts } from './retry-ledger.ts';
+import type { Attempts } from './retry-ledger.ts';
 
 export const NOTEBOOK_STATE_VERSION = 1;
 
@@ -25,6 +27,9 @@ export type NotebookState = {
   readonly notebook: Notebook;
   readonly lastRun: string;
   readonly pages: Readonly<Record<string, PageRecord>>;
+  // The pages that could not be read or written, by page id, and the sections whose pages could not
+  // be listed, by `section:` and the section id: three runs at most on the same version.
+  readonly retry?: Attempts;
 };
 
 export type NotebookStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -83,6 +88,7 @@ export const parseNotebookState = (raw: unknown): Result<NotebookState, Notebook
     notebook,
     lastRun: readString(raw, 'lastRun') ?? '',
     pages: pagesOf(raw['pages']),
+    retry: parseAttempts(raw['retry']),
   });
 };
 
@@ -108,7 +114,12 @@ export const notebookWorklist = (state: NotebookState, listed: ReadonlyArray<Lis
   const unread = new Set(unreadSections);
   return {
     write: listed
-      .filter((entry) => state.pages[entry.page.id]?.lastModified !== entry.page.lastModified && !isBefore(entry.page.lastModified, since))
+      .filter(
+        (entry) =>
+          state.pages[entry.page.id]?.lastModified !== entry.page.lastModified &&
+          !isBefore(entry.page.lastModified, since) &&
+          !isGivenUp(state.retry?.[entry.page.id], entry.page.lastModified)
+      )
       .sort((left, right) => compareText(left.page.lastModified, right.page.lastModified)),
     archive: Object.entries(state.pages).flatMap(([id, record]) => (present.has(id) || unread.has(record.section) ? [] : [{ id, record }])),
   };
