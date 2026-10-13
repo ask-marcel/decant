@@ -174,6 +174,37 @@ describe('syncing the channels of a Microsoft Team', () => {
     expect(stateOf(done.files).channels[GENERAL.id]?.posts['b']).toBeDefined();
   });
 
+  // Three runs on the same version of a post, then it is left alone until it changes: the channel's
+  // cursor moves on, and the post no longer costs a read and a report section on every run.
+  it('a post that fails three runs running is left alone by the fourth, which moves the cursor on, and is named once in the team report', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ reader: { failPosts: ['a'] }, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' } } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+    const postA = [{ path: 'General/Post a', reason: 'cannot render a' }];
+
+    expect(third.notes.gaveUp).toEqual(postA);
+    expect(third.notes.failed).toHaveLength(0);
+    expect(third.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Failed 3 times');
+    expect(fourth.reader.calls).not.toContain('postMarkdown:a');
+    expect(fourth.summary.failed).toBe(0);
+    expect(stateOf(fourth.files).channels[GENERAL.id]?.deltaLink).toBe('https://graph/delta?token=next');
+    expect(fourth.notes.givenUp).toEqual(postA);
+    expect(fourth.notes.gaveUp).toBeUndefined();
+    expect(fourth.files.written.has(`${ROOT}/_sync-report.md`)).toBe(false);
+  });
+
+  it('a post that renders after a failed run leaves nothing behind to try again', async () => {
+    const first = await run({ reader: { failPosts: ['a'] } });
+    const second = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } } });
+
+    expect(JSON.parse(first.files.written.get(STATE_PATH) ?? '{}').retry).toEqual({
+      a: { attempts: 1, version: '2026-09-08T09:00:00Z', name: 'General/Post a', reason: 'cannot render a' },
+    });
+    expect(second.summary.converted).toBe(1);
+    expect(JSON.parse(second.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
   it('a channel whose delta cannot be read ends the run naming the step', async () => {
     const done = await run({ reader: { failDelta: { kind: 'auth', message: 'sign-in has lapsed' } } });
 

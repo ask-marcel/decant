@@ -27,6 +27,8 @@ import type { StepError } from './ports/step-error.ts';
 import type { ChannelSummary, PostsDelta, TeamReader, TeamReaderError, TeamSummary } from './ports/team-reader.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
+import { withGaveUp } from '../domain/report.ts';
 
 export const TEAM_STATE_FILE = '.sync-state.json';
 
@@ -111,11 +113,18 @@ const writeOne = async (context: ChannelContext, state: TeamState, planned: Plan
     : markdown;
   if (!written.ok) {
     deps.logger.warn('post.failed', { post: post.id, cause: written.error.kind });
-    return { apply: (carried) => carried, counted: { failed: 1 }, notes: { failed: [{ path: reportName(channel, title), reason: written.error.message }] } };
+    const attempt = nextAttempt(state.retry?.[post.id], post.lastModified, reportName(channel, title), written.error.message);
+    // Out of tries now: named under its own heading, not as a failure the next run will try again.
+    const notes = isGivenUp(attempt, post.lastModified) ? {} : { failed: [{ path: reportName(channel, title), reason: written.error.message }] };
+    return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, post.id, attempt) }), counted: { failed: 1 }, notes };
   }
   await archiveSuperseded(deps, context.roots, state.channels[channel.id]?.posts[post.id], file);
   const record: PostRecord = { file, lastModified: post.lastModified, title };
-  return { apply: (carried) => withPost(carried, channel.id, channel.name, post.id, record), counted: { converted: 1 }, notes: {} };
+  return {
+    apply: (carried) => ({ ...withPost(carried, channel.id, channel.name, post.id, record), retry: clearAttempt(carried.retry, post.id) }),
+    counted: { converted: 1 },
+    notes: {},
+  };
 };
 
 const archiveGone = async (context: ChannelContext, gone: { readonly id: string; readonly record: PostRecord }): Promise<Done> => {
@@ -239,6 +248,8 @@ export const createSyncTeam =
     // stamps its own file rather than carrying the date of the last run that found work.
     const saved = await save(deps, input, done.value.state);
     if (!saved.ok) return saved;
-    await writeReport(deps, input, teamRoot(deps.kbRoot, input.team.name), input.team.name, done.value.summary, done.value.notes);
-    return ok({ id: input.team.id, source: input.team.name, summary: done.value.summary, notes: done.value.notes });
+    const after = done.value.state.retry;
+    const notes = withGaveUp({ ...done.value.notes, givenUp: givenUpNotes(after) }, gaveUpNotes(state.retry, after));
+    await writeReport(deps, input, teamRoot(deps.kbRoot, input.team.name), input.team.name, done.value.summary, notes);
+    return ok({ id: input.team.id, source: input.team.name, summary: done.value.summary, notes });
   };

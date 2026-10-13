@@ -8,6 +8,8 @@ import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { isBefore } from './sync-window.ts';
 import { compareText } from './utilities/compare-text.ts';
+import { isGivenUp, parseAttempts } from './retry-ledger.ts';
+import type { Attempts } from './retry-ledger.ts';
 
 export const TEAM_STATE_VERSION = 1;
 
@@ -29,6 +31,8 @@ export type TeamState = {
   readonly source: { readonly kind: 'team'; readonly id: string; readonly name: string };
   readonly lastRun: string;
   readonly channels: Readonly<Record<string, ChannelState>>;
+  // The posts that would not render, by post id, three runs at most on the same version.
+  readonly retry?: Attempts;
 };
 
 export type TeamStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -70,6 +74,7 @@ export const parseTeamState = (raw: unknown): Result<TeamState, TeamStateError> 
     source: { kind: 'team', id: readString(source, 'id') ?? '', name: readString(source, 'name') ?? '' },
     lastRun: readString(raw, 'lastRun') ?? '',
     channels: recordsOf(raw['channels'], channelOf),
+    retry: parseAttempts(raw['retry']),
   });
 };
 
@@ -106,7 +111,9 @@ export const channelWork = (state: TeamState, channelId: string, posts: Readonly
     return post.deleted && record !== undefined ? [{ id: post.id, record }] : [];
   });
   const write = posts
-    .filter((post) => !post.deleted && known[post.id]?.lastModified !== post.lastModified && !isBefore(post.lastModified, since))
+    .filter(
+      (post) => !post.deleted && known[post.id]?.lastModified !== post.lastModified && !isBefore(post.lastModified, since) && !isGivenUp(state.retry?.[post.id], post.lastModified)
+    )
     .sort((left, right) => compareText(left.lastModified, right.lastModified));
   return { write, archive };
 };
