@@ -284,8 +284,8 @@ describe('the pictures a document attached to a mail holds', () => {
     const { outcome, files } = await run({ reader: { conversations: { [CONV]: messages }, attachments, attachmentImages: images } });
     const stored = `${ATTACHMENTS_STORE}/${storedName('Contrat.docx')}`;
 
-    expect(files.binary.has(`${stored}.media/word_media_image1.png`)).toBe(true);
-    expect(files.written.get(THREAD_FILE)).not.toContain('word_media_image1.png');
+    expect(files.binary.has(`${stored}.media/image-01.png`)).toBe(true);
+    expect(files.written.get(THREAD_FILE)).not.toContain('image-01.png');
     expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${stored}.md`]);
   });
 
@@ -297,8 +297,8 @@ describe('the pictures a document attached to a mail holds', () => {
     const stored = `${ATTACHMENTS_STORE}/${storedName('Contrat.docx')}`;
     const record = outcome?.kind === 'rendered' ? outcome.thread.attachments[contentHash(bytesOf('att1'))] : undefined;
 
-    expect(record?.paths).toEqual([`${stored}.md`, `${stored}.media/word_media_image1.png`]);
-    expect(record?.media).toEqual([`${stored}.media/word_media_image1.png`]);
+    expect(record?.paths).toEqual([`${stored}.md`, `${stored}.media/image-01.png`]);
+    expect(record?.media).toEqual([`${stored}.media/image-01.png`]);
   });
 });
 

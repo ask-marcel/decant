@@ -328,13 +328,13 @@ describe('converting one document out of a library', () => {
       { name: 'Scan.pdf', path: 'Scan.pdf' },
       {
         reader: { markdown: { '01ABC': '' }, images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] } },
-        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png': 'Invoice total 1200 EUR' } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png': 'Invoice total 1200 EUR' } },
       }
     );
     const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
 
     expect(written).toContain('Invoice total 1200 EUR');
-    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png')).toBe(true);
+    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png')).toBe(true);
     expect(progress.details).toContainEqual({ label: 'Scan.pdf', what: 'reading picture 1/1' });
   });
 
@@ -347,7 +347,7 @@ describe('converting one document out of a library', () => {
       }
     );
 
-    expect(outcome).toEqual({ kind: 'failed', reason: 'write-failed: cannot write kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png' });
+    expect(outcome).toEqual({ kind: 'failed', reason: 'write-failed: cannot write kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png' });
   });
 
   it('a scanned PDF the source refuses to read as text still has its pages read by OCR', async () => {
@@ -358,7 +358,7 @@ describe('converting one document out of a library', () => {
           failMarkdown: { kind: 'unrenderable', message: 'pdf has no extractable text layer' },
           images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] },
         },
-        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png': 'Invoice total 1200 EUR' } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png': 'Invoice total 1200 EUR' } },
       }
     );
     const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
@@ -367,7 +367,7 @@ describe('converting one document out of a library', () => {
       kind: 'converted',
       outputs: [
         'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf',
-        'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png',
+        'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png',
         'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md',
       ],
     });
@@ -410,7 +410,7 @@ describe('converting one document out of a library', () => {
       { name: 'Scan.pdf', path: 'Scan.pdf' },
       {
         reader: { markdown: { '01ABC': '   ' }, images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] } },
-        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png': 'Read by OCR' } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png': 'Read by OCR' } },
       }
     );
 
@@ -422,13 +422,13 @@ describe('converting one document out of a library', () => {
       { name: 'Scan.pdf', path: 'Scan.pdf' },
       {
         reader: { markdown: { '01ABC': '' }, images: { '01ABC': [{ path: 'pdf/page1/img_p0_1.png', bytes: new Uint8Array([1, 2, 3]) }] } },
-        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png': '   ' } },
+        ocr: { texts: { 'kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png': '   ' } },
       }
     );
     const written = files.written.get('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.md') ?? '';
 
-    expect(written).toContain('![pdf_page1_img_p0_1.png](./Scan.pdf.media/pdf_page1_img_p0_1.png)');
-    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/pdf_page1_img_p0_1.png')).toBe(true);
+    expect(written).toContain('![image-01.png](./Scan.pdf.media/image-01.png)');
+    expect(files.binary.has('kb/Espace Contoso/Documents/2026-05-12/Scan.pdf.media/image-01.png')).toBe(true);
   });
 
   it('a photo is kept as it is, with the text read out of it beside it', async () => {
@@ -664,7 +664,7 @@ describe('saying what a conversion is doing while it does it', () => {
 });
 
 describe('keeping the pictures a document embeds', () => {
-  const MEDIA = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.media/word_media_image1.png';
+  const MEDIA = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.media/image-01.png';
 
   it('a document holding pictures keeps them beside its markdown, so a diagram is not lost to a placeholder', async () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }] };
@@ -681,6 +681,36 @@ describe('keeping the pictures a document embeds', () => {
 
     expect(written).toContain('## Images');
     expect(written).toContain('smartRoute');
+  });
+
+  // A part can be named by a 40-character hash. Copied whole into the name, it once made a path one
+  // character longer than Windows accepts, and the document was never written.
+  it('the pictures of a document are numbered in the order they came, each keeping its own extension', async () => {
+    const images = {
+      '01ABC': [
+        { path: 'word/media/30cd61b51f7c6391a2208eebdbb55edc3bb3c714.png', bytes: new Uint8Array([1]) },
+        { path: 'word/media/image2.JPEG', bytes: new Uint8Array([2]) },
+        { path: 'word/media/image3', bytes: new Uint8Array([3]) },
+      ],
+    };
+    const { outcome } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
+    const media = 'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.media';
+
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([
+      'kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md',
+      `${media}/image-01.png`,
+      `${media}/image-02.jpeg`,
+      `${media}/image-03`,
+    ]);
+  });
+
+  it('a document with a hundred pictures or more numbers them wide enough to sort as numbers', async () => {
+    const images = { '01ABC': Array.from({ length: 100 }, (_, at) => ({ path: `word/media/image${at + 1}.png`, bytes: new Uint8Array([at]) })) };
+    const { outcome } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
+    const outputs = outcome.kind === 'converted' ? outcome.outputs : [];
+
+    expect(outputs[1]).toEndWith('Contrat.docx.media/image-001.png');
+    expect(outputs[100]).toEndWith('Contrat.docx.media/image-100.png');
   });
 
   it('a document holding no pictures gains no folder and no section', async () => {
@@ -706,18 +736,14 @@ describe('keeping the pictures a document embeds', () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
     const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain(
-      '\n\n## Images\n\n![word_media_image1.png](./Contrat.docx.media/word_media_image1.png)\n'
-    );
+    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md')).toContain('\n\n## Images\n\n![image-01.png](./Contrat.docx.media/image-01.png)\n');
   });
 
   it('the picture of a document whose name holds a space is linked in a form that a viewer follows past the space', async () => {
     const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
     const { files } = await run({ name: 'ASN Spec.docx', path: 'Projets/ASN Spec.docx' }, { reader: { images, markdown: { '01ABC': 'Body.' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/ASN Spec.docx.md')).toContain(
-      '![word_media_image1.png](<./ASN Spec.docx.media/word_media_image1.png>)'
-    );
+    expect(files.written.get('kb/Espace Contoso/Documents/2026-05-12/Projets/ASN Spec.docx.md')).toContain('![image-01.png](<./ASN Spec.docx.media/image-01.png>)');
   });
 
   it('a picture that cannot be written stops the document rather than leaving half of it', async () => {

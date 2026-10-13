@@ -230,14 +230,14 @@ describe('keeping what was attached to a mail', () => {
 
   it('the pictures a Word attachment holds are taken out of it, since it keeps no copy you can look at', async () => {
     const images = { att1: [{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }] };
-    const { outcome, files } = await run({}, { reader: { attachmentImages: images }, ocr: { texts: { [`${FOLDER}/Contrat.docx.media/word_media_image1.png`]: 'smartRoute' } } });
+    const { outcome, files } = await run({}, { reader: { attachmentImages: images }, ocr: { texts: { [`${FOLDER}/Contrat.docx.media/image-01.png`]: 'smartRoute' } } });
     const written = files.written.get(`${FOLDER}/Contrat.docx.md`) ?? '';
 
-    expect(files.binary.has(`${FOLDER}/Contrat.docx.media/word_media_image1.png`)).toBe(true);
+    expect(files.binary.has(`${FOLDER}/Contrat.docx.media/image-01.png`)).toBe(true);
     expect(written).toContain('## Images');
-    expect(written).toContain('![word_media_image1.png](./Contrat.docx.media/word_media_image1.png)');
+    expect(written).toContain('![image-01.png](./Contrat.docx.media/image-01.png)');
     expect(written).toContain('smartRoute');
-    expect(outcome.kind === 'converted' && outcome.media).toEqual([`${FOLDER}/Contrat.docx.media/word_media_image1.png`]);
+    expect(outcome.kind === 'converted' && outcome.media).toEqual([`${FOLDER}/Contrat.docx.media/image-01.png`]);
   });
 
   it('a kind that keeps a copy you can look at is not asked for its pictures', async () => {
