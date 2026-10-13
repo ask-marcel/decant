@@ -178,6 +178,20 @@ describe('remembering where a mailbox sync got to', () => {
     });
   });
 
+  it('an attachment keeps the primary file it named, and one that named no file at all reads back with none', () => {
+    const parsed = parseMailboxState({
+      version: 2,
+      source: { kind: 'mailbox' },
+      attachments: {
+        ba7816bf8f01: { name: 'Scan.pdf', paths: ['_attachments/Scan.pdf', '_attachments/Scan.pdf.md'], primary: '_attachments/Scan.pdf.md', media: [] },
+        cafe00000001: { name: 'Lost.pdf' },
+      },
+    });
+
+    expect(parsed.ok && parsed.value.attachments['ba7816bf8f01']?.primary).toBe('_attachments/Scan.pdf.md');
+    expect(parsed.ok && parsed.value.attachments['cafe00000001']?.primary).toBe('');
+  });
+
   it('the queue can be replaced as conversations are finished', () => {
     expect(withPending(emptyMailboxState(), ['conv-1', 'conv-2']).pending).toEqual(['conv-1', 'conv-2']);
   });
