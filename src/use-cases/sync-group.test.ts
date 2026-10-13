@@ -354,7 +354,7 @@ describe('a group thread the run could not write', () => {
       outcome: landed,
     });
 
-    expect(dropped.files.written.get(REPORT_PATH)).toContain('- thread early: thread refused');
+    expect(dropped.notes.givenUp).toContainEqual({ path: 'thread early', reason: 'thread refused' });
   });
 
   it('a thread out of tries is named in the report by its topic, under the heading that says it will not be tried again', async () => {
@@ -362,7 +362,7 @@ describe('a group thread the run could not write', () => {
     const third = await again(second.files.written.get(STATE_PATH) ?? '', 'early');
     const report = third.files.written.get(REPORT_PATH) ?? '';
 
-    expect(report).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
+    expect(report).toContain('Failed 3 times, and will not be tried again unless the file changes:');
     expect(report).toContain('- thread Budget review: thread refused');
     expect(report).not.toContain('will be tried again on the next run');
   });

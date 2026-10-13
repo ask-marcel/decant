@@ -23,6 +23,7 @@ import {
 } from '../domain/site-state.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import { forgetSwept, givenUp, nextFailure } from '../domain/retry-policy.ts';
+import type { RetryEntry } from '../domain/retry-policy.ts';
 import { latestById, widens } from '../domain/sync-window.ts';
 import { buildWorklist } from '../domain/worklist.ts';
 import type { ReportEntry, ReportNotes, ReportRun } from '../domain/report.ts';
@@ -174,7 +175,9 @@ export const writeReport = async (
   summary: RunSummary,
   notes: RunNotes
 ): Promise<void> => {
-  const run: ReportRun = { source, at: deps.clock.nowIso(), counts: countsLine(summary), ...notes };
+  // A log of runs: an item out of tries is named in the run that gave up on it, and not by every run
+  // after. The report of the whole run is the one that lists every item still given up.
+  const run: ReportRun = { source, at: deps.clock.nowIso(), counts: countsLine(summary), ...notes, givenUp: notes.gaveUp ?? [] };
   if (input.dryRun || !hasSomethingToReport(run)) return;
   const path = `${root}/${REPORT_FILE_NAME}`;
   const existing = await deps.files.readText(path);
@@ -239,16 +242,26 @@ const syncDrive = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveS
   if (input.dryRun) return ok({ state: queued.value.state, summary: add(EMPTY, { queued: queued.value.state.drives[drive.id]?.pending.length ?? 0 }), notes: NO_NOTES });
   const done = await processQueue(deps, input, drive, queued.value.state, statePath);
   if (!done.ok) return done;
-  return ok({ ...done.value, notes: mergeNotes(done.value.notes, { givenUp: givenUpNotes(done.value.state.drives[drive.id]) }) });
+  const after = done.value.state.drives[drive.id];
+  return ok({ ...done.value, notes: mergeNotes(done.value.notes, { givenUp: givenUpNotes(after), gaveUp: gaveUpNotes(state.drives[drive.id], after) }) });
 };
+
+const givenUpEntries = (drive: DriveState | undefined): ReadonlyArray<readonly [string, RetryEntry]> => Object.entries(drive?.retry ?? {}).filter(([, entry]) => givenUp(entry));
+
+const noteOf = ([, entry]: readonly [string, RetryEntry]): ReportEntry => ({ path: entry.item.path, reason: entry.reason });
 
 // Read off the ledger rather than off this run's work, because a document out of tries is precisely
 // one this run did nothing about. Naming it every run is the point: it is the only thing standing
-// between a file nobody can convert and a file nobody knows about.
-const givenUpNotes = (drive: DriveState | undefined): ReadonlyArray<ReportEntry> =>
-  Object.values(drive?.retry ?? {})
-    .filter(givenUp)
-    .map((entry) => ({ path: entry.item.path, reason: entry.reason }));
+// between a file nobody can convert and a file nobody knows about. The report of the whole run
+// names these; the library's own report names only the ones this run gave up on.
+const givenUpNotes = (drive: DriveState | undefined): ReadonlyArray<ReportEntry> => givenUpEntries(drive).map(noteOf);
+
+const gaveUpNotes = (before: DriveState | undefined, after: DriveState | undefined): ReadonlyArray<ReportEntry> => {
+  const already = new Set(givenUpEntries(before).map(([id]) => id));
+  return givenUpEntries(after)
+    .filter(([id]) => !already.has(id))
+    .map(noteOf);
+};
 
 const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, state: SiteState, statePath: string): Promise<Result<{ state: SiteState }, StepError>> => {
   const known: DriveState = state.drives[drive.id] ?? { name: drive.name, pending: [], items: {}, retry: {} };
@@ -330,12 +343,16 @@ export type RunNotes = ReportNotes;
 
 const NO_NOTES: RunNotes = { skipped: [], failed: [], givenUp: [], archived: [] };
 
-const mergeNotes = (left: RunNotes, right: Partial<RunNotes>): RunNotes => ({
-  skipped: [...left.skipped, ...(right.skipped ?? [])],
-  failed: [...left.failed, ...(right.failed ?? [])],
-  givenUp: [...left.givenUp, ...(right.givenUp ?? [])],
-  archived: [...left.archived, ...(right.archived ?? [])],
-});
+const mergeNotes = (left: RunNotes, right: Partial<RunNotes>): RunNotes => {
+  const gaveUp = [...(left.gaveUp ?? []), ...(right.gaveUp ?? [])];
+  return {
+    skipped: [...left.skipped, ...(right.skipped ?? [])],
+    failed: [...left.failed, ...(right.failed ?? [])],
+    givenUp: [...left.givenUp, ...(right.givenUp ?? [])],
+    ...(gaveUp.length === 0 ? {} : { gaveUp }),
+    archived: [...left.archived, ...(right.archived ?? [])],
+  };
+};
 
 // The IO (converting, moving, archiving) happens now; the manifest change it implies comes back as a
 // function so a whole window's updates fold onto the manifest in order, after the parallel IO.

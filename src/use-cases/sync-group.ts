@@ -13,6 +13,7 @@ import type { GroupState } from '../domain/group-state.ts';
 import { threadRef } from '../domain/group-thread.ts';
 import type { GroupThread } from '../domain/group-thread.ts';
 import { abandonedThreads } from '../domain/mail-state.ts';
+import { withGaveUp } from '../domain/report.ts';
 import type { AttachmentRecord, LinkedRecord, RetryRecord, ThreadRecord } from '../domain/mail-state.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import type { Result } from '../domain/result.ts';
@@ -189,11 +190,25 @@ const noted = (notes: RunNotes, results: ReadonlyArray<Rendered>): RunNotes =>
 // Named by topic where the listing still has one, since a report is read by a person and a Graph
 // thread id tells them nothing. A thread the group has since dropped keeps its id, which is all
 // there is left to call it.
-const abandoned = (state: GroupState, listing: ReadonlyArray<GroupThread>): RunNotes['givenUp'] =>
-  abandonedThreads(state.retry).map((entry) => ({
+const named = (entries: ReadonlyArray<{ readonly threadId: string; readonly reason: string }>, listing: ReadonlyArray<GroupThread>): RunNotes['givenUp'] =>
+  entries.map((entry) => ({
     path: `thread ${listing.find((thread) => thread.id === entry.threadId)?.topic ?? entry.threadId}`,
     reason: entry.reason,
   }));
+
+// Added to, never replacing: a run reports the files a rendered thread has stopped owing as well
+// as the threads the ledger still holds, and the two lists are filled from different places. The
+// files stopped owing in this run, and a thread joins the list in the run that gave up on it: those
+// two are what the group's own report names.
+const abandonedNotes = (notes: RunNotes, before: GroupState, after: GroupState, listing: ReadonlyArray<GroupThread>): RunNotes => {
+  const already = new Set(abandonedThreads(before.retry).map((entry) => entry.threadId));
+  const abandoned = abandonedThreads(after.retry);
+  const gaveUp = named(
+    abandoned.filter((entry) => !already.has(entry.threadId)),
+    listing
+  );
+  return withGaveUp({ ...notes, givenUp: [...notes.givenUp, ...named(abandoned, listing)] }, [...notes.givenUp, ...gaveUp]);
+};
 
 const labelOf = (input: SyncGroupInput): string => sourceLabel({ name: input.group.name, kind: 'group' });
 
@@ -238,9 +253,7 @@ const render = async (
   // stopped halfway would leave the rest of a widened reach below the watermark for good.
   const finished = await save(deps, `${root}/${GROUP_STATE_FILE}`, { ...current, since: input.since });
   if (!finished.ok) return finished;
-  // Added to, never replacing: a run reports the files a rendered thread has stopped owing as well
-  // as the threads the ledger still holds, and the two lists are filled from different places.
-  const reported = { ...notes, givenUp: [...notes.givenUp, ...abandoned(current, listing)] };
+  const reported = abandonedNotes(notes, state, current, listing);
   await writeReport(deps, input, root, labelOf(input), summary, reported);
   return ok({ id: input.group.id, source: labelOf(input), summary, notes: reported });
 };

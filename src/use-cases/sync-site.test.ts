@@ -13,7 +13,7 @@ import { createProgressFake } from '../test-helpers/progress-fake.ts';
 import type { ProgressFake } from '../test-helpers/progress-fake.ts';
 import { createConvertFile } from './convert-file.ts';
 import { createSyncSite } from './sync-site.ts';
-import type { RunSummary } from './sync-site.ts';
+import type { RunNotes, RunSummary } from './sync-site.ts';
 
 const site = { id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://tenant.sharepoint.com/sites/X' };
 const drives = [{ id: 'b!one', name: 'Documents' }];
@@ -33,7 +33,7 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 
 const run = async (
   seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; drives?: typeof drives; site?: typeof site; since?: string } = {}
-): Promise<{ summary: RunSummary; files: FilesFake; logger: LoggerFake; progress: ProgressFake; reader: DriveReaderFake; ok: boolean }> => {
+): Promise<{ summary: RunSummary; notes?: RunNotes; files: FilesFake; logger: LoggerFake; progress: ProgressFake; reader: DriveReaderFake; ok: boolean }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
   const progress = createProgressFake();
@@ -56,7 +56,7 @@ const run = async (
     dryRun: seeds.dryRun ?? false,
     since: seeds.since,
   });
-  return { summary: result.ok ? result.value.summary : ({} as RunSummary), files, logger, progress, reader, ok: result.ok };
+  return { summary: result.ok ? result.value.summary : ({} as RunSummary), notes: result.ok ? result.value.notes : undefined, files, logger, progress, reader, ok: result.ok };
 };
 
 const stateAfter = (
@@ -102,7 +102,7 @@ describe('reporting what did not reach the knowledge base', () => {
     });
     const report = files.written.get(REPORT_PATH) ?? '';
 
-    expect(report).toContain('Could not be read, and will be tried again on the next run:');
+    expect(report).toContain('Failed, and will be tried again on the next run:');
     expect(report).toContain('- Projets/Contrat.docx: permanent: file is locked');
   });
 
@@ -801,17 +801,24 @@ describe('a document the source would not hand over', () => {
     const third = await again(second.files.written.get(STATE_PATH) ?? '', true);
     const report = third.files.written.get(REPORT_PATH) ?? '';
 
-    expect(report).toContain('Could not be read after 3 tries, and will not be tried again unless the file changes:');
+    expect(report).toContain('Failed 3 times, and will not be tried again unless the file changes:');
     expect(report).toContain('- Annexes/appendix_9.1.pdf: transient: gateway timeout');
     expect(report).not.toContain('will be tried again on the next run');
   });
 
-  it('a document still out of tries is named again by every run after the one that gave up', async () => {
+  // The library's own report is a log of runs, so it names the document once, in the run that gave
+  // up on it. Every run after still hands it on to the report of the whole run, which lists what is
+  // given up now.
+  it('a document still out of tries is not named again in the library report, and every run after still hands it on', async () => {
     const second = await again(await swept(), true);
     const third = await again(second.files.written.get(STATE_PATH) ?? '', true);
     const fourth = await again(third.files.written.get(STATE_PATH) ?? '', true);
+    const appendix = [{ path: 'Annexes/appendix_9.1.pdf', reason: 'transient: gateway timeout' }];
 
-    expect(fourth.files.written.get(REPORT_PATH)).toContain('- Annexes/appendix_9.1.pdf: transient: gateway timeout');
+    expect(third.notes?.gaveUp).toEqual(appendix);
+    expect(fourth.files.written.has(REPORT_PATH)).toBe(false);
+    expect(fourth.notes?.gaveUp).toBeUndefined();
+    expect(fourth.notes?.givenUp).toEqual(appendix);
   });
 
   it('a document edited at the source after it was given up on is tried again from scratch', async () => {

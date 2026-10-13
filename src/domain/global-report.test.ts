@@ -32,7 +32,7 @@ describe('one report covering everything a run touched', () => {
     expect(rendered).toContain('## Espace Contoso');
     expect(rendered).toContain('Nothing was left behind.');
     expect(rendered).not.toContain('Left in place');
-    expect(rendered).not.toContain('Could not be read');
+    expect(rendered).not.toContain('Failed');
   });
 
   it('a source the run did not touch is named with the date it last ran, so its silence does not read as clean', () => {
