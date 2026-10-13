@@ -1,7 +1,7 @@
 // Bun has no primitive for directories: `Bun.file(dir).exists()` answers "is a file", and there is
-// no rename. `node:fs/promises` takes those calls, the boundary carve-out in rule 20. Every file read,
-// write and removal below stays on the Bun file API.
-import { mkdir, readdir, rename } from 'node:fs/promises';
+// no rename. `node:fs/promises` takes those calls and the removal of a folder a move left empty, the
+// boundary carve-out in rule 20. Every file read, write and removal below stays on the Bun file API.
+import { mkdir, readdir, rename, rmdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { WINDOWS_PATH_LIMIT } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
@@ -94,14 +94,41 @@ const write = async (io: Renaming, path: string, contents: string | Uint8Array, 
   }
 };
 
-const moveTo = async (from: string, to: string, platform: string): Promise<Result<void, FilesError>> => {
+// The deepest folder two paths share.
+const sharedFolder = (from: string, to: string): string => {
+  const left = dirname(from).split('/');
+  const right = dirname(to).split('/');
+  let at = 0;
+  while (at < left.length && left[at] === right[at]) at += 1;
+  return left.slice(0, at).join('/');
+};
+
+// The folders a move leaves empty go with it, from the one it left up to the one the two paths
+// share: a library filed again out of its day folders, or the last file of a folder put aside, leaves
+// no empty folder behind. A folder that still holds something refuses to go, and ends the climb.
+const removeEmptied = async (from: string, to: string): Promise<void> => {
+  const shared = sharedFolder(from, to);
+  for (let folder = dirname(from); folder.length > shared.length && folder !== dirname(folder); folder = dirname(folder)) {
+    const removed = await rmdir(folder).then(
+      () => true,
+      () => false
+    );
+    if (!removed) return;
+  }
+};
+
+// A move never takes the place of a file already there. What stands in the way belongs to another
+// item, and a move refused is tried again by a later run, where a file written over is gone.
+const moveTo = async (io: Renaming, from: string, to: string, platform: string): Promise<Result<void, FilesError>> => {
+  if (await Bun.file(to).exists()) return err({ kind: 'write-failed', path: to, message: `a file is already at ${to}` });
   try {
     await mkdir(dirname(to), { recursive: true });
-    await rename(from, to);
-    return ok(undefined);
+    await renameOver(io, from, to, RENAME_TRIES);
   } catch (error) {
     return writeFailed(to, error, platform);
   }
+  await removeEmptied(from, to);
+  return ok(undefined);
 };
 
 // The platform is the one a failed write is explained for; a test names it, a run takes this one's.
@@ -111,6 +138,6 @@ export const createBunFiles = (platform: string = process.platform, io: Renaming
   listDirectoryNames: listDirectoryNamesAt,
   writeText: async (path, content) => write(io, path, content, platform),
   writeBytes: async (path, bytes) => write(io, path, bytes, platform),
-  move: async (from, to) => moveTo(from, to, platform),
+  move: async (from, to) => moveTo(io, from, to, platform),
   exists: async (path) => ok(await Bun.file(path).exists()),
 });
