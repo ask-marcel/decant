@@ -30,13 +30,13 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 
 const run = async (
   over: Partial<DriveItem>,
-  seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed } = {}
+  seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed; pathBudget?: number } = {}
 ): Promise<{ outcome: ConvertOutcome; files: FilesFake; reader: ReturnType<typeof createDriveReaderFake>; logger: LoggerFake; progress: ProgressFake }> => {
   const files = createFilesFake(seeds.files);
   const reader = createDriveReaderFake(seeds.reader);
   const logger = createLoggerFake();
   const progress = createProgressFake();
-  const convert = createConvertFile({ reader, files, ocr: createOcrFake(seeds.ocr), clock: createClockFake(), logger, progress });
+  const convert = createConvertFile({ reader, files, ocr: createOcrFake(seeds.ocr), clock: createClockFake(), logger, progress, pathBudget: seeds.pathBudget });
   const outcome = await convert({
     item: item(over),
     driveId: 'b!one',
@@ -49,6 +49,18 @@ const run = async (
 };
 
 describe('converting one document out of a library', () => {
+  // The export the audit read lost a document to a path one character too long for Windows.
+  it('a document whose path would run past what Windows accepts lands under a shorter name, its extension kept', async () => {
+    const { outcome } = await run(
+      { name: 'Contrat de service avec le fournisseur principal.docx', path: 'Projets/Contrat de service avec le fournisseur principal.docx' },
+      { reader: { markdown: { '01ABC': 'Clause one.' } }, pathBudget: 150 }
+    );
+
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([
+      expect.stringMatching(/^kb\/Espace Contoso\/Documents\/2026-05-12\/Projets\/Contrat de service avec le fournis-[0-9a-f]{8}\.docx\.md$/),
+    ]);
+  });
+
   it('a Word document lands as markdown under the same folders it had in SharePoint', async () => {
     const { outcome, files } = await run({}, { reader: { markdown: { '01ABC': '# Contrat\n\nClause one.' } } });
 

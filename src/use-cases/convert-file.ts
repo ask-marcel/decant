@@ -7,7 +7,7 @@ import type { MimePart } from '../domain/mime.ts';
 import { readMime } from '../domain/mime.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_SLIDES_NOTE, NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
-import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
+import { fitSegment, memberFile, safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import { datedRoot } from '../domain/output-paths.ts';
 import type { SkipReason } from '../domain/report.ts';
 import type { Result } from '../domain/result.ts';
@@ -27,6 +27,8 @@ export type ConvertFileDeps = {
   readonly clock: Clock;
   readonly logger: Logger;
   readonly progress: Progress;
+  // How long a path may be as decant writes it. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 // Where the file goes, one way or the other. A sweep files a library under the day each document
@@ -302,11 +304,11 @@ const writeArchiveEntries = async (
 ): Promise<ConvertOutcome> => {
   const outputs: string[] = [archivePath];
   for (const entry of entries) {
-    const relative = safeRelPath(entry.path.split('/'));
+    const file = memberFile(folder, entry.path, context.deps.pathBudget);
     const stamp = { ...context.stamp, zipEntry: entry.path };
-    const written = await context.deps.files.writeText(`${folder}/${relative}.md`, kbDocument(stamp, entry.text ?? entry.note ?? NO_TEXT_NOTE));
+    const written = await context.deps.files.writeText(file, kbDocument(stamp, entry.text ?? entry.note ?? NO_TEXT_NOTE));
     if (!written.ok) return failure(written.error);
-    outputs.push(`${folder}/${relative}.md`);
+    outputs.push(file);
   }
   return { kind: 'converted', outputs };
 };
@@ -332,6 +334,7 @@ export const createConvertFile =
   async (input) => {
     const decision = planFile({ name: input.item.name, size: input.item.size }, input.maxBytes);
     if (decision.kind === 'skip') return { kind: 'skipped', reason: decision.reason };
-    const context = { deps, input, dir: targetDir(input), name: safeSegment(input.asName ?? input.item.name), stamp: stampFor(input, deps.clock) };
+    const dir = targetDir(input);
+    const context = { deps, input, dir, name: fitSegment(dir, safeSegment(input.asName ?? input.item.name), deps.pathBudget), stamp: stampFor(input, deps.clock) };
     return CONVERTERS[decision.route](context);
   };

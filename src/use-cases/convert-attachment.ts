@@ -9,7 +9,7 @@ import { unwrapSafelinks } from '../domain/safelink.ts';
 import type { CarriedPart } from '../domain/saved-mail.ts';
 import { savedMailBody } from '../domain/saved-mail.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
-import { safeRelPath, safeSegment } from '../domain/kb-path.ts';
+import { memberFile, safeSegment } from '../domain/kb-path.ts';
 import { renderZipManifest } from '../domain/zip-manifest.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
@@ -30,6 +30,8 @@ export type ConvertAttachmentDeps = {
   readonly unpackArchive: (path: string) => Promise<Result<ReadonlyArray<ArchiveEntry>, { readonly kind: string; readonly message: string }>>;
   // Reads a file already on disk, which is what a part taken out of a saved email is by then.
   readonly convertLocal: (path: string) => Promise<Result<string, { readonly kind: string; readonly message: string }>>;
+  // How long a path may be as decant writes it. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 export type ConvertAttachmentInput = {
@@ -260,7 +262,7 @@ const asArchive = async (context: Context): Promise<AttachmentOutcome> => {
 const writeArchiveEntries = async (context: Context, folder: string, archivePath: string, entries: ReadonlyArray<ArchiveEntry>): Promise<AttachmentOutcome> => {
   const outputs: string[] = [archivePath];
   for (const entry of entries) {
-    const path = `${folder}/${safeRelPath(entry.path.split('/'))}.md`;
+    const path = memberFile(folder, entry.path, context.deps.pathBudget);
     const stamp = { ...context.input.stamp, zipEntry: entry.path };
     const written = await context.deps.files.writeText(path, kbDocument(stamp, entry.text ?? entry.note ?? NO_TEXT_NOTE));
     if (!written.ok) return failure(written.error);

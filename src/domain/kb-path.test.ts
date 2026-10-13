@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { disambiguateSegment, fitSegment, freePath, safeRelPath, safeSegment } from './kb-path.ts';
+import { disambiguateSegment, fitSegment, freePath, memberFile, safeRelPath, safeSegment } from './kb-path.ts';
 
 // The factories return branded strings; the assertions compare them as the text they are.
 const text = (value: string): string => value;
@@ -206,5 +206,19 @@ describe('keeping a path short enough for Windows', () => {
   it('a planned file is fitted to the budget it is given, and planned as before when none is given', () => {
     expect(freePath(folder, `${'a'.repeat(150)}.md`, 'id-1', new Set(), undefined, 259)).toHaveLength(204);
     expect(freePath(folder, `${'a'.repeat(150)}.md`, 'id-1', new Set())).toBe(`${folder}/${'a'.repeat(150)}.md`);
+  });
+});
+
+describe('naming the file a zip member lands in', () => {
+  it('a member keeps the folders it had inside the archive, made safe, and gains .md', () => {
+    expect(memberFile('kb/T/_attachments/Scans', 'week 1/check: C1.html', undefined)).toBe('kb/T/_attachments/Scans/week 1/check_ C1.html.md');
+  });
+
+  it('a member whose path would run past the budget has its own name cut, and its folders kept', () => {
+    const file = memberFile(`kb/${'f'.repeat(97)}`, `deep/${'m'.repeat(150)}.html`, 259);
+
+    expect(file).toStartWith(`kb/${'f'.repeat(97)}/deep/${'m'.repeat(80)}`);
+    expect(file).toMatch(/-[0-9a-f]{8}\.md$/);
+    expect(file).toHaveLength(204);
   });
 });
