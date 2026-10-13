@@ -35,7 +35,15 @@ const post = (id: string, lastModified: string, over: Partial<ChannelPost> = {})
 });
 
 const run = async (
-  seeds: { reader?: TeamReaderSeed; files?: FilesFakeSeed; channels?: ReadonlyArray<{ id: string; name: string }>; dryRun?: boolean; concurrency?: number; since?: string } = {}
+  seeds: {
+    reader?: TeamReaderSeed;
+    files?: FilesFakeSeed;
+    channels?: ReadonlyArray<{ id: string; name: string }>;
+    dryRun?: boolean;
+    concurrency?: number;
+    since?: string;
+    timezone?: string;
+  } = {}
 ): Promise<{
   summary: RunSummary;
   source: string;
@@ -55,7 +63,7 @@ const run = async (
     deltaLinks: { [GENERAL.id]: 'https://graph/delta?token=next' },
     ...seeds.reader,
   });
-  const syncTeam = createSyncTeam({ reader, files, clock: createClockFake('2026-09-11T14:00:00Z'), logger, progress, kbRoot: 'kb', timezone: 'UTC' });
+  const syncTeam = createSyncTeam({ reader, files, clock: createClockFake('2026-09-11T14:00:00Z'), logger, progress, kbRoot: 'kb', timezone: seeds.timezone ?? 'UTC' });
   const outcome = await syncTeam({ team: TEAM, channels: seeds.channels ?? [GENERAL], dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4, since: seeds.since });
   const empty = {
     summary: { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 },
@@ -168,6 +176,13 @@ describe('syncing the channels of a Microsoft Team', () => {
 
     expect(next.files.moves).toEqual([{ from: OLD, to: `${ROOT}/General/2026-09-01/Kick-off.md` }]);
     expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
+  });
+
+  // Mail, the calendar and To Do count their days in the zone of the knowledge base, and so do posts.
+  it('a post sent just after midnight in the zone of the knowledge base is filed under that day, not the UTC day before', async () => {
+    const done = await run({ reader: { posts: { [GENERAL.id]: [post('a', '2026-09-07T22:30:00Z')] } }, timezone: 'Europe/Paris' });
+
+    expect(done.files.written.has(`${ROOT}/General/2026-09-08/Post a.md`)).toBe(true);
   });
 
   // The page a reader opens the channel by: every post the state holds, the latest activity first.

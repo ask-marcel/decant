@@ -9,6 +9,7 @@ import { err, ok } from './result.ts';
 import { isBefore } from './sync-window.ts';
 import { compareText } from './utilities/compare-text.ts';
 import { isGivenUp, parseAttempts } from './retry-ledger.ts';
+import { UNDATED_DAY, dayIn } from './zoned-day.ts';
 import type { Attempts } from './retry-ledger.ts';
 
 export const TEAM_STATE_VERSION = 1;
@@ -129,6 +130,13 @@ export const channelWork = (state: TeamState, channelId: string, posts: Readonly
 
 export type PlannedPost = { readonly post: ChannelPost; readonly file: string };
 
+// The day a post was first posted where the knowledge base counts its days, as mail, the calendar and
+// To Do count theirs; none for a post that gave no time, which goes under `undated/`.
+const postedDay = (instantIso: string, zone: string): string => {
+  const day = dayIn(instantIso, zone);
+  return day === UNDATED_DAY ? '' : day;
+};
+
 const MARKDOWN = '.md';
 
 // Where each post about to be written goes, settled before any is written. A post is filed under the
@@ -137,12 +145,19 @@ const MARKDOWN = '.md';
 // a name in one library does. A path another post's record holds is taken, even
 // when that post is rewritten this run too: its file is put aside only once its own write lands,
 // which can come after a namesake's write to the same path. A post's own copy never stands in its way.
-export const planPostFiles = (channelRoot: string, posts: ReadonlyArray<ChannelPost>, state: TeamState, channelId: string, budget?: number): ReadonlyArray<PlannedPost> => {
+export const planPostFiles = (
+  channelRoot: string,
+  posts: ReadonlyArray<ChannelPost>,
+  state: TeamState,
+  channelId: string,
+  budget?: number,
+  zone = 'UTC'
+): ReadonlyArray<PlannedPost> => {
   const known = state.channels[channelId]?.posts ?? {};
   const taken = new Set(Object.values(known).map((record) => record.file));
   const planned: PlannedPost[] = [];
   for (const post of posts) {
-    const file = freePath(datedRoot(channelRoot, post.created), `${safeSegment(postTitle(post))}${MARKDOWN}`, post.id, taken, known[post.id]?.file, budget);
+    const file = freePath(datedRoot(channelRoot, postedDay(post.created, zone)), `${safeSegment(postTitle(post))}${MARKDOWN}`, post.id, taken, known[post.id]?.file, budget);
     taken.add(file);
     planned.push({ post, file });
   }
@@ -161,7 +176,7 @@ export type RefiledChannel = { readonly channel: ChannelState; readonly moves: R
 
 // A channel as the current layout files it, and the files to move to get there: each post from the
 // day it last changed to the day it was first posted, under the name it already has.
-export const refileChannel = (channelRoot: string, channel: ChannelState, budget?: number): RefiledChannel => {
+export const refileChannel = (channelRoot: string, channel: ChannelState, budget?: number, zone = 'UTC'): RefiledChannel => {
   const taken = new Set(Object.values(channel.posts).map((record) => record.file));
   const moves: { from: string; to: string }[] = [];
   const posts = Object.fromEntries(
@@ -169,7 +184,7 @@ export const refileChannel = (channelRoot: string, channel: ChannelState, budget
       const posted = postedOn(id);
       if (posted === undefined) return [id, record] as const;
       taken.delete(record.file);
-      const file = freePath(datedRoot(channelRoot, posted), baseName(record.file), id, taken, record.file, budget);
+      const file = freePath(datedRoot(channelRoot, postedDay(posted, zone)), baseName(record.file), id, taken, record.file, budget);
       taken.add(file);
       if (file !== record.file) moves.push({ from: record.file, to: file });
       return [id, { ...record, file }] as const;

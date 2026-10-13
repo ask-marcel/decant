@@ -248,7 +248,7 @@ const syncChannel = async (deps: SyncTeamDeps, input: SyncTeamInput, carried: Pr
   const work = channelWork(carried.state, channel.id, delta.value.posts, input.since);
   if (input.dryRun) return ok({ ...carried, summary: { ...carried.summary, queued: carried.summary.queued + work.write.length } });
   deps.progress.start(work.write.length, `${input.team.name} / ${channel.name}`);
-  const written = await writePosts(context, carried, planPostFiles(context.roots.root, work.write, carried.state, channel.id, context.deps.pathBudget));
+  const written = await writePosts(context, carried, planPostFiles(context.roots.root, work.write, carried.state, channel.id, context.deps.pathBudget, context.deps.timezone));
   deps.progress.done();
   if (!written.ok) return written;
   const gone = await Promise.all(work.archive.map((entry) => archiveGone(context, entry)));
@@ -280,7 +280,7 @@ const refile = async (deps: SyncTeamDeps, input: SyncTeamInput, state: TeamState
   const channels: Record<string, ChannelState> = {};
   let settled = true;
   for (const [id, channel] of Object.entries(state.channels)) {
-    const refiled = refileChannel(`${teamRoot(deps.kbRoot, input.team.name)}/${safeSegment(channel.name)}`, channel, deps.pathBudget);
+    const refiled = refileChannel(`${teamRoot(deps.kbRoot, input.team.name)}/${safeSegment(channel.name)}`, channel, deps.pathBudget, deps.timezone);
     const stuck = await refileAll(deps, refiled.moves);
     settled &&= stuck.size === 0;
     channels[id] = stayedAt(refiled.channel, stuck);
