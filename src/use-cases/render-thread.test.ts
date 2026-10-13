@@ -54,6 +54,7 @@ describe('writing one conversation as one file', () => {
         '  - Valerie FAIRBANKS <valerie@example.com>',
         'first_message: "2026-05-12T09:31:00Z"',
         'last_message: "2026-05-13T10:00:00Z"',
+        'timezone: Europe/Paris',
         'message_count: 2',
         'synced_at: "2026-07-23T14:00:00Z"',
         '---',
