@@ -121,25 +121,34 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
 
 export const stringList = (raw: unknown): ReadonlyArray<string> => (Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : []);
 
+// A run on Windows once wrote some of these paths with backslashes. No name this tool writes can
+// hold one, since every segment is sanitized, so each is read back with forward slashes and a later
+// run compares the paths it builds against the same spelling.
+const posixPath = (path: string): string => path.replaceAll('\\', '/');
+
+const pathList = (raw: unknown): ReadonlyArray<string> => stringList(raw).map(posixPath);
+
 export const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
   folder: readString(raw, 'folder') ?? '',
   conversationIds: stringList(raw['conversationIds']),
-  file: readString(raw, 'file') ?? '',
+  file: posixPath(readString(raw, 'file') ?? ''),
   messageIds: stringList(raw['messageIds']),
   lastMessage: readString(raw, 'lastMessage') ?? '',
-  attachments: stringList(raw['attachments']),
-  inlineImages: stringList(raw['inlineImages']),
+  attachments: pathList(raw['attachments']),
+  inlineImages: pathList(raw['inlineImages']),
 });
+
+export const linkedOf = (entry: Record<string, unknown>): LinkedRecord => ({ paths: pathList(entry['paths']) });
 
 // A state written before the store remembered which file to link falls back to the first one it
 // wrote, which is the only one for a document and the file itself for everything else.
 export const attachmentOf = (entry: Record<string, unknown>): AttachmentRecord => {
-  const paths = stringList(entry['paths']);
+  const paths = pathList(entry['paths']);
   return {
     name: readString(entry, 'name') ?? '',
     paths,
-    primary: readString(entry, 'primary') ?? paths[0] ?? '',
-    media: stringList(entry['media']),
+    primary: posixPath(readString(entry, 'primary') ?? paths[0] ?? ''),
+    media: pathList(entry['media']),
     text: readString(entry, 'text'),
   };
 };
@@ -165,7 +174,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     folders: mapOf(raw['folders'], (entry) => ({ name: readString(entry, 'name') ?? '', deltaLink: readString(entry, 'deltaLink') })),
     threads: mapOf(raw['threads'], threadOf),
     conversations: mapOf(raw['conversations'], (entry) => ({ threadId: readString(entry, 'threadId') ?? '', root: readString(entry, 'root') ?? '' })),
-    linked: mapOf(raw['linked'], (entry) => ({ paths: stringList(entry['paths']) })),
+    linked: mapOf(raw['linked'], linkedOf),
     attachments: mapOf(raw['attachments'], attachmentOf),
     pending: stringList(raw['pending']),
     retry: mapOf(raw['retry'], retryOf),

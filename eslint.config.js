@@ -50,17 +50,26 @@ const EMPTY_EQUAL_BAN = {
   message: '`toEqual([])` passes on `[undefined]`: assert an empty array with `toStrictEqual([])` or `toHaveLength(0)`.',
 };
 
+// On Windows `node:path` joins and relates with a backslash, and the domain and the use cases write
+// the paths they build into notes and front matter, where a backslash is an escape and the link
+// breaks. Their paths are posix whatever the machine, so they import `node:path/posix`. An adapter
+// that only hands a path to the filesystem may use either.
+const PATH_BANS = ['node:path', 'path'].map((name) => ({
+  name,
+  message: 'On Windows node:path writes a backslash, which breaks a link in a note: import from node:path/posix.',
+}));
+
 // The dependency rule as lint (hard rule 37). Dependencies point inward, so each layer names the
 // layers it may never import, and a layer left out of a list is one it may reach. Production files
 // only: a test reaches for the fakes in src/test-helpers/ by design.
-const layerZone = (layer, forbidden, files = [`src/${layer}/**/*.ts`]) => ({
+const layerZone = (layer, forbidden, files = [`src/${layer}/**/*.ts`], banned = []) => ({
   files,
   ignores: ['**/*.test.ts'],
   rules: {
     'no-restricted-imports': [
       'error',
       {
-        paths: [MOCK_BAN],
+        paths: [MOCK_BAN, ...banned],
         patterns: [
           {
             group: forbidden.flatMap((name) => [`**/${name}`, `**/${name}/**`]),
@@ -130,8 +139,8 @@ export default [
     files: ['**/*.test.ts'],
     rules: { 'no-restricted-syntax': ['error', ...STYLE_BANS, EMPTY_EQUAL_BAN] },
   },
-  layerZone('domain', ['use-cases', 'infra', 'presenter', 'composition', 'test-helpers']),
-  layerZone('use-cases', ['infra', 'presenter', 'composition', 'test-helpers']),
+  layerZone('domain', ['use-cases', 'infra', 'presenter', 'composition', 'test-helpers'], undefined, PATH_BANS),
+  layerZone('use-cases', ['infra', 'presenter', 'composition', 'test-helpers'], undefined, PATH_BANS),
   layerZone('presenter', ['use-cases', 'infra', 'composition', 'test-helpers']),
   layerZone('infra', ['presenter', 'composition', 'test-helpers']),
   layerZone('composition', ['test-helpers']),

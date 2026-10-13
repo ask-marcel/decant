@@ -1,4 +1,4 @@
-import { relative as pathBetween } from 'node:path';
+import { relative as pathBetween } from 'node:path/posix';
 import { withoutFrontMatter } from '../domain/front-matter.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
 import { renderLinkCard } from '../domain/link-card.ts';

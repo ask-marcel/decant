@@ -1,7 +1,7 @@
 import { CATEGORY_FOLDER } from './kb-category.ts';
 import { safeRelPath } from './kb-path.ts';
 import type { SafeRelPath } from './kb-path.ts';
-import { attachmentOf, mapOf, retryOf, stringList, threadOf } from './mail-state.ts';
+import { attachmentOf, linkedOf, mapOf, retryOf, threadOf } from './mail-state.ts';
 import type { AttachmentRecord, LinkedRecord, RetryRecord, ThreadRecord } from './mail-state.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
@@ -69,7 +69,7 @@ export const parseGroupState = (raw: unknown): Result<GroupState, GroupStateErro
     source: { kind: 'group', id: readString(source, 'id') ?? '', name: readString(source, 'name') ?? '' },
     lastRun: readString(raw, 'lastRun') ?? '',
     threads: mapOf(raw['threads'], threadOf),
-    linked: mapOf(raw['linked'], (entry) => ({ paths: stringList(entry['paths']) })),
+    linked: mapOf(raw['linked'], linkedOf),
     attachments: mapOf(raw['attachments'], attachmentOf),
     retry: mapOf(raw['retry'], retryOf),
     since: readString(raw, 'since'),
