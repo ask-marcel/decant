@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path';
 import { buildDeps } from './composition/build-deps.ts';
+import { EXIT_BAD_OPTIONS, EXIT_DONE, EXIT_STOPPED, exitCodeOf } from './composition/exit-code.ts';
 import { readKeptConfig } from './composition/kept-zone.ts';
 import { parseOptions, USAGE } from './composition/options.ts';
 import { formatError } from './domain/utilities/format-error.ts';
@@ -13,13 +14,13 @@ const run = async (): Promise<number> => {
   const options = parseOptions(process.argv.slice(2));
   if (!options.ok) {
     printLine(`${options.error.message}\n\n${USAGE}`);
-    return 2;
+    return EXIT_BAD_OPTIONS;
   }
   // Asked for, so answering it is success. It used to fall to the branch above and exit 2, which
   // reads as a broken install to anything that checks.
   if (options.value.help) {
     printLine(USAGE);
-    return 0;
+    return EXIT_DONE;
   }
   const config = await readKeptConfig(
     {
@@ -56,16 +57,13 @@ const run = async (): Promise<number> => {
     since: options.value.since,
     refresh: options.value.refresh,
   });
-  if (!summaries.ok) {
-    printLine(`failed at ${summaries.error.step}: ${summaries.error.message}`);
-    return 1;
-  }
-  return summaries.value.some((source) => source.summary.failed > 0) ? 1 : 0;
+  if (!summaries.ok) printLine(`failed at ${summaries.error.step}: ${summaries.error.message}`);
+  return exitCodeOf(summaries);
 };
 
 try {
   process.exit(await run());
 } catch (error) {
   printLine(`crashed (unexpected): ${formatError(error)}`);
-  process.exit(1);
+  process.exit(EXIT_STOPPED);
 }
