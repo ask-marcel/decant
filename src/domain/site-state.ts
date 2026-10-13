@@ -72,6 +72,8 @@ const entryOf = (entry: Record<string, unknown>): ManifestEntry => ({
   path: readString(entry, 'path') ?? '',
   cTag: readString(entry, 'cTag') ?? '',
   outputs: Array.isArray(entry['outputs']) ? entry['outputs'].filter((value): value is string => typeof value === 'string') : [],
+  modified: readString(entry, 'modified'),
+  modifiedBy: readString(entry, 'modifiedBy'),
 });
 
 // A queued item is trusted as written: this file is ours, and a half-written one is rejected whole

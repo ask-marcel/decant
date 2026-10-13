@@ -209,7 +209,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const progress = given(overrides.progress, () => createStderrProgress());
   const pathBudget = config.pathBudget;
   const convertFile = createConvertFile({ reader, files, ocr, clock, logger, progress, pathBudget });
-  const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot });
+  const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone });
   const listSyncedSources = createListSyncedSources({ files, logger, kbRoot: config.kbRoot });
   const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown, pathBudget });
   // Hoisted only to keep the call below on one line: Bun reports the inner lines of a multi-line

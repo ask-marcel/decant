@@ -1,4 +1,6 @@
 import { addressKindOf } from '../domain/address-kind.ts';
+import { INDEX_FILE } from '../domain/index-page.ts';
+import { libraryIndexPage } from '../domain/library-index.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { categoryFolderOf } from '../domain/kb-category.ts';
 import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
@@ -55,6 +57,8 @@ export type SyncSiteDeps = {
   readonly logger: Logger;
   readonly progress: Progress;
   readonly kbRoot: string;
+  // The zone the knowledge base counts its days in, which the library page lists each document under.
+  readonly timezone: string;
 };
 
 export type SyncSiteInput = {
@@ -159,6 +163,16 @@ const refile = async (deps: SyncSiteDeps, input: ResolvedInput, state: SiteState
   return { ...state, drives, layout: settled ? LIBRARY_LAYOUT : state.layout };
 };
 
+// The library as a reader scans it, made from the state. A page that will not write is logged and
+// leaves the run standing: the documents themselves already landed.
+const writeLibraryIndex = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, state: SiteState): Promise<void> => {
+  if (input.dryRun) return;
+  const root = libraryRootOf(deps.kbRoot, input.segment, drive);
+  const path = `${root}/${INDEX_FILE}`;
+  const written = await deps.files.writeText(path, libraryIndexPage(drive.name, root, state.drives[drive.id], deps.timezone));
+  if (!written.ok) deps.logger.warn('index.failed', { path, cause: written.error.kind });
+};
+
 export const createSyncSite =
   (deps: SyncSiteDeps): SyncSite =>
   async (rawInput) => {
@@ -174,6 +188,7 @@ export const createSyncSite =
       state = outcome.value.state;
       summary = add(summary, outcome.value.summary);
       notes = mergeNotes(notes, outcome.value.notes);
+      await writeLibraryIndex(deps, input, drive, state);
     }
     const finished = { ...state, lastRun: deps.clock.nowIso() };
     const saved = await save(deps.files, statePath, finished, input.dryRun);
@@ -418,7 +433,8 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   const outputs = outcome.kind === 'converted' ? outcome.outputs : [];
   // A conversion, and a decision to leave the file alone, both settle what an earlier failure was
   // waiting on: the ledger entry goes with them.
-  const update = (manifest: DriveState): DriveState => forgetFailure(recordItem(manifest, item.id, { path: item.path, cTag: item.cTag, outputs }), item.id);
+  const recorded = { path: item.path, cTag: item.cTag, outputs, modified: item.lastModified, modifiedBy: item.modifiedBy };
+  const update = (manifest: DriveState): DriveState => forgetFailure(recordItem(manifest, item.id, recorded), item.id);
   if (outcome.kind === 'converted') return { update, counted: { converted: 1 } };
   return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason: skipReason(outcome.reason, input.maxBytes, item.name) }] } };
 };
