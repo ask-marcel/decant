@@ -93,7 +93,8 @@ arrived, a group thread by its last post, a post or a page by its last change, a
 edit, an event by the day it starts (a recurring series is kept whatever day it began, since it may
 be running still). To Do lists, Planner plans, SharePoint lists and the people directory always
 come whole: they say how things stand now, and a board missing its old open tasks would mislead.
-Days are counted in UTC, the calendar's in the mailbox's zone.
+decant finds these dates in UTC, and the dates of calendar events in the zone of the knowledge base
+(see Time zone).
 
 To move the day, run once with `--since`, which keeps the new day for every run after it:
 
@@ -108,6 +109,27 @@ nothing: what is already in `kb/` stays. `update` and a run that names a source 
 with no day kept yet, they reach everything. Clearing `kb/` clears the day with it, and the next run
 asks again. A day that cannot be read, mistyped by hand in `kb/.decant.json`, stops the run rather
 than syncing everything; `--since` sets it again.
+
+### Time zone
+
+decant uses one time zone for each knowledge base. The zone sets these values:
+
+- the day folder of a mail thread
+- the time of each message in a thread note
+- the start and the end of a calendar event
+- the due day and the completed day of a task.
+
+decant keeps the zone in `kb/.decant.json`, together with the day from How far back. Each later run
+uses the kept zone, also on a machine in a different zone. With no zone kept, a run uses the zone of
+the machine. Thread notes and calendar notes give the zone in their `timezone:` line.
+
+To change the zone, run one time with `--timezone`. decant keeps the new zone for all later runs:
+
+```bash
+decant update --timezone Asia/Shanghai
+```
+
+A dry run keeps nothing. The change does not move a thread folder that is already in `kb/`.
 
 ### Options
 
@@ -133,13 +155,13 @@ than syncing everything; `--since` sets it again.
 | `--no-ocr` | Do not read text out of images or scanned PDFs |
 | `--refresh` | List the sites afresh instead of drawing the picker from the ones last seen |
 | `--ocr-lang <code>` | Force one language for images and scanned PDFs (default `auto`, chosen per image) |
-| `--timezone <zone>` | IANA zone the mailbox counts its days in, e.g. `Asia/Shanghai` (default: this machine's) |
+| `--timezone <zone>` | IANA zone of the knowledge base, for example `Asia/Shanghai`. decant keeps it for all later runs (see Time zone). Default: the kept zone, or the zone of this machine |
 
 ## What lands in `kb/`
 
 ```
 kb/
-  .decant.json                      how far back the runs reach: a day, or all
+  .decant.json                      how far back the runs reach (a day, or all), and the time zone
   _sync-report.md                   what the last run left behind, every source in one file
   _archive/SharePoint sites/<Site>/<Library>/...
                                     files whose source was deleted, renamed, or changed away
@@ -459,6 +481,9 @@ Ask for the September rate.
 - [Contract draft](https://tenant.sharepoint.com/sites/X/Contract.docx)
 ```
 
+The `due` and `completed` days are days in the zone of the knowledge base (see Time zone), the
+same days that To Do shows.
+
 Completed tasks land alongside the open ones, each marked with its status and the day it was
 finished. A knowledge base is for remembering what was decided, and most of that is in work already
 done; a sync that kept only the open tasks would delete a task from `kb/` at the moment it stopped
@@ -490,6 +515,7 @@ source: https://outlook.office365.com/owa/?itemid=...
 subject: Offsite planning
 start: "2026-09-12 15:00"
 end: "2026-09-12 16:30"
+timezone: Asia/Shanghai
 organizer: Valerie
 attendees:
   - Jane Doe (accepted)
@@ -510,8 +536,8 @@ Agenda: ...
 - [Venues.xlsx](<Offsite planning.attachments/Venues.xlsx.md>)
 ```
 
-Times are given in the zone the calendar counts its days in, the same `--timezone` the mailbox
-uses; an all-day event is given as days. The body is the invitation's text with the markup gone, so
+Times are in the zone of the knowledge base, and the `timezone:` line names that zone (see Time
+zone). An all-day event shows days, not times. The body is the invitation's text with the markup gone, so
 the Teams boilerplate reads as a few lines rather than a page of HTML.
 
 The calendar delta reports what changed and no more, so each event it names is fetched in full. A
@@ -836,7 +862,7 @@ revisited. A message arriving late, older than anything already held, would othe
 a different root and rename a folder already on disk. A conversation whose headers cannot be read
 is left unresolved and retried on the next sweep rather than filed under a guess.
 
-The day is counted in the zone given by `--timezone`, defaulting to this machine's. Every
+The day is the day in the zone of the knowledge base (see Time zone). Every
 timestamp Graph returns is UTC, so a message received at 16:40Z is the next day in a UTC+8 tenant,
 and the folder name is written once.
 
