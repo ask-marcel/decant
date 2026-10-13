@@ -34,6 +34,22 @@ describe('remembering where a site sync got to', () => {
     expect(parseSiteState(JSON.parse(serializeSiteState(state)))).toEqual({ ok: true, value: state });
   });
 
+  // The layout says whether the files are still in the day folders of the first one; the day and the
+  // author of each change are what the library page lists a document by.
+  it('a state keeps the layout its files are in and who changed each document when, and reads a layout that is not a number as none', () => {
+    const library = {
+      name: 'Documents',
+      pending: [],
+      items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: ['Contrat.docx.md'], modified: '2026-05-12T09:31:00Z', modifiedBy: 'Jane Doe' } },
+      retry: {},
+    };
+    const state = { ...withDrive(emptySiteState(site), 'b!one', library), layout: 2 };
+    const written = JSON.parse(serializeSiteState(state));
+
+    expect(parseSiteState(written)).toEqual({ ok: true, value: state });
+    expect(parseSiteState({ ...written, layout: '2' })).toMatchObject({ ok: true, value: { layout: undefined } });
+  });
+
   it('a state file that is not ours is rejected rather than mistaken for an empty run', () => {
     expect(parseSiteState('nope')).toEqual({ ok: false, error: { kind: 'malformed', message: 'state is not an object' } });
     expect(parseSiteState({ version: 1 })).toEqual({ ok: false, error: { kind: 'malformed', message: 'state has no source' } });
@@ -94,6 +110,12 @@ describe('recording what happened to one document', () => {
 
   it('a document deleted in SharePoint is forgotten, so a later run does not look for it', () => {
     expect(forgetItem(drive, '01ABC').items).toEqual({});
+  });
+
+  it('forgetting one document leaves the others recorded', () => {
+    const two = recordItem(drive, '01DEF', { path: 'Budget.xlsx', cTag: 'c2', outputs: ['Budget.xlsx.md'] });
+
+    expect(Object.keys(forgetItem(two, '01ABC').items)).toStrictEqual(['01DEF']);
   });
 
   it('a renamed document keeps its version but records its new place and files', () => {

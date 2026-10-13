@@ -32,6 +32,31 @@ describe('putting aside what an item held', () => {
     expect(files.written.get('kb/_archive/2026-10-13/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md')).toBe('first');
   });
 
+  it('the day and its second folder both holding a path send the set to the third', async () => {
+    const at = (folder: string): string => `kb/_archive/${folder}/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md`;
+    const files = createFilesFake({ texts: { [NOTE]: 'third', [at('2026-10-13')]: 'first', [at('2026-10-13-2')]: 'second' } });
+
+    await putAside({ files, clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb' }, [NOTE]);
+
+    expect(files.moves.map((move) => move.to)).toEqual([at('2026-10-13-3')]);
+  });
+
+  // Past a hundred folders in one day the search stops, and the move itself refuses to write over
+  // what is there.
+  it('a day whose hundred folders all hold the path sends the set to the last of them', async () => {
+    const at = (folder: string): string => `kb/_archive/${folder}/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md`;
+    const folders = ['2026-10-13', ...Array.from({ length: 99 }, (_, index) => `2026-10-13-${index + 2}`)];
+    const files = createFilesFake({ texts: { [NOTE]: 'latest', ...Object.fromEntries(folders.map((folder) => [at(folder), 'older'])) } });
+
+    await putAside({ files, clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb' }, [NOTE]);
+
+    expect(files.moves.map((move) => move.to)).toEqual([at('2026-10-13-100')]);
+  });
+
+  it('an empty set moves nothing and names nothing', async () => {
+    expect(await setAside({ files: createFilesFake(), clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb' }, [])).toStrictEqual({ moved: [], failed: [] });
+  });
+
   it('a file that will not move is named with why, the others still move, and nothing at all asks for nothing', async () => {
     const refusing = createFilesFake({ failMoveWith: { kind: 'write-failed', path: NOTE, message: 'locked' } });
 
