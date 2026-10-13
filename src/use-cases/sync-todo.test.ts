@@ -118,7 +118,7 @@ describe('syncing a Microsoft To Do list', () => {
       lastModified: '2026-09-01T09:00:00Z',
       title: 'Book the venue',
     });
-    const done = await run({ reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
+    const done = await run({ reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } }, files: { texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }) } } });
 
     expect(done.summary.converted).toBe(1);
     expect(done.files.written.has('kb/To Do/Tasks/2026-09-08/Book the venue.md')).toBe(true);
@@ -132,7 +132,7 @@ describe('syncing a Microsoft To Do list', () => {
     const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: FILE, lastModified: '2026-09-01T09:00:00Z', title: 'Book the venue' });
     const done = await run({
       reader: { tasks: { 'list-1': [task({ due: '2026-09-08', notes: 'Ask about parking' })] } },
-      files: { texts: { [STATE_PATH]: serializeTodoState(state), [FILE]: 'the task as it was' } },
+      files: { texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [FILE]: 'the task as it was' } },
     });
 
     expect(done.files.written.get(FILE)).toContain('Ask about parking');
@@ -144,12 +144,89 @@ describe('syncing a Microsoft To Do list', () => {
     const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: FILE, lastModified: '2026-09-01T09:00:00Z', title: 'Book the venue' });
     const done = await run({
       reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } },
-      files: { texts: { [STATE_PATH]: serializeTodoState(state), [FILE]: 'the task as it was' }, failWritesMatching: 'Book the venue' },
+      files: { texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [FILE]: 'the task as it was' }, failWritesMatching: 'Book the venue' },
     });
 
     expect(done.summary.failed).toBe(1);
     expect(done.files.written.get(FILE)).toBe('the task as it was');
     expect(done.files.written.has('kb/_archive/2026-09-09/To Do/Tasks/2026-09-08/Book the venue.md')).toBe(false);
+  });
+
+  // The first layout filed a task under the day it last changed.
+  it('the first run of this layout moves each task to the day it is due, once, and puts nothing aside', async () => {
+    const OLD = 'kb/To Do/Tasks/2026-09-01/Book the venue.md';
+    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: OLD, lastModified: '2026-09-08T16:20:11Z', title: 'Book the venue' });
+    const listing = { tasks: { 'list-1': [task({ due: '2026-09-20' })] } };
+    const first = await run({ reader: listing, files: { texts: { [STATE_PATH]: serializeTodoState(state), [OLD]: 'the task' } } });
+
+    expect(first.summary.converted).toBe(0);
+    expect(first.files.moves).toEqual([{ from: OLD, to: 'kb/To Do/Tasks/2026-09-20/Book the venue.md' }]);
+    expect(JSON.parse(first.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
+
+    const second = await run({ reader: listing, files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } } });
+
+    expect(second.files.moves).toHaveLength(0);
+    expect(second.summary.converted).toBe(0);
+  });
+
+  // Its file is not where it belongs, so the task is written under its due day all the same, and the
+  // copy left behind goes aside, or into the log when it will not move either.
+  it('a task that will not move is written under its due day all the same, and the next run finds nothing left to move', async () => {
+    const OLD = 'kb/To Do/Tasks/2026-09-01/Book the venue.md';
+    const NEW = 'kb/To Do/Tasks/2026-09-20/Book the venue.md';
+    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: OLD, lastModified: '2026-09-08T16:20:11Z', title: 'Book the venue' });
+    const listing = { tasks: { 'list-1': [task({ due: '2026-09-20' })] } };
+    const stuck = await run({
+      reader: listing,
+      files: { texts: { [STATE_PATH]: serializeTodoState(state), [OLD]: 'the task' }, failMoveWith: { kind: 'write-failed', path: OLD, message: 'locked' } },
+    });
+    const kept = JSON.parse(stuck.files.written.get(STATE_PATH) ?? '{}');
+
+    expect(stuck.files.written.get(NEW)).toContain('# Book the venue');
+    expect(kept.tasks['AAMkAGI-task'].file).toBe(NEW);
+    expect(kept.layout).toBeUndefined();
+    expect(stuck.logger.calls).toContainEqual({ level: 'warn', event: 'refile.failed', meta: { path: OLD, cause: 'write-failed' } });
+    expect(stuck.logger.calls).toContainEqual({ level: 'warn', event: 'supersede.failed', meta: { path: OLD, cause: 'write-failed' } });
+
+    const next = await run({ reader: listing, files: { texts: { [STATE_PATH]: stuck.files.written.get(STATE_PATH) ?? '', [NEW]: 'the task' } } });
+
+    expect(next.files.moves).toHaveLength(0);
+    expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
+  });
+
+  it('a dry run counts the tasks the run would write once the list is filed by due day, and moves nothing', async () => {
+    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', {
+      file: 'kb/To Do/Tasks/2026-09-01/Book the venue.md',
+      lastModified: '2026-09-08T16:20:11Z',
+      title: 'Book the venue',
+    });
+    const listing = { tasks: { 'list-1': [task({ due: '2026-09-20' }), task({ id: 'AAMkAGI-new', title: 'Water the plants' })] } };
+    const done = await run({ reader: listing, files: { texts: { [STATE_PATH]: serializeTodoState(state) } }, dryRun: true });
+
+    expect(done.summary.queued).toBe(1);
+    expect(done.files.moves).toHaveLength(0);
+  });
+
+  it('a task the list no longer holds is put aside in the archive and named in the report', async () => {
+    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-gone', {
+      file: 'kb/To Do/Tasks/2026-09-01/Cancel the order.md',
+      lastModified: '2026-09-01T09:00:00Z',
+      title: 'Cancel the order',
+    });
+    const done = await run({ reader: { tasks: { 'list-1': [] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
+
+    expect(done.summary.archived).toBe(1);
+    expect(done.notes.archived).toEqual([{ path: 'Cancel the order', reason: 'no longer in the list' }]);
+    expect(done.files.moves).toEqual([{ from: 'kb/To Do/Tasks/2026-09-01/Cancel the order.md', to: 'kb/_archive/2026-09-09/To Do/Tasks/2026-09-01/Cancel the order.md' }]);
+    expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks).toEqual({});
+    expect(done.files.written.get('kb/To Do/Tasks/_sync-report.md')).toContain('Cancel the order');
+  });
+
+  it('two tasks sharing a title on one day are kept apart, rather than one overwriting the other', async () => {
+    const done = await run({ reader: { tasks: { 'list-1': [task(), task({ id: 'AAMkAGI-twin' })] } } });
+
+    expect(done.summary.converted).toBe(2);
+    expect([...done.files.written.keys()].filter((path) => path.endsWith('.md'))).toHaveLength(2);
   });
 
   it('a task renamed in the same window as its namesake sets aside only the version each had, and the namesake is rewritten in the file its record names', async () => {
@@ -164,7 +241,7 @@ describe('syncing a Microsoft To Do list', () => {
     ];
     const done = await run({
       reader: { tasks: { 'list-1': tasks } },
-      files: { texts: { [STATE_PATH]: serializeTodoState(state), [renamed.file]: 'the task as it was', [namesake.file]: 'the namesake as it was' } },
+      files: { texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [renamed.file]: 'the task as it was', [namesake.file]: 'the namesake as it was' } },
     });
 
     const recorded = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks['namesake'].file;

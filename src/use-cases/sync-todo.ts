@@ -1,7 +1,18 @@
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { renderTaskDocument } from '../domain/todo-document.ts';
-import { TODO_STATE_VERSION, emptyTodoState, parseTodoState, serializeTodoState, todoRootName, todoWorklist, withTask, withoutTask } from '../domain/todo-state.ts';
+import {
+  TODO_LAYOUT,
+  TODO_STATE_VERSION,
+  emptyTodoState,
+  parseTodoState,
+  refileTasks,
+  serializeTodoState,
+  todoRootName,
+  todoWorklist,
+  withTask,
+  withoutTask,
+} from '../domain/todo-state.ts';
 import type { PlannedTask, TaskRecord, TodoState } from '../domain/todo-state.ts';
 import type { TodoTask } from '../domain/todo-task.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -17,6 +28,7 @@ import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextA
 import { withGaveUp } from '../domain/report.ts';
 import { putAside, putBack, setAside } from './put-aside.ts';
 import type { SetAside } from './put-aside.ts';
+import { refileAll } from './refile.ts';
 
 export const TODO_STATE_FILE = '.sync-state.json';
 
@@ -185,16 +197,31 @@ const sweep = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, sta
   return ok({ id: input.list.id, source: input.list.name, summary: done.summary, notes });
 };
 
+// The first run of this layout moves every task from the day it last changed to the day it is due,
+// once. The moves are not put aside: nothing is superseded, only filed again. A task that will not
+// move stays recorded where it is and keeps the list in the earlier layout, so the next run moves it.
+const refile = async (deps: SyncTodoDeps, roots: Roots, state: TodoState, tasks: ReadonlyArray<TodoTask>): Promise<TodoState> => {
+  const refiled = refileTasks(roots.root, state, tasks, deps.pathBudget);
+  const stuck = await refileAll(deps, refiled.moves);
+  if (stuck.size === 0) return refiled.state;
+  const records = Object.entries(refiled.state.tasks).map(([id, record]) => [id, { ...record, file: stuck.get(record.file) ?? record.file }] as const);
+  return { ...refiled.state, tasks: Object.fromEntries(records), layout: state.layout };
+};
+
 export const createSyncTodo =
   (deps: SyncTodoDeps): SyncTodo =>
   async (input) => {
     const roots: Roots = { root: todoRoot(deps.kbRoot, input.list.name) };
-    const state = await loadState(deps, `${roots.root}/${TODO_STATE_FILE}`, input.list);
+    const loaded = await loadState(deps, `${roots.root}/${TODO_STATE_FILE}`, input.list);
     const listed = await deps.reader.tasks(input.list.id);
     if (!listed.ok) return failed('listTasks', listed.error.kind, listed.error.message);
     if (input.dryRun) {
-      const work = todoWorklist(roots.root, state, listed.value, deps.pathBudget);
+      // Counted on the list as this layout files it, where the first run moves its tasks rather than
+      // writing them again.
+      const filed = loaded.layout === TODO_LAYOUT ? loaded : refileTasks(roots.root, loaded, listed.value, deps.pathBudget).state;
+      const work = todoWorklist(roots.root, filed, listed.value, deps.pathBudget);
       return ok({ id: input.list.id, source: input.list.name, summary: { ...EMPTY, queued: work.write.length }, notes: NO_NOTES });
     }
+    const state = loaded.layout === TODO_LAYOUT ? loaded : await refile(deps, roots, loaded, listed.value);
     return sweep(deps, input, roots, { ...state, version: TODO_STATE_VERSION }, listed.value);
   };
