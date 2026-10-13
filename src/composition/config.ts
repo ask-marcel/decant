@@ -9,6 +9,8 @@ export type Config = {
 
 export type ConfigInput = {
   readonly env: Readonly<Record<string, string | undefined>>;
+  // What `--out` named for this run. It wins over `KB_ROOT`, which is kept for every run.
+  readonly out?: string;
   readonly ocrLang: string;
   readonly ocr?: boolean;
   readonly interactive: boolean;
@@ -22,7 +24,7 @@ export type ConfigInput = {
 // nothing downstream depends on process.env, and the composition root stays testable.
 export const readConfig = (input: ConfigInput): Config => ({
   logLevel: input.env['KB_LOG_LEVEL'] ?? 'error',
-  kbRoot: input.env['KB_ROOT'] ?? 'kb',
+  kbRoot: input.out ?? input.env['KB_ROOT'] ?? 'kb',
   ocrLang: input.ocrLang,
   ocr: input.ocr ?? true,
   interactive: input.interactive,

@@ -31,6 +31,9 @@ export type Options = {
   // of `decant --mailbox --help`, where the alternative is a sync nobody meant to start.
   readonly help: boolean;
   readonly since?: string;
+  // The folder the knowledge base is written to. None means the configuration decides, which reads
+  // `KB_ROOT` and falls back to `kb`.
+  readonly out?: string;
   // Empty means the machine's own zone, resolved where the run is composed rather than here: a
   // default read at module load would be a runtime value frozen into a constant.
   readonly timezone: string;
@@ -75,6 +78,7 @@ const FLAGS_WITH_VALUE = new Set([
   '--concurrency',
   '--since',
   '--timezone',
+  '--out',
 ]);
 
 const withOcrLang = (options: Options, value: string): Result<Options, OptionsError> =>
@@ -105,6 +109,15 @@ const withSince = (options: Options, value: string): Result<Options, OptionsErro
   return since.ok ? ok({ ...options, since: since.value }) : err({ kind: 'bad-option', message: `--since expects ${SINCE_SHAPE}, got: ${value}` });
 };
 
+// A slash on the end names the same folder and is dropped, since every path below is joined with
+// one. A name that is only slashes is refused: it is the root of the disk, never a knowledge base.
+const withoutEndSlash = (text: string): string => (text.endsWith('/') ? withoutEndSlash(text.slice(0, -1)) : text);
+
+const withOut = (options: Options, value: string): Result<Options, OptionsError> => {
+  const out = withoutEndSlash(value);
+  return out === '' ? err({ kind: 'bad-option', message: `--out expects a folder, got: ${value}` }) : ok({ ...options, out });
+};
+
 type ValueFlag = (options: Options, value: string) => Result<Options, OptionsError>;
 
 // What each flag that takes a value does with it, one row a flag. `--max-size-mb` is the one left
@@ -123,6 +136,7 @@ const VALUE_FLAGS: ReadonlyMap<string, ValueFlag> = new Map<string, ValueFlag>([
   ['--concurrency', withConcurrency],
   ['--since', withSince],
   ['--timezone', withTimezone],
+  ['--out', withOut],
 ]);
 
 const withValue = (options: Options, flag: string, value: string): Result<Options, OptionsError> => (VALUE_FLAGS.get(flag) ?? withSize)(options, value);
@@ -177,6 +191,7 @@ export const USAGE = [
   '  --calendar          sync your Outlook calendar without showing the picker',
   '  --since <day|all>   reach back to this day, or through everything, and keep it for every later run',
   '                      a date as YYYY-MM-DD, not a count of days: --since 2026-01-31, or --since all',
+  '  --out <folder>      write the knowledge base to this folder (default kb, or KB_ROOT)',
   '  --dry-run           show what would be done, write nothing',
   '  --max-size-mb <n>   skip files larger than this (default 50)',
   '  --concurrency <n>   how many items to convert at once (default 4)',
