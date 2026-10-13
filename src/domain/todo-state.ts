@@ -1,5 +1,5 @@
 import { CATEGORY_FOLDER } from './kb-category.ts';
-import { freePath, safeRelPath, safeSegment } from './kb-path.ts';
+import { cutToWord, freePath, safeRelPath, safeSegment } from './kb-path.ts';
 import type { SafeRelPath } from './kb-path.ts';
 import { datedRoot } from './output-paths.ts';
 import type { Result } from './result.ts';
@@ -94,6 +94,10 @@ export const todoWorklist = (state: TodoState, tasks: ReadonlyArray<TodoTask>): 
 
 const MARKDOWN = '.md';
 
+// A task's file is named by the first words of its title. A title can be a whole sentence, and at 180
+// characters the path grew past what Windows accepts. The note's heading keeps the whole title.
+const TITLE_LIMIT = 80;
+
 // One task and the file it is about to be written to. Paired rather than looked up by id later, so
 // there is no lookup that could miss and no fallback path for a miss that cannot happen.
 export type PlannedTask = { readonly task: TodoTask; readonly file: string };
@@ -109,7 +113,7 @@ export const planTaskFiles = (root: string, tasks: ReadonlyArray<TodoTask>, stat
   const taken = new Set(Object.values(state.tasks).map((record) => record.file));
   const planned: PlannedTask[] = [];
   for (const task of tasks) {
-    const file = freePath(datedRoot(root, task.lastModified), `${safeSegment(task.title)}${MARKDOWN}`, task.id, taken, state.tasks[task.id]?.file);
+    const file = freePath(datedRoot(root, task.lastModified), `${safeSegment(cutToWord(task.title, TITLE_LIMIT, ' '))}${MARKDOWN}`, task.id, taken, state.tasks[task.id]?.file);
     taken.add(file);
     planned.push({ task, file });
   }

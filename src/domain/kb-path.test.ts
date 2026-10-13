@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { disambiguateSegment, safeRelPath, safeSegment } from './kb-path.ts';
+import { disambiguateSegment, freePath, safeRelPath, safeSegment } from './kb-path.ts';
 
 // The factories return branded strings; the assertions compare them as the text they are.
 const text = (value: string): string => value;
@@ -48,6 +48,52 @@ describe('turning a SharePoint name into somewhere safe to write', () => {
 
     expect(shortened).toHaveLength(180);
     expect(shortened.startsWith('aaa')).toBe(true);
+  });
+
+  // A To Do title cut there became `… (just .md`, with the space before the extension the caller adds.
+  it('a long name cut just after a space ends without it', () => {
+    expect(text(safeSegment(`${'a'.repeat(179)} ${'b'.repeat(50)}`))).toBe('a'.repeat(179));
+  });
+
+  it('a long name keeps its extension when it is cut, so the file still opens with the right program', () => {
+    const shortened = text(safeSegment(`${'a'.repeat(300)}.docx`));
+
+    expect(shortened).toHaveLength(180);
+    expect(shortened.endsWith('a.docx')).toBe(true);
+  });
+
+  it('a long title whose last dot opens no extension is cut like any other text', () => {
+    expect(text(safeSegment(`deck v1.2 ${'x'.repeat(300)}`))).toBe(`deck v1.2 ${'x'.repeat(170)}`);
+  });
+
+  it('a cut never splits a character in two', () => {
+    expect(text(safeSegment(`${'a'.repeat(179)}😀b`))).toBe('a'.repeat(179));
+  });
+
+  it('a name that Windows keeps for a device takes an underscore, with or without an extension', () => {
+    const reserved = ['CON', 'prn', 'Aux', 'nul', 'COM1', 'com9', 'LPT1', 'lpt9'];
+
+    for (const name of reserved) {
+      expect(text(safeSegment(name))).toBe(`${name}_`);
+      expect(text(safeSegment(`${name}.txt`))).toBe(`${name}_.txt`);
+    }
+  });
+
+  it('a name that only starts like a device name is written as it is', () => {
+    expect(['CONTRACT.docx', 'console', 'com0', 'lpt10.txt', 'nullable.md'].map((name) => text(safeSegment(name)))).toEqual([
+      'CONTRACT.docx',
+      'console',
+      'com0',
+      'lpt10.txt',
+      'nullable.md',
+    ]);
+  });
+
+  // An attachment or a zip entry can carry one of these, and git obeys a `.gitignore` it finds in a
+  // kb kept in git, and skips a `.git` folder.
+  it('a name that git reads as its own takes an underscore in front', () => {
+    expect(['.git', '.gitignore', '.GitAttributes', '.gitmodules'].map((name) => text(safeSegment(name)))).toEqual(['_.git', '_.gitignore', '_.GitAttributes', '_.gitmodules']);
+    expect(['.github', 'x.gitignore', '.gitkeep'].map((name) => text(safeSegment(name)))).toEqual(['.github', 'x.gitignore', '.gitkeep']);
   });
 
   it('accented names are normalised so the same document never lands twice', () => {
@@ -102,5 +148,30 @@ describe('keeping two documents with the same name apart', () => {
     const second = text(disambiguateSegment(`${'a'.repeat(300)} v2.docx`, '9988776655FF'));
 
     expect(first).not.toBe(second);
+  });
+});
+
+// Windows and macOS take `Report.md` and `report.md` for one file, so the second write would replace
+// the first without a word.
+describe('telling names apart the way the disk does', () => {
+  it('a name held by another item in other letter case counts as taken, so the second item takes its own suffix', () => {
+    const file = freePath('kb/To Do/Tasks/2026-09-08', 'call mark.md', 'id-2', new Set(['kb/To Do/Tasks/2026-09-08/Call Mark.md']));
+
+    expect(file).not.toBe('kb/To Do/Tasks/2026-09-08/call mark.md');
+    expect(file).toStartWith('kb/To Do/Tasks/2026-09-08/call mark-');
+  });
+
+  // Written over in place, the file keeps the case it was first named in. Renamed to the new case,
+  // the next step would put the old path aside, and on such a disk that path is the fresh note.
+  it('an item whose title changed only in letter case keeps its own file as it is', () => {
+    const own = 'kb/To Do/Tasks/2026-09-08/Call Mark.md';
+
+    expect(freePath('kb/To Do/Tasks/2026-09-08', 'call mark.md', 'id-1', new Set([own]), own)).toBe(own);
+  });
+
+  it('an item that moved to another folder is not held back by its old file in other case', () => {
+    const own = 'kb/To Do/Tasks/2026-09-08/Call Mark.md';
+
+    expect(freePath('kb/To Do/Tasks/2026-09-09', 'call mark.md', 'id-1', new Set([own]), own)).toBe('kb/To Do/Tasks/2026-09-09/call mark.md');
   });
 });

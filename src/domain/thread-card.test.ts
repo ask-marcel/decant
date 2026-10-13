@@ -89,8 +89,12 @@ describe('naming a file inside the thread folder it landed in', () => {
 
   // A leading dot names a hidden file rather than opening an extension, so the number goes on the
   // end of the whole name instead of in front of what looks like one.
+  it('a name taken in other letter case is numbered too, since the disk takes them for one file', () => {
+    expect(text(uniqueName('report.pdf', ['Report.pdf']))).toBe('report-2.pdf');
+  });
+
   it('a hidden file is numbered whole, since its leading dot opens no extension', () => {
-    expect(text(uniqueName('.gitignore', ['.gitignore']))).toBe('.gitignore-2');
+    expect(text(uniqueName('.editorconfig', ['.editorconfig']))).toBe('.editorconfig-2');
   });
 
   it('a name the filesystem could not hold is made safe before it becomes a path', () => {
