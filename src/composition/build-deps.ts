@@ -250,7 +250,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const syncGroup = createSyncGroup({ reader: group, files, renderThreadFor: renderGroupThreadFor, clock, logger, progress, kbRoot: config.kbRoot });
   // A task is text with nothing hanging off it, so it needs none of the conversion machinery the
   // other sources are built out of: the reader, somewhere to write, and a clock to stamp it.
-  const todo = given(overrides.todo, () => createTodoReaderFromCall(createMarcelCall(api)));
+  const todo = given(overrides.todo, () => createTodoReaderFromCall(createMarcelCall(api), config.timezone));
   const syncTodo = createSyncTodo({ reader: todo, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
   // A channel post renders through the library, the way a mail message does, so a team needs the
   // reader, somewhere to write, and a clock, and none of the conversion machinery.

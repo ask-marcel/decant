@@ -48,6 +48,24 @@ describe('reading a Microsoft To Do task as Graph answers for it', () => {
     expect(parsed?.due).toBe('2026-12-31');
   });
 
+  // To Do keeps a due day as midnight where the task was made, and Graph answers in UTC: 2 June made
+  // in Shanghai comes back as 16:00 on 1 June, and cutting the date off that string gave 1 June.
+  it('a due day and a completion day that Graph gives in UTC are read in the zone the run counts its days in', () => {
+    const atMidnightIn = (dateTime: string): { dateTime: string; timeZone: string } => ({ dateTime, timeZone: 'UTC' });
+    const shanghai = parseTodoTask(
+      { ...graphTask, dueDateTime: atMidnightIn('2027-06-01T16:00:00.0000000'), completedDateTime: atMidnightIn('2027-06-01T16:00:00.0000000') },
+      'Asia/Shanghai'
+    );
+    const newYork = parseTodoTask({ ...graphTask, dueDateTime: atMidnightIn('2027-06-02T04:00:00.0000000') }, 'America/New_York');
+    const unzoned = parseTodoTask({ ...graphTask, dueDateTime: { dateTime: '2027-06-01T16:00:00.0000000' } }, 'Asia/Shanghai');
+
+    expect([shanghai?.due, shanghai?.completed, newYork?.due, unzoned?.due]).toEqual(['2027-06-02', '2027-06-02', '2027-06-02', '2027-06-02']);
+  });
+
+  it("a day that Graph gives in a named zone is that zone's own day, whatever zone the run counts in", () => {
+    expect(parseTodoTask({ ...graphTask, dueDateTime: { dateTime: '2026-12-31T00:00:00.0000000', timeZone: 'Asia/Shanghai' } }, 'America/New_York')?.due).toBe('2026-12-31');
+  });
+
   it('a task with no id is no task, since nothing could be fetched or filed under it', () => {
     expect(parseTodoTask({ title: 'No id here' })).toBeUndefined();
     expect(parseTodoTask('not a record')).toBeUndefined();
