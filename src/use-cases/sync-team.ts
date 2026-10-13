@@ -4,11 +4,13 @@ import { safeSegment } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import {
+  TEAMS_LAYOUT,
   TEAM_STATE_VERSION,
   channelWork,
   emptyTeamState,
   parseTeamState,
   planPostFiles,
+  refileChannel,
   serializeTeamState,
   teamRootName,
   withChannelCursor,
@@ -29,7 +31,8 @@ import { writeReport } from './sync-site.ts';
 import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
 import type { ChannelPost } from '../domain/channel-post.ts';
 import { withGaveUp } from '../domain/report.ts';
-import { putAside } from './put-aside.ts';
+import { putAside, putBack, setAside } from './put-aside.ts';
+import type { SetAside } from './put-aside.ts';
 
 export const TEAM_STATE_FILE = '.sync-state.json';
 
@@ -93,11 +96,12 @@ type Done = { readonly apply: (state: TeamState) => TeamState; readonly counted:
 // alone would leave two channels' posts indistinguishable in one list.
 const reportName = (channel: ChannelSummary, title: string): string => `${channel.name}/${title}`;
 
-// The copy under the day the post used to carry, which the fresh one does not overwrite because it
-// sits under a different day. Put aside rather than deleted.
-const archiveSuperseded = async (deps: SyncTeamDeps, roots: Roots, before: PostRecord | undefined, after: string): Promise<void> => {
-  if (before === undefined || before.file === after) return;
-  for (const missed of await putAside(deps, [before.file])) deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
+// The version a post had before this write, set aside under the day of the run so the knowledge base
+// keeps it, whether the post stays at its path or a new title moved it. Put back when the write fails.
+const setAsideBefore = async (deps: SyncTeamDeps, before: PostRecord | undefined): Promise<SetAside> => {
+  const aside = await setAside(deps, before === undefined ? [] : [before.file]);
+  for (const missed of aside.failed) deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
+  return aside;
 };
 
 type ChannelContext = { readonly deps: SyncTeamDeps; readonly input: SyncTeamInput; readonly channel: ChannelSummary; readonly roots: Roots };
@@ -107,9 +111,11 @@ const writeOne = async (context: ChannelContext, state: TeamState, planned: Plan
   const { post, file } = planned;
   const title = file.slice(file.lastIndexOf('/') + 1, -'.md'.length);
   const markdown = await deps.reader.postMarkdown(input.team.id, channel.id, post.id);
+  const aside = markdown.ok ? await setAsideBefore(deps, state.channels[channel.id]?.posts[post.id]) : undefined;
   const written = markdown.ok
     ? await deps.files.writeText(file, renderPostDocument({ post, team: input.team.name, channel: channel.name, markdown: markdown.value, syncedAt: deps.clock.nowIso() }))
     : markdown;
+  if (!written.ok && aside !== undefined) for (const missed of await putBack(deps, aside)) deps.logger.warn('restore.failed', { path: missed.path, cause: missed.error.kind });
   if (!written.ok) {
     deps.logger.warn('post.failed', { post: post.id, cause: written.error.kind });
     const attempt = nextAttempt(state.retry?.[post.id], post.lastModified, reportName(channel, title), written.error.message);
@@ -117,7 +123,6 @@ const writeOne = async (context: ChannelContext, state: TeamState, planned: Plan
     const notes = isGivenUp(attempt, post.lastModified) ? {} : { failed: [{ path: reportName(channel, title), reason: written.error.message }] };
     return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, post.id, attempt) }), counted: { failed: 1 }, notes };
   }
-  await archiveSuperseded(deps, context.roots, state.channels[channel.id]?.posts[post.id], file);
   const record: PostRecord = { file, lastModified: post.lastModified, title };
   return {
     apply: (carried) => ({ ...withPost(carried, channel.id, channel.name, post.id, record), retry: clearAttempt(carried.retry, post.id) }),
@@ -247,11 +252,27 @@ const syncChannels = async (deps: SyncTeamDeps, input: SyncTeamInput, state: Tea
   return ok(progressing);
 };
 
+// The first run of this layout moves every post from the day it last changed to the day it was first
+// posted, once. The moves are not put aside: nothing is superseded, only filed again.
+const refile = async (deps: SyncTeamDeps, input: SyncTeamInput, state: TeamState): Promise<TeamState> => {
+  const channels: Record<string, ChannelState> = {};
+  for (const [id, channel] of Object.entries(state.channels)) {
+    const refiled = refileChannel(`${teamRoot(deps.kbRoot, input.team.name)}/${safeSegment(channel.name)}`, channel, deps.pathBudget);
+    for (const move of refiled.moves) {
+      const moved = await deps.files.move(move.from, move.to);
+      if (!moved.ok) deps.logger.warn('refile.failed', { path: move.from, cause: moved.error.kind });
+    }
+    channels[id] = refiled.channel;
+  }
+  return { ...state, channels, layout: TEAMS_LAYOUT };
+};
+
 export const createSyncTeam =
   (deps: SyncTeamDeps): SyncTeam =>
   async (input) => {
     if (input.channels.length === 0) return failed('sync', 'no-channel', `no channel chosen for ${input.team.name}`);
-    const state = await loadState(deps, `${teamRoot(deps.kbRoot, input.team.name)}/${TEAM_STATE_FILE}`, input.team);
+    const loaded = await loadState(deps, `${teamRoot(deps.kbRoot, input.team.name)}/${TEAM_STATE_FILE}`, input.team);
+    const state = input.dryRun || loaded.layout === TEAMS_LAYOUT ? loaded : await refile(deps, input, loaded);
     const done = await syncChannels(deps, input, { ...state, version: TEAM_STATE_VERSION });
     if (!done.ok) return done;
     if (input.dryRun) return ok({ id: input.team.id, source: input.team.name, summary: done.value.summary, notes: NO_NOTES });

@@ -97,19 +97,57 @@ describe('syncing the channels of a Microsoft Team', () => {
     expect(done.summary.converted).toBe(1);
   });
 
-  it('a post replied to since it was written is written again under its new day, and the copy under the old one is put aside', async () => {
+  // A reply moves the day a post last changed and not the day it was first posted, so the post keeps
+  // its path, and the version before the reply is set aside under the day of the run.
+  it('a post replied to since it was written is written again at its own path, and the version before the reply is put aside', async () => {
     const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'a', {
       file: `${ROOT}/General/2026-09-01/Post a.md`,
       lastModified: '2026-09-01T09:00:00Z',
       title: 'Post a',
     });
-    const done = await run({ reader: { posts: { [GENERAL.id]: [post('a', '2026-09-08T09:00:00Z')] } }, files: { texts: { [STATE_PATH]: serializeTeamState(state) } } });
+    const replied = post('a', '2026-09-08T09:00:00Z', { created: '2026-09-01T09:00:00Z' });
+    const done = await run({
+      reader: { posts: { [GENERAL.id]: [replied] } },
+      files: { texts: { [STATE_PATH]: serializeTeamState(state), [`${ROOT}/General/2026-09-01/Post a.md`]: 'before the reply' } },
+    });
 
     expect(done.summary.converted).toBe(1);
+    expect(done.files.written.get(`${ROOT}/General/2026-09-01/Post a.md`)).toContain('Post a');
     expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-01/Post a.md`, to: 'kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-01/Post a.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-01/Post a.md')).toBe('before the reply');
   });
 
-  it('a post retitled in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
+  it('a post that will not write puts the version before it back', async () => {
+    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'a', {
+      file: `${ROOT}/General/2026-09-08/Post a.md`,
+      lastModified: 'old',
+      title: 'Post a',
+    });
+    const done = await run({ files: { texts: { [STATE_PATH]: serializeTeamState(state), [`${ROOT}/General/2026-09-08/Post a.md`]: 'before' }, failWritesMatching: 'Post a.md' } });
+
+    expect(done.files.written.get(`${ROOT}/General/2026-09-08/Post a.md`)).toBe('before');
+  });
+
+  // The first layout filed a post under the day it last changed; its id is the moment it was posted.
+  it('the first run of this layout moves each post to the day it was first posted, once, and puts nothing aside', async () => {
+    const posted = String(Date.parse('2026-09-01T09:00:00Z'));
+    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, posted, {
+      file: `${ROOT}/General/2026-09-08/Kick-off.md`,
+      lastModified: '2026-09-08T09:00:00Z',
+      title: 'Kick-off',
+    });
+    const quiet = { posts: { [GENERAL.id]: [] }, deltaLinks: { [GENERAL.id]: 'next' } };
+    const first = await run({ reader: quiet, files: { texts: { [STATE_PATH]: serializeTeamState(state), [`${ROOT}/General/2026-09-08/Kick-off.md`]: 'the post' } } });
+
+    expect(first.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-08/Kick-off.md`, to: `${ROOT}/General/2026-09-01/Kick-off.md` }]);
+    expect(JSON.parse(first.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
+
+    const second = await run({ reader: quiet, files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } } });
+
+    expect(second.files.moves).toHaveLength(0);
+  });
+
+  it('a post retitled in the same window as its namesake sets aside only the version each had, and the namesake is rewritten in the file its record names', async () => {
     const retitled = { file: `${ROOT}/General/2026-09-08/Venue.md`, lastModified: '2026-09-08T09:00:00Z', title: 'Venue' };
     // Where the namesake was put while the retitled post held the plain name.
     const namesakeFile = `${ROOT}/General/2026-09-08/${freeSegment('Venue.md', 'namesake', (name) => name === 'Venue.md')}`;
@@ -125,8 +163,10 @@ describe('syncing the channels of a Microsoft Team', () => {
 
     const recorded = stateOf(done.files).channels[GENERAL.id]?.posts['namesake']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('the venue is booked');
-    expect(done.files.moves).toEqual([{ from: retitled.file, to: 'kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-08/Venue.md' }]);
+    expect(done.files.moves).toHaveLength(2);
+    expect(done.files.moves).toContainEqual({ from: retitled.file, to: 'kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-08/Venue.md' });
     expect(done.files.written.get('kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-08/Venue.md')).toBe('the post as it was');
+    expect(done.files.written.get(namesakeFile.replace(`${ROOT}/`, 'kb/_archive/2026-09-11/Teams/Northwind Leadership/'))).toBe('the namesake as it was');
   });
 
   it('three posts sharing a subject, sent within the same minute, land in three files', async () => {
