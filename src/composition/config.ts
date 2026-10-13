@@ -1,6 +1,11 @@
+import { WINDOWS_PATH_LIMIT } from '../domain/kb-path.ts';
+
 export type Config = {
   readonly logLevel: string;
   readonly kbRoot: string;
+  // How long a path may be as decant writes it: what Windows accepts, less the folders in front of
+  // the knowledge base on disk. Absent when the run was given no way to resolve the folder.
+  readonly pathBudget?: number;
   readonly ocrLang: string;
   readonly ocr: boolean;
   readonly interactive: boolean;
@@ -13,6 +18,9 @@ export type ConfigInput = {
   readonly out?: string;
   // `process.platform`, given rather than read here, so a test can say it runs on Windows.
   readonly platform?: string;
+  // Turns the knowledge base folder into the absolute path it is on disk. Given rather than called
+  // here, since the answer depends on the folder the run was started in.
+  readonly resolvePath?: (path: string) => string;
   readonly ocrLang: string;
   readonly ocr?: boolean;
   readonly interactive: boolean;
@@ -27,13 +35,22 @@ export type ConfigInput = {
 // is an ordinary character in a name, and is kept.
 const kbRootFor = (named: string, platform: string | undefined): string => (platform === 'win32' ? named.replaceAll('\\', '/') : named);
 
+// Windows counts a path from the drive letter, so the folders in front of the knowledge base come
+// off its limit before any name inside it is planned.
+const pathBudgetFor = (kbRoot: string, resolvePath: ((path: string) => string) | undefined): number | undefined =>
+  resolvePath === undefined ? undefined : WINDOWS_PATH_LIMIT - (resolvePath(kbRoot).length - kbRoot.length);
+
 // The only module that reads the environment: every other layer takes its values as parameters, so
 // nothing downstream depends on process.env, and the composition root stays testable.
-export const readConfig = (input: ConfigInput): Config => ({
-  logLevel: input.env['KB_LOG_LEVEL'] ?? 'error',
-  kbRoot: kbRootFor(input.out ?? input.env['KB_ROOT'] ?? 'kb', input.platform),
-  ocrLang: input.ocrLang,
-  ocr: input.ocr ?? true,
-  interactive: input.interactive,
-  timezone: input.timezone === '' ? input.machineTimezone : input.timezone,
-});
+export const readConfig = (input: ConfigInput): Config => {
+  const kbRoot = kbRootFor(input.out ?? input.env['KB_ROOT'] ?? 'kb', input.platform);
+  return {
+    logLevel: input.env['KB_LOG_LEVEL'] ?? 'error',
+    kbRoot,
+    pathBudget: pathBudgetFor(kbRoot, input.resolvePath),
+    ocrLang: input.ocrLang,
+    ocr: input.ocr ?? true,
+    interactive: input.interactive,
+    timezone: input.timezone === '' ? input.machineTimezone : input.timezone,
+  };
+};

@@ -52,6 +52,15 @@ describe('reading the run configuration', () => {
     expect(on('linux', 'odd\\name', {})).toMatchObject({ kbRoot: 'odd\\name' });
   });
 
+  // Windows counts a path from the drive letter, so what stands in front of the knowledge base comes
+  // off the 259 characters before any name inside it is planned.
+  it('the path budget is what Windows accepts less the folders in front of the knowledge base, and none without a way to resolve the folder', () => {
+    const resolvePath = (path: string): string => `C:/Users/VincentDelacourt/Documents/KB/raw/${path}`;
+
+    expect(readConfig({ env: {}, out: 'office365', resolvePath, ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'UTC' })).toMatchObject({ pathBudget: 216 });
+    expect(readConfig({ env: {}, out: 'office365', ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'UTC' }).pathBudget).toBeUndefined();
+  });
+
   // The zone a run was told to count in wins; with none given, the machine's own is what it gets.
   it('a zone named for the run is what its days are counted in', () => {
     expect(readConfig({ env: {}, ocrLang: 'en', interactive: true, timezone: 'Asia/Shanghai', machineTimezone: 'Europe/Paris' })).toMatchObject({ timezone: 'Asia/Shanghai' });

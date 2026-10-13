@@ -1,4 +1,5 @@
 #!/usr/bin/env bun
+import { resolve } from 'node:path';
 import { buildDeps } from './composition/build-deps.ts';
 import { readConfig } from './composition/config.ts';
 import { parseOptions, USAGE } from './composition/options.ts';
@@ -23,6 +24,7 @@ const run = async (): Promise<number> => {
     env: process.env,
     out: options.value.out,
     platform: process.platform,
+    resolvePath: resolve,
     ocrLang: options.value.ocrLang,
     ocr: options.value.ocr,
     interactive: options.value.command === 'sync',

@@ -203,10 +203,11 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const ocr = given(overrides.ocr, () => (config.ocr ? createRapidOcr({ shell: createBunShell(), lang: config.ocrLang, cache: ocrCache }) : createNoOcr()));
   const prompt = given(overrides.prompt, () => createStdinPrompt(() => console));
   const progress = given(overrides.progress, () => createStderrProgress());
-  const convertFile = createConvertFile({ reader, files, ocr, clock, logger, progress });
+  const pathBudget = config.pathBudget;
+  const convertFile = createConvertFile({ reader, files, ocr, clock, logger, progress, pathBudget });
   const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot });
   const listSyncedSources = createListSyncedSources({ files, logger, kbRoot: config.kbRoot });
-  const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown });
+  const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown, pathBudget });
   // Hoisted only to keep the call below on one line: Bun reports the inner lines of a multi-line
   // expression as never executed, so splitting it reads as coverage lost. See the comment further
   // down and the journal entry for the same trap in `progress-bar.ts`.
@@ -223,13 +224,14 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     mailboxRoot,
     sourceName: MAILBOX_NAME,
     timezone: config.timezone,
+    pathBudget,
   });
   const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot });
   // A group inbox reads through its own commands but renders through the same path, so it gets the
   // same converters with the group reader underneath them, and a renderer per group because each
   // one writes into its own folder.
   const group = given(overrides.group, () => createGroupReaderFromCall(createMarcelCall(api)));
-  const convertGroupAttachment = createConvertAttachment({ reader: group, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown });
+  const convertGroupAttachment = createConvertAttachment({ reader: group, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown, pathBudget });
   const renderGroupThreadFor = (root: string, name: string): ReturnType<typeof createRenderThread> =>
     createRenderThread({
       reader: group,
@@ -243,28 +245,29 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
       mailboxRoot: root,
       sourceName: name,
       timezone: config.timezone,
+      pathBudget,
     });
   const syncGroup = createSyncGroup({ reader: group, files, renderThreadFor: renderGroupThreadFor, clock, logger, progress, kbRoot: config.kbRoot });
   // A task is text with nothing hanging off it, so it needs none of the conversion machinery the
   // other sources are built out of: the reader, somewhere to write, and a clock to stamp it.
   const todo = given(overrides.todo, () => createTodoReaderFromCall(createMarcelCall(api)));
-  const syncTodo = createSyncTodo({ reader: todo, files, clock, logger, progress, kbRoot: config.kbRoot });
+  const syncTodo = createSyncTodo({ reader: todo, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
   // A channel post renders through the library, the way a mail message does, so a team needs the
   // reader, somewhere to write, and a clock, and none of the conversion machinery.
   const team = given(overrides.team, () => createTeamReaderFromCall(createMarcelCall(api)));
-  const syncTeam = createSyncTeam({ reader: team, files, clock, logger, progress, kbRoot: config.kbRoot });
+  const syncTeam = createSyncTeam({ reader: team, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
   // The directory is enumerated through the Teams, so it borrows the team reader's listing.
   const people = given(overrides.people, () => createPeopleReaderFromCall(createMarcelCall(api)));
-  const syncPeople = createSyncPeople({ reader: people, teams: team, files, clock, logger, progress, kbRoot: config.kbRoot });
+  const syncPeople = createSyncPeople({ reader: people, teams: team, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
   // The calendar counts its days where the mailbox counts them.
   const calendar = given(overrides.calendar, () => createCalendarReaderFromCall(createMarcelCall(api)));
-  const syncCalendar = createSyncCalendar({ reader: calendar, files, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone });
+  const syncCalendar = createSyncCalendar({ reader: calendar, files, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone, pathBudget });
   const notebook = given(overrides.notebook, () => createNotebookReaderFromCall(createMarcelCall(api)));
-  const syncNotebook = createSyncNotebook({ reader: notebook, files, clock, logger, progress, kbRoot: config.kbRoot });
+  const syncNotebook = createSyncNotebook({ reader: notebook, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
   const list = given(overrides.list, () => createListReaderFromCall(createMarcelCall(api)));
-  const syncLists = createSyncLists({ reader: list, files, clock, logger, progress, kbRoot: config.kbRoot });
+  const syncLists = createSyncLists({ reader: list, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
   const plan = given(overrides.plan, () => createPlanReaderFromCall(createMarcelCall(api)));
-  const syncPlan = createSyncPlan({ reader: plan, files, clock, logger, progress, kbRoot: config.kbRoot });
+  const syncPlan = createSyncPlan({ reader: plan, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
   const savedDrives = createSavedDrives(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
