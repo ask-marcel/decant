@@ -89,8 +89,9 @@ const nameOf = (event: CalendarEvent): string => (event.subject.length > 0 ? eve
 // Where an event goes: under the day it starts, counted where the calendar lives, named by its
 // subject. Two events can share a subject and a day (a standup and its exception, two calls named
 // alike); the second takes a suffix from its own id, the way a document sharing a name in one
-// library does. `taken` is every path some other event holds, on disk or planned this run.
-export const eventFileFor = (root: string, event: CalendarEvent, zone: string, taken: ReadonlySet<string>): string => {
+// library does. `taken` is every path some other event holds, on disk or planned this run, and
+// `own` is the file the event already has.
+export const eventFileFor = (root: string, event: CalendarEvent, zone: string, taken: ReadonlySet<string>, own?: string): string => {
   const name = `${safeSegment(nameOf(event))}${MARKDOWN}`;
-  return freePath(`${root}/${dayIn(event.start, zone)}`, name, event.id, taken);
+  return freePath(`${root}/${dayIn(event.start, zone)}`, name, event.id, taken, own);
 };

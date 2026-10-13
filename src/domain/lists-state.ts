@@ -77,7 +77,8 @@ export const goneLists = (state: ListsState, present: ReadonlyArray<SharePointLi
 const MARKDOWN = '.md';
 
 // Where a list's table goes: under the site, named by the list. Two lists can share a name on one
-// site; the second takes a suffix from its own id. A file held by another list is taken.
-export const listFileFor = (root: string, list: SharePointList, taken: ReadonlySet<string>): string => {
-  return freePath(root, `${safeSegment(list.name)}${MARKDOWN}`, list.id, taken);
+// site; the second takes a suffix from its own id. A file held by another list is taken, and `own`
+// is the file the list already has.
+export const listFileFor = (root: string, list: SharePointList, taken: ReadonlySet<string>, own?: string): string => {
+  return freePath(root, `${safeSegment(list.name)}${MARKDOWN}`, list.id, taken, own);
 };

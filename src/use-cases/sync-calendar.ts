@@ -14,7 +14,7 @@ import {
   withoutEvent,
 } from '../domain/calendar-state.ts';
 import type { CalendarState, EventRecord } from '../domain/calendar-state.ts';
-import { freeSegment, safeSegment } from '../domain/kb-path.ts';
+import { freeSegment, holdsIgnoringCase, safeSegment } from '../domain/kb-path.ts';
 import { archivePath } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
@@ -107,7 +107,7 @@ type Attached = {
 };
 
 const attachmentName = (attachment: EventAttachment, taken: Set<string>): string => {
-  const name = freeSegment(`${safeSegment(attachment.name)}${MARKDOWN}`, attachment.id, (candidate) => taken.has(candidate));
+  const name = freeSegment(`${safeSegment(attachment.name)}${MARKDOWN}`, attachment.id, (candidate) => holdsIgnoringCase(taken, candidate));
   taken.add(name);
   return name;
 };
@@ -208,7 +208,8 @@ const planWindow = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: Cal
   const planned: Planned[] = [];
   for (const entry of fetched) {
     if (entry.event === undefined || !wanted(deps, input, state, entry.event)) continue;
-    const file = eventFileFor(calendarRoot(deps.kbRoot), entry.event, deps.timezone, new Set([...heldByOthers(state, entry.event.id), ...handedOut]));
+    const taken = new Set([...heldByOthers(state, entry.event.id), ...handedOut]);
+    const file = eventFileFor(calendarRoot(deps.kbRoot), entry.event, deps.timezone, taken, state.events[entry.event.id]?.file);
     handedOut.add(file);
     planned.push({ event: entry.event, file });
   }

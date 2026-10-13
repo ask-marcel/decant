@@ -532,6 +532,15 @@ describe('naming the files an event carries', () => {
     expect(filesHolding(done.files, [FIRST, SECOND, THIRD])).toEqual([1, 1, 1]);
   });
 
+  it('two attachments whose names differ only in letter case land as two files, since the disk takes them for one', async () => {
+    const lower = { ...SECOND, name: 'agenda.docx' };
+
+    const done = await run({ reader: { attachments: { a: [FIRST, lower] } } });
+
+    expect(filesHolding(done.files, [FIRST, lower])).toEqual([1, 1]);
+    expect(stateOf(done.files).events['a']?.outputs.filter((path) => path.toLowerCase().endsWith('agenda.docx.md'))).toHaveLength(1);
+  });
+
   // The lookalike's name is read off a first run rather than worked out here, so it is the name the
   // namesake really takes, whatever the suffix is made of.
   it('an attachment named the way its namesake would be suffixed keeps its file, and the namesake lands in another', async () => {

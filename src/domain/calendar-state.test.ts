@@ -90,6 +90,12 @@ describe('deciding where an event goes', () => {
     expect(eventFileFor('kb/Calendar', event('AAMkAGI-x', '', '2026-09-12T09:00:00Z'), 'UTC', new Set())).toBe('kb/Calendar/2026-09-12/event AAMkAGI-x.md');
   });
 
+  it('an event whose subject changed only in letter case keeps the file it has, as it is', () => {
+    const own = 'kb/Calendar/2026-09-12/Offsite Planning.md';
+
+    expect(eventFileFor('kb/Calendar', event('a', 'Offsite planning', '2026-09-12T09:00:00Z'), 'UTC', new Set(), own)).toBe(own);
+  });
+
   it('an event with no usable start still lands somewhere, under the undated day', () => {
     expect(eventFileFor('kb/Calendar', event('a', 'Someday', ''), 'UTC', new Set())).toBe('kb/Calendar/0000-00-00/Someday.md');
   });
