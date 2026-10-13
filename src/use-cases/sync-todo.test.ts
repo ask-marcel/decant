@@ -19,6 +19,8 @@ const LIST = { id: 'list-1', name: 'Tasks' };
 
 const STATE_PATH = 'kb/To Do/Tasks/.sync-state.json';
 
+const INDEX_PATH = 'kb/To Do/Tasks/_index.md';
+
 const task = (over: Partial<TodoTask> = {}): TodoTask => ({
   id: 'AAMkAGI-task',
   title: 'Book the venue',
@@ -81,7 +83,9 @@ describe('syncing a Microsoft To Do list', () => {
   it('a task in a knowledge base deep on the disk is filed under a name cut to what Windows accepts', async () => {
     const done = await run({ reader: { tasks: { 'list-1': [task({ title: 'Book the venue for the offsite in Rotterdam', due: '2026-09-08' })] } }, pathBudget: 100 });
 
-    expect([...done.files.written.keys()].filter((path) => path !== STATE_PATH)).toEqual([expect.stringMatching(/^kb\/To Do\/Tasks\/2026-09-08\/Book th-[0-9a-f]{8}\.md$/)]);
+    expect([...done.files.written.keys()].filter((path) => path !== STATE_PATH && path !== INDEX_PATH)).toEqual([
+      expect.stringMatching(/^kb\/To Do\/Tasks\/2026-09-08\/Book th-[0-9a-f]{8}\.md$/),
+    ]);
   });
 
   it('a first run writes every task under the day it is due, or under undated/ when it has none, and remembers what it wrote', async () => {
@@ -90,7 +94,9 @@ describe('syncing a Microsoft To Do list', () => {
     });
 
     expect(done.summary.converted).toBe(2);
-    expect(new Set(done.files.written.keys())).toEqual(new Set([STATE_PATH, 'kb/To Do/Tasks/undated/Water the plants.md', 'kb/To Do/Tasks/2026-09-20/Book the venue.md']));
+    expect(new Set(done.files.written.keys())).toEqual(
+      new Set([STATE_PATH, INDEX_PATH, 'kb/To Do/Tasks/undated/Water the plants.md', 'kb/To Do/Tasks/2026-09-20/Book the venue.md'])
+    );
     expect(done.files.written.get('kb/To Do/Tasks/2026-09-20/Book the venue.md')).toContain('# Book the venue');
     expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks['AAMkAGI-task']).toEqual({
       file: 'kb/To Do/Tasks/2026-09-20/Book the venue.md',
@@ -108,7 +114,7 @@ describe('syncing a Microsoft To Do list', () => {
     const done = await run({ reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
 
     expect(done.summary.converted).toBe(0);
-    expect(done.files.writeLog).toEqual([STATE_PATH]);
+    expect(done.files.writeLog).toEqual([STATE_PATH, INDEX_PATH]);
     expect(done.files.moves).toHaveLength(0);
   });
 
@@ -226,7 +232,7 @@ describe('syncing a Microsoft To Do list', () => {
     const done = await run({ reader: { tasks: { 'list-1': [task(), task({ id: 'AAMkAGI-twin' })] } } });
 
     expect(done.summary.converted).toBe(2);
-    expect([...done.files.written.keys()].filter((path) => path.endsWith('.md'))).toHaveLength(2);
+    expect([...done.files.written.keys()].filter((path) => path.endsWith('.md') && path !== INDEX_PATH)).toHaveLength(2);
   });
 
   it('a task renamed in the same window as its namesake sets aside only the version each had, and the namesake is rewritten in the file its record names', async () => {
@@ -255,7 +261,54 @@ describe('syncing a Microsoft To Do list', () => {
   it('three tasks sharing a title and a day land in three files, though Graph opens all their ids alike', async () => {
     const done = await run({ reader: { tasks: { 'list-1': ['AAMkADU3-one', 'AAMkADU3-two', 'AAMkADU3-three'].map((id) => task({ id, title: 'Follow up' })) } } });
 
-    expect([...done.files.written.keys()].filter((path) => path.endsWith('.md'))).toHaveLength(3);
+    expect([...done.files.written.keys()].filter((path) => path.endsWith('.md') && path !== INDEX_PATH)).toHaveLength(3);
+  });
+
+  // The page a reader opens the list by: what is open by the day it is due, then what has no due day,
+  // then what is done, the latest first.
+  it('the list page names open tasks by due day, then those with no due day, then completed ones, the latest first', async () => {
+    const tasks = [
+      task({ id: 'venue', due: '2026-09-20' }),
+      task({ id: 'caterer', title: 'Call the caterer', status: 'inProgress', due: '2026-09-10' }),
+      task({ id: 'plants', title: 'Water the plants' }),
+      task({ id: 'invites', title: 'Send the invites', status: 'completed', completed: '2026-09-05' }),
+      task({ id: 'badges', title: 'Print the badges', status: 'completed', completed: '2026-09-07' }),
+    ];
+    const done = await run({ reader: { tasks: { 'list-1': tasks } } });
+
+    expect(done.files.written.get(INDEX_PATH)).toBe(
+      [
+        '# Tasks',
+        '',
+        '## Open, by due day',
+        '',
+        '- 2026-09-10 · [Call the caterer](<2026-09-10/Call the caterer.md>) · in progress',
+        '- 2026-09-20 · [Book the venue](<2026-09-20/Book the venue.md>) · not started',
+        '',
+        '## Open, with no due day',
+        '',
+        '- [Water the plants](<undated/Water the plants.md>) · not started',
+        '',
+        '## Completed, the latest first',
+        '',
+        '- 2026-09-07 · [Print the badges](<undated/Print the badges.md>)',
+        '- 2026-09-05 · [Send the invites](<undated/Send the invites.md>)',
+        '',
+      ].join('\n')
+    );
+  });
+
+  // A task that could not be written has no file, so the page has no line that would lead nowhere.
+  it('a task that could not be written is left off the list page, and a page that will not write leaves the run standing', async () => {
+    const done = await run({ reader: { tasks: { 'list-1': [task(), task({ id: 'plants', title: 'Water the plants' })] } }, files: { failWritesMatching: 'Book the venue' } });
+
+    expect(done.files.written.get(INDEX_PATH)).not.toContain('Book the venue');
+    expect(done.files.written.get(INDEX_PATH)).toContain('Water the plants');
+
+    const refused = await run({ reader: { tasks: { 'list-1': [task()] } }, files: { failWritesMatching: '_index.md' } });
+
+    expect(refused.ok).toBe(true);
+    expect(refused.logger.calls).toContainEqual({ level: 'warn', event: 'index.failed', meta: { path: INDEX_PATH, cause: 'write-failed' } });
   });
 
   it('a dry run says how much it would write and writes nothing at all', async () => {

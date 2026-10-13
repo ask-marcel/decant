@@ -1,6 +1,8 @@
+import { INDEX_FILE } from '../domain/index-page.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { renderTaskDocument } from '../domain/todo-document.ts';
+import { todoIndexPage } from '../domain/todo-index.ts';
 import {
   TODO_LAYOUT,
   TODO_STATE_VERSION,
@@ -179,6 +181,14 @@ const write = async (
   return ok(progressing);
 };
 
+// The list as a reader works through it, made from what the run holds. A page that will not write is
+// logged and leaves the run standing: the tasks themselves already landed.
+const writeIndex = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, tasks: ReadonlyArray<TodoTask>, state: TodoState): Promise<void> => {
+  const path = `${roots.root}/${INDEX_FILE}`;
+  const written = await deps.files.writeText(path, todoIndexPage(input.list.name, roots.root, tasks, state));
+  if (!written.ok) deps.logger.warn('index.failed', { path, cause: written.error.kind });
+};
+
 const sweep = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, state: TodoState, tasks: ReadonlyArray<TodoTask>): Promise<Result<SourceRun, StepError>> => {
   const work = todoWorklist(roots.root, state, tasks, deps.pathBudget);
   deps.progress.start(work.write.length, input.list.name);
@@ -192,6 +202,7 @@ const sweep = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, sta
   // and the run report called the list stale on the strength of that.
   const saved = await save(deps, `${roots.root}/${TODO_STATE_FILE}`, done.state);
   if (!saved.ok) return saved;
+  await writeIndex(deps, input, roots, tasks, done.state);
   const notes = withGaveUp({ ...done.notes, givenUp: givenUpNotes(done.state.retry) }, gaveUpNotes(state.retry, done.state.retry));
   await writeReport(deps, input, roots.root, input.list.name, done.summary, notes);
   return ok({ id: input.list.id, source: input.list.name, summary: done.summary, notes });
