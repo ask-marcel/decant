@@ -41,6 +41,9 @@ export type SyncCalendarDeps = {
   readonly kbRoot: string;
   // The zone the calendar's days are counted in, which is the mailbox's.
   readonly timezone: string;
+  // How long a path may be as decant writes it: Windows' limit less what stands in front of the
+  // knowledge base on disk. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 // `since` as the mailbox takes it: events starting before that day are listed by the delta and not
@@ -209,7 +212,7 @@ const planWindow = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: Cal
   for (const entry of fetched) {
     if (entry.event === undefined || !wanted(deps, input, state, entry.event)) continue;
     const taken = new Set([...heldByOthers(state, entry.event.id), ...handedOut]);
-    const file = eventFileFor(calendarRoot(deps.kbRoot), entry.event, deps.timezone, taken, state.events[entry.event.id]?.file);
+    const file = eventFileFor(calendarRoot(deps.kbRoot), entry.event, deps.timezone, taken, state.events[entry.event.id]?.file, deps.pathBudget);
     handedOut.add(file);
     planned.push({ event: entry.event, file });
   }
