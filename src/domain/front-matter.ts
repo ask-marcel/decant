@@ -14,8 +14,17 @@ const needsQuoting = (raw: string, folded: string): boolean => folded !== raw ||
 
 const quote = (value: string): string => `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
 
+// A line break would end the value, so the lines are joined with one space, each trimmed where it
+// was broken. A run of spaces inside a line stays: a path names a file that can hold two spaces in a
+// row, and folding them named a file that is not on disk.
+const LINE_BREAK = /\r\n|\r|\n/;
+
 const scalar = (raw: string): string => {
-  const folded = raw.replace(/\s+/g, ' ').trim();
+  const folded = raw
+    .split(LINE_BREAK)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0)
+    .join(' ');
   return needsQuoting(raw, folded) ? quote(folded) : folded;
 };
 
