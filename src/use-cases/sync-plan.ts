@@ -16,7 +16,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
-import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 
 export const PLAN_STATE_FILE = '.sync-state.json';
@@ -281,7 +281,9 @@ export const createSyncPlan =
     deps.progress.done();
     if (!written.ok) return written;
     const gone = goneTasks(state, plan.value.tasks);
-    const done = fold(written.value, await Promise.all(gone.map((entry) => archiveGone(deps, roots, entry))));
+    const folded = fold(written.value, await Promise.all(gone.map((entry) => archiveGone(deps, roots, entry))));
+    // A task the plan no longer holds leaves the ledger too: given up on, it would be named in every report.
+    const done = { ...folded, state: { ...folded.state, retry: heldAttempts(folded.state.retry, new Set(plan.value.tasks.map((task) => task.id))) } };
     // A task whose details failed this run still has its card, and the board is drawn again with it.
     if (work.length + gone.length + opening.summary.failed > 0 || state.lastRun.length === 0) await writeBoard(deps, input, roots, entries, plan.value.buckets, names);
     return finish(deps, input, roots, state, done);

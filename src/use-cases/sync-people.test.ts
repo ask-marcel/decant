@@ -288,6 +288,16 @@ describe('syncing the people directory', () => {
     expect(JSON.parse(second.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
   });
 
+  // Given up on, then gone from the source: nobody can fix it now, and named as failed it would stay in
+  // every report.
+  it('a colleague given up on who then left every roster is no longer named as given up', async () => {
+    const state = { ...emptyPeopleState(), retry: { gone: { attempts: 3, version: 'unread', name: 'Former colleague', reason: 'no such user: gone' } } };
+    const done = await run({ files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
+
+    expect(done.notes.givenUp).toHaveLength(0);
+    expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
   it('a page that will not write three runs running is left alone by the fourth', async () => {
     const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
       run({ files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' }, failWritesMatching: 'Jane Doe' } });

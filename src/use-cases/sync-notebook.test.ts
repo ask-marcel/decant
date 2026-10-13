@@ -231,6 +231,17 @@ describe('syncing a OneNote notebook', () => {
     expect(fourth.files.written.has(`${ROOT}/_sync-report.md`)).toBe(false);
   });
 
+  // Given up on, then gone from the source: nobody can fix it now, and named as failed it would stay in
+  // every report.
+  it('a page or a section given up on and then gone from the notebook is no longer named as given up', async () => {
+    const tries = { attempts: 3, version: 'x', name: 'Old', reason: 'cannot read' };
+    const state = { ...emptyNotebookState(NOTEBOOK), retry: { 'gone-page': tries, 'section:gone': { ...tries, version: 'unread' } } };
+    const done = await run({ files: { texts: { [STATE_PATH]: serializeNotebookState(state) } } });
+
+    expect(done.notes.givenUp).toHaveLength(0);
+    expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
   it('a section whose pages cannot be listed three runs running is named once as given up, its count staying put', async () => {
     const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
       run({ reader: { failPagesOf: ['sec-b'] }, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' } } });

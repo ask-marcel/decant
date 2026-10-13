@@ -200,6 +200,16 @@ describe('syncing the lists of a SharePoint site', () => {
     expect(stateOf(done.files).lists['issues']).toBeDefined();
   });
 
+  // Given up on, then gone from the source: nobody can fix it now, and named as failed it would stay in
+  // every report.
+  it('a list given up on and then gone from the site is no longer named as given up', async () => {
+    const state = { ...emptyListsState(SITE.id, SITE.name), retry: { gone: { attempts: 3, version: 'unread', name: 'Old list', reason: 'Graph is busy' } } };
+    const done = await run({ files: { texts: { [STATE_PATH]: serializeListsState(state) } } });
+
+    expect(done.notes.givenUp).toHaveLength(0);
+    expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
   // Every list is read whole on every run, so one whose rows cannot be read is asked for again each
   // time: named as a failure for three runs, then once as given up, its count staying put.
   it('a list that cannot be read three runs running is named once as given up, and a list read again leaves nothing behind', async () => {

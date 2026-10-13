@@ -25,7 +25,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
-import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import type { Unread } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 
@@ -220,7 +220,12 @@ export const createSyncNotebook =
     const written = await writePages(deps, input, roots, opening, planPageFiles(roots.root, work.write, state, deps.pathBudget));
     deps.progress.done();
     if (!written.ok) return written;
-    const done = fold(written.value, await Promise.all(work.archive.map((entry) => archiveGone(deps, roots, entry))));
+    const folded = fold(written.value, await Promise.all(work.archive.map((entry) => archiveGone(deps, roots, entry))));
+    // A page or a section the notebook no longer holds leaves the ledger too: given up on, it would be
+    // named in every report. A page in a section that could not be listed is tried again once its
+    // section lists, which costs a try and loses nothing.
+    const held = new Set([...listing.pages.map((entry) => entry.page.id), ...sections.value.map(sectionKey)]);
+    const done = { ...folded, state: { ...folded.state, retry: heldAttempts(folded.state.retry, held) } };
     const saved = await save(deps, roots, done.state);
     if (!saved.ok) return saved;
     const notes = withGaveUp({ ...done.notes, givenUp: givenUpNotes(done.state.retry) }, gaveUpNotes(state.retry, done.state.retry));

@@ -16,7 +16,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
-import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 
 export const LISTS_STATE_FILE = '.sync-state.json';
@@ -227,7 +227,9 @@ export const createSyncLists =
     const written = await writeTables(deps, input, roots, opening, work);
     deps.progress.done();
     if (!written.ok) return written;
-    const done = fold(written.value, await Promise.all(goneLists(state, lists).map((entry) => archiveGone(deps, roots, entry))));
+    const folded = fold(written.value, await Promise.all(goneLists(state, lists).map((entry) => archiveGone(deps, roots, entry))));
+    // A list the site no longer holds leaves the ledger too: given up on, it would be named in every report.
+    const done = { ...folded, state: { ...folded.state, retry: heldAttempts(folded.state.retry, new Set(lists.map((list) => list.id))) } };
     const saved = await save(deps, roots, done.state);
     if (!saved.ok) return saved;
     const notes = withGaveUp({ ...done.notes, givenUp: givenUpNotes(done.state.retry) }, gaveUpNotes(state.retry, done.state.retry));

@@ -254,6 +254,16 @@ describe('syncing a Planner plan', () => {
     expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'assignee.unnamed', meta: { user: 'u-sam', cause: 'permanent' } });
   });
 
+  // Given up on, then gone from the source: nobody can fix it now, and named as failed it would stay in
+  // every report.
+  it('a task given up on and then gone from the plan is no longer named as given up', async () => {
+    const state = { ...emptyPlanState(PLAN), retry: { 't-gone': { attempts: 3, version: 'unread', name: 'Old task', reason: 'Graph is busy' } } };
+    const done = await run({ files: { texts: { [STATE_PATH]: serializePlanState(state) } } });
+
+    expect(done.notes.givenUp).toHaveLength(0);
+    expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
   // Every task's details are read on every run, so a task whose details cannot be read is asked for
   // again each time: named as a failure for three runs, then once as given up, its count staying put.
   it('a task whose details cannot be read three runs running is named once as given up, and a task read again leaves nothing behind', async () => {
