@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import type { DriveDeltaPage } from '../domain/drive-item.ts';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import { createGroupReaderFake } from '../test-helpers/group-reader-fake.ts';
 import { createTodoReaderFake } from '../test-helpers/todo-reader-fake.ts';
@@ -140,7 +141,11 @@ describe('wiring the command together', () => {
     const summaries = await deps.runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
 
     expect(summaries.ok && summaries.value).toHaveLength(1);
-    expect(JSON.parse(files.written.get(statePath) ?? '{}').drives['b!two'].deltaLink).toBe('cursor-1');
+    // The cursor is kept beside the state, in a file of its own.
+    const cursor = JSON.parse(files.written.get('kb/SharePoint sites/Espace Contoso/.sync-cursor.json') ?? '{}').cursor;
+
+    expect(cursor.drives['b!two'].deltaLink).toBe('cursor-1');
+    expect(JSON.parse(files.written.get(statePath) ?? '{}').drives['b!two'].deltaLink).toBeUndefined();
   });
 
   it('a refresh repeats the channels the earlier run recorded for that team, and a team whose record is unreadable refuses rather than guessing', async () => {
@@ -175,7 +180,7 @@ describe('wiring the command together', () => {
 
     expect(summaries.ok && summaries.value.map((source) => source.source)).toEqual(['Northwind Leadership']);
     expect(team.calls).toContain('postsDelta:ch-planning:fresh');
-    expect(JSON.parse(files.written.get(statePath) ?? '{}').channels['ch-planning'].deltaLink).toBe('https://graph/delta?token=1');
+    expect(JSON.parse(files.written.get('kb/Teams/Northwind Leadership/.sync-cursor.json') ?? '{}').cursor.channels['ch-planning'].deltaLink).toBe('https://graph/delta?token=1');
 
     const unreadable = createFilesFake({
       directories: { kb: ['Teams'], 'kb/Teams': ['Northwind Leadership'] },
@@ -447,5 +452,63 @@ describe('keeping how far back the runs reach', () => {
 
     expect(outcome.ok).toBe(true);
     expect(logger.calls).toContainEqual({ level: 'warn', event: 'since.unkept', meta: { cause: 'write-failed' } });
+  });
+});
+
+// What a copy of the knowledge base sees: a backup, git or OneDrive takes every changed file as news.
+describe('a run that finds nothing new', () => {
+  const STATE = 'kb/SharePoint sites/Espace Contoso/.sync-state.json';
+  const seeded = JSON.stringify({
+    version: 1,
+    source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://x' },
+    lastRun: '',
+    drives: { 'b!one': { name: 'Documents', pending: [], items: {} } },
+  });
+  const contract = {
+    id: '01ABC',
+    name: 'Contrat.docx',
+    kind: 'file' as const,
+    size: 4096,
+    path: 'Contrat.docx',
+    lastModified: '2026-05-12T09:31:00Z',
+    cTag: 'c1',
+    webUrl: 'https://x/Contrat.docx',
+  };
+
+  const updateAt = async (files: ReturnType<typeof createFilesFake>, pages: ReadonlyArray<DriveDeltaPage>, at: string): Promise<void> => {
+    await buildDeps(configFor({}), {
+      files,
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake({ pages }),
+      mail: createMailReaderFake(),
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
+      people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
+      notebook: createNotebookReaderFake(),
+      list: createListReaderFake(),
+      plan: createPlanReaderFake(),
+      ocr: createOcrFake(),
+      prompt: createPromptFake(),
+      clock: createClockFake(at),
+    }).runSync({ command: 'update', driveIds: [], maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+  };
+
+  // The first run with nothing new still says so: the report names what the last run did, and the
+  // run before it converted a file. From the second on, the cursor alone moves.
+  it('a second update in a row with nothing new at the source changes no file but the cursor beside the state', async () => {
+    const files = createFilesFake({ directories: { kb: ['SharePoint sites'], 'kb/SharePoint sites': ['Espace Contoso'] }, texts: { [STATE]: seeded } });
+    await updateAt(files, [{ items: [contract], skipped: 0, deltaLink: 'cursor-1' }], '2026-10-12T08:00:00Z');
+    const converted = new Map(files.written);
+    await updateAt(files, [{ items: [], skipped: 0, deltaLink: 'cursor-2' }], '2026-10-13T08:00:00Z');
+    const changedBy = (before: ReadonlyMap<string, string>): ReadonlyArray<string> => [...files.written].filter(([path, text]) => before.get(path) !== text).map(([path]) => path);
+
+    expect(changedBy(converted)).toEqual(['kb/SharePoint sites/Espace Contoso/.sync-cursor.json', 'kb/_sync-report.md']);
+
+    const quiet = new Map(files.written);
+    await updateAt(files, [{ items: [], skipped: 0, deltaLink: 'cursor-3' }], '2026-10-14T08:00:00Z');
+
+    expect(changedBy(quiet)).toEqual(['kb/SharePoint sites/Espace Contoso/.sync-cursor.json']);
   });
 });
