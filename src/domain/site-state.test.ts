@@ -174,6 +174,24 @@ describe('filing a library again in the layout without day folders', () => {
     expect(refiled.drive.items['01NEW']).toEqual(drive.items['01NEW']);
   });
 
+  // A name cut to fit Windows does not hold the full name, and an archive's first file sits in the
+  // folder it was unpacked in: neither leads anywhere wrong.
+  it('a document under a cut name and an archive with its members move out of the day folder, every file keeping its name', () => {
+    const refiled = refileDrive('kb/S/D', {
+      ...drive,
+      items: {
+        '01CUT': { path: 'Contrat de service avec le fournisseur.docx', cTag: 'c1', outputs: ['kb/S/D/2026-05-12/Contrat de servi-4db6e62d.docx.md'] },
+        '01ZIP': { path: 'Projets/pack.zip', cTag: 'c1', outputs: ['kb/S/D/undated/Projets/pack/pack.zip', 'kb/S/D/Projets/pack/readme.txt.md'] },
+      },
+    });
+
+    expect(refiled.moves).toEqual([
+      { from: 'kb/S/D/2026-05-12/Contrat de servi-4db6e62d.docx.md', to: 'kb/S/D/Contrat de servi-4db6e62d.docx.md' },
+      { from: 'kb/S/D/undated/Projets/pack/pack.zip', to: 'kb/S/D/Projets/pack/pack.zip' },
+    ]);
+    expect(refiled.drive.items['01ZIP']?.outputs).toEqual(['kb/S/D/Projets/pack/pack.zip', 'kb/S/D/Projets/pack/readme.txt.md']);
+  });
+
   // A path too long for Windows failed as a write, and the day folder was part of the length.
   it('a document given up on because it could not be written gets its tries back, and one that failed otherwise does not', () => {
     const item = { id: '01MOOV', name: 'Pre-read.docx', kind: 'file' as const, size: 1, path: 'Pre-read.docx', lastModified: '', cTag: 'c1', webUrl: '' };
