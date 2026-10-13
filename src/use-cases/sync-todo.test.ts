@@ -79,25 +79,21 @@ describe('syncing a Microsoft To Do list', () => {
   // A knowledge base that sits deep on a Windows disk leaves fewer characters for each path: what
   // stands in front of it is taken off the budget before any name is planned.
   it('a task in a knowledge base deep on the disk is filed under a name cut to what Windows accepts', async () => {
-    const done = await run({ reader: { tasks: { 'list-1': [task({ title: 'Book the venue for the offsite in Rotterdam' })] } }, pathBudget: 100 });
+    const done = await run({ reader: { tasks: { 'list-1': [task({ title: 'Book the venue for the offsite in Rotterdam', due: '2026-09-08' })] } }, pathBudget: 100 });
 
     expect([...done.files.written.keys()].filter((path) => path !== STATE_PATH)).toEqual([expect.stringMatching(/^kb\/To Do\/Tasks\/2026-09-08\/Book th-[0-9a-f]{8}\.md$/)]);
   });
 
-  it('a first run writes every task under the day it last changed, and remembers what it wrote', async () => {
+  it('a first run writes every task under the day it is due, or under undated/ when it has none, and remembers what it wrote', async () => {
     const done = await run({
-      reader: { tasks: { 'list-1': [task(), task({ id: 'AAMkAGI-other', title: 'Water the plants', lastModified: '2026-09-01T08:00:00Z' })] } },
+      reader: { tasks: { 'list-1': [task({ due: '2026-09-20' }), task({ id: 'AAMkAGI-other', title: 'Water the plants', lastModified: '2026-09-01T08:00:00Z' })] } },
     });
 
     expect(done.summary.converted).toBe(2);
-    expect([...done.files.written.keys()].toSorted((left, right) => left.localeCompare(right))).toEqual([
-      STATE_PATH,
-      'kb/To Do/Tasks/2026-09-01/Water the plants.md',
-      'kb/To Do/Tasks/2026-09-08/Book the venue.md',
-    ]);
-    expect(done.files.written.get('kb/To Do/Tasks/2026-09-08/Book the venue.md')).toContain('# Book the venue');
+    expect(new Set(done.files.written.keys())).toEqual(new Set([STATE_PATH, 'kb/To Do/Tasks/undated/Water the plants.md', 'kb/To Do/Tasks/2026-09-20/Book the venue.md']));
+    expect(done.files.written.get('kb/To Do/Tasks/2026-09-20/Book the venue.md')).toContain('# Book the venue');
     expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks['AAMkAGI-task']).toEqual({
-      file: 'kb/To Do/Tasks/2026-09-08/Book the venue.md',
+      file: 'kb/To Do/Tasks/2026-09-20/Book the venue.md',
       lastModified: '2026-09-08T16:20:11Z',
       title: 'Book the venue',
     });
@@ -109,56 +105,62 @@ describe('syncing a Microsoft To Do list', () => {
       lastModified: '2026-09-08T16:20:11Z',
       title: 'Book the venue',
     });
-    const done = await run({ reader: { tasks: { 'list-1': [task()] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
+    const done = await run({ reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
 
     expect(done.summary.converted).toBe(0);
     expect(done.files.writeLog).toEqual([STATE_PATH]);
+    expect(done.files.moves).toHaveLength(0);
   });
 
-  it('a task edited onto a later day is written under the new day, and the copy under the old one is put aside', async () => {
+  it('a task whose due day moved is written under the new day, and the copy under the old one is put aside', async () => {
     const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', {
       file: 'kb/To Do/Tasks/2026-09-01/Book the venue.md',
       lastModified: '2026-09-01T09:00:00Z',
       title: 'Book the venue',
     });
-    const done = await run({ reader: { tasks: { 'list-1': [task()] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
+    const done = await run({ reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
 
     expect(done.summary.converted).toBe(1);
     expect(done.files.written.has('kb/To Do/Tasks/2026-09-08/Book the venue.md')).toBe(true);
     expect(done.files.moves).toEqual([{ from: 'kb/To Do/Tasks/2026-09-01/Book the venue.md', to: 'kb/_archive/2026-09-09/To Do/Tasks/2026-09-01/Book the venue.md' }]);
   });
 
-  it('a task the list no longer holds is put aside in the archive and named in the report', async () => {
-    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-gone', {
-      file: 'kb/To Do/Tasks/2026-09-01/Cancel the order.md',
-      lastModified: '2026-09-01T09:00:00Z',
-      title: 'Cancel the order',
+  // The knowledge base keeps each version a task had, without git: the one an edit replaces goes under
+  // the day of the run that replaced it.
+  it('an edit that keeps the due day writes the task where it was, and puts the version before it aside', async () => {
+    const FILE = 'kb/To Do/Tasks/2026-09-08/Book the venue.md';
+    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: FILE, lastModified: '2026-09-01T09:00:00Z', title: 'Book the venue' });
+    const done = await run({
+      reader: { tasks: { 'list-1': [task({ due: '2026-09-08', notes: 'Ask about parking' })] } },
+      files: { texts: { [STATE_PATH]: serializeTodoState(state), [FILE]: 'the task as it was' } },
     });
-    const done = await run({ reader: { tasks: { 'list-1': [] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
 
-    expect(done.summary.archived).toBe(1);
-    expect(done.notes.archived).toEqual([{ path: 'Cancel the order', reason: 'no longer in the list' }]);
-    expect(done.files.moves).toEqual([{ from: 'kb/To Do/Tasks/2026-09-01/Cancel the order.md', to: 'kb/_archive/2026-09-09/To Do/Tasks/2026-09-01/Cancel the order.md' }]);
-    expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks).toEqual({});
-    expect(done.files.written.get('kb/To Do/Tasks/_sync-report.md')).toContain('Cancel the order');
+    expect(done.files.written.get(FILE)).toContain('Ask about parking');
+    expect(done.files.written.get('kb/_archive/2026-09-09/To Do/Tasks/2026-09-08/Book the venue.md')).toBe('the task as it was');
   });
 
-  it('two tasks sharing a title on one day are kept apart, rather than one overwriting the other', async () => {
-    const done = await run({ reader: { tasks: { 'list-1': [task(), task({ id: 'AAMkAGI-twin' })] } } });
+  it('a write that fails puts the version before it back, so the list still holds it', async () => {
+    const FILE = 'kb/To Do/Tasks/2026-09-08/Book the venue.md';
+    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: FILE, lastModified: '2026-09-01T09:00:00Z', title: 'Book the venue' });
+    const done = await run({
+      reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } },
+      files: { texts: { [STATE_PATH]: serializeTodoState(state), [FILE]: 'the task as it was' }, failWritesMatching: 'Book the venue' },
+    });
 
-    expect(done.summary.converted).toBe(2);
-    expect([...done.files.written.keys()].filter((path) => path.endsWith('.md'))).toHaveLength(2);
+    expect(done.summary.failed).toBe(1);
+    expect(done.files.written.get(FILE)).toBe('the task as it was');
+    expect(done.files.written.has('kb/_archive/2026-09-09/To Do/Tasks/2026-09-08/Book the venue.md')).toBe(false);
   });
 
-  it('a task renamed in the same window as its namesake puts only its own old document aside, and the namesake is rewritten in the file its record names', async () => {
+  it('a task renamed in the same window as its namesake sets aside only the version each had, and the namesake is rewritten in the file its record names', async () => {
     const renamed = { file: 'kb/To Do/Tasks/2026-09-08/Call the venue.md', lastModified: '2026-09-08T09:00:00Z', title: 'Call the venue' };
     // Where the namesake was put while the renamed task held the plain name.
     const namesakeFile = `kb/To Do/Tasks/2026-09-08/${freeSegment('Call the venue.md', 'namesake', (name) => name === 'Call the venue.md')}`;
     const namesake = { file: namesakeFile, lastModified: '2026-09-08T10:00:00Z', title: 'Call the venue' };
     const state = withTask(withTask(emptyTodoState('list-1', 'Tasks'), 'renamed', renamed), 'namesake', namesake);
     const tasks = [
-      task({ id: 'renamed', title: 'Book the venue', lastModified: '2026-09-08T16:00:00Z' }),
-      task({ id: 'namesake', title: 'Call the venue', lastModified: '2026-09-08T17:00:00Z', notes: 'Ask about parking' }),
+      task({ id: 'renamed', title: 'Book the venue', lastModified: '2026-09-08T16:00:00Z', due: '2026-09-08' }),
+      task({ id: 'namesake', title: 'Call the venue', lastModified: '2026-09-08T17:00:00Z', due: '2026-09-08', notes: 'Ask about parking' }),
     ];
     const done = await run({
       reader: { tasks: { 'list-1': tasks } },
@@ -167,8 +169,10 @@ describe('syncing a Microsoft To Do list', () => {
 
     const recorded = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks['namesake'].file;
     expect(done.files.written.get(recorded)).toContain('Ask about parking');
-    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/2026-09-09/To Do/Tasks/2026-09-08/Call the venue.md' }]);
+    expect(done.files.moves).toHaveLength(2);
+    expect(done.files.moves).toContainEqual({ from: renamed.file, to: 'kb/_archive/2026-09-09/To Do/Tasks/2026-09-08/Call the venue.md' });
     expect(done.files.written.get('kb/_archive/2026-09-09/To Do/Tasks/2026-09-08/Call the venue.md')).toBe('the task as it was');
+    expect(done.files.written.get(namesakeFile.replace('kb/To Do/', 'kb/_archive/2026-09-09/To Do/'))).toBe('the namesake as it was');
   });
 
   it('three tasks sharing a title and a day land in three files, though Graph opens all their ids alike', async () => {
@@ -234,7 +238,7 @@ describe('syncing a Microsoft To Do list', () => {
     const done = await run({ reader: { tasks: { 'list-1': [task()] } }, files: { failWritesMatching: 'Book the venue' } });
 
     expect(done.summary.failed).toBe(1);
-    expect(done.notes.failed).toEqual([{ path: 'Book the venue', reason: 'cannot write kb/To Do/Tasks/2026-09-08/Book the venue.md' }]);
+    expect(done.notes.failed).toEqual([{ path: 'Book the venue', reason: 'cannot write kb/To Do/Tasks/undated/Book the venue.md' }]);
     expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks).toEqual({});
   });
 
@@ -278,7 +282,7 @@ describe('syncing a Microsoft To Do list', () => {
       run({ reader: listing, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' }, failWritesMatching: 'Book the venue' } });
     const third = await failing(await failing(await failing()));
     const fourth = await failing(third);
-    const venue = [{ path: 'Book the venue', reason: 'cannot write kb/To Do/Tasks/2026-09-08/Book the venue.md' }];
+    const venue = [{ path: 'Book the venue', reason: 'cannot write kb/To Do/Tasks/undated/Book the venue.md' }];
 
     expect(third.notes.gaveUp).toEqual(venue);
     expect(third.notes.failed).toHaveLength(0);

@@ -17,9 +17,12 @@ const task = (id: string, lastModified: string): TodoTask => ({
   links: [],
 });
 
+const ROOT = 'kb/To Do/Tasks';
+
+// Two tasks with no due day, each written where this layout files it.
 const seeded = (): ReturnType<typeof emptyTodoState> =>
-  withTask(withTask(emptyTodoState('list-1', 'Tasks'), 'a', { file: 'kb/To Do/Tasks/2026-09-01/a.md', lastModified: '2026-09-01T09:00:00Z', title: 'a' }), 'b', {
-    file: 'kb/To Do/Tasks/2026-09-02/b.md',
+  withTask(withTask(emptyTodoState('list-1', 'Tasks'), 'a', { file: 'kb/To Do/Tasks/undated/a.md', lastModified: '2026-09-01T09:00:00Z', title: 'a' }), 'b', {
+    file: 'kb/To Do/Tasks/undated/b.md',
     lastModified: '2026-09-02T09:00:00Z',
     title: 'b',
   });
@@ -34,7 +37,7 @@ describe('what a To Do list run remembers between runs', () => {
   });
 
   it('a task recorded once is found again by its id, with the file it wrote', () => {
-    expect(seeded().tasks['a']).toEqual({ file: 'kb/To Do/Tasks/2026-09-01/a.md', lastModified: '2026-09-01T09:00:00Z', title: 'a' });
+    expect(seeded().tasks['a']).toEqual({ file: 'kb/To Do/Tasks/undated/a.md', lastModified: '2026-09-01T09:00:00Z', title: 'a' });
   });
 
   it('a task forgotten leaves the rest of the ledger where it was', () => {
@@ -85,40 +88,46 @@ describe('what a To Do list run remembers between runs', () => {
 
 describe('deciding what a To Do run owes', () => {
   it('a task the ledger has never seen is written, and one whose source has not changed since is left alone', () => {
-    const work = todoWorklist(seeded(), [task('a', '2026-09-01T09:00:00Z'), task('c', '2026-09-03T09:00:00Z'), task('b', '2026-09-02T09:00:00Z')]);
+    const work = todoWorklist(ROOT, seeded(), [task('a', '2026-09-01T09:00:00Z'), task('c', '2026-09-03T09:00:00Z'), task('b', '2026-09-02T09:00:00Z')]);
 
-    expect(work.write.map((entry) => entry.id)).toEqual(['c']);
+    expect(work.write.map((entry) => entry.task.id)).toEqual(['c']);
     expect(work.archive).toHaveLength(0);
   });
 
   it('a task edited since it was written is written again', () => {
-    const work = todoWorklist(seeded(), [task('a', '2026-09-05T11:00:00Z'), task('b', '2026-09-02T09:00:00Z')]);
+    const work = todoWorklist(ROOT, seeded(), [task('a', '2026-09-05T11:00:00Z'), task('b', '2026-09-02T09:00:00Z')]);
 
-    expect(work.write.map((entry) => entry.id)).toEqual(['a']);
+    expect(work.write.map((entry) => entry.task.id)).toEqual(['a']);
+  });
+
+  it('a task whose file is not where it belongs is written again where it belongs, though it did not change', () => {
+    const work = todoWorklist(ROOT, seeded(), [{ ...task('a', '2026-09-01T09:00:00Z'), due: '2026-10-15' }, task('b', '2026-09-02T09:00:00Z')]);
+
+    expect(work.write).toEqual([{ task: { ...task('a', '2026-09-01T09:00:00Z'), due: '2026-10-15' }, file: 'kb/To Do/Tasks/2026-10-15/a.md' }]);
   });
 
   it('what is written goes oldest first, so a run that stops leaves a prefix of the list rather than a scattering of it', () => {
-    const work = todoWorklist(emptyTodoState('list-1', 'Tasks'), [task('c', '2026-09-03T09:00:00Z'), task('a', '2026-09-01T09:00:00Z'), task('b', '2026-09-02T09:00:00Z')]);
+    const work = todoWorklist(ROOT, emptyTodoState('list-1', 'Tasks'), [task('c', '2026-09-03T09:00:00Z'), task('a', '2026-09-01T09:00:00Z'), task('b', '2026-09-02T09:00:00Z')]);
 
-    expect(work.write.map((entry) => entry.id)).toEqual(['a', 'b', 'c']);
+    expect(work.write.map((entry) => entry.task.id)).toEqual(['a', 'b', 'c']);
   });
 
   it('a task the list no longer holds is put aside, named by the file it left behind', () => {
-    const work = todoWorklist(seeded(), [task('a', '2026-09-01T09:00:00Z')]);
+    const work = todoWorklist(ROOT, seeded(), [task('a', '2026-09-01T09:00:00Z')]);
 
-    expect(work.archive).toEqual([{ id: 'b', record: { file: 'kb/To Do/Tasks/2026-09-02/b.md', lastModified: '2026-09-02T09:00:00Z', title: 'b' } }]);
+    expect(work.archive).toEqual([{ id: 'b', record: { file: 'kb/To Do/Tasks/undated/b.md', lastModified: '2026-09-02T09:00:00Z', title: 'b' } }]);
   });
 });
 
 describe('deciding where each task about to be written goes', () => {
-  it('a task is filed under the day it last changed, under a name a filesystem accepts', () => {
-    const planned = planTaskFiles('kb/To Do/Tasks', [task('a', '2026-09-08T16:20:11Z')], emptyTodoState('list-1', 'Tasks'));
+  it('a task is filed under the day it is due, not the day it last changed, under a name a filesystem accepts', () => {
+    const due = { ...task('a', '2026-09-08T16:20:11Z'), due: '2026-10-15' };
 
-    expect(planned).toEqual([{ task: task('a', '2026-09-08T16:20:11Z'), file: 'kb/To Do/Tasks/2026-09-08/a.md' }]);
+    expect(planTaskFiles('kb/To Do/Tasks', [due], emptyTodoState('list-1', 'Tasks'))).toEqual([{ task: due, file: 'kb/To Do/Tasks/2026-10-15/a.md' }]);
   });
 
-  it('a task that changed on no day Graph would name is still filed somewhere, rather than at the list root', () => {
-    expect(planTaskFiles('kb/To Do/Tasks', [task('a', '')], emptyTodoState('list-1', 'Tasks'))[0]?.file).toBe('kb/To Do/Tasks/undated/a.md');
+  it('a task with no due day is filed under undated/, rather than at the list root', () => {
+    expect(planTaskFiles('kb/To Do/Tasks', [task('a', '2026-09-08T16:20:11Z')], emptyTodoState('list-1', 'Tasks'))[0]?.file).toBe('kb/To Do/Tasks/undated/a.md');
   });
 
   // A title can be a whole sentence of 200 characters. Three such tasks were never written, because
@@ -133,15 +142,15 @@ describe('deciding where each task about to be written goes', () => {
     const files = planTaskFiles('kb/To Do/Tasks', [story, oneWord], emptyTodoState('list-1', 'Tasks')).map((planned) => planned.file);
 
     expect(files).toEqual([
-      'kb/To Do/Tasks/2026-09-08/Write the note about the team in Lyon that does something by hand that can be.md',
-      `kb/To Do/Tasks/2026-09-08/${'x'.repeat(80)}.md`,
+      'kb/To Do/Tasks/undated/Write the note about the team in Lyon that does something by hand that can be.md',
+      `kb/To Do/Tasks/undated/${'x'.repeat(80)}.md`,
     ]);
   });
 
-  it('two tasks sharing a title and a day take different files, so neither is written over the other', () => {
+  it('two tasks sharing a title and a due day take different files, so neither is written over the other', () => {
     const twins = [
-      { ...task('one', '2026-09-08T16:20:11Z'), title: 'Follow up' },
-      { ...task('two', '2026-09-08T16:20:11Z'), title: 'Follow up' },
+      { ...task('one', '2026-09-08T16:20:11Z'), title: 'Follow up', due: '2026-09-08' },
+      { ...task('two', '2026-09-08T16:20:11Z'), title: 'Follow up', due: '2026-09-08' },
     ];
 
     const files = planTaskFiles('kb/To Do/Tasks', twins, emptyTodoState('list-1', 'Tasks')).map((planned) => planned.file);
@@ -157,7 +166,7 @@ describe('deciding where each task about to be written goes', () => {
       lastModified: '2026-09-08T16:20:11Z',
       title: 'Follow up',
     });
-    const arriving = [{ ...task('newcomer', '2026-09-08T16:20:11Z'), title: 'Follow up' }];
+    const arriving = [{ ...task('newcomer', '2026-09-08T16:20:11Z'), title: 'Follow up', due: '2026-09-08' }];
 
     expect(planTaskFiles('kb/To Do/Tasks', arriving, held)[0]?.file).not.toBe('kb/To Do/Tasks/2026-09-08/Follow up.md');
   });
@@ -165,6 +174,6 @@ describe('deciding where each task about to be written goes', () => {
   it('a task keeps its own plain path when the only thing holding it is the copy this run is replacing', () => {
     const held = withTask(emptyTodoState('list-1', 'Tasks'), 'a', { file: 'kb/To Do/Tasks/2026-09-08/a.md', lastModified: '2026-09-01T09:00:00Z', title: 'a' });
 
-    expect(planTaskFiles('kb/To Do/Tasks', [task('a', '2026-09-08T16:20:11Z')], held)[0]?.file).toBe('kb/To Do/Tasks/2026-09-08/a.md');
+    expect(planTaskFiles('kb/To Do/Tasks', [{ ...task('a', '2026-09-08T16:20:11Z'), due: '2026-09-08' }], held)[0]?.file).toBe('kb/To Do/Tasks/2026-09-08/a.md');
   });
 });
