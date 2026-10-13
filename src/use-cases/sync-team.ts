@@ -27,7 +27,8 @@ import type { StepError } from './ports/step-error.ts';
 import type { ChannelSummary, PostsDelta, TeamReader, TeamReaderError, TeamSummary } from './ports/team-reader.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
-import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
+import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
+import type { ChannelPost } from '../domain/channel-post.ts';
 import { withGaveUp } from '../domain/report.ts';
 
 export const TEAM_STATE_FILE = '.sync-state.json';
@@ -163,6 +164,19 @@ const fold = (carried: Progressing, results: ReadonlyArray<Done>): Progressing =
   state: results.reduce((state, done) => done.apply(state), carried.state),
 });
 
+// A post the changes say was deleted leaves the ledger as it leaves the disk, written or not: one given
+// up on would otherwise be named as failed in every report for good.
+const forgetting = (progressing: Progressing, posts: ReadonlyArray<ChannelPost>): Progressing => ({
+  ...progressing,
+  state: {
+    ...progressing.state,
+    retry: forgetAttempts(
+      progressing.state.retry,
+      posts.filter((post) => post.deleted).map((post) => post.id)
+    ),
+  },
+});
+
 const save = async (deps: SyncTeamDeps, input: SyncTeamInput, state: TeamState): Promise<Result<undefined, StepError>> => {
   const written = await deps.files.writeText(`${teamRoot(deps.kbRoot, input.team.name)}/${TEAM_STATE_FILE}`, serializeTeamState({ ...state, lastRun: deps.clock.nowIso() }));
   return written.ok ? ok(undefined) : failed('saveState', written.error.kind, written.error.message);
@@ -222,7 +236,7 @@ const syncChannel = async (deps: SyncTeamDeps, input: SyncTeamInput, carried: Pr
   deps.progress.done();
   if (!written.ok) return written;
   const gone = await Promise.all(work.archive.map((entry) => archiveGone(context, entry)));
-  const done = fold(written.value, gone);
+  const done = forgetting(fold(written.value, gone), delta.value.posts);
   return ok({ ...done, state: withChannelCursor(done.state, channel.id, channel.name, cursorAfter(carried, done, delta.value.deltaLink), input.since) });
 };
 

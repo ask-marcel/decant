@@ -30,6 +30,20 @@ export const clearAttempt = (ledger: Attempts | undefined, id: string): Attempts
   return kept.length === 0 ? undefined : Object.fromEntries(kept);
 };
 
+// The ledger as it was when nothing in it goes, so a run that forgot nothing changes nothing.
+const keptWhere = (ledger: Attempts | undefined, keep: (id: string) => boolean): Attempts | undefined => {
+  const kept = Object.entries(ledger ?? {}).filter(([id]) => keep(id));
+  if (kept.length === Object.keys(ledger ?? {}).length) return ledger;
+  return kept.length === 0 ? undefined : Object.fromEntries(kept);
+};
+
+// An item the source no longer holds has nothing left to try. Kept, one given up on would be named in
+// every report for good, as failed on an item nobody can fix. A source read whole keeps the entries of
+// what it holds; one read as changes forgets what the changes say is gone.
+export const heldAttempts = (ledger: Attempts | undefined, held: ReadonlySet<string>): Attempts | undefined => keptWhere(ledger, (id) => held.has(id));
+
+export const forgetAttempts = (ledger: Attempts | undefined, gone: ReadonlyArray<string>): Attempts | undefined => keptWhere(ledger, (id) => !gone.includes(id));
+
 const noteOf = (attempt: Attempt): ReportEntry => ({ path: attempt.name, reason: attempt.reason });
 
 // Every item out of tries, for the report of the whole run, which names them on every run.
