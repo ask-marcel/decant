@@ -1,6 +1,5 @@
 import { assembleDirectory, renderOrgChart, renderPersonDocument } from '../domain/directory.ts';
 import type { Colleague, FileOf } from '../domain/directory.ts';
-import { archivePath } from '../domain/output-paths.ts';
 import {
   PEOPLE_ID,
   PEOPLE_NAME,
@@ -30,6 +29,7 @@ import { writeReport } from './sync-site.ts';
 import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { Unread } from '../domain/retry-ledger.ts';
+import { putAside } from './put-aside.ts';
 
 export const PEOPLE_STATE_FILE = '.sync-state.json';
 
@@ -61,8 +61,6 @@ const NO_NOTES: RunNotes = { skipped: [], failed: [], givenUp: [], archived: [] 
 const failed = (step: string, cause: string, message: string): Result<never, StepError> => ({ ok: false, error: { step, cause, message } });
 
 export const peopleRoot = (kbRoot: string): string => `${kbRoot}/${PEOPLE_NAME}`;
-
-const archiveRootOf = (kbRoot: string): string => `${kbRoot}/_archive/${PEOPLE_NAME}`;
 
 const loadState = async (deps: SyncPeopleDeps, path: string): Promise<PeopleState> => {
   const text = await deps.files.readText(path);
@@ -134,8 +132,7 @@ type Done = { readonly apply: (state: PeopleState) => PeopleState; readonly coun
 
 const archiveSuperseded = async (deps: SyncPeopleDeps, before: PersonRecord | undefined, after: string): Promise<void> => {
   if (before === undefined || before.file === after) return;
-  const moved = await deps.files.move(before.file, archivePath(archiveRootOf(deps.kbRoot), peopleRoot(deps.kbRoot), before.file));
-  if (!moved.ok) deps.logger.warn('supersede.failed', { path: before.file, cause: moved.error.kind });
+  for (const missed of await putAside(deps, [before.file])) deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
 };
 
 const writeOne = async (deps: SyncPeopleDeps, state: PeopleState, planned: PlannedPerson, fileOf: FileOf): Promise<Done> => {
@@ -155,8 +152,7 @@ const writeOne = async (deps: SyncPeopleDeps, state: PeopleState, planned: Plann
 };
 
 const archiveGone = async (deps: SyncPeopleDeps, gone: { readonly id: string; readonly record: PersonRecord }): Promise<Done> => {
-  const moved = await deps.files.move(gone.record.file, archivePath(archiveRootOf(deps.kbRoot), peopleRoot(deps.kbRoot), gone.record.file));
-  if (!moved.ok) deps.logger.warn('archive.failed', { path: gone.record.file, cause: moved.error.kind });
+  for (const missed of await putAside(deps, [gone.record.file])) deps.logger.warn('archive.failed', { path: missed.path, cause: missed.error.kind });
   return { apply: (carried) => withoutPerson(carried, gone.id), counted: { archived: 1 }, notes: { archived: [{ path: gone.record.name, reason: 'no longer in the directory' }] } };
 };
 

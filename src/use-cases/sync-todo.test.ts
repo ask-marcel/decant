@@ -125,7 +125,7 @@ describe('syncing a Microsoft To Do list', () => {
 
     expect(done.summary.converted).toBe(1);
     expect(done.files.written.has('kb/To Do/Tasks/2026-09-08/Book the venue.md')).toBe(true);
-    expect(done.files.moves).toEqual([{ from: 'kb/To Do/Tasks/2026-09-01/Book the venue.md', to: 'kb/_archive/To Do/Tasks/2026-09-01/Book the venue.md' }]);
+    expect(done.files.moves).toEqual([{ from: 'kb/To Do/Tasks/2026-09-01/Book the venue.md', to: 'kb/_archive/2026-09-09/To Do/Tasks/2026-09-01/Book the venue.md' }]);
   });
 
   it('a task the list no longer holds is put aside in the archive and named in the report', async () => {
@@ -138,7 +138,7 @@ describe('syncing a Microsoft To Do list', () => {
 
     expect(done.summary.archived).toBe(1);
     expect(done.notes.archived).toEqual([{ path: 'Cancel the order', reason: 'no longer in the list' }]);
-    expect(done.files.moves).toEqual([{ from: 'kb/To Do/Tasks/2026-09-01/Cancel the order.md', to: 'kb/_archive/To Do/Tasks/2026-09-01/Cancel the order.md' }]);
+    expect(done.files.moves).toEqual([{ from: 'kb/To Do/Tasks/2026-09-01/Cancel the order.md', to: 'kb/_archive/2026-09-09/To Do/Tasks/2026-09-01/Cancel the order.md' }]);
     expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks).toEqual({});
     expect(done.files.written.get('kb/To Do/Tasks/_sync-report.md')).toContain('Cancel the order');
   });
@@ -167,8 +167,8 @@ describe('syncing a Microsoft To Do list', () => {
 
     const recorded = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks['namesake'].file;
     expect(done.files.written.get(recorded)).toContain('Ask about parking');
-    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/To Do/Tasks/2026-09-08/Call the venue.md' }]);
-    expect(done.files.written.get('kb/_archive/To Do/Tasks/2026-09-08/Call the venue.md')).toBe('the task as it was');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/2026-09-09/To Do/Tasks/2026-09-08/Call the venue.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-09/To Do/Tasks/2026-09-08/Call the venue.md')).toBe('the task as it was');
   });
 
   it('three tasks sharing a title and a day land in three files, though Graph opens all their ids alike', async () => {

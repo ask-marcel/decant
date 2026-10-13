@@ -1,4 +1,3 @@
-import { archivePath } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { renderTaskDocument } from '../domain/todo-document.ts';
@@ -16,6 +15,7 @@ import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
+import { putAside } from './put-aside.ts';
 
 export const TODO_STATE_FILE = '.sync-state.json';
 
@@ -46,8 +46,6 @@ const failed = (step: string, cause: string, message: string): Result<never, Ste
 
 export const todoRoot = (kbRoot: string, name: string): string => `${kbRoot}/${todoRootName(name)}`;
 
-const archiveRootOf = (kbRoot: string, name: string): string => `${kbRoot}/_archive/${todoRootName(name)}`;
-
 const loadState = async (deps: SyncTodoDeps, path: string, list: TodoList): Promise<TodoState> => {
   const text = await deps.files.readText(path);
   if (!text.ok) return emptyTodoState(list.id, list.name);
@@ -69,11 +67,10 @@ type Done = { readonly apply: (state: TodoState) => TodoState; readonly counted:
 // has already goes.
 const archiveSuperseded = async (deps: SyncTodoDeps, roots: Roots, before: TaskRecord | undefined, after: string): Promise<void> => {
   if (before === undefined || before.file === after) return;
-  const moved = await deps.files.move(before.file, archivePath(roots.archive, roots.root, before.file));
-  if (!moved.ok) deps.logger.warn('supersede.failed', { path: before.file, cause: moved.error.kind });
+  for (const missed of await putAside(deps, [before.file])) deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
 };
 
-type Roots = { readonly root: string; readonly archive: string };
+type Roots = { readonly root: string };
 
 const writeOne = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, state: TodoState, planned: PlannedTask): Promise<Done> => {
   const { task, file } = planned;
@@ -94,8 +91,7 @@ const writeOne = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, 
 // A task the list no longer holds. Named in the report by its title, which is the only thing left to
 // call it once the source has stopped answering for its id.
 const archiveGone = async (deps: SyncTodoDeps, roots: Roots, gone: { readonly id: string; readonly record: TaskRecord }): Promise<Done> => {
-  const moved = await deps.files.move(gone.record.file, archivePath(roots.archive, roots.root, gone.record.file));
-  if (!moved.ok) deps.logger.warn('archive.failed', { path: gone.record.file, cause: moved.error.kind });
+  for (const missed of await putAside(deps, [gone.record.file])) deps.logger.warn('archive.failed', { path: missed.path, cause: missed.error.kind });
   return {
     apply: (carried) => withoutTask(carried, gone.id),
     counted: { archived: 1 },
@@ -192,7 +188,7 @@ const sweep = async (deps: SyncTodoDeps, input: SyncTodoInput, roots: Roots, sta
 export const createSyncTodo =
   (deps: SyncTodoDeps): SyncTodo =>
   async (input) => {
-    const roots: Roots = { root: todoRoot(deps.kbRoot, input.list.name), archive: archiveRootOf(deps.kbRoot, input.list.name) };
+    const roots: Roots = { root: todoRoot(deps.kbRoot, input.list.name) };
     const state = await loadState(deps, `${roots.root}/${TODO_STATE_FILE}`, input.list);
     const listed = await deps.reader.tasks(input.list.id);
     if (!listed.ok) return failed('listTasks', listed.error.kind, listed.error.message);

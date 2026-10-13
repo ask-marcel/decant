@@ -1,7 +1,6 @@
 import { renderPostDocument } from '../domain/channel-document.ts';
 import { postTitle } from '../domain/channel-post.ts';
 import { safeSegment } from '../domain/kb-path.ts';
-import { archivePath } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import {
@@ -30,6 +29,7 @@ import { writeReport } from './sync-site.ts';
 import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
 import type { ChannelPost } from '../domain/channel-post.ts';
 import { withGaveUp } from '../domain/report.ts';
+import { putAside } from './put-aside.ts';
 
 export const TEAM_STATE_FILE = '.sync-state.json';
 
@@ -66,12 +66,11 @@ const failed = (step: string, cause: string, message: string): Result<never, Ste
 
 export const teamRoot = (kbRoot: string, name: string): string => `${kbRoot}/${teamRootName(name)}`;
 
-type Roots = { readonly root: string; readonly archive: string };
+type Roots = { readonly root: string };
 
-// A channel's own folder under the team, and its mirror under `_archive/`.
+// A channel's own folder under the team.
 const channelRoots = (deps: SyncTeamDeps, team: TeamSummary, channel: ChannelSummary): Roots => ({
   root: `${teamRoot(deps.kbRoot, team.name)}/${safeSegment(channel.name)}`,
-  archive: `${deps.kbRoot}/_archive/${teamRootName(team.name)}/${safeSegment(channel.name)}`,
 });
 
 const loadState = async (deps: SyncTeamDeps, path: string, team: TeamSummary): Promise<TeamState> => {
@@ -98,8 +97,7 @@ const reportName = (channel: ChannelSummary, title: string): string => `${channe
 // sits under a different day. Put aside rather than deleted.
 const archiveSuperseded = async (deps: SyncTeamDeps, roots: Roots, before: PostRecord | undefined, after: string): Promise<void> => {
   if (before === undefined || before.file === after) return;
-  const moved = await deps.files.move(before.file, archivePath(roots.archive, roots.root, before.file));
-  if (!moved.ok) deps.logger.warn('supersede.failed', { path: before.file, cause: moved.error.kind });
+  for (const missed of await putAside(deps, [before.file])) deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
 };
 
 type ChannelContext = { readonly deps: SyncTeamDeps; readonly input: SyncTeamInput; readonly channel: ChannelSummary; readonly roots: Roots };
@@ -129,9 +127,8 @@ const writeOne = async (context: ChannelContext, state: TeamState, planned: Plan
 };
 
 const archiveGone = async (context: ChannelContext, gone: { readonly id: string; readonly record: PostRecord }): Promise<Done> => {
-  const { deps, channel, roots } = context;
-  const moved = await deps.files.move(gone.record.file, archivePath(roots.archive, roots.root, gone.record.file));
-  if (!moved.ok) deps.logger.warn('archive.failed', { path: gone.record.file, cause: moved.error.kind });
+  const { deps, channel } = context;
+  for (const missed of await putAside(deps, [gone.record.file])) deps.logger.warn('archive.failed', { path: missed.path, cause: missed.error.kind });
   return {
     apply: (carried) => withoutPost(carried, channel.id, gone.id),
     counted: { archived: 1 },

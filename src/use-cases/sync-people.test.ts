@@ -167,7 +167,7 @@ describe('syncing the people directory', () => {
       { path: 'Left Already', reason: 'no longer in the directory' },
       { path: 'Switched Off', reason: 'no longer in the directory' },
     ]);
-    expect(done.files.moves.map((move) => move.to)).toEqual(['kb/_archive/People/Left Already.md', 'kb/_archive/People/Switched Off.md']);
+    expect(done.files.moves.map((move) => move.to)).toEqual(['kb/_archive/2026-09-11/People/Left Already.md', 'kb/_archive/2026-09-11/People/Switched Off.md']);
     expect(Object.keys(stateOf(done.files).people).toSorted((left, right) => left.localeCompare(right))).toEqual(['dana', 'jane']);
   });
 
@@ -176,7 +176,7 @@ describe('syncing the people directory', () => {
     const done = await run({ files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
 
     expect(done.files.written.has(`${ROOT}/Jane Doe.md`)).toBe(true);
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/Jane Smith.md`, to: 'kb/_archive/People/Jane Smith.md' }]);
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/Jane Smith.md`, to: 'kb/_archive/2026-09-11/People/Jane Smith.md' }]);
   });
 
   it('a person renamed in the same run as a namesake puts only their own old page aside, and the namesake is rewritten in the page their record names', async () => {
@@ -202,8 +202,8 @@ describe('syncing the people directory', () => {
 
     const recorded = stateOf(done.files).people['jane-b']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('Head of Finance');
-    expect(done.files.moves).toEqual([{ from: `${ROOT}/Jane Doe.md`, to: 'kb/_archive/People/Jane Doe.md' }]);
-    expect(done.files.written.get('kb/_archive/People/Jane Doe.md')).toBe('the page as it was');
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/Jane Doe.md`, to: 'kb/_archive/2026-09-11/People/Jane Doe.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-11/People/Jane Doe.md')).toBe('the page as it was');
   });
 
   it('a person renamed while their namesake changes puts only their own old page aside, and the namesake is rewritten in the file their record names', async () => {
@@ -229,8 +229,8 @@ describe('syncing the people directory', () => {
 
     const recorded = stateOf(done.files).people['namesake']?.file ?? '';
     expect(done.files.written.get(recorded)).toContain('Head of Finance');
-    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/People/Sam Lee.md' }]);
-    expect(done.files.written.get('kb/_archive/People/Sam Lee.md')).toBe('the page as it was');
+    expect(done.files.moves).toEqual([{ from: renamed.file, to: 'kb/_archive/2026-09-11/People/Sam Lee.md' }]);
+    expect(done.files.written.get('kb/_archive/2026-09-11/People/Sam Lee.md')).toBe('the page as it was');
   });
 
   it('three colleagues sharing a name each get a page of their own, even when their ids open alike', async () => {
