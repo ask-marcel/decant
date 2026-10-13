@@ -254,6 +254,44 @@ describe('syncing a Planner plan', () => {
     expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'assignee.unnamed', meta: { user: 'u-sam', cause: 'permanent' } });
   });
 
+  // Every task's details are read on every run, so a task whose details cannot be read is asked for
+  // again each time: named as a failure for three runs, then once as given up, its count staying put.
+  it('a task whose details cannot be read three runs running is named once as given up, and a task read again leaves nothing behind', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ reader: { failDetailsOf: ['t-venue'] }, files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' } } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+    const venue = [{ path: 'Book the venue', reason: 'Graph is busy' }];
+
+    expect(third.notes.gaveUp).toEqual(venue);
+    expect(third.summary.failed).toBe(1);
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.notes.givenUp).toEqual(venue);
+    expect(fourth.files.written.get(STATE_PATH)).toBe(third.files.written.get(STATE_PATH));
+
+    const read = await run({ files: { texts: { [STATE_PATH]: fourth.files.written.get(STATE_PATH) ?? '' } } });
+
+    expect(JSON.parse(read.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
+  it('a page that will not write three runs running is left alone by the fourth, until the task changes', async () => {
+    const failing = async (carried?: Awaited<ReturnType<typeof run>>): ReturnType<typeof run> =>
+      run({ files: { texts: carried === undefined ? {} : { [STATE_PATH]: carried.files.written.get(STATE_PATH) ?? '' }, failWritesMatching: 'Book the venue.md' } });
+    const third = await failing(await failing(await failing()));
+    const fourth = await failing(third);
+
+    expect(third.notes.gaveUp).toEqual([{ path: 'Book the venue', reason: `cannot write ${ROOT}/To do/Book the venue.md` }]);
+    expect(fourth.summary.failed).toBe(0);
+    expect(fourth.progress.started).toEqual([{ total: 0, what: 'Offsite 2026' }]);
+
+    const changed = await run({
+      reader: { details: { ...DETAILS, 't-venue': details('Four rooms.', 'W/"d-2"') } },
+      files: { texts: { [STATE_PATH]: fourth.files.written.get(STATE_PATH) ?? '' } },
+    });
+
+    expect(changed.summary.converted).toBe(1);
+  });
+
   it('a plan whose buckets or tasks cannot be listed ends the run naming the step', async () => {
     const buckets = await run({ reader: { failBuckets: { kind: 'auth', message: 'sign-in has lapsed' } } });
     const tasks = await run({ reader: { failTasks: { kind: 'transient', message: 'Graph is busy' } } });

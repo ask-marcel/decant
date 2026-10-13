@@ -4,6 +4,8 @@ import type { SafeRelPath } from './kb-path.ts';
 import type { Bucket, Plan, PlanTask } from './planner.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
+import { parseAttempts } from './retry-ledger.ts';
+import type { Attempts } from './retry-ledger.ts';
 
 export const PLAN_STATE_VERSION = 1;
 
@@ -22,6 +24,9 @@ export type PlanState = {
   readonly plan: Plan;
   readonly lastRun: string;
   readonly tasks: Readonly<Record<string, TaskRecord>>;
+  // The tasks whose details could not be read or whose page could not be written, by task id, three
+  // runs at most on the same version.
+  readonly retry?: Attempts;
 };
 
 export type PlanStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -73,6 +78,7 @@ export const parsePlanState = (raw: unknown): Result<PlanState, PlanStateError> 
     plan,
     lastRun: readString(raw, 'lastRun') ?? '',
     tasks: tasksOf(raw['tasks']),
+    retry: parseAttempts(raw['retry']),
   });
 };
 
