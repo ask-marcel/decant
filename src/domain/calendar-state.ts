@@ -4,6 +4,8 @@ import { stringList } from './mail-state.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { dayIn } from './zoned-day.ts';
+import { parseAttempts } from './retry-ledger.ts';
+import type { Attempts } from './retry-ledger.ts';
 
 export const CALENDAR_STATE_VERSION = 1;
 
@@ -26,6 +28,9 @@ export type CalendarState = {
   // further back than this reads the delta whole again. A file written before this reached everything.
   readonly since?: string;
   readonly events: Readonly<Record<string, EventRecord>>;
+  // The events that could not be fetched or written, by event id, three runs at most on the same
+  // version.
+  readonly retry?: Attempts;
 };
 
 export type CalendarStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -70,6 +75,7 @@ export const parseCalendarState = (raw: unknown): Result<CalendarState, Calendar
     ...(deltaLink === undefined ? {} : { deltaLink }),
     since: readString(raw, 'since'),
     events: eventsOf(raw['events']),
+    retry: parseAttempts(raw['retry']),
   });
 };
 

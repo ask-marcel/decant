@@ -29,6 +29,8 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
+import { clearAttempt, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { withGaveUp } from '../domain/report.ts';
 
 export const CALENDAR_STATE_FILE = '.sync-state.json';
 
@@ -161,17 +163,20 @@ const writeOne = async (deps: SyncCalendarDeps, state: CalendarState, planned: P
   const written = await deps.files.writeText(file, renderEventDocument({ event, zone: deps.timezone, attachments: attached.links, syncedAt: deps.clock.nowIso() }));
   if (!written.ok) {
     deps.logger.warn('event.failed', { event: event.id, cause: written.error.kind });
+    const attempt = nextAttempt(state.retry?.[event.id], event.lastModified, event.id, written.error.message);
+    // Out of tries now: named under its own heading, not as a failure the next run will try again.
+    const own = isGivenUp(attempt, event.lastModified) ? [] : [{ path: event.id, reason: written.error.message }];
     return {
-      apply: (carried) => carried,
+      apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, event.id, attempt) }),
       counted: { failed: 1 + attached.failed.length },
-      notes: { failed: [...attached.failed, { path: event.id, reason: written.error.message }] },
+      notes: { failed: [...attached.failed, ...own] },
     };
   }
   const outputs = [file, ...attached.outputs];
   await archiveSuperseded(deps, state.events[event.id], outputs);
   const record: EventRecord = { file, lastModified: event.lastModified, subject: event.subject, outputs };
   return {
-    apply: (carried) => withEvent(carried, event.id, record),
+    apply: (carried) => ({ ...withEvent(carried, event.id, record), retry: clearAttempt(carried.retry, event.id) }),
     counted: { converted: 1, failed: attached.failed.length, skipped: attached.skipped.length },
     notes: { failed: attached.failed, skipped: attached.skipped },
   };
@@ -190,7 +195,7 @@ const fetchOne = async (deps: SyncCalendarDeps, id: string): Promise<Fetched> =>
 // ledger already holds it at the same `lastModifiedDateTime`, which is what a delta re-read after
 // a stopped run answers for everything that already landed.
 const wanted = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: CalendarState, event: CalendarEvent): boolean =>
-  inReach(deps, input, event) && state.events[event.id]?.lastModified !== event.lastModified;
+  inReach(deps, input, event) && state.events[event.id]?.lastModified !== event.lastModified && !isGivenUp(state.retry?.[event.id], event.lastModified);
 
 // A recurring series is kept whatever day it began: Outlook holds it as one event starting on its
 // first occurrence, and a meeting that began before the day may be running still.
@@ -220,9 +225,19 @@ const planWindow = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: Cal
   return planned;
 };
 
-const unread = (fetched: ReadonlyArray<Fetched>): Done => {
-  const failures = fetched.flatMap((entry) => (entry.failed === undefined ? [] : [{ path: entry.id, reason: entry.failed }]));
-  return { apply: (carried) => carried, counted: { failed: failures.length }, notes: { failed: failures } };
+// The cursor holds while an event fails, so the delta names it again on every run, and it is fetched
+// again, nothing else saying whether it changed. It is named as a failure for three runs, then
+// given up on, and then it no longer holds the cursor.
+const unread = (state: CalendarState, fetched: ReadonlyArray<Fetched>): Done => {
+  const failures = fetched.flatMap((entry) => (entry.failed === undefined ? [] : [{ id: entry.id, name: entry.id, reason: entry.failed }]));
+  const tried = triedReads(
+    state.retry,
+    fetched.filter((entry) => entry.failed === undefined).map((entry) => entry.id),
+    failures
+  );
+  // The ledger as it was when nothing moved in it, so a window with nothing to write saves nothing.
+  const apply = tried.retry === state.retry ? (carried: CalendarState): CalendarState => carried : (carried: CalendarState): CalendarState => ({ ...carried, retry: tried.retry });
+  return { apply, counted: { failed: tried.tried }, notes: { failed: tried.failed } };
 };
 
 const counted = (summary: RunSummary, results: ReadonlyArray<Done>): RunSummary =>
@@ -268,7 +283,7 @@ const writeWindow = async (deps: SyncCalendarDeps, input: SyncCalendarInput, car
   const planned = planWindow(deps, input, carried.state, fetched);
   const written = await Promise.all(planned.map((entry) => writeOne(deps, carried.state, entry)));
   for (const entry of fetched) deps.progress.step(shownAs(entry));
-  return [unread(fetched), ...written];
+  return [unread(carried.state, fetched), ...written];
 };
 
 // Saved once per window that changed the ledger, so a stopped run resumes without rewriting what
@@ -290,11 +305,18 @@ const writeChanged = async (deps: SyncCalendarDeps, input: SyncCalendarInput, ca
 const cursorAfter = (done: Progressing, deltaLink: string | undefined, since: string | undefined): CalendarState =>
   done.summary.failed > 0 ? done.state : withCursor({ ...done.state, since }, deltaLink);
 
-const finish = async (deps: SyncCalendarDeps, input: SyncCalendarInput, done: Progressing, deltaLink: string | undefined): Promise<Result<SourceRun, StepError>> => {
+const finish = async (
+  deps: SyncCalendarDeps,
+  input: SyncCalendarInput,
+  before: CalendarState,
+  done: Progressing,
+  deltaLink: string | undefined
+): Promise<Result<SourceRun, StepError>> => {
   const saved = await save(deps, cursorAfter(done, deltaLink, input.since));
   if (!saved.ok) return saved;
-  await writeReport(deps, input, calendarRoot(deps.kbRoot), CALENDAR_NAME, done.summary, done.notes);
-  return ok({ id: CALENDAR_ID, source: CALENDAR_NAME, summary: done.summary, notes: done.notes });
+  const notes = withGaveUp({ ...done.notes, givenUp: givenUpNotes(done.state.retry) }, gaveUpNotes(before.retry, done.state.retry));
+  await writeReport(deps, input, calendarRoot(deps.kbRoot), CALENDAR_NAME, done.summary, notes);
+  return ok({ id: CALENDAR_ID, source: CALENDAR_NAME, summary: done.summary, notes });
 };
 
 // A day earlier than the one the cursor was taken under: what the cursor passed over never comes back
@@ -326,5 +348,5 @@ export const createSyncCalendar =
     const written = await writeChanged(deps, input, fold({ summary: EMPTY, notes: NO_NOTES, state }, gone), ids);
     deps.progress.done();
     if (!written.ok) return written;
-    return finish(deps, input, written.value, delta.value.deltaLink);
+    return finish(deps, input, state, written.value, delta.value.deltaLink);
   };
