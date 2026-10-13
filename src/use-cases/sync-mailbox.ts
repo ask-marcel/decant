@@ -2,7 +2,8 @@ import type { MailFolder } from '../domain/mail-folder.ts';
 import { syncableFolders } from '../domain/mail-folder.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
-import { attachmentRows, linkRows, renderJsonl, threadRows } from '../domain/mail-meta.ts';
+import { INDEX_FILE } from '../domain/index-page.ts';
+import { attachmentRows, linkRows, mailboxIndexPage, renderJsonl, threadRows } from '../domain/mail-meta.ts';
 import { rootMessageId } from '../domain/root-message-id.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
@@ -58,6 +59,8 @@ export type SyncMailboxDeps = {
   readonly logger: Logger;
   readonly progress: Progress;
   readonly kbRoot: string;
+  // The zone the knowledge base counts its days in, which the index page lists each thread under.
+  readonly timezone: string;
 };
 
 export type SyncMailboxInput = {
@@ -93,6 +96,7 @@ const writeIndexes = async (deps: SyncMailboxDeps, input: SyncMailboxInput, stat
     { path: `${root}/threads.jsonl`, body: renderJsonl(threadRows(state)) },
     { path: `${root}/attachments.jsonl`, body: renderJsonl(attachmentRows(state)) },
     { path: `${root}/links.jsonl`, body: renderJsonl(linkRows(state)) },
+    { path: `${mailboxRoot(deps.kbRoot)}/${INDEX_FILE}`, body: mailboxIndexPage(state, deps.timezone) },
   ];
   for (const file of files) {
     const written = await deps.files.writeText(file.path, file.body);

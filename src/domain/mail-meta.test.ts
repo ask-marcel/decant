@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'bun:test';
-import { attachmentRows, linkRows, renderJsonl, threadRows } from './mail-meta.ts';
+import { attachmentRows, linkRows, mailboxIndexPage, renderJsonl, threadRows } from './mail-meta.ts';
 import { emptyMailboxState, withAttachment, withConversation, withLinked, withThread } from './mail-state.ts';
+import type { ThreadRecord } from './mail-state.ts';
 
 const thread = {
   folder: '2026-05-12-d9f4e0a3c1-contrat',
   conversationIds: ['conv-1'],
   file: 'threads/2026-05-12-d9f4e0a3c1-contrat/contrat.md',
   messageIds: ['m1', 'm2'],
+  firstMessage: '2026-05-12T09:31:00Z',
   lastMessage: '2026-05-13T10:00:00Z',
   attachments: ['_attachments/Contrat-a1b2.docx.md'],
   inlineImages: [],
@@ -20,7 +22,7 @@ describe('indexing what a mailbox holds', () => {
   // nothing wrapped across lines.
   it('one line per thread, carrying what a query would filter on', () => {
     const line = '{"thread_id":"d9f4e0a3c1","folder":"2026-05-12-d9f4e0a3c1-contrat","file":"threads/2026-05-12-d9f4e0a3c1-contrat/contrat.md",';
-    const rest = '"conversation_ids":["conv-1"],"message_count":2,"last_message":"2026-05-13T10:00:00Z","attachments":1}\n';
+    const rest = '"conversation_ids":["conv-1"],"message_count":2,"first_message":"2026-05-12T09:31:00Z","last_message":"2026-05-13T10:00:00Z","attachments":1}\n';
 
     expect(renderJsonl(threadRows(held))).toBe(`${line}${rest}`);
   });
@@ -73,5 +75,33 @@ describe('indexing what a mailbox holds', () => {
 
   it('a line holding a quote or a newline stays one line', () => {
     expect(renderJsonl([{ name: 'a "quoted"\nname' }])).toBe('{"name":"a \\"quoted\\"\\nname"}\n');
+  });
+});
+
+describe('the page a reader opens the mailbox by', () => {
+  it('a thread is listed under the day of its last message where the knowledge base counts its days, by its subject and who wrote last', () => {
+    const late = withThread(emptyMailboxState(), 'd9f4e0a3c1', { ...thread, lastMessage: '2026-05-13T23:30:00Z', subject: 'Contrat', lastFrom: 'Li Wei' });
+
+    expect(mailboxIndexPage(late, 'Asia/Shanghai')).toContain('- 2026-05-14 · [Contrat](threads/2026-05-12-d9f4e0a3c1-contrat/contrat.md) · Li Wei\n');
+  });
+
+  // Newest first; a tie keeps the order of the keys, so the page reads the same on every run.
+  it('the thread with the newest message comes first, and two at one moment keep the order of their keys', () => {
+    const at = (lastMessage: string, file: string): ThreadRecord => ({ ...thread, lastMessage, file, subject: file });
+    const state = withThread(
+      withThread(withThread(emptyMailboxState(), 'bbbb', at('2026-05-13T10:00:00Z', 'b.md')), 'aaaa', at('2026-05-13T10:00:00Z', 'a.md')),
+      'cccc',
+      at('2026-05-14T08:00:00Z', 'c.md')
+    );
+    const lines = mailboxIndexPage(state, 'UTC')
+      .split('\n')
+      .filter((line) => line.startsWith('- '));
+
+    expect(lines).toEqual(['- 2026-05-14 · [c.md](c.md)', '- 2026-05-13 · [a.md](a.md)', '- 2026-05-13 · [b.md](b.md)']);
+  });
+
+  // A thread written before its subject was kept is linked by its file until a new message writes it.
+  it('a thread kept without a subject or a sender is still listed, linked by its file', () => {
+    expect(mailboxIndexPage(held, 'UTC')).toContain('- 2026-05-13 · [threads/2026-05-12-d9f4e0a3c1-contrat/contrat.md](threads/2026-05-12-d9f4e0a3c1-contrat/contrat.md)\n');
   });
 });

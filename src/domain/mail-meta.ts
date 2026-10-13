@@ -1,4 +1,6 @@
-import type { MailboxState } from './mail-state.ts';
+import { indexDay, renderIndexPage } from './index-page.ts';
+import type { IndexRow } from './index-page.ts';
+import type { MailboxState, ThreadRecord } from './mail-state.ts';
 import { compareText } from './utilities/compare-text.ts';
 
 // The cross-thread index. Front matter inside a markdown file is only text, so filtering on a date,
@@ -14,6 +16,7 @@ export type ThreadRow = {
   readonly file: string;
   readonly conversation_ids: ReadonlyArray<string>;
   readonly message_count: number;
+  readonly first_message: string;
   readonly last_message: string;
   readonly attachments: number;
 };
@@ -30,6 +33,7 @@ export const threadRows = (state: MailboxState): ReadonlyArray<ThreadRow> =>
     file: record.file,
     conversation_ids: record.conversationIds,
     message_count: record.messageIds.length,
+    first_message: record.firstMessage ?? '',
     last_message: record.lastMessage,
     attachments: record.attachments.length,
   }));
@@ -42,3 +46,22 @@ export const attachmentRows = (state: MailboxState): ReadonlyArray<AttachmentRow
 export type LinkRow = { readonly item: string; readonly files: ReadonlyArray<string> };
 
 export const linkRows = (state: MailboxState): ReadonlyArray<LinkRow> => byKey(state.linked).map(([item, record]) => ({ item, files: record.paths }));
+
+const threadRow = ([threadId, record]: readonly [string, ThreadRecord], zone: string): IndexRow & { readonly at: string; readonly id: string } => ({
+  day: indexDay(record.lastMessage, zone),
+  title: record.subject ?? '',
+  file: record.file,
+  note: record.lastFrom ?? '',
+  at: record.lastMessage,
+  id: threadId,
+});
+
+// The mailbox as a reader scans it: the thread with the newest message first, under the day of that
+// message, by its subject and the one who wrote last. Two threads at one moment keep the order of
+// their keys, so the page does not change between runs that changed nothing.
+export const mailboxIndexPage = (state: MailboxState, zone: string): string => {
+  const rows = Object.entries(state.threads)
+    .map((entry) => threadRow(entry, zone))
+    .toSorted((left, right) => compareText(right.at, left.at) || compareText(left.id, right.id));
+  return renderIndexPage('Mailbox', [{ heading: 'By last message', rows }]);
+};

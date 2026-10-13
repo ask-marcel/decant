@@ -93,6 +93,7 @@ const run = async (
     progress,
     clock: createClockFake(),
     kbRoot: 'kb',
+    timezone: 'UTC',
     renderThread: async (input) => {
       asked.push(input.conversationIds.join(','));
       labels.push(input.label);
@@ -837,10 +838,43 @@ describe('rendering several conversations at once', () => {
     ]);
   });
 
+  // The page a reader opens the mailbox by: every thread the state holds, the newest message first.
+  it('the mailbox page lists every thread the mailbox holds, the one with the newest message first', async () => {
+    const already = withThread(withConversation(emptyMailboxState(), 'conv-old', { threadId: 'thread-old', root: '<old@example.com>' }), 'thread-old', {
+      folder: '2024-01-02-thread-old-earlier',
+      conversationIds: ['conv-old'],
+      file: '2024-01-02-thread-old-earlier/earlier.md',
+      messageIds: ['m0'],
+      lastMessage: '2024-01-02T00:00:00Z',
+      attachments: [],
+      inlineImages: [],
+      subject: 'Earlier',
+      lastFrom: 'Li Wei',
+    });
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: serializeMailboxState(already) } },
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] },
+      outcome: () => rendered({ thread: { ...rendered().thread, record: { ...rendered().thread.record, subject: 'Contrat Contoso', lastFrom: 'Jane Doe' } } }),
+    });
+
+    expect(files.written.get('kb/Mailbox/_index.md')).toBe(
+      [
+        '# Mailbox',
+        '',
+        '## By last message',
+        '',
+        '- 2026-05-12 · [Contrat Contoso](threads/2026-05-12/thread.md) · Jane Doe',
+        '- 2024-01-02 · [Earlier](2024-01-02-thread-old-earlier/earlier.md) · Li Wei',
+        '',
+      ].join('\n')
+    );
+  });
+
   it('a dry run leaves no index behind, having written nothing to index', async () => {
     const { files } = await run({ dryRun: true, reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] } });
 
     expect([...files.written.keys()].filter((path) => path.includes('_meta/'))).toStrictEqual([]);
+    expect(files.written.has('kb/Mailbox/_index.md')).toBe(false);
   });
 
   it('a window of conversations saves the state once, not once per conversation', async () => {

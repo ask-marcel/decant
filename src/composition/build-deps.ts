@@ -230,7 +230,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     timezone: config.timezone,
     pathBudget,
   });
-  const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot });
+  const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone });
   // A group inbox reads through its own commands but renders through the same path, so it gets the
   // same converters with the group reader underneath them, and a renderer per group because each
   // one writes into its own folder.
