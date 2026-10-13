@@ -43,6 +43,8 @@ export type RenderThreadDeps = {
   readonly timezone: string;
   // Where the file being read is named, beside the conversation's own row on the counter.
   readonly progress: Progress;
+  // How long a path may be as decant writes it. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 export type RenderThreadInput = {
@@ -211,7 +213,8 @@ const writeThread = async (
   const relative = place.relative;
   const stamp = stampFor(deps, input, first, last);
   const reading = { ...deps, convertAttachment: (converting: ConvertAttachmentInput): Promise<AttachmentOutcome> => announced(deps, input.label, converting) };
-  const attachments = await attachmentsOf(reading, { here: place.here, mailboxRoot: deps.mailboxRoot, maxBytes: input.maxBytes, stored: input.attachments }, parts, stamp);
+  const filePlace = { here: place.here, mailboxRoot: deps.mailboxRoot, maxBytes: input.maxBytes, stored: input.attachments, pathBudget: deps.pathBudget };
+  const attachments = await attachmentsOf(reading, filePlace, parts, stamp);
   const following = { ...deps, convertFile: (converting: ConvertFileInput): Promise<ConvertOutcome> => announcedLink(deps, input.label, converting) };
   const links = await linkedFiles(following, place.here, input.maxBytes, parts);
   // Everything the thread carried sits inside the thread's own folder, so every reference below is

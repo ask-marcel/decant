@@ -71,6 +71,8 @@ export const run = async (
     ocr?: OcrSeed;
     // What the source is called, so a test can render a thread as a group inbox rather than the mailbox.
     sourceName?: string;
+    // How long a path may be as decant writes it, so a test can put the knowledge base deep on a disk.
+    pathBudget?: number;
   } = {}
 ): Promise<{
   outcome: RenderThreadOutcome | undefined;
@@ -97,6 +99,7 @@ export const run = async (
     sourceName: seeds.sourceName ?? 'Mailbox',
     mailboxRoot: 'kb/Mailbox',
     timezone: 'Europe/Paris',
+    pathBudget: seeds.pathBudget,
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(seeds.ocr), logger, unpackArchive: drive.localArchive, convertLocal: drive.localMarkdown }),
     convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger, progress: createProgressFake() }),
   });

@@ -1,6 +1,6 @@
 import { contentHash } from '../domain/content-hash.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
-import { disambiguateSegment } from '../domain/kb-path.ts';
+import { disambiguateSegment, fitSegment } from '../domain/kb-path.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
 import { carriesInlineImage } from '../domain/inline-image.ts';
 import { isOpaqueName } from '../domain/opaque-name.ts';
@@ -31,6 +31,8 @@ export type FilePlace = {
   readonly mailboxRoot: string;
   readonly maxBytes: number;
   readonly stored: Readonly<Record<string, AttachmentRecord>>;
+  // How long a path may be as decant writes it. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 // What one message carried, kept per message rather than per thread: the body that message rendered
@@ -126,8 +128,10 @@ const placeAttachment = async (
   // recorded. A card for a file too large to pull, or of a kind nothing reads, is the only place
   // its arrival and the reason are written down, and the body needs a name to link at.
   const inline = isInlinePicture(attachment);
-  const asName = uniqueName(attachment.name, taken);
-  taken.push(asName);
+  // Told apart before it is fitted: two names alike up to the cut are still told apart by their hash.
+  const unique = uniqueName(attachment.name, taken);
+  taken.push(unique);
+  const asName = fitSegment(`${place.here}/${ATTACHMENTS_FOLDER}`, unique, place.pathBudget);
   if (attachment.size > place.maxBytes) return { asName, paths: [], skipped: { path: attachment.name, reason: tooLargeReason(place.maxBytes) } };
   const address = await addressOf(deps, messageId, attachment);
   if (!address.ok) return { asName, paths: [], failed: { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` } };

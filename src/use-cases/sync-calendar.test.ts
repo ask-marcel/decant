@@ -46,7 +46,7 @@ const OFFSITE = event('a', 'Offsite planning', '2026-09-12T07:00:00Z', { hasAtta
 const STANDUP = event('b', 'Standup', '2026-09-10T08:00:00Z');
 
 const run = async (
-  seeds: { reader?: CalendarReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; since?: string } = {}
+  seeds: { reader?: CalendarReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; since?: string; pathBudget?: number } = {}
 ): Promise<{
   summary: RunSummary;
   source: string;
@@ -72,7 +72,16 @@ const run = async (
     markdown: { 'att-1': '---\nname: Venues.xlsx\n---\n\n| Venue | Cost |\n' },
     ...seeds.reader,
   });
-  const syncCalendar = createSyncCalendar({ reader, files, clock: createClockFake('2026-09-12T14:00:00Z'), logger, progress, kbRoot: 'kb', timezone: 'UTC' });
+  const syncCalendar = createSyncCalendar({
+    reader,
+    files,
+    clock: createClockFake('2026-09-12T14:00:00Z'),
+    logger,
+    progress,
+    kbRoot: 'kb',
+    timezone: 'UTC',
+    pathBudget: seeds.pathBudget,
+  });
   const outcome = await syncCalendar({ dryRun: seeds.dryRun ?? false, concurrency: seeds.concurrency ?? 4, since: seeds.since });
   const empty = {
     summary: { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 },
@@ -530,6 +539,17 @@ describe('naming the files an event carries', () => {
     const done = await run({ reader: { attachments: { a: [FIRST, SECOND, THIRD] } } });
 
     expect(filesHolding(done.files, [FIRST, SECOND, THIRD])).toEqual([1, 1, 1]);
+  });
+
+  it('an attachment whose path would run past what Windows accepts lands under a shorter name, its extension kept', async () => {
+    const long = { ...FIRST, name: 'Agenda for the offsite in Rotterdam with every session and room.docx' };
+
+    const done = await run({ reader: { attachments: { a: [long] } }, pathBudget: 150 });
+    const outputs = stateOf(done.files).events['a']?.outputs ?? [];
+
+    expect(outputs.at(-1)).toStartWith(`${ATTACHED}Agenda for the`);
+    expect(outputs.at(-1)).toMatch(/-[0-9a-f]{8}\.md$/);
+    expect(outputs.at(-1)?.length ?? 0).toBeLessThanOrEqual(150 - 55);
   });
 
   it('two attachments whose names differ only in letter case land as two files, since the disk takes them for one', async () => {
