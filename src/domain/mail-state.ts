@@ -1,6 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { MAX_CONVERSION_ATTEMPTS } from './retry-policy.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 // What a mailbox run leaves behind: a cursor per folder, what every conversation produced, and the
 // files already fetched, so a re-run converts nothing it has seen and a stop loses one thread.
@@ -256,7 +257,7 @@ export const conversationsInThread = (state: MailboxState, threadId: string): Re
   Object.entries(state.conversations)
     .filter(([, record]) => record.threadId === threadId)
     .map(([id, record]) => ({ id, root: record.root }))
-    .sort((left, right) => left.id.localeCompare(right.id));
+    .sort((left, right) => compareText(left.id, right.id));
 
 // A conversation needs writing again when it holds a message the last run never saw. A message
 // merely being reread, or its read flag flipping, changes nothing that lands on disk.

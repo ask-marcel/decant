@@ -1,6 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { canonicalCursor } from './utilities/graph-cursor.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 export type Correspondent = { readonly name: string; readonly address: string };
 
@@ -71,4 +72,4 @@ export const parseMailDelta = (raw: unknown): Result<MailDeltaPage, MailParseErr
 
 // A thread is read newest-page-first by Graph and comes back unordered, so it is sorted here.
 export const inReceivedOrder = (messages: ReadonlyArray<MailMessage>): ReadonlyArray<MailMessage> =>
-  [...messages].sort((left, right) => (left.received === right.received ? left.id.localeCompare(right.id) : left.received.localeCompare(right.received)));
+  [...messages].sort((left, right) => (left.received === right.received ? compareText(left.id, right.id) : compareText(left.received, right.received)));

@@ -46,6 +46,7 @@ import { withGaveUp } from '../domain/report.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
+import { compareText } from '../domain/utilities/compare-text.ts';
 
 export const MAIL_STATE_FILE = '.sync-state.json';
 
@@ -215,7 +216,7 @@ const conversationsOf = (messages: ReadonlyArray<MailMessage>, since: string | u
     if (held === undefined) grouped.set(message.conversationId, { first: message, rest: [] });
     else held.rest.push(message);
   }
-  return [...grouped.entries()].map(([id, held]) => conversationOf(id, held.first, held.rest)).sort((left, right) => left.last.localeCompare(right.last));
+  return [...grouped.entries()].map(([id, held]) => conversationOf(id, held.first, held.rest)).sort((left, right) => compareText(left.last, right.last));
 };
 
 // One header read per conversation the run has never resolved, and never again for that one. The

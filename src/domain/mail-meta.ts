@@ -1,4 +1,5 @@
 import type { MailboxState } from './mail-state.ts';
+import { compareText } from './utilities/compare-text.ts';
 
 // The cross-thread index. Front matter inside a markdown file is only text, so filtering on a date,
 // a sender or a missing dependency means reading every file; these are what make that a query.
@@ -20,7 +21,7 @@ export type ThreadRow = {
 // Sorted by key rather than left in the order an object iterates. Roughly one thread id in a
 // hundred is all digits, and JavaScript puts an integer-like key ahead of every other one in an
 // object, so an unsorted index would reshuffle itself on runs that changed nothing at all.
-const byKey = <T>(entries: Readonly<Record<string, T>>): ReadonlyArray<readonly [string, T]> => Object.entries(entries).sort(([left], [right]) => left.localeCompare(right));
+const byKey = <T>(entries: Readonly<Record<string, T>>): ReadonlyArray<readonly [string, T]> => Object.entries(entries).sort(([left], [right]) => compareText(left, right));
 
 export const threadRows = (state: MailboxState): ReadonlyArray<ThreadRow> =>
   byKey(state.threads).map(([threadId, record]) => ({
