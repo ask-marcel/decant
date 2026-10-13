@@ -1,6 +1,6 @@
 import { linkDestination } from './markdown-link.ts';
 import { renderFrontMatter } from './front-matter.ts';
-import { safeSegment } from './kb-path.ts';
+import { holdsIgnoringCase, safeSegment } from './kb-path.ts';
 import type { SafeSegment } from './kb-path.ts';
 
 // What one thread carried, standing beside that thread rather than in the store the file itself
@@ -79,7 +79,7 @@ export const uniqueName = (filename: string, taken: ReadonlyArray<string>): Safe
   const extension = filename.slice(cut);
   let attempt = 1;
   let candidate = safeSegment(filename);
-  while (taken.includes(candidate)) {
+  while (holdsIgnoringCase(taken, candidate)) {
     attempt += 1;
     candidate = safeSegment(`${stem}-${attempt}${extension}`);
   }

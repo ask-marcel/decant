@@ -22,10 +22,53 @@ const stripTrailing = (value: string): string => {
   return value.slice(0, end);
 };
 
+// An extension is kept whole when a long name is cut: a few letters or digits after the last dot. A
+// title such as `deck v1.2 for Mark` has a dot that opens no extension, and is cut like any text.
+const EXTENSION = /\.[A-Za-z0-9]{1,10}$/;
+
+const HIGH_SURROGATE_FIRST = 0xd8_00;
+const HIGH_SURROGATE_LAST = 0xdb_ff;
+
+// Counted in UTF-16 units, the way Windows counts a path, and never between the two halves of one
+// character: half an emoji is not a character any filesystem should be asked to store.
+const cutAt = (text: string, limit: number): string => {
+  if (text.length <= limit) return text;
+  const last = text.charCodeAt(limit - 1);
+  return text.slice(0, last >= HIGH_SURROGATE_FIRST && last <= HIGH_SURROGATE_LAST ? limit - 1 : limit);
+};
+
+// Cut back to the last separator inside the limit, so a name ends on a word. A single word longer
+// than the whole limit has no separator to fall back to and is cut where it must be: a path that is
+// too long is worse than a word that is.
+export const cutToWord = (text: string, limit: number, separator: string): string => {
+  if (text.length <= limit) return text;
+  const head = cutAt(text, limit);
+  const lastSeparator = head.lastIndexOf(separator);
+  return lastSeparator < 0 ? head : head.slice(0, lastSeparator);
+};
+
+const cutKeepingExtension = (name: string): string => {
+  if (name.length <= MAX_SEGMENT_LENGTH) return name;
+  const extension = EXTENSION.exec(name)?.[0] ?? '';
+  return `${cutAt(name.slice(0, name.length - extension.length), MAX_SEGMENT_LENGTH - extension.length)}${extension}`;
+};
+
+// Windows keeps these names for devices, with an extension or without one, so `CON` or `nul.txt`
+// cannot be written there.
+const DEVICE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?=\.|$)/i;
+
+// Git reads these as its own when the knowledge base is kept in git: it skips a `.git` folder and
+// obeys a `.gitignore`. An attachment or a zip entry can carry one.
+const GIT_OWN = /^\.git(ignore|attributes|modules)?$/i;
+
+const unclaimed = (name: string): string => (GIT_OWN.test(name) ? `_${name}` : name.replace(DEVICE, '$1_'));
+
+// The cut comes before the trailing dots and spaces are dropped: the other way round, a cut that
+// fell just after a space kept it, and the `.md` a caller adds followed the space.
 export const safeSegment = (raw: string): SafeSegment => {
   const replaced = replaceForbidden(raw.normalize('NFC'));
-  const trimmed = stripTrailing(replaced).slice(0, MAX_SEGMENT_LENGTH);
-  return (trimmed.length === 0 ? '_' : trimmed) as SafeSegment;
+  const trimmed = stripTrailing(cutKeepingExtension(replaced));
+  return unclaimed(trimmed.length === 0 ? '_' : trimmed) as SafeSegment;
 };
 
 export const safeRelPath = (segments: ReadonlyArray<string>): SafeRelPath =>
@@ -71,10 +114,22 @@ const freeSuffixed = (segment: string, hash: string, isTaken: (candidate: string
 export const freeSegment = (segment: string, itemId: string, isTaken: (candidate: string) => boolean): string =>
   isTaken(segment) ? freeSuffixed(segment, idHash(itemId), isTaken) : segment;
 
+// Windows and macOS take `Report.md` and `report.md` for one file, so a name is held when a held
+// name matches it in either case: the second write would otherwise replace the first without a word.
+const sameIgnoringCase = (left: string, right: string): boolean => left.toLowerCase() === right.toLowerCase();
+
+export const holdsIgnoringCase = (taken: Iterable<string>, name: string): boolean => {
+  for (const held of taken) if (sameIgnoringCase(held, name)) return true;
+  return false;
+};
+
 // The same for a file in a folder, where what is taken is held as whole paths. The item's own file,
-// when it already has one, never stands in its way.
+// when it already has one, never stands in its way. When only the letter case of its name changed,
+// the file is kept as it is: renamed, the old path would be put aside next, and on a disk that
+// ignores case that path is the fresh note.
 export const freePath = (folder: string, segment: string, itemId: string, taken: ReadonlySet<string>, own?: string): string => {
   const within = (name: string): string => `${folder}/${name}`;
-  const held = (path: string): boolean => path !== own && taken.has(path);
+  if (own !== undefined && sameIgnoringCase(within(segment), own)) return own;
+  const held = (path: string): boolean => path !== own && holdsIgnoringCase(taken, path);
   return within(freeSegment(segment, itemId, (candidate) => held(within(candidate))));
 };

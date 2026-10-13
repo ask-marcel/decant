@@ -121,6 +121,23 @@ describe('deciding where each task about to be written goes', () => {
     expect(planTaskFiles('kb/To Do/Tasks', [task('a', '')], emptyTodoState('list-1', 'Tasks'))[0]?.file).toBe('kb/To Do/Tasks/undated/a.md');
   });
 
+  // A title can be a whole sentence of 200 characters. Three such tasks were never written, because
+  // their paths grew past what Windows accepts. The heading inside the note keeps the whole title.
+  it('a task with a long title is filed under its first words, at most 80 characters, ending on a whole word', () => {
+    const story = {
+      ...task('a', '2026-09-08T16:20:11Z'),
+      title: 'Write the story about IT in Rotterdam that does something manual that can be automated and fixed, and put it in my decision for Mark and Tom',
+    };
+    const oneWord = { ...task('b', '2026-09-08T16:20:11Z'), title: 'x'.repeat(100) };
+
+    const files = planTaskFiles('kb/To Do/Tasks', [story, oneWord], emptyTodoState('list-1', 'Tasks')).map((planned) => planned.file);
+
+    expect(files).toEqual([
+      'kb/To Do/Tasks/2026-09-08/Write the story about IT in Rotterdam that does something manual that can be.md',
+      `kb/To Do/Tasks/2026-09-08/${'x'.repeat(80)}.md`,
+    ]);
+  });
+
   it('two tasks sharing a title and a day take different files, so neither is written over the other', () => {
     const twins = [
       { ...task('one', '2026-09-08T16:20:11Z'), title: 'Follow up' },
