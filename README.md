@@ -483,6 +483,7 @@ kb/
       _linked/Rapport.docx                           a SharePoint file a message pointed at
       _linked/Rapport.docx.md                        its card: the address, the version, its text
     _meta/threads.jsonl                              one line per thread, for querying
+    _meta/messages.jsonl                             one line per message, for search
     _meta/attachments.jsonl                          one line per stored file, by content address
     _meta/links.jsonl                                one line per document pointed at
 ```
@@ -491,6 +492,63 @@ The `_index.md` file of the mailbox lists each thread, with the thread that has 
 the top. Each line shows the day of that message, the subject as a link, and the sender of that
 message. In `_meta/threads.jsonl`, `first_message` and `last_message` give the time of the first
 message and of the last message of each thread.
+
+Each message in a thread note starts with a heading and one line of data:
+
+```
+## 2026-05-12 11:31 — Jane Doe to Valerie FAIRBANKS; cc Li Wei
+
+from jane@contoso.com · to valerie@contoso.com · cc li.wei@northwind.example · folder Inbox · flag open · importance high · categories Blue category
+```
+
+The heading gives the time in the zone of the knowledge base, the sender, the names in To and the
+names in Cc. A message with no name in To and in Cc gets `to (no visible recipients)`, for example a
+notice sent with Bcc. A post in a group inbox has no To and no Cc. Thus its heading gives only the
+sender.
+
+The line of data gives the addresses, the folder of the message, the flag (`open` or `complete`),
+the importance and the categories. It has only the parts that have a value, and it shows the
+importance only when it is high or low. decant does not know the name of a subfolder of Deleted
+Items, Junk Email, Drafts or Outbox. Thus a message in such a subfolder has no folder in its line.
+
+`_meta/messages.jsonl` has one line for each message of each thread, in the sequence of the time of
+the messages. Each run writes the file again from the state. The fields are:
+
+| Field | Value |
+|---|---|
+| `date`, `time` | The day and the time (`HH:MM`) of the message, in the zone of the knowledge base. |
+| `utc` | The time of the message in UTC, as Graph gives it. |
+| `direction` | `draft` for a draft. `sent` when the sender address is an address of your mailbox. Else `received`. |
+| `from`, `from_email` | The name and the address of the sender. |
+| `to`, `to_emails`, `cc`, `cc_emails` | The names and the addresses in To and in Cc. |
+| `subject` | The subject of the message. |
+| `folder` | The name of the folder of the message. It is empty when decant does not know the folder. |
+| `flag` | `open`, `complete`, or empty for no flag. |
+| `categories`, `importance` | The categories of the message, and `low`, `normal` or `high`. |
+| `attachments`, `linked_files` | The names of the files that the message carried, and of the SharePoint files that it links to. |
+| `preview` | The first words of the message, on one line. |
+| `note` | The path of the thread note from `kb/`. |
+| `position` | The place of the message in its thread, for example `2/5`. |
+| `thread_id`, `message_id`, `internet_message_id` | The thread id, the Graph id and the RFC `Message-ID`. |
+
+For example, this PowerShell command shows the mail that you received on the day before today:
+
+```powershell
+Get-Content kb/Mailbox/_meta/messages.jsonl -Encoding UTF8 | ConvertFrom-Json |
+  Where-Object { $_.date -eq (Get-Date).AddDays(-1).ToString('yyyy-MM-dd') -and $_.direction -eq 'received' } |
+  Format-Table time, from, subject, folder
+```
+
+decant writes a thread again when the thread gets a new message. It also writes a thread again when
+a message of the thread gets a new flag, category, importance or folder. A new name of a folder
+writes again each thread with a message in that folder. A change of the read status does not write
+the thread again. decant does not read Deleted Items, Junk
+Email, Drafts and Outbox for changes. Thus a new flag on a message in these folders does not write
+its thread again.
+
+When decant finds a mailbox from before this version, it updates the mailbox one time. The first run
+reads each mail folder again from the start, and writes each thread again. Then each note has the
+new headings, and `_meta/messages.jsonl` has a line for each message.
 
 ### What a To Do sync writes
 
@@ -960,8 +1018,8 @@ is an archive of what was sent, and what was sent is the destination.
 
 The head of each thread names where the file itself lives under `path:`, so a thread pasted into
 a context window can still be resolved and traced back, and lists every participant with the
-address you would reply to. Message headings keep names alone, since one heading already runs
-to eleven recipients.
+address you would reply to, also the people in Cc. The heading of each message gives the names, and
+the line of data under it gives the addresses.
 
 `_sync-report.md` holds only what a reader should look into. A run in which every file arrived
 writes the counts and the line "Nothing was left behind." A file left out says which kind it was,
