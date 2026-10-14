@@ -2,6 +2,8 @@ import { relative as pathBetween } from 'node:path/posix';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
+import { messageRecordOf } from '../domain/message-record.ts';
+import type { MessageRecord } from '../domain/message-record.ts';
 import type { AttachmentRecord, LinkedRecord, ThreadRecord } from '../domain/mail-state.ts';
 import { renderFrontMatter } from '../domain/front-matter.ts';
 import type { Result } from '../domain/result.ts';
@@ -16,9 +18,11 @@ import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import type { AttachmentOutcome, ConvertAttachment, ConvertAttachmentInput } from './convert-attachment.ts';
 import { ATTACHMENTS_FOLDER, attachmentsOf } from './thread-files.ts';
+import type { MessageFile } from './thread-files.ts';
 import { rewriteBodies, writeCards } from './thread-documents.ts';
 import type { ConvertFile, ConvertFileInput, ConvertOutcome } from './convert-file.ts';
 import { linkedFiles, writeLinkCards } from './thread-links.ts';
+import type { LinkedTally } from './thread-links.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
@@ -208,6 +212,29 @@ const announcedLink = async (deps: RenderThreadDeps, label: string, converting: 
   return deps.convertFile(converting);
 };
 
+// The files a message carried, by the names the sender gave them. A picture shown in the body is part
+// of the message rather than something sent with it, so it is not one of them.
+const carriedNames = (files: ReadonlyArray<MessageFile>): ReadonlyArray<string> => files.filter((file) => file.picture === undefined).map((file) => file.attachment.name);
+
+// The documents a message linked to, each once however often the message names it.
+const linkedNames = (referenced: LinkedTally['referenced'], messageId: string): ReadonlyArray<string> => [
+  ...new Set(referenced.filter((entry) => entry.messageId === messageId).map((entry) => entry.link.name)),
+];
+
+const messageRecords = (
+  input: RenderThreadInput,
+  parts: ReadonlyArray<ThreadPart>,
+  byMessage: Readonly<Record<string, ReadonlyArray<MessageFile>>>,
+  referenced: LinkedTally['referenced']
+): ReadonlyArray<MessageRecord> =>
+  parts.map((part) =>
+    messageRecordOf(part.message, {
+      folder: input.folders?.[part.message.folderId ?? ''] ?? '',
+      attachments: carriedNames(byMessage[part.message.id] ?? []),
+      linked: linkedNames(referenced, part.message.id),
+    })
+  );
+
 const writeThread = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
@@ -261,6 +288,7 @@ const writeThread = async (
         subject: first.subject,
         firstMessage: first.received,
         lastFrom: last.from?.name ?? '',
+        messages: messageRecords(input, parts, attachments.byMessage, links.referenced),
       },
       linked: links.linked,
       attachments: attachments.store,

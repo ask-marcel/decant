@@ -5,6 +5,7 @@ import {
   ATTACHMENTS_STORE,
   CONV,
   INLINE_STORE,
+  LINK_BODIES,
   ROOT,
   THREAD_FILE,
   THREAD_FOLDER,
@@ -69,6 +70,46 @@ describe('writing one conversation as one file', () => {
     const { files } = await run({ reader: { conversations, bodies: { m1: 'One.' } }, folders: { 'AAMk-follow': 'To_Follow' } });
 
     expect(files.written.get(THREAD_FILE)).toContain('\n\nfrom jane@example.com · to valerie@example.com · folder To_Follow\n\nOne.');
+  });
+
+  // What the message index lists each message by, kept with the thread: an ordinary run writes a few
+  // threads out of thousands, and the index is written whole from the state on every run.
+  it('each message is recorded with the files it carried, the documents it linked to and the folder it sits in', async () => {
+    const report = { url: 'https://tenant.sharepoint.com/x', driveId: 'b!one', itemId: '01ABC', name: 'Rapport.docx' };
+    const conversations = {
+      [CONV]: [
+        message({ hasAttachments: true, folderId: 'AAMk-follow', cc: [] }),
+        message({ id: 'm2', received: '2026-05-13T10:00:00Z', folderId: 'AAMk-sent', flag: 'flagged', categories: ['Blue category'], preview: 'See  the\nreport.' }),
+      ],
+    };
+    const attachments = {
+      m1: [
+        { id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false },
+        { id: 'sig', name: 'image001.png', contentType: 'image/png', size: 100, isInline: true },
+      ],
+    };
+    const { outcome } = await run({
+      reader: { conversations, bodies: LINK_BODIES, attachments, links: { m2: [report, report] } },
+      folders: { 'AAMk-follow': 'To_Follow', 'AAMk-sent': 'Sent Items' },
+    });
+    const records = outcome?.kind === 'rendered' ? outcome.thread.record.messages : undefined;
+
+    expect(records?.map((record) => [record.id, record.folder, record.attachments, record.linked])).toEqual([
+      ['m1', 'To_Follow', ['Contrat.docx'], []],
+      ['m2', 'Sent Items', [], ['Rapport.docx']],
+    ]);
+    expect(records?.[1]).toMatchObject({
+      flag: 'flagged',
+      categories: ['Blue category'],
+      preview: 'See the report.',
+      to: [{ name: 'Valerie FAIRBANKS', address: 'valerie@example.com' }],
+    });
+  });
+
+  it('a message in a folder the sync gave no name for is recorded with no folder name', async () => {
+    const { outcome } = await run({ reader: { conversations: { [CONV]: [message({ folderId: 'AAMk-gone' })] } } });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.messages?.[0]?.folder).toBe('');
   });
 
   it('a thread from a group inbox names that group, not the mailbox, so a reader knows where it came from', async () => {

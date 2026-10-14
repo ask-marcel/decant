@@ -3,6 +3,7 @@ import { withoutFrontMatter } from '../domain/front-matter.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
 import { renderLinkCard } from '../domain/link-card.ts';
 import type { LinkedRecord } from '../domain/mail-state.ts';
+import type { MailMessage } from '../domain/mail-message.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { skipReason } from '../domain/report.ts';
 import { uniqueName } from '../domain/thread-card.ts';
@@ -49,6 +50,8 @@ type Pulled = {
 // What one message pointed at, kept per message so a card can say when the thread referenced it.
 type MessageLink = {
   readonly link: LinkedFile;
+  // Which message pointed at it, so the message index can list what each message linked to.
+  readonly messageId: string;
   readonly received: string;
   // What the document was called inside this thread's folder. The card is this plus `.md`, so the
   // pair is one decision taken once, before the pull, and a document nobody could fetch still has a
@@ -90,9 +93,10 @@ const addAll = (into: string[], paths: ReadonlyArray<string>): void => {
 const pulledOnce = async (deps: LinkDeps, here: string, maxBytes: number, link: LinkedFile, asName: string, already: LinkedRecord | undefined): Promise<Pulled> =>
   already === undefined ? pullLinked(deps, here, maxBytes, link, asName) : { record: already };
 
-const referenceOf = (link: LinkedFile, received: string, asName: string, pulled: Pulled): MessageLink => ({
+const referenceOf = (link: LinkedFile, message: MailMessage, asName: string, pulled: Pulled): MessageLink => ({
   link,
-  received,
+  messageId: message.id,
+  received: message.received,
   asName,
   paths: pulled.record?.paths ?? [],
   lastModified: pulled.lastModified,
@@ -127,7 +131,7 @@ export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number
       if (pulled.failed !== undefined) failed.push(pulled.failed);
       // Recorded whether or not it came: a card for a document nobody could pull is the only place
       // the thread's dependence on it is written down.
-      referenced.push(referenceOf(link, message.received, asName, pulled));
+      referenced.push(referenceOf(link, message, asName, pulled));
       if (pulled.record === undefined) continue;
       linked[key] = pulled.record;
       addAll(paths, pulled.record.paths);
