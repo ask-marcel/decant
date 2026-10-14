@@ -252,8 +252,6 @@ describe('writing a conversation as one document', () => {
   });
 });
 
-// Reached directly rather than through `renderThread`, whose body trimming hides every difference
-// this function makes to the lines it drops.
 // What a search finds a message by, on the line under its heading: the addresses the heading leaves
 // out, the folder it sits in, and how it is marked.
 describe('the line under each heading', () => {
@@ -311,6 +309,8 @@ describe('the line under each heading', () => {
   });
 });
 
+// Reached directly rather than through `renderThread`, whose body trimming hides every difference
+// this function makes to the lines it drops.
 describe('finding where a message actually starts', () => {
   it('blank lines before the first words are dropped, so a section opens on the text', () => {
     expect(withoutMailHeaders('\n\nPlease review the budget.')).toBe('Please review the budget.');
