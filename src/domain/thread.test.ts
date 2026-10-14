@@ -289,6 +289,15 @@ describe('the line under each heading', () => {
     expect(lineOf({ categories: [], cc: [] }, {})).toBe('from jane@example.com · to valerie@example.com · flag open · importance high');
   });
 
+  it('several people in one list are written one after the other', () => {
+    const to = [
+      { name: 'Valerie FAIRBANKS', address: 'valerie@example.com' },
+      { name: 'Li Wei', address: 'li.wei@northwind.example' },
+    ];
+
+    expect(lineOf({ to })).toContain(' · to valerie@example.com, li.wei@northwind.example · ');
+  });
+
   it('an address the source left empty is not written', () => {
     expect(
       lineOf({

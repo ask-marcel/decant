@@ -144,5 +144,7 @@ describe('reading the message records back', () => {
         linked: [],
       },
     ]);
+    // Pinned by length as well: Bun reads an array holding one `undefined` as equal to an empty one.
+    expect(read?.[0]?.to).toHaveLength(0);
   });
 });
