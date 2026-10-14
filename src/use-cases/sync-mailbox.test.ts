@@ -510,7 +510,11 @@ describe('writing a thread again when one of its messages is marked', () => {
   });
 
   it('a conversation from before the day asked for that no thread holds is still left out', async () => {
+    // Resolved to a thread that was never written, which is no thread in the knowledge base either.
+    const unwritten = withConversation(filed(), 'conv-9', { threadId: 'thread-9', root: '<nine@example.com>' });
+
     expect(await runOn(filed(), sweeping({ id: 'm9', conversationId: 'conv-9' }), '2026-06-01')).toStrictEqual([]);
+    expect(await runOn(unwritten, sweeping({ id: 'm9', conversationId: 'conv-9' }), '2026-06-01')).toStrictEqual([]);
   });
 
   it('a thread written before its messages were recorded is written again only for a new message', async () => {
