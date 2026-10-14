@@ -80,9 +80,19 @@ export type ConversationRecord = { readonly threadId: string; readonly root: str
 // was swept and a delta only ever reports what changed since.
 export type RetryRecord = { readonly attempts: number; readonly reason: string };
 
+// What each folder cursor reads a message with, and what each thread record keeps of it. Raised when
+// either grows: Graph keeps the fields of the request that opened a cursor inside the cursor, and a
+// thread written before keeps none of the new ones. A sweep that finds a state below it drops the
+// cursors and writes every thread again, once. `STATE_VERSION` stays where it is, since a state from
+// before is understood, and refusing it would cost a full sweep and the record of every thread.
+export const MAIL_FIELDS = 2;
+
 export type MailboxState = {
   readonly version: typeof STATE_VERSION;
   readonly source: { readonly kind: 'mailbox'; readonly id: string; readonly name: string };
+  // The `MAIL_FIELDS` the cursors and the thread records were made with. Absent from a state written
+  // before the fields were counted.
+  readonly fields?: number;
   readonly lastRun: string;
   readonly folders: Readonly<Record<string, { readonly name: string; readonly deltaLink?: string }>>;
   readonly threads: Readonly<Record<string, ThreadRecord>>;
@@ -115,6 +125,7 @@ export const MAILBOX_NAME = 'Mailbox';
 export const emptyMailboxState = (): MailboxState => ({
   version: STATE_VERSION,
   source: { kind: 'mailbox', id: MAILBOX_ID, name: MAILBOX_NAME },
+  fields: MAIL_FIELDS,
   lastRun: '',
   folders: {},
   threads: {},
@@ -191,6 +202,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
   return ok({
     version: STATE_VERSION,
     source: { kind: 'mailbox', id: readString(raw['source'], 'id') ?? MAILBOX_ID, name: readString(raw['source'], 'name') ?? MAILBOX_NAME },
+    fields: typeof raw['fields'] === 'number' ? raw['fields'] : undefined,
     lastRun: readString(raw, 'lastRun') ?? '',
     folders: mapOf(raw['folders'], (entry) => ({ name: readString(entry, 'name') ?? '', deltaLink: readString(entry, 'deltaLink') })),
     threads: mapOf(raw['threads'], threadOf),

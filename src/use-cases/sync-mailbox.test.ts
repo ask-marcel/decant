@@ -494,6 +494,62 @@ describe('writing a thread again when one of its messages is marked', () => {
   });
 });
 
+// A cursor keeps the fields of the request that opened it, so one taken before decant read a
+// message's folder and flag goes on reading without them; and a thread written then holds no record of
+// its messages. Both are made good once, on the first sweep that finds the state from before.
+describe('updating a mailbox written before the message fields were read', () => {
+  const filed = withThread(withConversation(emptyMailboxState(), 'conv-1', { threadId: 'thread-1', root: '<root@example.com>' }), 'thread-1', {
+    folder: '2026-05-12-thread-1',
+    conversationIds: ['conv-1'],
+    file: 'threads/2026-05-12-thread-1/contrat-contoso.md',
+    messageIds: ['m1'],
+    lastMessage: '2026-05-12T09:31:00Z',
+    attachments: [],
+    inlineImages: [],
+    subject: 'RE: Contrat Contoso',
+  });
+  const before = (state: MailboxState): string => serializeMailboxState({ ...withFolderCursor(state, 'AAMk-inbox', 'Inbox', 'cursor-1'), fields: undefined });
+  const quiet = { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'cursor-2' }] };
+
+  it('reads every folder from the start and writes every thread again, once', async () => {
+    const { reader, asked, labels, files, logger } = await run({ files: { texts: { [STATE_PATH]: before(filed) } }, reader: quiet });
+
+    expect(reader.calls).toContain('folderDelta:AAMk-inbox');
+    expect(reader.calls).not.toContain('deltaFrom:cursor-1');
+    expect(asked).toEqual(['conv-1']);
+    expect(labels).toEqual(['Contrat Contoso']);
+    expect(stateAfter(files)).toMatchObject({ fields: 2, folders: { 'AAMk-inbox': { deltaLink: 'cursor-2' } } });
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'mail.fields-upgraded', meta: { threads: 1 } });
+
+    const next = await run({ files: { texts: { [STATE_PATH]: files.written.get(STATE_PATH) ?? '' } }, reader: quiet });
+
+    expect(next.asked).toStrictEqual([]);
+    expect(next.reader.calls).toContain('deltaFrom:cursor-2');
+  });
+
+  it('leaves alone a thread that has run out of tries', async () => {
+    const { asked } = await run({ files: { texts: { [STATE_PATH]: before(withRetry(filed, 'thread-1', { attempts: 3, reason: 'refused' })) } }, reader: quiet });
+
+    expect(asked).toStrictEqual([]);
+  });
+
+  it('a dry run counts the threads the update will write, and writes nothing', async () => {
+    const { summary, files } = await run({ files: { texts: { [STATE_PATH]: before(filed) } }, reader: quiet, dryRun: true });
+
+    expect(summary.queued).toBe(1);
+    expect(files.writeLog).toStrictEqual([]);
+  });
+
+  // The queue a stopped run left is written first; the sweep that would update comes on the next run.
+  it('a run that continues a saved queue leaves the update to the next sweep', async () => {
+    const halfDone = serializeMailboxState({ ...filed, fields: undefined, pending: ['thread-1'] });
+    const { reader, files } = await run({ files: { texts: { [STATE_PATH]: halfDone } }, reader: quiet });
+
+    expect(reader.calls.some((call) => call.startsWith('folderDelta') || call.startsWith('deltaFrom'))).toBe(false);
+    expect(stateAfter(files)).not.toHaveProperty('fields');
+  });
+});
+
 describe('naming the folder each message sits in', () => {
   it('the folders the sweep passes over are named for the messages a thread holds in them', async () => {
     const reader = { folders: [folder(), folder({ id: 'AAMk-bin', name: 'Deleted Items' })], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] };
