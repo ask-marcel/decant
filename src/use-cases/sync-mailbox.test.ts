@@ -1076,6 +1076,51 @@ describe('rendering several conversations at once', () => {
     );
   });
 
+  // One line per message beside the one per thread, written from the state on every run, with the
+  // sent mail told apart by the addresses the sweep read.
+  it('the message index lists each message beside the thread index, and a run with no change writes it the same', async () => {
+    const message1 = {
+      id: 'm1',
+      received: '2026-05-12T09:31:00Z',
+      subject: 'Contrat Contoso',
+      from: { name: 'Jane Doe', address: 'jane@example.com' },
+      to: [],
+      cc: [],
+      folderId: 'AAMk-inbox',
+      flag: 'notFlagged',
+      importance: 'normal',
+      categories: [],
+      folder: 'Inbox',
+      draft: false,
+      internetMessageId: '',
+      preview: '',
+      attachments: [],
+      linked: [],
+    };
+    const outcome = (): RenderThreadOutcome => rendered({ thread: { ...rendered().thread, record: { ...rendered().thread.record, messages: [message1] } } });
+    const reader = { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }], own: ['jane@example.com'] };
+    const first = await run({ reader, outcome });
+    const index = first.files.written.get('kb/Mailbox/_meta/messages.jsonl') ?? '';
+
+    expect(index.split('\n').filter((line) => line.length > 0)).toHaveLength(1);
+    expect(JSON.parse(index)).toMatchObject({ message_id: 'm1', direction: 'sent', folder: 'Inbox', note: 'Mailbox/threads/2026-05-12/thread.md', position: '1/1' });
+
+    const again = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } }, reader: { ...reader, pages: [] } });
+
+    expect(again.files.written.get('kb/Mailbox/_meta/messages.jsonl')).toBe(index);
+  });
+
+  it('the addresses the sweep read are kept, and a failed read keeps the ones held before', async () => {
+    const kept = await run({ reader: { folders: [folder()], own: ['jane@example.com'] } });
+    const held = serializeMailboxState({ ...emptyMailboxState(), ownAddresses: ['jane@example.com'] });
+    const refused = { kind: 'transient' as const, message: 'throttled' };
+    const failed = await run({ files: { texts: { [STATE_PATH]: held } }, reader: { folders: [folder()], failCalls: { ownAddresses: refused } } });
+
+    expect(JSON.parse(kept.files.written.get(STATE_PATH) ?? '{}').ownAddresses).toEqual(['jane@example.com']);
+    expect(JSON.parse(failed.files.written.get(STATE_PATH) ?? '{}').ownAddresses).toEqual(['jane@example.com']);
+    expect(failed.logger.calls).toContainEqual({ level: 'warn', event: 'mail.owner-unread', meta: { cause: 'transient' } });
+  });
+
   it('a dry run leaves no index behind, having written nothing to index', async () => {
     const { files } = await run({ dryRun: true, reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] } });
 

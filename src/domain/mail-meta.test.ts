@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'bun:test';
-import { attachmentRows, linkRows, mailboxIndexPage, renderJsonl, threadRows } from './mail-meta.ts';
+import { attachmentRows, linkRows, mailboxIndexPage, messageRows, renderJsonl, threadRows } from './mail-meta.ts';
 import { emptyMailboxState, withAttachment, withConversation, withLinked, withThread } from './mail-state.ts';
 import type { ThreadRecord } from './mail-state.ts';
+import type { MessageRecord } from './message-record.ts';
 
 const thread = {
   folder: '2026-05-12-d9f4e0a3c1-contrat',
@@ -103,5 +104,100 @@ describe('the page a reader opens the mailbox by', () => {
   // A thread written before its subject was kept is linked by its file until a new message writes it.
   it('a thread kept without a subject or a sender is still listed, linked by its file', () => {
     expect(mailboxIndexPage(held, 'UTC')).toContain('- 2026-05-13 · [threads/2026-05-12-d9f4e0a3c1-contrat/contrat.md](threads/2026-05-12-d9f4e0a3c1-contrat/contrat.md)\n');
+  });
+});
+
+// One line per message, with the field names the filters already written against the message index
+// ask for, so `$_.flag -eq 'open'` and `$_.direction -eq 'received'` keep working.
+describe('indexing each message the mailbox holds', () => {
+  const recorded = (over: Partial<MessageRecord> = {}): MessageRecord => ({
+    id: 'm1',
+    received: '2026-05-12T09:31:00Z',
+    subject: 'Contrat Contoso',
+    from: { name: 'Jane Doe', address: 'jane@contoso.com' },
+    to: [{ name: 'Valerie FAIRBANKS', address: 'valerie@contoso.com' }],
+    cc: [{ name: 'Li Wei', address: 'li.wei@northwind.example' }],
+    folderId: 'AAMk-follow',
+    flag: 'flagged',
+    importance: 'high',
+    categories: ['Blue category'],
+    folder: 'To_Follow',
+    draft: false,
+    internetMessageId: '<AM0PR04MB6f21@contoso.com>',
+    preview: 'Hi Valerie, the figures are attached.',
+    attachments: ['Contrat.docx'],
+    linked: ['Rapport.docx'],
+    ...over,
+  });
+  const holding = (messages: ReadonlyArray<MessageRecord> | undefined, ownAddresses: ReadonlyArray<string> = []): ReturnType<typeof emptyMailboxState> => ({
+    ...withThread(emptyMailboxState(), 'd9f4e0a3c1', { ...thread, messages }),
+    ownAddresses,
+  });
+
+  it('a message is one line, with when, who, where and how it is marked', () => {
+    const replied = recorded({ id: 'm2', received: '2026-05-13T22:30:00Z', from: { name: 'Valerie FAIRBANKS', address: 'valerie@contoso.com' }, to: [], cc: [] });
+
+    expect(messageRows(holding([recorded(), replied]), 'Europe/Paris')).toEqual([
+      {
+        date: '2026-05-12',
+        time: '11:31',
+        utc: '2026-05-12T09:31:00Z',
+        direction: 'received',
+        from: 'Jane Doe',
+        from_email: 'jane@contoso.com',
+        to: ['Valerie FAIRBANKS'],
+        to_emails: ['valerie@contoso.com'],
+        cc: ['Li Wei'],
+        cc_emails: ['li.wei@northwind.example'],
+        subject: 'Contrat Contoso',
+        folder: 'To_Follow',
+        flag: 'open',
+        categories: ['Blue category'],
+        importance: 'high',
+        attachments: ['Contrat.docx'],
+        linked_files: ['Rapport.docx'],
+        preview: 'Hi Valerie, the figures are attached.',
+        note: 'Mailbox/threads/2026-05-12-d9f4e0a3c1-contrat/contrat.md',
+        position: '1/2',
+        thread_id: 'd9f4e0a3c1',
+        message_id: 'm1',
+        internet_message_id: '<AM0PR04MB6f21@contoso.com>',
+      },
+      expect.objectContaining({ date: '2026-05-14', time: '00:30', utc: '2026-05-13T22:30:00Z', to: [], cc_emails: [], position: '2/2', message_id: 'm2' }),
+    ]);
+  });
+
+  // Told by the address it went out from, not by the folder: a reply filed with its conversation in a
+  // project folder is still mail the mailbox sent.
+  it('a message from an address of the mailbox was sent, in whatever case the address is written, and a draft is a draft', () => {
+    const own = ['jane@contoso.com'];
+    const directions = (records: ReadonlyArray<MessageRecord>): ReadonlyArray<string> => messageRows(holding(records, own), 'UTC').map((row) => row.direction);
+
+    expect(directions([recorded({ from: { name: 'Jane Doe', address: 'Jane@Contoso.com' } })])).toEqual(['sent']);
+    expect(directions([recorded({ draft: true })])).toEqual(['draft']);
+    expect(directions([recorded({ from: { name: 'Li Wei', address: 'li.wei@northwind.example' } })])).toEqual(['received']);
+    expect(directions([recorded({ from: undefined })])).toEqual(['received']);
+  });
+
+  it('a message with no sender and no time leaves those fields empty, and a flag marked complete says so', () => {
+    const [row] = messageRows(holding([recorded({ from: undefined, received: '', flag: 'complete' })]), 'UTC');
+
+    expect(row).toMatchObject({ date: '', time: '', utc: '', from: '', from_email: '', flag: 'complete' });
+  });
+
+  it('lines run oldest first across every thread, a tie kept apart by the message id', () => {
+    const state = withThread(holding([recorded({ id: 'b', received: '2026-05-12T09:31:00Z' }), recorded({ id: 'c', received: '2026-05-14T09:31:00Z' })]), 'ffff000000', {
+      ...thread,
+      messages: [recorded({ id: 'a', received: '2026-05-12T09:31:00Z' }), recorded({ id: 'd', received: '2026-05-13T09:31:00Z' })],
+    });
+
+    expect(messageRows(state, 'UTC').map((row) => row.message_id)).toEqual(['a', 'b', 'd', 'c']);
+  });
+
+  // A thread written before its messages were recorded has nothing to list yet, and the one-time
+  // update writes it again.
+  it('a thread with no message records gives no line', () => {
+    expect(messageRows(holding(undefined), 'UTC')).toStrictEqual([]);
+    expect(renderJsonl(messageRows(holding([]), 'UTC'))).toBe('');
   });
 });
