@@ -3,11 +3,15 @@ import type { AttachmentRecord } from './mail-state.ts';
 import {
   countThreads,
   emptyMailboxState,
+  folderNames,
+  marksChanged,
   needsRender,
   parseMailboxState,
+  renamedFolders,
   retriedThreads,
   serializeMailboxState,
   threadOfConversation,
+  threadsInFolders,
   withAttachment,
   withConversation,
   withFolderCursor,
@@ -15,8 +19,10 @@ import {
   withPending,
   withRetry,
   withThread,
+  withUnsweptFolders,
   withoutRetry,
 } from './mail-state.ts';
+import type { MessageRecord } from './message-record.ts';
 
 const thread = {
   folder: '2026-05-12-a3f9c1e0d2-contrat',
@@ -42,6 +48,7 @@ describe('remembering where a mailbox sync got to', () => {
       pending: [],
       retry: {},
       titles: {},
+      unsweptFolders: {},
     });
   });
 
@@ -284,6 +291,108 @@ describe('deciding whether a conversation has to be written again', () => {
     expect(needsRender(state, 'conv-1', ['m1', 'm2'])).toBe(false);
     expect(needsRender(state, 'conv-1', ['m2'])).toBe(false);
     expect(needsRender(state, 'conv-1', [])).toBe(false);
+  });
+});
+
+// A message flagged, filed elsewhere, given a category or an importance since its thread was written
+// is a thread that says something no longer true. A message only read is not.
+describe('telling whether a message was marked since its thread was written', () => {
+  const recorded = (over: Partial<MessageRecord> = {}): MessageRecord => ({
+    id: 'm1',
+    received: '2026-05-12T09:31:00Z',
+    subject: 'Contrat',
+    to: [],
+    cc: [],
+    folderId: 'AAMk-inbox',
+    flag: 'notFlagged',
+    importance: 'normal',
+    categories: ['Blue category'],
+    folder: 'Inbox',
+    draft: false,
+    internetMessageId: '',
+    preview: '',
+    attachments: [],
+    linked: [],
+    ...over,
+  });
+  const marks = { id: 'm1', folderId: 'AAMk-inbox', flag: 'notFlagged', importance: 'normal', categories: ['Blue category'] };
+  const filed = withThread(withConversation(emptyMailboxState(), 'conv-1', { threadId: 'd9f4e0a3c1', root: '<root@example.com>' }), 'd9f4e0a3c1', {
+    ...thread,
+    messages: [recorded()],
+  });
+
+  it('a message marked as it was when its thread was written leaves the thread alone', () => {
+    expect(marksChanged(filed, 'conv-1', [marks])).toBe(false);
+  });
+
+  it('a message flagged since is a thread to write again', () => {
+    expect(marksChanged(filed, 'conv-1', [{ ...marks, flag: 'flagged' }])).toBe(true);
+    expect(marksChanged(filed, 'conv-1', [marks, { ...marks, flag: 'flagged' }])).toBe(true);
+  });
+
+  // A new message is what `needsRender` answers for, and a conversation nobody resolved has nothing
+  // written to compare against.
+  it('a message the thread never held, or a conversation no thread holds, has nothing to compare', () => {
+    expect(marksChanged(filed, 'conv-1', [{ ...marks, id: 'm9', flag: 'flagged' }])).toBe(false);
+    expect(marksChanged(filed, 'conv-new', [{ ...marks, flag: 'flagged' }])).toBe(false);
+    expect(marksChanged(withConversation(emptyMailboxState(), 'conv-2', { threadId: 'none', root: '<r@example.com>' }), 'conv-2', [{ ...marks, flag: 'flagged' }])).toBe(false);
+  });
+
+  it('a thread written before its messages were recorded has no marks to compare', () => {
+    const unmarked = withThread(filed, 'd9f4e0a3c1', thread);
+
+    expect(marksChanged(unmarked, 'conv-1', [{ ...marks, flag: 'flagged' }])).toBe(false);
+  });
+});
+
+describe('naming the folders of a mailbox', () => {
+  it('the swept folders and the ones the sweep passes over are named together', () => {
+    const state = withUnsweptFolders(withFolderCursor(emptyMailboxState(), 'AAMk-inbox', 'Inbox', 'c1'), [{ id: 'AAMk-bin', name: 'Deleted Items', childCount: 0, itemCount: 3 }]);
+
+    expect(folderNames(state)).toEqual({ 'AAMk-bin': 'Deleted Items', 'AAMk-inbox': 'Inbox' });
+    expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
+  });
+
+  // Replaced whole on each sweep, so a folder gone from the source is gone from the names too.
+  it('the folders passed over are the ones the last sweep listed, and a name that is not text is dropped', () => {
+    const once = withUnsweptFolders(emptyMailboxState(), [{ id: 'AAMk-bin', name: 'Deleted Items', childCount: 0, itemCount: 0 }]);
+    const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox' }, unsweptFolders: { 'AAMk-bin': 'Deleted Items', 'AAMk-odd': 7 } });
+
+    expect(withUnsweptFolders(once, []).unsweptFolders).toEqual({});
+    expect(parsed.ok && parsed.value.unsweptFolders).toEqual({ 'AAMk-bin': 'Deleted Items' });
+  });
+
+  it('a folder whose name changed is found, and one new or gone is not a rename', () => {
+    expect(renamedFolders({ a: 'Follow', b: 'Inbox', gone: 'Old' }, { a: 'To_Follow', b: 'Inbox', fresh: 'New' })).toEqual(['a']);
+  });
+
+  it('the threads holding a message in a folder are found, each once, in a stable order', () => {
+    const message = (folderId: string): MessageRecord => ({
+      id: folderId,
+      received: '',
+      subject: '',
+      to: [],
+      cc: [],
+      folderId,
+      flag: '',
+      importance: '',
+      categories: [],
+      folder: '',
+      draft: false,
+      internetMessageId: '',
+      preview: '',
+      attachments: [],
+      linked: [],
+    });
+    const state = [
+      ['t2', [message('a'), message('a')]],
+      ['t1', [message('b'), message('a')]],
+      ['t3', [message('b')]],
+      ['t4', undefined],
+    ].reduce((carried, [id, messages]) => withThread(carried, String(id), { ...thread, messages: messages as ReadonlyArray<MessageRecord> | undefined }), emptyMailboxState());
+
+    expect(threadsInFolders(state, ['a'])).toEqual(['t1', 't2']);
+    expect(threadsInFolders(state, [])).toStrictEqual([]);
   });
 });
 

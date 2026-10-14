@@ -1,5 +1,6 @@
-import type { MessageRecord } from './message-record.ts';
-import { parseMessageRecords } from './message-record.ts';
+import type { MailFolder } from './mail-folder.ts';
+import type { MessageMarks, MessageRecord } from './message-record.ts';
+import { parseMessageRecords, sameMarks } from './message-record.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { MAX_CONVERSION_ATTEMPTS } from './retry-policy.ts';
@@ -100,6 +101,10 @@ export type MailboxState = {
   // queue or tries a thread again names it on the counter as the sweep that queued it did. Kept for
   // those threads only and dropped once one is written. Additive: a file from before holds none.
   readonly titles: Readonly<Record<string, string>>;
+  // The folders the sweep passes over (Deleted Items, Junk Email, Drafts, Outbox), by name only: a
+  // conversation holds messages in them too, and each message says which folder it sits in. Kept so
+  // a run that resumes its queue, and lists no folders, can still name them. Additive.
+  readonly unsweptFolders: Readonly<Record<string, string>>;
 };
 
 export type MailStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -119,6 +124,7 @@ export const emptyMailboxState = (): MailboxState => ({
   pending: [],
   retry: {},
   titles: {},
+  unsweptFolders: {},
 });
 
 export const serializeMailboxState = (state: MailboxState): string => `${JSON.stringify(state, undefined, 2)}\n`;
@@ -195,6 +201,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     retry: mapOf(raw['retry'], retryOf),
     since: readString(raw, 'since'),
     titles: textsOf(raw['titles']),
+    unsweptFolders: textsOf(raw['unsweptFolders']),
   });
 };
 
@@ -214,6 +221,35 @@ export const withFolderCursor = (state: MailboxState, folderId: string, name: st
   ...state,
   folders: { ...state.folders, [folderId]: { name, ...(deltaLink === undefined ? {} : { deltaLink }) } },
 });
+
+// The folders this sweep passed over, as the listing named them, in place of the ones before.
+export const withUnsweptFolders = (state: MailboxState, folders: ReadonlyArray<MailFolder>): MailboxState => ({
+  ...state,
+  unsweptFolders: Object.fromEntries(folders.map((folder) => [folder.id, folder.name])),
+});
+
+// Every folder's name by its id, swept or passed over.
+export const folderNames = (state: MailboxState): Readonly<Record<string, string>> => ({
+  ...state.unsweptFolders,
+  ...Object.fromEntries(Object.entries(state.folders).map(([id, folder]) => [id, folder.name])),
+});
+
+// The folders that were named before and are named otherwise now. A folder new to the listing, or
+// gone from it, holds no message a thread already wrote under another name.
+export const renamedFolders = (before: Readonly<Record<string, string>>, after: Readonly<Record<string, string>>): ReadonlyArray<string> =>
+  Object.entries(after)
+    .filter(([id, name]) => before[id] !== undefined && before[id] !== name)
+    .map(([id]) => id);
+
+// The threads holding a message in one of these folders, by key, so a queue built from them comes out
+// the same whatever order the state was read in.
+export const threadsInFolders = (state: MailboxState, folderIds: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const wanted = new Set(folderIds);
+  return Object.entries(state.threads)
+    .filter(([, record]) => (record.messages ?? []).some((message) => wanted.has(message.folderId)))
+    .map(([threadId]) => threadId)
+    .sort(compareText);
+};
 
 // Every folder read again from the start, each keeping its name.
 export const withoutCursors = (state: MailboxState): MailboxState => ({
@@ -293,6 +329,23 @@ export const needsRender = (state: MailboxState, conversationId: string, message
   if (known === undefined) return true;
   const seen = new Set(known.messageIds);
   return messageIds.some((id) => !seen.has(id));
+};
+
+// A message the sweep returned, by its id and how it is marked now.
+export type SweptMarks = MessageMarks & { readonly id: string };
+
+// A conversation holding a message marked otherwise than when its thread was written: flagged, given
+// a category or an importance, or moved, which changes what the note says about it. A message read and
+// nothing more is marked as it was. A thread written before its messages were recorded has no marks
+// to compare, and only a new message writes it again, as `needsRender` decides.
+export const marksChanged = (state: MailboxState, conversationId: string, swept: ReadonlyArray<SweptMarks>): boolean => {
+  const belongs = state.conversations[conversationId];
+  const known = belongs === undefined ? undefined : state.threads[belongs.threadId];
+  const held = new Map((known?.messages ?? []).map((record) => [record.id, record]));
+  return swept.some((message) => {
+    const record = held.get(message.id);
+    return record !== undefined && !sameMarks(record, message);
+  });
 };
 
 export const countThreads = (state: MailboxState): number => Object.keys(state.threads).length;
