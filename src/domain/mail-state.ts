@@ -1,3 +1,5 @@
+import type { MessageRecord } from './message-record.ts';
+import { parseMessageRecords } from './message-record.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { MAX_CONVERSION_ATTEMPTS } from './retry-policy.ts';
@@ -26,6 +28,9 @@ export type ThreadRecord = {
   readonly subject?: string;
   readonly firstMessage?: string;
   readonly lastFrom?: string;
+  // What each message was when the thread was written, oldest first: the marks a sweep compares, and
+  // what the message index lists it by. Absent from a thread written before they were kept.
+  readonly messages?: ReadonlyArray<MessageRecord>;
 };
 
 // The files one linked SharePoint document produced, the way an attachment records its own: a
@@ -145,6 +150,7 @@ export const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
   subject: readString(raw, 'subject'),
   firstMessage: readString(raw, 'firstMessage'),
   lastFrom: readString(raw, 'lastFrom'),
+  messages: parseMessageRecords(raw['messages']),
 });
 
 export const linkedOf = (entry: Record<string, unknown>): LinkedRecord => ({ paths: pathList(entry['paths']) });

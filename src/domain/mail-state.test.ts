@@ -64,6 +64,32 @@ describe('remembering where a mailbox sync got to', () => {
     expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
   });
 
+  it('a thread written with a record of each message reads them back', () => {
+    const messages = [
+      {
+        id: 'm1',
+        received: '2026-05-12T09:31:00Z',
+        subject: 'Contrat',
+        from: { name: 'Jane Doe', address: 'jane@contoso.com' },
+        to: [],
+        cc: [],
+        folderId: 'AAMk-inbox',
+        flag: 'notFlagged',
+        importance: 'normal',
+        categories: [],
+        folder: 'Inbox',
+        draft: false,
+        internetMessageId: '<a@contoso.com>',
+        preview: 'Hello.',
+        attachments: [],
+        linked: [],
+      },
+    ];
+    const state = withThread(emptyMailboxState(), 'thread-1', { ...thread, messages });
+
+    expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
+  });
+
   it('a state file written before the shared attachment store still loads', () => {
     const parsed = parseMailboxState({ version: 2, source: { kind: 'mailbox' } });
 
