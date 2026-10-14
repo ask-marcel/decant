@@ -43,14 +43,17 @@ describe('putting aside what an item held', () => {
 
   // Past a hundred folders in one day the search stops, and the move itself refuses to write over
   // what is there.
-  it('a day whose hundred folders all hold the path sends the set to the last of them', async () => {
+  it('a day whose hundred folders all hold the path tries the last of them, and the move refuses to write over it', async () => {
     const at = (folder: string): string => `kb/_archive/${folder}/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md`;
     const folders = ['2026-10-13', ...Array.from({ length: 99 }, (_, index) => `2026-10-13-${index + 2}`)];
     const files = createFilesFake({ texts: { [NOTE]: 'latest', ...Object.fromEntries(folders.map((folder) => [at(folder), 'older'])) } });
+    const last = at('2026-10-13-100');
 
-    await putAside({ files, clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb' }, [NOTE]);
+    const failed = await putAside({ files, clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb' }, [NOTE]);
 
-    expect(files.moves.map((move) => move.to)).toEqual([at('2026-10-13-100')]);
+    expect(failed).toEqual([{ path: NOTE, error: { kind: 'write-failed', path: last, message: `a file is already at ${last}` } }]);
+    expect(files.written.get(last)).toBe('older');
+    expect(files.written.get(NOTE)).toBe('latest');
   });
 
   it('an empty set moves nothing and names nothing', async () => {
