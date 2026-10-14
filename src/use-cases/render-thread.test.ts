@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { contentHash } from '../domain/content-hash.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
+import { threadOf } from '../domain/mail-state.ts';
 import {
   ATTACHMENTS_STORE,
   CONV,
@@ -104,6 +105,16 @@ describe('writing one conversation as one file', () => {
       preview: 'See the report.',
       to: [{ name: 'Valerie FAIRBANKS', address: 'valerie@example.com' }],
     });
+  });
+
+  // The state is written again only when its text changes, so a thread record read back from it must
+  // write the keys in the order the render wrote them, or a run with no change rewrites the file.
+  it('a thread record read back from the state writes the same text the render gave it', async () => {
+    const swept = message({ cc: [], folderId: 'AAMk-inbox', flag: 'notFlagged', importance: 'normal', categories: ['Blue category'], isDraft: false, preview: 'One.' });
+    const { outcome } = await run({ reader: { conversations: { [CONV]: [swept] } }, folders: { 'AAMk-inbox': 'Inbox' } });
+    const text = JSON.stringify(outcome?.kind === 'rendered' ? outcome.thread.record : undefined);
+
+    expect(JSON.stringify(threadOf(JSON.parse(text)))).toBe(text);
   });
 
   it('a message in a folder the sync gave no name for is recorded with no folder name', async () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { parseGroupPost, parseGroupThread, postRef, refParts, threadRef } from './group-thread.ts';
 import type { GroupThread } from './group-thread.ts';
+import { renderThread } from './thread.ts';
 
 const GROUP = '0d3b-group';
 
@@ -60,6 +61,27 @@ describe('reading a group inbox thread and the posts under it', () => {
     expect(parsed?.isDeleted).toBe(false);
     expect(parsed?.received).toBe('');
     expect(parsed?.hasAttachments).toBe(false);
+  });
+
+  // The group is a post's whole audience, so a post keeps no recipient lists of its own, and its
+  // heading names nobody rather than saying the post reached no one.
+  it('a post keeps no Cc, folder or flag of its own, so its heading names only who wrote it', () => {
+    const post = parseGroupPost(
+      {
+        id: 'AAMkAD-post',
+        receivedDateTime: '2026-07-20T10:45:14Z',
+        sender: { emailAddress: { name: 'Dana Farrow', address: 'd.farrow@example.com' } },
+        ccRecipients: [{ emailAddress: { name: 'Li Wei', address: 'li.wei@example.com' } }],
+      },
+      thread,
+      GROUP
+    );
+    const rendered = post === undefined ? '' : renderThread({ subject: thread.topic, parts: [{ message: post, body: 'Agreed.' }] }, 'UTC');
+
+    expect(post).not.toHaveProperty('cc');
+    expect(post).not.toHaveProperty('folderId');
+    expect(post).not.toHaveProperty('flag');
+    expect(rendered).toContain('## 2026-07-20 10:45 — Dana Farrow\n\nfrom d.farrow@example.com\n\nAgreed.');
   });
 
   it('a post with no id is no post, and neither is a payload that is not a record', () => {

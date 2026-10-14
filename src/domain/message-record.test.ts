@@ -103,6 +103,14 @@ describe('telling a message that was marked from one that was only read', () => 
 });
 
 describe('reading the message records back', () => {
+  // A run with no change at the source must leave the state file as it was, so a record read back
+  // writes its keys in the order it was written in, not only the same values.
+  it('records read back write the same text they were read from', () => {
+    const text = JSON.stringify([messageRecordOf(message(), CARRIED), messageRecordOf(message({ id: 'm2', from: undefined }), CARRIED)]);
+
+    expect(JSON.stringify(parseMessageRecords(JSON.parse(text)))).toBe(text);
+  });
+
   it('records read back as they were written', () => {
     const records = [messageRecordOf(message(), CARRIED), messageRecordOf(message({ id: 'm2', from: undefined, isDraft: true }), CARRIED)];
 
