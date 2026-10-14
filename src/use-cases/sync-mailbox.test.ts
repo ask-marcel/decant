@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'bun:test';
 import type { MailFolder } from '../domain/mail-folder.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
-import { serializeMailboxState, emptyMailboxState, withConversation, withFolderCursor, withThread } from '../domain/mail-state.ts';
+import { serializeMailboxState, emptyMailboxState, withConversation, withFolderCursor, withRetry, withThread } from '../domain/mail-state.ts';
+import type { MailboxState } from '../domain/mail-state.ts';
+import type { MessageRecord } from '../domain/message-record.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import { err, ok } from '../domain/result.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
@@ -76,6 +78,7 @@ const run = async (
   progress: ProgressFake;
   asked: string[];
   labels: string[];
+  inputs: RenderThreadInput[];
   ok: boolean;
   error?: StepError;
   reader: ReturnType<typeof createMailReaderFake>;
@@ -86,6 +89,7 @@ const run = async (
   const reader = createMailReaderFake(seeds.reader);
   const asked: string[] = [];
   const labels: string[] = [];
+  const inputs: RenderThreadInput[] = [];
   const syncMailbox = createSyncMailbox({
     reader,
     files,
@@ -97,6 +101,7 @@ const run = async (
     renderThread: async (input) => {
       asked.push(input.conversationIds.join(','));
       labels.push(input.label);
+      inputs.push(input);
       if (seeds.failThread === input.conversationIds.join(',')) return err({ kind: 'permanent' as const, message: 'thread refused' });
       return ok(seeds.outcome === undefined ? rendered() : seeds.outcome(input));
     },
@@ -115,6 +120,7 @@ const run = async (
     progress,
     asked,
     labels,
+    inputs,
     ok: result.ok,
     error: result.ok ? undefined : result.error,
     reader,
@@ -419,6 +425,150 @@ describe('running a mailbox sync again', () => {
     const { asked } = await run({ files: { texts: { [STATE_PATH]: known } }, reader });
 
     expect(asked).toEqual(['conv-1']);
+  });
+});
+
+// A flag, a category, an importance or a move changes what a thread's note says about a message, and
+// none of them adds a message. Reading one changes nothing a note says.
+describe('writing a thread again when one of its messages is marked', () => {
+  const recorded = (over: Partial<MessageRecord> = {}): MessageRecord => ({
+    id: 'm1',
+    received: '2026-05-12T09:31:00Z',
+    subject: 'Contrat Contoso',
+    from: { name: 'Jane Doe', address: 'jane@example.com' },
+    to: [],
+    cc: [],
+    folderId: 'AAMk-inbox',
+    flag: 'notFlagged',
+    importance: 'normal',
+    categories: [],
+    folder: 'Inbox',
+    draft: false,
+    internetMessageId: '',
+    preview: '',
+    attachments: [],
+    linked: [],
+    ...over,
+  });
+  const filedWith = (messages: ReadonlyArray<MessageRecord> | undefined): MailboxState =>
+    withThread(withConversation(emptyMailboxState(), 'conv-1', { threadId: 'thread-1', root: '<root@example.com>' }), 'thread-1', {
+      folder: '2026-05-12-thread-1',
+      conversationIds: ['conv-1'],
+      file: 'threads/2026-05-12-thread-1/contrat-contoso.md',
+      messageIds: ['m1'],
+      lastMessage: '2026-05-12T09:31:00Z',
+      attachments: [],
+      inlineImages: [],
+      subject: 'Contrat Contoso',
+      messages,
+    });
+  const filed = (): MailboxState => filedWith([recorded()]);
+  const sweeping = (over: Partial<MailMessage> = {}): MailReaderSeed => ({
+    folders: [folder()],
+    pages: [{ messages: [message({ folderId: 'AAMk-inbox', flag: 'notFlagged', importance: 'normal', categories: [], ...over })], skipped: 0, deltaLink: 'c1' }],
+  });
+  const runOn = async (state: MailboxState, reader: MailReaderSeed, since?: string): Promise<string[]> =>
+    (await run({ files: { texts: { [STATE_PATH]: serializeMailboxState(state) } }, reader, since })).asked;
+
+  it('a message flagged since its thread was written writes the thread again', async () => {
+    expect(await runOn(filed(), sweeping({ flag: 'flagged' }))).toEqual(['conv-1']);
+  });
+
+  it('a message given a category, another importance or another folder writes its thread again too', async () => {
+    expect(await runOn(filed(), sweeping({ categories: ['Blue category'] }))).toEqual(['conv-1']);
+    expect(await runOn(filed(), sweeping({ importance: 'high' }))).toEqual(['conv-1']);
+    expect(await runOn(filed(), sweeping({ folderId: 'AAMk-follow' }))).toEqual(['conv-1']);
+  });
+
+  it('a message only read since leaves its thread alone', async () => {
+    expect(await runOn(filed(), sweeping())).toStrictEqual([]);
+  });
+
+  // The day narrows which conversations come in, not what happens to one already in.
+  it('a message flagged from before the day asked for still writes its thread again, the thread being in the knowledge base', async () => {
+    expect(await runOn(filed(), sweeping({ flag: 'flagged' }), '2026-06-01')).toEqual(['conv-1']);
+  });
+
+  it('a thread written before its messages were recorded is written again only for a new message', async () => {
+    expect(await runOn(filedWith(undefined), sweeping({ flag: 'flagged' }))).toStrictEqual([]);
+  });
+});
+
+describe('naming the folder each message sits in', () => {
+  it('the folders the sweep passes over are named for the messages a thread holds in them', async () => {
+    const reader = { folders: [folder(), folder({ id: 'AAMk-bin', name: 'Deleted Items' })], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] };
+    const { files, inputs } = await run({ reader });
+
+    expect(JSON.parse(files.written.get(STATE_PATH) ?? '{}').unsweptFolders).toEqual({ 'AAMk-bin': 'Deleted Items' });
+    expect(inputs[0]?.folders).toEqual({ 'AAMk-bin': 'Deleted Items', 'AAMk-inbox': 'Inbox' });
+  });
+
+  // A run that resumes a queue lists no folders, so the names come from what the last sweep kept.
+  it('a run that resumes its queue names the folders the last sweep listed', async () => {
+    const held = withConversation(emptyMailboxState(), 'conv-9', { threadId: 'thread-9', root: '<r@example.com>' });
+    const halfDone = serializeMailboxState({
+      ...withFolderCursor(held, 'AAMk-inbox', 'Inbox', 'c1'),
+      unsweptFolders: { 'AAMk-bin': 'Deleted Items' },
+      pending: ['thread-9'],
+    });
+    const { inputs } = await run({ files: { texts: { [STATE_PATH]: halfDone } }, reader: { folders: [folder()] } });
+
+    expect(inputs[0]?.folders).toEqual({ 'AAMk-bin': 'Deleted Items', 'AAMk-inbox': 'Inbox' });
+  });
+
+  describe('a folder renamed at the source', () => {
+    const inFollow = withThread(withConversation(emptyMailboxState(), 'conv-1', { threadId: 'thread-1', root: '<root@example.com>' }), 'thread-1', {
+      folder: '2026-05-12-thread-1',
+      conversationIds: ['conv-1'],
+      file: 'threads/2026-05-12-thread-1/contrat-contoso.md',
+      messageIds: ['m1'],
+      lastMessage: '2026-05-12T09:31:00Z',
+      attachments: [],
+      inlineImages: [],
+      subject: 'RE: Contrat Contoso',
+      messages: [
+        {
+          id: 'm1',
+          received: '2026-05-12T09:31:00Z',
+          subject: 'Contrat Contoso',
+          to: [],
+          cc: [],
+          folderId: 'AAMk-follow',
+          flag: 'notFlagged',
+          importance: 'normal',
+          categories: [],
+          folder: 'Follow',
+          draft: false,
+          internetMessageId: '',
+          preview: '',
+          attachments: [],
+          linked: [],
+        },
+      ],
+    });
+    const renamed = { folders: [folder({ id: 'AAMk-follow', name: 'To_Follow' })], pages: [{ messages: [], skipped: 0, deltaLink: 'c1' }] };
+    const before = (state: MailboxState): string => serializeMailboxState(withFolderCursor(state, 'AAMk-follow', 'Follow', 'c0'));
+
+    // No message changed, so no delta reports one, and only the name tells the run.
+    it('writes again each thread with a message in it, under the subject it was written with', async () => {
+      const { asked, labels } = await run({ files: { texts: { [STATE_PATH]: before(inFollow) } }, reader: renamed });
+
+      expect(asked).toEqual(['conv-1']);
+      expect(labels).toEqual(['Contrat Contoso']);
+    });
+
+    it('leaves alone a thread that has run out of tries', async () => {
+      const { asked } = await run({ files: { texts: { [STATE_PATH]: before(withRetry(inFollow, 'thread-1', { attempts: 3, reason: 'refused' })) } }, reader: renamed });
+
+      expect(asked).toStrictEqual([]);
+    });
+
+    it('a folder that keeps its name writes nothing again', async () => {
+      const kept = { ...renamed, folders: [folder({ id: 'AAMk-follow', name: 'Follow' })] };
+      const { asked } = await run({ files: { texts: { [STATE_PATH]: before(inFollow) } }, reader: kept });
+
+      expect(asked).toStrictEqual([]);
+    });
   });
 });
 

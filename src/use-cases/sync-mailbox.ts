@@ -1,24 +1,29 @@
 import type { MailFolder } from '../domain/mail-folder.ts';
-import { syncableFolders } from '../domain/mail-folder.ts';
+import { isExcludedFolder, syncableFolders } from '../domain/mail-folder.ts';
 import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
+import { marksOf } from '../domain/message-record.ts';
 import { INDEX_FILE } from '../domain/index-page.ts';
 import { attachmentRows, linkRows, mailboxIndexPage, renderJsonl, threadRows } from '../domain/mail-meta.ts';
 import { rootMessageId } from '../domain/root-message-id.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
-import type { AttachmentRecord, LinkedRecord, MailboxState, ThreadRecord } from '../domain/mail-state.ts';
+import type { AttachmentRecord, LinkedRecord, MailboxState, SweptMarks, ThreadRecord } from '../domain/mail-state.ts';
 import {
   MAILBOX_ID,
   MAILBOX_NAME,
   abandonedThreads,
   emptyMailboxState,
+  folderNames,
+  marksChanged,
   needsRender,
   parseMailboxState,
+  renamedFolders,
   retriedThreads,
   serializeMailboxState,
   conversationsInThread,
   threadOfConversation,
+  threadsInFolders,
   withAttachment,
   withConversation,
   withFolderCursor,
@@ -26,6 +31,7 @@ import {
   withPending,
   withRetry,
   withThread,
+  withUnsweptFolders,
   withoutCursors,
   withoutRetry,
   keptTitles,
@@ -128,8 +134,12 @@ const save = async (files: Files, path: string, state: MailboxState, dryRun: boo
 
 const stepFailure = (step: string, error: MailReaderError): Result<never, StepError> => ({ ok: false, error: { step, cause: error.kind, message: error.message } });
 
-// Every folder that holds correspondence, including the ones nested inside another.
-const folderTree = async (deps: SyncMailboxDeps): Promise<Result<ReadonlyArray<MailFolder>, MailReaderError>> => {
+// Every folder that holds correspondence, including the ones nested inside another, and the top-level
+// ones the sweep passes over. Those are named and never read: a conversation can hold a message in
+// Deleted Items or Drafts all the same, and the listing that named them is already in hand.
+type FolderTree = { readonly swept: ReadonlyArray<MailFolder>; readonly unswept: ReadonlyArray<MailFolder> };
+
+const folderTree = async (deps: SyncMailboxDeps): Promise<Result<FolderTree, MailReaderError>> => {
   const top = await deps.reader.listFolders();
   if (!top.ok) return top;
   const found: MailFolder[] = [];
@@ -143,7 +153,7 @@ const folderTree = async (deps: SyncMailboxDeps): Promise<Result<ReadonlyArray<M
     if (!children.ok) return children;
     queue.push(...syncableFolders(children.value));
   }
-  return ok(found);
+  return ok({ swept: found, unswept: top.value.filter((folder) => isExcludedFolder(folder.name)) });
 };
 
 type Swept = { readonly state: MailboxState; readonly messages: ReadonlyArray<MailMessage> };
@@ -190,8 +200,16 @@ const sweepFolder = async (deps: SyncMailboxDeps, state: MailboxState, folder: M
   return ok({ state: withFolderCursor(state, folder.id, folder.name, page.deltaLink), messages });
 };
 
-// `subject` is the oldest message's, which is what the thread's document is titled after.
-type Conversation = { readonly id: string; readonly messageIds: ReadonlyArray<string>; readonly last: string; readonly oldest: string; readonly subject: string };
+// `subject` is the oldest message's, which is what the thread's document is titled after. `marks` is how
+// each message the sweep returned is marked now, to compare with what its thread was written with.
+type Conversation = {
+  readonly id: string;
+  readonly messageIds: ReadonlyArray<string>;
+  readonly last: string;
+  readonly oldest: string;
+  readonly subject: string;
+  readonly marks: ReadonlyArray<SweptMarks>;
+};
 
 // Ordered rather than compared in place. `inReceivedOrder` already settles a tie by message id, so
 // the same sweep always names the same oldest message, and it is the ordering the thread's own
@@ -205,6 +223,7 @@ const conversationOf = (id: string, first: MailMessage, rest: ReadonlyArray<Mail
     last: (ordered[ordered.length - 1] ?? first).received,
     oldest: earliest.id,
     subject: earliest.subject,
+    marks: ordered.map((message) => ({ id: message.id, ...marksOf(message) })),
   };
 };
 
@@ -262,11 +281,15 @@ const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
   }
   const folders = await folderTree(deps);
   if (!folders.ok) return stepFailure('listFolders', folders.error);
-  deps.progress.start(folders.value.length, SWEEPING);
-  const swept = await sweepFolders(deps, sweptFrom(deps, state, input.since), folders.value);
+  deps.progress.start(folders.value.swept.length, SWEEPING);
+  const named = withUnsweptFolders(sweptFrom(deps, state, input.since), folders.value.unswept);
+  const swept = await sweepFolders(deps, named, folders.value.swept);
   deps.progress.done();
   if (!swept.ok) return stepFailure('sweepFolder', swept.error);
-  return finishQueue(deps, input, { ...swept.value.state, since: input.since }, statePath, swept.value.messages);
+  // A folder renamed at the source changes the line under every message in it, and no delta says so:
+  // renaming a folder changes none of its messages.
+  const renamed = threadsInFolders(swept.value.state, renamedFolders(folderNames(state), folderNames(swept.value.state)));
+  return finishQueue(deps, input, { ...swept.value.state, since: input.since }, statePath, { messages: swept.value.messages, extra: renamed });
 };
 
 const sweepFolders = async (deps: SyncMailboxDeps, state: MailboxState, folders: ReadonlyArray<MailFolder>): Promise<Result<Swept, MailReaderError>> => {
@@ -292,22 +315,38 @@ const sweptFrom = (deps: SyncMailboxDeps, state: MailboxState, since: string | u
   return withoutCursors(state);
 };
 
-const finishQueue = async (
-  deps: SyncMailboxDeps,
-  input: SyncMailboxInput,
-  state: MailboxState,
-  statePath: string,
-  messages: ReadonlyArray<MailMessage>
-): Promise<Result<MailboxState, StepError>> => {
-  const conversations = conversationsOf(messages, input.since);
-  const dirty = conversations.filter((conversation) => needsRender(state, conversation.id, conversation.messageIds));
-  deps.logger.info('mail.enumerated', { messages: messages.length, conversations: conversations.length, queued: dirty.length });
+// What the sweep brought back, and the threads to write again whatever it brought.
+type Found = { readonly messages: ReadonlyArray<MailMessage>; readonly extra: ReadonlyArray<string> };
+
+// A message marked since its thread was written counts whatever its day: the day narrows which
+// conversations come in, not what happens to one already in the knowledge base.
+const dirtyOf = (state: MailboxState, messages: ReadonlyArray<MailMessage>, since: string | undefined): ReadonlyArray<Conversation> => {
+  const fresh = conversationsOf(messages, since).filter((conversation) => needsRender(state, conversation.id, conversation.messageIds));
+  const taken = new Set(fresh.map((conversation) => conversation.id));
+  const marked = conversationsOf(messages, undefined).filter((conversation) => !taken.has(conversation.id) && marksChanged(state, conversation.id, conversation.marks));
+  return [...fresh, ...marked];
+};
+
+const finishQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string, found: Found): Promise<Result<MailboxState, StepError>> => {
+  const dirty = dirtyOf(state, found.messages, input.since);
+  deps.logger.info('mail.enumerated', { messages: found.messages.length, conversations: conversationsOf(found.messages, input.since).length, queued: dirty.length });
   const resolved = await resolveThreads(deps, state, dirty);
-  const fresh = threadsToRender(resolved, dirty);
-  const queued = withTitles(withPending(cleared(resolved, fresh), [...fresh, ...retriedThreads(resolved.retry, fresh)]), titlesOf(resolved, dirty));
+  const extra = found.extra.filter((threadId) => (resolved.retry[threadId]?.attempts ?? 0) < MAX_CONVERSION_ATTEMPTS);
+  const fresh = [...new Set([...threadsToRender(resolved, dirty), ...extra])];
+  const titles = { ...recordedTitles(resolved, extra), ...titlesOf(resolved, dirty) };
+  const queued = withTitles(withPending(cleared(resolved, fresh), [...fresh, ...retriedThreads(resolved.retry, fresh)]), titles);
   const saved = await save(deps.files, statePath, queued, input.dryRun);
   return saved.ok ? ok(queued) : saved;
 };
+
+// The subject a thread was written with, for a thread queued without a conversation the sweep found.
+const recordedTitles = (state: MailboxState, threadIds: ReadonlyArray<string>): Readonly<Record<string, string>> =>
+  Object.fromEntries(
+    threadIds.flatMap((threadId) => {
+      const subject = state.threads[threadId]?.subject;
+      return subject === undefined ? [] : [[threadId, bareSubject(subject)] as const];
+    })
+  );
 
 // The subject each queued thread goes by, bare of the markers a reply adds, the way the thread's
 // document is titled. A conversation left unresolved is queued under no thread, so it names none.
@@ -378,6 +417,7 @@ const renderOne = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
     maxBytes: input.maxBytes,
     linked: state.linked,
     attachments: state.attachments,
+    folders: folderNames(state),
   });
   if (!rendered.ok) {
     deps.logger.warn('thread.failed', { cause: rendered.error.kind });
