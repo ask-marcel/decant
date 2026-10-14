@@ -501,6 +501,18 @@ describe('writing a thread again when one of its messages is marked', () => {
     expect(await runOn(filed(), sweeping({ flag: 'flagged' }), '2026-06-01')).toEqual(['conv-1']);
   });
 
+  // Graph gives a message a new id when it moves to another folder, so a move reads as a message the
+  // thread never held. A thread already in the knowledge base is written again for it, whatever its day.
+  it('a message from before the day asked for that moved, and so came back under a new id, writes its recorded thread again', async () => {
+    const moved = sweeping({ id: 'm1-moved', folderId: 'AAMk-follow' });
+
+    expect(await runOn(filed(), moved, '2026-06-01')).toEqual(['conv-1']);
+  });
+
+  it('a conversation from before the day asked for that no thread holds is still left out', async () => {
+    expect(await runOn(filed(), sweeping({ id: 'm9', conversationId: 'conv-9' }), '2026-06-01')).toStrictEqual([]);
+  });
+
   it('a thread written before its messages were recorded is written again only for a new message', async () => {
     expect(await runOn(filedWith(undefined), sweeping({ flag: 'flagged' }))).toStrictEqual([]);
   });

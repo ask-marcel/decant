@@ -341,13 +341,22 @@ const sweptFrom = (deps: SyncMailboxDeps, state: MailboxState, since: string | u
 // What the sweep brought back, and the threads to write again whatever it brought.
 type Found = { readonly messages: ReadonlyArray<MailMessage>; readonly extra: ReadonlyArray<string> };
 
-// A message marked since its thread was written counts whatever its day: the day narrows which
-// conversations come in, not what happens to one already in the knowledge base.
+// Whether a thread already in the knowledge base holds this conversation.
+const recorded = (state: MailboxState, conversationId: string): boolean => {
+  const belongs = threadOfConversation(state, conversationId);
+  return belongs !== undefined && state.threads[belongs.threadId] !== undefined;
+};
+
+// A message of a thread already in the knowledge base counts whatever its day, whether it was marked
+// since the thread was written or came back under a new id, which is how Graph reports a message
+// moved to another folder: the day narrows which conversations come in, not what happens to one
+// already in.
 const dirtyOf = (state: MailboxState, messages: ReadonlyArray<MailMessage>, since: string | undefined): ReadonlyArray<Conversation> => {
   const fresh = conversationsOf(messages, since).filter((conversation) => needsRender(state, conversation.id, conversation.messageIds));
   const taken = new Set(fresh.map((conversation) => conversation.id));
-  const marked = conversationsOf(messages, undefined).filter((conversation) => !taken.has(conversation.id) && marksChanged(state, conversation.id, conversation.marks));
-  return [...fresh, ...marked];
+  const changed = (conversation: Conversation): boolean => needsRender(state, conversation.id, conversation.messageIds) || marksChanged(state, conversation.id, conversation.marks);
+  const held = conversationsOf(messages, undefined).filter((conversation) => !taken.has(conversation.id) && recorded(state, conversation.id) && changed(conversation));
+  return [...fresh, ...held];
 };
 
 const finishQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string, found: Found): Promise<Result<MailboxState, StepError>> => {
