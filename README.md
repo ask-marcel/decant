@@ -518,7 +518,7 @@ the messages. Each run writes the file again from the state. The fields are:
 |---|---|
 | `date`, `time` | The day and the time (`HH:MM`) of the message, in the zone of the knowledge base. |
 | `utc` | The time of the message in UTC, as Graph gives it. |
-| `direction` | `draft` for a draft. `sent` when the sender address is an address of your mailbox. Else `received`. |
+| `direction` | `draft` for a draft. `sent` when the sender address is the mail address or the sign-in name of your mailbox. Else `received`. |
 | `from`, `from_email` | The name and the address of the sender. |
 | `to`, `to_emails`, `cc`, `cc_emails` | The names and the addresses in To and in Cc. |
 | `subject` | The subject of the message. |
@@ -540,11 +540,13 @@ Get-Content kb/Mailbox/_meta/messages.jsonl -Encoding UTF8 | ConvertFrom-Json |
 ```
 
 decant writes a thread again when the thread gets a new message. It also writes a thread again when
-a message of the thread gets a new flag, category, importance or folder. A new name of a folder
-writes again each thread with a message in that folder. A change of the read status does not write
-the thread again. decant does not read Deleted Items, Junk
-Email, Drafts and Outbox for changes. Thus a new flag on a message in these folders does not write
-its thread again.
+a message of the thread gets a new flag, category, importance or folder. When a folder gets a new
+name, decant writes again each thread with a message in that folder. When you only read a message,
+decant does not write its thread again.
+
+decant does not read Deleted Items, Junk Email, Drafts and Outbox for changes. Thus a new flag on a
+message in these folders does not write its thread again. Also, a message that you move into one of
+these folders keeps its earlier folder in its line.
 
 When decant finds a mailbox from before this version, it updates the mailbox one time. The first run
 reads each mail folder again from the start, and writes each thread again. Then each note has the
