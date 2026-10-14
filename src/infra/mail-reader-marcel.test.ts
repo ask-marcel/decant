@@ -273,3 +273,34 @@ describe('reading a mailbox through the ask-marcel library', () => {
     expect((await reader.listFolders()).ok).toBe(false);
   });
 });
+
+// What tells a message the mailbox sent from one it received: the address it went out from.
+describe('reading the addresses the mailbox sends from', () => {
+  it('the mail address and the sign-in name come back in lower case, each one once', async () => {
+    const { reader, recorded } = readerFor({ 'get-current-user': ok({ mail: 'Jane.Doe@Contoso.com', userPrincipalName: 'jane.doe@contoso.com' }) });
+
+    expect(await reader.ownAddresses()).toEqual({ ok: true, value: ['jane.doe@contoso.com'] });
+    expect(recorded[0]).toEqual({ name: 'get-current-user', params: { select: 'mail,userPrincipalName' } });
+  });
+
+  it('two different addresses come back sorted', async () => {
+    const { reader } = readerFor({ 'get-current-user': ok({ mail: 'valerie@northwind.example', userPrincipalName: 'jane.doe@contoso.com' }) });
+
+    expect(await reader.ownAddresses()).toEqual({ ok: true, value: ['jane.doe@contoso.com', 'valerie@northwind.example'] });
+  });
+
+  // An account with no mailbox licence has no `mail`, and a sign-in name need not be an address.
+  it('a value that is missing or is not an address is left out', async () => {
+    const { reader } = readerFor({ 'get-current-user': ok({ mail: null, userPrincipalName: 'jane.doe@contoso.com' }) });
+    const { reader: nameless } = readerFor({ 'get-current-user': ok({ mail: 'jane.doe@contoso.com', userPrincipalName: 'jdoe' }) });
+
+    expect(await reader.ownAddresses()).toEqual({ ok: true, value: ['jane.doe@contoso.com'] });
+    expect(await nameless.ownAddresses()).toEqual({ ok: true, value: ['jane.doe@contoso.com'] });
+  });
+
+  it('a refusal is passed back rather than read as a mailbox with no address', async () => {
+    const { reader } = readerFor({ 'get-current-user': err({ type: 'api_error', status: 403, message: 'forbidden' }) });
+
+    expect(await reader.ownAddresses()).toEqual({ ok: false, error: { kind: 'permanent', message: 'forbidden' } });
+  });
+});

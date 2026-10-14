@@ -63,6 +63,9 @@ export type MailSweep = {
   // The RFC headers Graph leaves out of every default projection, which is where `References` lives
   // and so where a thread's root is. Asked for one message per conversation, not one per message.
   readonly messageHeaders: (messageId: string) => Promise<Result<ReadonlyArray<MessageHeader>, MailReaderError>>;
+  // The addresses this mailbox sends from, in lower case: what tells a message it sent from one it
+  // received, whatever folder either was filed in.
+  readonly ownAddresses: () => Promise<Result<ReadonlyArray<string>, MailReaderError>>;
 };
 
 export type MailReader = ThreadReader & MailSweep;
