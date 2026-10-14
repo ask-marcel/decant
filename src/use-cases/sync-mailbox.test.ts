@@ -480,6 +480,18 @@ describe('writing a thread again when one of its messages is marked', () => {
     expect(await runOn(filed(), sweeping({ folderId: 'AAMk-follow' }))).toEqual(['conv-1']);
   });
 
+  it('a message that gained a reply and was flagged as well is counted and queued once', async () => {
+    const reader = sweeping({ flag: 'flagged' });
+    const reply = message({ id: 'm2', received: '2026-05-13T10:00:00Z', folderId: 'AAMk-inbox', flag: 'notFlagged', importance: 'normal', categories: [] });
+    const { asked, logger } = await run({
+      files: { texts: { [STATE_PATH]: serializeMailboxState(filed()) } },
+      reader: { ...reader, pages: [{ messages: [...(reader.pages?.[0]?.messages ?? []), reply], skipped: 0, deltaLink: 'c1' }] },
+    });
+
+    expect(asked).toEqual(['conv-1']);
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'mail.enumerated', meta: { messages: 2, conversations: 1, queued: 1 } });
+  });
+
   it('a message only read since leaves its thread alone', async () => {
     expect(await runOn(filed(), sweeping())).toStrictEqual([]);
   });
@@ -525,6 +537,26 @@ describe('updating a mailbox written before the message fields were read', () =>
 
     expect(next.asked).toStrictEqual([]);
     expect(next.reader.calls).toContain('deltaFrom:cursor-2');
+  });
+
+  // In the order of their keys, so the queue a stopped update leaves is the same whatever order the
+  // state was read in; and a thread written before subjects were kept is named for what it is.
+  it('queues the threads in the order of their ids, naming one with no subject as from an earlier run', async () => {
+    const second = withThread(withConversation(filed, 'conv-0', { threadId: 'thread-0', root: '<zero@example.com>' }), 'thread-0', {
+      ...filed.threads['thread-1'],
+      folder: '2026-05-11-thread-0',
+      conversationIds: ['conv-0'],
+      file: 'threads/2026-05-11-thread-0/x.md',
+      messageIds: ['m0'],
+      lastMessage: '2026-05-11T09:31:00Z',
+      attachments: [],
+      inlineImages: [],
+      subject: undefined,
+    });
+    const { asked, labels } = await run({ files: { texts: { [STATE_PATH]: before(second) } }, reader: quiet });
+
+    expect(asked).toEqual(['conv-0', 'conv-1']);
+    expect(labels).toEqual(['a conversation from an earlier run', 'Contrat Contoso']);
   });
 
   it('leaves alone a thread that has run out of tries', async () => {

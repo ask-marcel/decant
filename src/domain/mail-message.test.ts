@@ -81,6 +81,10 @@ describe('reading a message out of a mailbox sweep', () => {
     expect(parseMessage({ ...rawMessage, flag: 'flagged', categories: 'Blue category' })).toMatchObject({ flag: '', categories: [] });
   });
 
+  it('a field Graph gave as something other than text reads as empty', () => {
+    expect(parseMessage({ ...rawMessage, importance: 3, bodyPreview: { text: 'Hi' } })).toMatchObject({ importance: '', preview: '' });
+  });
+
   it('a sender given without a display name falls back to the address', () => {
     const parsed = parseMessage({ ...rawMessage, from: { emailAddress: { address: 'noreply@qoder.com' } } });
 
