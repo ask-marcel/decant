@@ -239,10 +239,11 @@ export const withFolderCursor = (state: MailboxState, folderId: string, name: st
   folders: { ...state.folders, [folderId]: { name, ...(deltaLink === undefined ? {} : { deltaLink }) } },
 });
 
-// The folders this sweep passed over, as the listing named them, in place of the ones before.
+// The folders this sweep passed over, as the listing named them, in place of the ones before. By id,
+// so a listing that gives the same folders in another order leaves the state file as it was.
 export const withUnsweptFolders = (state: MailboxState, folders: ReadonlyArray<MailFolder>): MailboxState => ({
   ...state,
-  unsweptFolders: Object.fromEntries(folders.map((folder) => [folder.id, folder.name])),
+  unsweptFolders: Object.fromEntries(folders.map((folder) => [folder.id, folder.name] as const).toSorted(([left], [right]) => compareText(left, right))),
 });
 
 export const withOwnAddresses = (state: MailboxState, ownAddresses: ReadonlyArray<string>): MailboxState => ({ ...state, ownAddresses });

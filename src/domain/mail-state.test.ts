@@ -383,6 +383,13 @@ describe('naming the folders of a mailbox', () => {
     expect(parsed.ok && parsed.value.unsweptFolders).toEqual({ 'AAMk-bin': 'Deleted Items' });
   });
 
+  // A listing that names the same folders in another order changes nothing, so the state does not.
+  it('the folders passed over are kept in a fixed order, whatever order the listing gave them in', () => {
+    const folder = (id: string): { id: string; name: string; childCount: number; itemCount: number } => ({ id, name: id, childCount: 0, itemCount: 0 });
+
+    expect(Object.keys(withUnsweptFolders(emptyMailboxState(), [folder('AAMk-junk'), folder('AAMk-bin')]).unsweptFolders)).toEqual(['AAMk-bin', 'AAMk-junk']);
+  });
+
   it('a folder whose name changed is found, and one new or gone is not a rename', () => {
     expect(renamedFolders({ a: 'Follow', b: 'Inbox', gone: 'Old' }, { a: 'To_Follow', b: 'Inbox', fresh: 'New' })).toEqual(['a']);
   });
