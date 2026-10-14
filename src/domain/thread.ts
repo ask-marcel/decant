@@ -2,7 +2,7 @@ import type { Correspondent, MailMessage } from './mail-message.ts';
 import { bareSubject } from './thread-subject.ts';
 import { unwrapSafelinks } from './safelink.ts';
 import { timeIn } from './zoned-day.ts';
-import { inReceivedOrder } from './mail-message.ts';
+import { flagWord, inReceivedOrder } from './mail-message.ts';
 import { compareText } from './utilities/compare-text.ts';
 
 export type ThreadPart = {
@@ -13,6 +13,9 @@ export type ThreadPart = {
 export type Thread = {
   readonly subject: string;
   readonly parts: ReadonlyArray<ThreadPart>;
+  // The name of each mail folder by its id, for the line under each heading. Absent for a group
+  // inbox, which has no folders.
+  readonly folders?: Readonly<Record<string, string>>;
 };
 
 // The subject a thread is known by, with the markers saying how its mail travelled taken off. The
@@ -26,7 +29,17 @@ export const threadTitle = (subject: string): string => {
 
 const nameOf = (who: Correspondent | undefined): string => who?.name ?? 'Unknown sender';
 
-const recipients = (message: MailMessage): string => (message.to.length === 0 ? '' : ` to ${message.to.map((who) => who.name).join(', ')}`);
+const listed = (label: string, who: ReadonlyArray<Correspondent>): ReadonlyArray<string> => (who.length === 0 ? [] : [`${label} ${who.map((one) => one.name).join(', ')}`]);
+
+// To and Cc apart, the way the mail itself shows them. A mail with nobody in either went to Bcc
+// alone, a notice sent to many, and says so: a heading that said nothing left a search for whom it
+// reached with nothing to find. A post in a group inbox keeps no lists at all, the group being its
+// whole audience, and names nobody.
+const recipients = (message: MailMessage): string => {
+  const lists = [...listed('to', message.to), ...listed('cc', message.cc ?? [])];
+  if (lists.length > 0) return ` ${lists.join('; ')}`;
+  return message.cc === undefined ? '' : ' to (no visible recipients)';
+};
 
 // Told where the mailbox lives, not sliced off the raw UTC string. The folder the thread sits in is
 // already counted in that zone, so a UTC heading disagreed with its own path by the offset, and
@@ -77,14 +90,45 @@ const bodyOf = (part: ThreadPart): string => {
   return trimmed.length === 0 ? '_This message had no readable body._' : trimmed;
 };
 
-const section = (part: ThreadPart, timezone: string): string => `${heading(part, timezone)}\n\n${bodyOf(part)}`;
+const addresses = (who: ReadonlyArray<Correspondent>): string =>
+  who
+    .map((one) => one.address)
+    .filter((address) => address.length > 0)
+    .join(', ');
+
+// Nearly every message is of normal importance, so only the two that stand out are written.
+const standsOut = (importance: string | undefined): string => (importance === 'high' || importance === 'low' ? importance : '');
+
+// What a search finds a message by, on one line under its heading: the addresses the heading leaves
+// out, the folder the message sits in, and how it is marked. A part with nothing in it is left out,
+// and a message with nothing to say gets no line.
+const factsOf = (message: MailMessage, folder: string): string => {
+  const parts: ReadonlyArray<readonly [string, string]> = [
+    ['from', message.from?.address ?? ''],
+    ['to', addresses(message.to)],
+    ['cc', addresses(message.cc ?? [])],
+    ['folder', folder],
+    ['flag', flagWord(message.flag)],
+    ['importance', standsOut(message.importance)],
+    ['categories', (message.categories ?? []).join(', ')],
+  ];
+  return parts
+    .filter(([, value]) => value.length > 0)
+    .map(([label, value]) => `${label} ${value}`)
+    .join(' · ');
+};
+
+const section = (part: ThreadPart, timezone: string, folders: Readonly<Record<string, string>>): string => {
+  const facts = factsOf(part.message, folders[part.message.folderId ?? ''] ?? '');
+  return [heading(part, timezone), ...(facts.length === 0 ? [] : [facts]), bodyOf(part)].join('\n\n');
+};
 
 // One file holds the whole conversation, oldest message first, each under its own heading. Quoted
 // reply chains are already stripped upstream, so nothing here repeats what an earlier section said.
 export const renderThread = (thread: Thread, timezone: string): string => {
   const order = new Map(inReceivedOrder(thread.parts.map((part) => part.message)).map((message, index) => [message.id, index]));
   const ordered = [...thread.parts].sort((left, right) => (order.get(left.message.id) ?? 0) - (order.get(right.message.id) ?? 0));
-  return [`# ${threadTitle(thread.subject)}`, ...ordered.map((part) => section(part, timezone))].join('\n\n');
+  return [`# ${threadTitle(thread.subject)}`, ...ordered.map((part) => section(part, timezone, thread.folders ?? {}))].join('\n\n');
 };
 
 // Name and address both, in the shape mail itself uses. The headings name people the way a reader
@@ -95,6 +139,6 @@ export const renderThread = (thread: Thread, timezone: string): string => {
 const asWritten = (who: Correspondent): string => (who.address.length === 0 ? who.name : `${who.name} <${who.address}>`);
 
 export const participantsOf = (parts: ReadonlyArray<ThreadPart>): ReadonlyArray<string> => {
-  const everyone = parts.flatMap((part) => [...(part.message.from === undefined ? [] : [part.message.from]), ...part.message.to]);
+  const everyone = parts.flatMap((part) => [...(part.message.from === undefined ? [] : [part.message.from]), ...part.message.to, ...(part.message.cc ?? [])]);
   return [...new Set(everyone.map(asWritten))].sort(compareText);
 };

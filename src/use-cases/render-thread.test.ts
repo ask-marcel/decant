@@ -62,6 +62,15 @@ describe('writing one conversation as one file', () => {
     );
   });
 
+  // The sync knows every folder by its id and hands the names over, so the note says where each
+  // message sits without the render asking Graph about folders.
+  it('each message names the folder it sits in, on the line under its heading', async () => {
+    const conversations = { [CONV]: [message({ folderId: 'AAMk-follow', cc: [] })] };
+    const { files } = await run({ reader: { conversations, bodies: { m1: 'One.' } }, folders: { 'AAMk-follow': 'To_Follow' } });
+
+    expect(files.written.get(THREAD_FILE)).toContain('\n\nfrom jane@example.com · to valerie@example.com · folder To_Follow\n\nOne.');
+  });
+
   it('a thread from a group inbox names that group, not the mailbox, so a reader knows where it came from', async () => {
     const conversations = { [CONV]: [message()] };
     const { files } = await run({ reader: { conversations, bodies: { m1: 'One.' } }, sourceName: 'Northwind Leadership Team' });

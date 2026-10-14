@@ -67,6 +67,9 @@ export type RenderThreadInput = {
   // handed back so the index in `_meta` names every file the mailbox holds. Consulted before
   // converting only for the files this thread already holds, since each thread keeps its own copy.
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
+  // The name of each mail folder by its id, so each message says where it sits. Absent for a group
+  // inbox, which has no folders.
+  readonly folders?: Readonly<Record<string, string>>;
 };
 
 export type RenderedThread = {
@@ -236,7 +239,10 @@ const writeThread = async (
   // of it to a store the whole mailbox shares, and a reader follows either one the same way.
   const linkedRefs = links.paths.map((path) => pathBetween(here, path));
   const header = threadHeader(input, parts, first, last, stamp.syncedAt, deps.sourceName, relative, attachmentRefs, inlineRefs, linkedRefs, deps.timezone);
-  const written = await deps.files.writeText(`${deps.mailboxRoot}/${relative}`, `${header}\n\n${renderThread({ subject: first.subject, parts: bodies.parts }, deps.timezone)}\n`);
+  const written = await deps.files.writeText(
+    `${deps.mailboxRoot}/${relative}`,
+    `${header}\n\n${renderThread({ subject: first.subject, parts: bodies.parts, folders: input.folders }, deps.timezone)}\n`
+  );
   if (!written.ok) return err({ kind: 'permanent', message: written.error.message });
   // Named with the conversation they arrived in: two threads can each carry an `image002.wmz`, and
   // a report listing the bare name twice tells the reader nothing about which is which.
