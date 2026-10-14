@@ -31,7 +31,54 @@ describe('reading a message out of a mailbox sweep', () => {
         { name: 'David Chang', address: 'david.chang@contoso.com' },
       ],
       isDeleted: false,
+      cc: [],
+      folderId: '',
+      flag: '',
+      categories: [],
+      importance: '',
+      internetMessageId: '',
+      isDraft: false,
+      preview: '',
     });
+  });
+
+  // What a search finds a message by besides who wrote it: where it sits, whether it is flagged, how
+  // it is marked, and who was copied. All of it read off the message, none of it worked out.
+  it('a message read with its search fields carries its folder, flag, categories, importance, copies and opening words', () => {
+    const parsed = parseMessage({
+      ...rawMessage,
+      ccRecipients: [{ emailAddress: { name: 'Li Wei', address: 'li.wei@northwind.example' } }],
+      parentFolderId: 'AAMk-follow',
+      flag: { flagStatus: 'flagged' },
+      categories: ['Blue category', 'Project X'],
+      importance: 'high',
+      internetMessageId: '<AM0PR04MB6f21@contoso.com>',
+      isDraft: false,
+      bodyPreview: 'Hi Valerie, the figures are attached.',
+    });
+
+    expect(parsed).toMatchObject({
+      cc: [{ name: 'Li Wei', address: 'li.wei@northwind.example' }],
+      folderId: 'AAMk-follow',
+      flag: 'flagged',
+      categories: ['Blue category', 'Project X'],
+      importance: 'high',
+      internetMessageId: '<AM0PR04MB6f21@contoso.com>',
+      isDraft: false,
+      preview: 'Hi Valerie, the figures are attached.',
+    });
+  });
+
+  it('a draft says it is one', () => {
+    expect(parseMessage({ ...rawMessage, isDraft: true })?.isDraft).toBe(true);
+  });
+
+  it('a flag Graph gave no status for reads as no flag, and a category that is not text is dropped', () => {
+    const parsed = parseMessage({ ...rawMessage, flag: {}, categories: ['Blue category', 7, null] });
+
+    expect(parsed?.flag).toBe('');
+    expect(parsed?.categories).toEqual(['Blue category']);
+    expect(parseMessage({ ...rawMessage, flag: 'flagged', categories: 'Blue category' })).toMatchObject({ flag: '', categories: [] });
   });
 
   it('a sender given without a display name falls back to the address', () => {

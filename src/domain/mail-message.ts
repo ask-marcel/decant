@@ -14,6 +14,21 @@ export type MailMessage = {
   readonly from?: Correspondent;
   readonly to: ReadonlyArray<Correspondent>;
   readonly isDeleted: boolean;
+  // What a search finds a message by besides who wrote it, read off the message itself. Absent on a
+  // post in a group inbox, which has no recipients of its own (the group is its audience), no folder,
+  // no flag and no category: an empty `cc` says a message was copied to nobody, an absent one says
+  // the source keeps no such list.
+  readonly cc?: ReadonlyArray<Correspondent>;
+  readonly folderId?: string;
+  // Graph's own `flagStatus`: `notFlagged`, `flagged` or `complete`.
+  readonly flag?: string;
+  readonly categories?: ReadonlyArray<string>;
+  readonly importance?: string;
+  // The RFC `Message-ID`, which stays the same when the message moves to another folder.
+  readonly internetMessageId?: string;
+  readonly isDraft?: boolean;
+  // The opening words of the body, as Graph cuts them.
+  readonly preview?: string;
 };
 
 export type MailDeltaPage = {
@@ -32,6 +47,12 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
   return typeof value === 'string' ? value : undefined;
 };
 
+const textOf = (record: Record<string, unknown>, key: string): string => readString(record, key) ?? '';
+
+const textsOf = (raw: unknown): ReadonlyArray<string> => (Array.isArray(raw) ? raw.filter((entry): entry is string => typeof entry === 'string') : []);
+
+const flagOf = (raw: unknown): string => (isRecord(raw) ? textOf(raw, 'flagStatus') : '');
+
 const correspondentOf = (raw: unknown): Correspondent | undefined => {
   if (!isRecord(raw) || !isRecord(raw['emailAddress'])) return undefined;
   const address = readString(raw['emailAddress'], 'address');
@@ -47,14 +68,22 @@ export const parseMessage = (raw: unknown): MailMessage | undefined => {
   if (id === undefined) return undefined;
   return {
     id,
-    conversationId: readString(raw, 'conversationId') ?? '',
-    subject: readString(raw, 'subject') ?? '',
-    received: readString(raw, 'receivedDateTime') ?? '',
+    conversationId: textOf(raw, 'conversationId'),
+    subject: textOf(raw, 'subject'),
+    received: textOf(raw, 'receivedDateTime'),
     hasAttachments: raw['hasAttachments'] === true,
     from: correspondentOf(raw['from']),
     to: recipientsOf(raw['toRecipients']),
     // Graph marks a message removed since the last sweep with an `@removed` facet, id only.
     isDeleted: raw['@removed'] !== undefined,
+    cc: recipientsOf(raw['ccRecipients']),
+    folderId: textOf(raw, 'parentFolderId'),
+    flag: flagOf(raw['flag']),
+    categories: textsOf(raw['categories']),
+    importance: textOf(raw, 'importance'),
+    internetMessageId: textOf(raw, 'internetMessageId'),
+    isDraft: raw['isDraft'] === true,
+    preview: textOf(raw, 'bodyPreview'),
   };
 };
 
