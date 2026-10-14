@@ -39,6 +39,7 @@ describe('remembering where a mailbox sync got to', () => {
     expect(emptyMailboxState()).toEqual({
       version: 2,
       source: { kind: 'mailbox', id: 'me', name: 'Mailbox' },
+      fields: 2,
       lastRun: '',
       folders: {},
       threads: {},
@@ -95,6 +96,15 @@ describe('remembering where a mailbox sync got to', () => {
     const state = withThread(emptyMailboxState(), 'thread-1', { ...thread, messages });
 
     expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
+  });
+
+  // Absent, not zero: a state written before the fields were counted is one the next sweep updates.
+  it('a state file written before the message fields were counted reads as having none', () => {
+    const before = parseMailboxState({ version: 2, source: { kind: 'mailbox' } });
+    const odd = parseMailboxState({ version: 2, source: { kind: 'mailbox' }, fields: '2' });
+
+    expect(before.ok && before.value.fields).toBeUndefined();
+    expect(odd.ok && odd.value.fields).toBeUndefined();
   });
 
   it('a state file written before the shared attachment store still loads', () => {
