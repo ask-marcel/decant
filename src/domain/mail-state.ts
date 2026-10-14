@@ -115,6 +115,9 @@ export type MailboxState = {
   // conversation holds messages in them too, and each message says which folder it sits in. Kept so
   // a run that resumes its queue, and lists no folders, can still name them. Additive.
   readonly unsweptFolders: Readonly<Record<string, string>>;
+  // The addresses the mailbox sends from, as the last sweep read them: what tells the message index a
+  // message sent from one received. Additive: a file from before holds none.
+  readonly ownAddresses: ReadonlyArray<string>;
 };
 
 export type MailStateError = { readonly kind: 'malformed'; readonly message: string };
@@ -136,6 +139,7 @@ export const emptyMailboxState = (): MailboxState => ({
   retry: {},
   titles: {},
   unsweptFolders: {},
+  ownAddresses: [],
 });
 
 export const serializeMailboxState = (state: MailboxState): string => `${JSON.stringify(state, undefined, 2)}\n`;
@@ -214,6 +218,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     since: readString(raw, 'since'),
     titles: textsOf(raw['titles']),
     unsweptFolders: textsOf(raw['unsweptFolders']),
+    ownAddresses: stringList(raw['ownAddresses']),
   });
 };
 
@@ -239,6 +244,8 @@ export const withUnsweptFolders = (state: MailboxState, folders: ReadonlyArray<M
   ...state,
   unsweptFolders: Object.fromEntries(folders.map((folder) => [folder.id, folder.name])),
 });
+
+export const withOwnAddresses = (state: MailboxState, ownAddresses: ReadonlyArray<string>): MailboxState => ({ ...state, ownAddresses });
 
 // Every folder's name by its id, swept or passed over.
 export const folderNames = (state: MailboxState): Readonly<Record<string, string>> => ({

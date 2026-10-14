@@ -18,6 +18,7 @@ import {
   withLinked,
   withPending,
   withRetry,
+  withOwnAddresses,
   withThread,
   withUnsweptFolders,
   withoutRetry,
@@ -50,7 +51,17 @@ describe('remembering where a mailbox sync got to', () => {
       retry: {},
       titles: {},
       unsweptFolders: {},
+      ownAddresses: [],
     });
+  });
+
+  it('the addresses the mailbox sends from read back, and a state from before them holds none', () => {
+    const state = withOwnAddresses(emptyMailboxState(), ['jane@contoso.com']);
+    const before = parseMailboxState({ version: 2, source: { kind: 'mailbox' } });
+
+    expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
+    expect(state.ownAddresses).toEqual(['jane@contoso.com']);
+    expect(before.ok && before.value.ownAddresses).toStrictEqual([]);
   });
 
   it('the subjects kept for queued conversations read back, and a state from before them has none', () => {

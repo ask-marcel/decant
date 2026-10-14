@@ -4,7 +4,7 @@ import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
 import { marksOf } from '../domain/message-record.ts';
 import { INDEX_FILE } from '../domain/index-page.ts';
-import { attachmentRows, linkRows, mailboxIndexPage, renderJsonl, threadRows } from '../domain/mail-meta.ts';
+import { attachmentRows, linkRows, mailboxIndexPage, messageRows, renderJsonl, threadRows } from '../domain/mail-meta.ts';
 import { rootMessageId } from '../domain/root-message-id.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
@@ -31,6 +31,7 @@ import {
   withLinked,
   withPending,
   withRetry,
+  withOwnAddresses,
   withThread,
   withUnsweptFolders,
   withoutCursors,
@@ -101,6 +102,7 @@ const writeIndexes = async (deps: SyncMailboxDeps, input: SyncMailboxInput, stat
   const root = `${mailboxRoot(deps.kbRoot)}/_meta`;
   const files = [
     { path: `${root}/threads.jsonl`, body: renderJsonl(threadRows(state)) },
+    { path: `${root}/messages.jsonl`, body: renderJsonl(messageRows(state, deps.timezone)) },
     { path: `${root}/attachments.jsonl`, body: renderJsonl(attachmentRows(state)) },
     { path: `${root}/links.jsonl`, body: renderJsonl(linkRows(state)) },
     { path: `${mailboxRoot(deps.kbRoot)}/${INDEX_FILE}`, body: mailboxIndexPage(state, deps.timezone) },
@@ -282,8 +284,9 @@ const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
   }
   const folders = await folderTree(deps);
   if (!folders.ok) return stepFailure('listFolders', folders.error);
+  const addressed = await ownAddressesRead(deps, state);
   deps.progress.start(folders.value.swept.length, SWEEPING);
-  const named = withUnsweptFolders(sweptFrom(deps, state, input.since), folders.value.unswept);
+  const named = withUnsweptFolders(sweptFrom(deps, addressed, input.since), folders.value.unswept);
   const swept = await sweepFolders(deps, named, folders.value.swept);
   deps.progress.done();
   if (!swept.ok) return stepFailure('sweepFolder', swept.error);
@@ -292,6 +295,15 @@ const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
   const renamed = threadsInFolders(swept.value.state, renamedFolders(folderNames(state), folderNames(swept.value.state)));
   const extra = updating(state) ? Object.keys(state.threads).sort(compareText) : renamed;
   return finishQueue(deps, input, { ...swept.value.state, since: input.since, fields: MAIL_FIELDS }, statePath, { messages: swept.value.messages, extra });
+};
+
+// The addresses the mailbox sends from, read again on every sweep. A failed read keeps the ones held
+// before: they only tell sent mail from received in the message index, which every run writes again.
+const ownAddressesRead = async (deps: SyncMailboxDeps, state: MailboxState): Promise<MailboxState> => {
+  const own = await deps.reader.ownAddresses();
+  if (own.ok) return withOwnAddresses(state, own.value);
+  deps.logger.warn('mail.owner-unread', { cause: own.error.kind });
+  return state;
 };
 
 // A state from before the fields the sweep reads now: its cursors read without them, and its threads
