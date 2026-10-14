@@ -113,6 +113,7 @@ Params are listed with their canonical keys; `?` marks optional.
 | `download-drive-item-as-pdf` | `driveId`, `itemId`, `tenantId?` | `{ contentType: 'application/pdf', size, base64 }`; a plain-text source short-circuits to `{ ..., text, passthrough: true, note }` |
 | `download-drive-item-as-markdown` | `driveId`, `itemId`, `tenantId?`, `includeMetadata?`, `inlineImages?`, `keepQuoted?`, `maxCells?` | `{ contentType: 'text/markdown' \| 'text/plain', size, text }` |
 | `convert-local-file-to-markdown` | `path`, `includeMetadata?`, `inlineImages?`, `keepQuoted?`, `includeImages?`, `maxCells?` | single file: `{ contentType, size, text }`; zip: `{ count, files: [{ path, contentType, size, text } \| { path, note }] }` |
+| `get-current-user` | `select?`, `expand?`, strict schema | one `user`. decant asks for `mail` and `userPrincipalName`, the addresses that the mailbox sends from. |
 | `list-mail-folders` | OData only, strict schema | `{ value: mailFolder[] }`; **no `wellKnownName` in v1.0**, so Junk/Deleted/Drafts/Outbox can only be matched by localised `displayName` |
 | `list-mail-child-folders` | `mailFolderId`, OData | `{ value: mailFolder[] }` |
 | `list-mail-folder-messages-delta` | `mailFolderId`, `top?`, `select?`, `filter?`, `expand?` (no `skip`, `orderby`) | `{ value: message[], '@odata.nextLink'?, '@odata.deltaLink'? }` |

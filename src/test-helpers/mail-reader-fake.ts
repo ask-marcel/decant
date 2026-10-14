@@ -26,6 +26,8 @@ export type MailReaderSeed = {
   // The bytes an attachment really holds, for a test about what is inside a file rather than around it.
   readonly attachmentRaw?: Readonly<Record<string, string>>;
   readonly links?: Readonly<Record<string, ReadonlyArray<LinkedFile>>>;
+  // The addresses the mailbox sends from. None unless a test is about which messages it sent.
+  readonly own?: ReadonlyArray<string>;
   // Keyed by attachment id, the way the texts are, so one document can hold pictures and another not.
   readonly attachmentImages?: Readonly<Record<string, ReadonlyArray<EmbeddedImage>>>;
   readonly failWith?: MailReaderError;
@@ -101,6 +103,10 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
     attachmentImages: async (messageId, attachmentId) => {
       const refused = seed.failCalls?.['attachmentImages'];
       return refused ? err(refused) : forMessage(messageId, `attachmentImages:${attachmentId}`, seed.attachmentImages?.[attachmentId] ?? []);
+    },
+    ownAddresses: async () => {
+      const refused = seed.failCalls?.['ownAddresses'];
+      return refused ? err(refused) : ok(seed.own ?? []);
     },
     messageHeaders: async (messageId) => {
       const refused = seed.failCalls?.['messageHeaders'];

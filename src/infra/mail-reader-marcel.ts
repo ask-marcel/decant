@@ -4,6 +4,7 @@ import type { MailDeltaPage, MailMessage } from '../domain/mail-message.ts';
 import type { MessageHeader } from '../domain/root-message-id.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
+import { compareText } from '../domain/utilities/compare-text.ts';
 import type { AttachmentKind, LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
 import { mediaOf } from './drive-reader-marcel.ts';
 import type { MarcelCall } from './drive-reader-marcel.ts';
@@ -78,6 +79,14 @@ export const toLinks = (value: unknown): ReadonlyArray<LinkedFile> => {
     if (driveId === undefined || itemId === undefined) return [];
     return [{ url: readString(entry, 'url') ?? '', driveId, itemId, name: readString(entry, 'name') ?? itemId }];
   });
+};
+
+// The two addresses `/me` gives for the signed-in mailbox, in lower case since an address matches
+// whatever its case, and each one once. A sign-in name that is not an address is left out, and so is
+// a `mail` an account with no mailbox licence leaves empty.
+const addressesOf = (value: unknown): ReadonlyArray<string> => {
+  const named = [readString(value, 'mail'), readString(value, 'userPrincipalName')].filter((entry): entry is string => entry?.includes('@') === true);
+  return [...new Set(named.map((entry) => entry.toLowerCase()))].sort(compareText);
 };
 
 // How many messages a folder delta asks for on each page, the first and every one after it.
@@ -160,6 +169,10 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
     messageHeaders: async (messageId) => {
       const raw = await call('get-mail-message', { messageId, select: 'internetMessageHeaders' });
       return raw.ok ? ok(headersOf(raw.value)) : raw;
+    },
+    ownAddresses: async () => {
+      const raw = await call('get-current-user', { select: 'mail,userPrincipalName' });
+      return raw.ok ? ok(addressesOf(raw.value)) : raw;
     },
     messageMarkdown: async (messageId) => textOf('convert-mail-to-markdown', { messageId }),
     attachments: async (messageId) => {
