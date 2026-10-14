@@ -64,7 +64,7 @@ describe('reading a mailbox through the ask-marcel library', () => {
 
     await reader.folderDelta('AAMk1');
 
-    expect(recorded[0]?.params['select']).toBe('id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients');
+    expect(recorded[0]?.params['select']).toBe('id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients,parentFolderId,flag,categories,importance');
   });
 
   it('the cursor closing a sweep comes back ready for the next run', async () => {
@@ -98,6 +98,18 @@ describe('reading a mailbox through the ask-marcel library', () => {
 
     expect(messages.ok && messages.value).toHaveLength(1);
     expect(recorded[0]?.params).toMatchObject({ conversationId: 'conv-1' });
+  });
+
+  // A thread is read for its note and for the message index, which show more than a sweep needs: who
+  // was copied, the id a message keeps wherever it moves, whether it was sent, and its opening words.
+  it('a conversation asks for the fields its note and the message index show', async () => {
+    const { reader, recorded } = readerFor({ 'list-conversation-messages': ok({ value: [] }) });
+
+    await reader.conversation('conv-1');
+
+    expect(recorded[0]?.params['select']).toBe(
+      'id,conversationId,subject,receivedDateTime,hasAttachments,from,toRecipients,parentFolderId,flag,categories,importance,ccRecipients,internetMessageId,isDraft,bodyPreview'
+    );
   });
 
   // Graph pages `/me/messages` rather than answering a whole thread at once, so a conversation past
