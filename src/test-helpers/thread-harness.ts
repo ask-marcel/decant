@@ -73,6 +73,8 @@ export const run = async (
     sourceName?: string;
     // How long a path may be as decant writes it, so a test can put the knowledge base deep on a disk.
     pathBudget?: number;
+    // The name of each mail folder by its id, as the sync hands them to the render.
+    folders?: Record<string, string>;
   } = {}
 ): Promise<{
   outcome: RenderThreadOutcome | undefined;
@@ -112,6 +114,7 @@ export const run = async (
     maxBytes: 50 * 1024 * 1024,
     linked: seeds.linked ?? {},
     attachments: seeds.attachments ?? {},
+    folders: seeds.folders,
   });
   return { outcome: result.ok ? result.value : undefined, error: result.ok ? undefined : result.error, files, logger, reader, drive, progress, ok: result.ok };
 };

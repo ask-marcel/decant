@@ -101,9 +101,13 @@ describe('writing a conversation as one document', () => {
         '',
         '## 2026-05-12 11:31 — Jane Doe to Valerie FAIRBANKS',
         '',
+        'from jane@example.com · to valerie@example.com',
+        '',
         'Here is the contract.',
         '',
         '## 2026-05-13 12:00 — Valerie FAIRBANKS to Jane Doe',
+        '',
+        'from v@example.com · to j@example.com',
         '',
         'Agreed.',
       ].join('\n')
@@ -144,6 +148,35 @@ describe('writing a conversation as one document', () => {
     const rendered = renderThread({ subject: 'Contrat', parts: [{ message: message({ to }), body: 'Body.' }] }, 'Europe/Paris');
 
     expect(rendered).toContain('— Jane Doe to Jane Doe, David Chang');
+  });
+
+  it('a message copied to others names them after the people it was written to', () => {
+    const cc = [{ name: 'Li Wei', address: 'li.wei@northwind.example' }];
+    const rendered = renderThread({ subject: 'Contrat', parts: [{ message: message({ cc }), body: 'Body.' }] }, 'Europe/Paris');
+
+    expect(rendered).toContain('## 2026-05-12 11:31 — Jane Doe to Valerie FAIRBANKS; cc Li Wei\n');
+  });
+
+  it('a message only copied to people names them as copied', () => {
+    const cc = [{ name: 'Li Wei', address: 'li.wei@northwind.example' }];
+    const rendered = renderThread({ subject: 'Contrat', parts: [{ message: message({ to: [], cc }), body: 'Body.' }] }, 'Europe/Paris');
+
+    expect(rendered).toContain('## 2026-05-12 11:31 — Jane Doe cc Li Wei\n');
+  });
+
+  // A notice sent to everyone through Bcc shows nobody, and a heading that said nothing left a search
+  // for whom it reached with nothing to find.
+  it('a mail written to nobody anyone can see says so', () => {
+    const rendered = renderThread({ subject: 'Contrat', parts: [{ message: message({ to: [], cc: [] }), body: 'Body.' }] }, 'Europe/Paris');
+
+    expect(rendered).toContain('## 2026-05-12 11:31 — Jane Doe to (no visible recipients)\n');
+  });
+
+  // A post goes to its group, which is the whole audience, and the post keeps no list of its own.
+  it('a post in a group inbox, which keeps no recipient lists, names nobody', () => {
+    const rendered = renderThread({ subject: 'Contrat', parts: [{ message: message({ to: [] }), body: 'Body.' }] }, 'Europe/Paris');
+
+    expect(rendered).toBe(['# Contrat', '', '## 2026-05-12 11:31 — Jane Doe', '', 'from jane@example.com', '', 'Body.'].join('\n'));
   });
 
   it('the header block the converter adds is dropped, since the section already says all of it', () => {
@@ -221,6 +254,54 @@ describe('writing a conversation as one document', () => {
 
 // Reached directly rather than through `renderThread`, whose body trimming hides every difference
 // this function makes to the lines it drops.
+// What a search finds a message by, on the line under its heading: the addresses the heading leaves
+// out, the folder it sits in, and how it is marked.
+describe('the line under each heading', () => {
+  const marked = message({
+    cc: [{ name: 'Li Wei', address: 'li.wei@northwind.example' }],
+    folderId: 'AAMk-follow',
+    flag: 'flagged',
+    importance: 'high',
+    categories: ['Blue category', 'Project X'],
+  });
+  const lineOf = (over: Partial<MailMessage>, folders: Readonly<Record<string, string>> = { 'AAMk-follow': 'To_Follow' }): string =>
+    renderThread({ subject: 'Contrat', parts: [{ message: { ...marked, ...over }, body: 'Body.' }], folders }, 'Europe/Paris').split('\n')[4] ?? '';
+
+  it('gives the addresses, the folder, the flag, the importance and the categories, in that order', () => {
+    expect(lineOf({})).toBe(
+      'from jane@example.com · to valerie@example.com · cc li.wei@northwind.example · folder To_Follow · flag open · importance high · categories Blue category, Project X'
+    );
+  });
+
+  it('a flag marked complete says so, and a message never flagged says nothing of a flag', () => {
+    expect(lineOf({ flag: 'complete' })).toContain(' · flag complete · ');
+    expect(lineOf({ flag: 'notFlagged' })).not.toContain('flag');
+    expect(lineOf({ flag: undefined })).not.toContain('flag');
+  });
+
+  // Nearly every message is of normal importance, so only the two that stand out are written.
+  it('normal importance is not written, and low importance is', () => {
+    expect(lineOf({ importance: 'normal' })).not.toContain('importance');
+    expect(lineOf({ importance: 'low' })).toContain(' · importance low · ');
+  });
+
+  it('a folder the run cannot name is left out, as are categories and copies the message does not have', () => {
+    expect(lineOf({ categories: [], cc: [] }, {})).toBe('from jane@example.com · to valerie@example.com · flag open · importance high');
+  });
+
+  it('an address the source left empty is not written', () => {
+    expect(
+      lineOf({
+        from: { name: 'Jane Doe', address: '' },
+        to: [
+          { name: 'Valerie FAIRBANKS', address: '' },
+          { name: 'Ann', address: 'ann@example.com' },
+        ],
+      })
+    ).toMatch(/^to ann@example.com · cc /);
+  });
+});
+
 describe('finding where a message actually starts', () => {
   it('blank lines before the first words are dropped, so a section opens on the text', () => {
     expect(withoutMailHeaders('\n\nPlease review the budget.')).toBe('Please review the budget.');
@@ -295,6 +376,12 @@ describe('listing who took part in a conversation', () => {
     ];
 
     expect(participantsOf(parts)).toEqual(['Adam Bell <a@example.com>', 'Marc Petit <m@example.com>', 'Zoe Wang <z@example.com>']);
+  });
+
+  it('everyone copied is named among the people who took part', () => {
+    const parts = [{ message: message({ to: [], cc: [{ name: 'Li Wei', address: 'li.wei@northwind.example' }] }), body: '' }];
+
+    expect(participantsOf(parts)).toEqual(['Jane Doe <jane@example.com>', 'Li Wei <li.wei@northwind.example>']);
   });
 
   it('a message with no sender still counts the people it was written to', () => {

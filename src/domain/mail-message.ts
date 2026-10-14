@@ -31,6 +31,13 @@ export type MailMessage = {
   readonly preview?: string;
 };
 
+// How a flag reads in a note and in the message index: `open` while it waits, `complete` once done,
+// and nothing for a message never flagged. `open` because the filters written against the message
+// index before decant wrote it already ask for that word.
+const FLAG_WORDS: Readonly<Partial<Record<string, string>>> = { flagged: 'open', complete: 'complete' };
+
+export const flagWord = (flag: string | undefined): string => FLAG_WORDS[flag ?? ''] ?? '';
+
 export type MailDeltaPage = {
   readonly messages: ReadonlyArray<MailMessage>;
   readonly skipped: number;
