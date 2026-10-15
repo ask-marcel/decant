@@ -511,8 +511,9 @@ describe('the names a thread already gave its files', () => {
   });
 
   // A card holds the text read out of its file, and the next write reads the card back for that text:
-  // a failure card written over it would be taken for the text.
-  it('a file converted before whose bytes cannot be fetched keeps its card, and the failure gets a card of its own', async () => {
+  // a failure written over it would be taken for the text. The file keeps what it had, its name and
+  // its card, and the write names it as failed.
+  it('a file the thread held whose bytes cannot be fetched keeps its card and its name, and is named as failed', async () => {
     const once = await run({ reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1')] } } });
 
     const twice = await again(once, {
@@ -520,9 +521,50 @@ describe('the names a thread already gave its files', () => {
       attachments: { m1: [budget('att1')] },
       failCalls: { attachmentBytes: { kind: 'throttled', message: 'slow down' } },
     });
+    const thread = twice.outcome?.kind === 'rendered' ? twice.outcome.thread : undefined;
 
     expect(twice.files.written.get(`${ATTACHMENTS_STORE}/Budget.xlsx.md`)).toContain('converted att1');
-    expect(twice.files.written.get(`${second}.md`)).toContain('throttled: slow down');
+    expect(twice.files.written.has(`${second}.md`)).toBe(false);
+    expect(thread?.record.files).toEqual(recordOf(once.outcome)?.files);
+    expect(thread?.record.names).toEqual(recordOf(once.outcome)?.names);
+    expect(thread?.filesFailed).toEqual([{ path: `${THREAD_RELATIVE}: Budget.xlsx`, reason: 'throttled: slow down' }]);
+  });
+
+  // The same for a file that left only a card, or whose content another thread recorded first: what
+  // it had beside the card is named as unread, so the run does not take it for gone.
+  it('a file the thread held with no stored record keeps its card, and its other files are named as unread', async () => {
+    const once = await run({ reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1')] } } });
+    const named = recordOf(once.outcome);
+
+    const twice = await run({
+      reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1')] }, failCalls: { attachmentBytes: { kind: 'throttled', message: 'slow down' } } },
+      folder: THREAD_FOLDER,
+      file: THREAD_RELATIVE,
+      names: named?.names,
+      held: named?.files,
+      files: { texts: Object.fromEntries(once.files.written) },
+    });
+    const thread = twice.outcome?.kind === 'rendered' ? twice.outcome.thread : undefined;
+
+    expect(twice.files.written.get(`${ATTACHMENTS_STORE}/Budget.xlsx.md`)).toContain('converted att1');
+    expect(thread?.record.files).toEqual([`${ATTACHMENTS_STORE}/Budget.xlsx.md`]);
+    expect(thread?.unread).toEqual([`${ATTACHMENTS_STORE}/Budget.xlsx`]);
+  });
+
+  // Every file the message carried may still be there: none of them is taken for gone.
+  it('a message whose files cannot be listed has every file it carried before named as unread', async () => {
+    const once = await run({ reader: { conversations: { [CONV]: [m1, m2] }, attachments: { m1: [budget('att1')], m2: [budget('att2', 'Plan.pdf')] } } });
+
+    const listing = await run({
+      reader: { conversations: { [CONV]: [m1, m2] }, failAttachmentList: { kind: 'transient', message: 'timeout' } },
+      folder: THREAD_FOLDER,
+      file: THREAD_RELATIVE,
+      names: recordOf(once.outcome)?.names,
+      held: recordOf(once.outcome)?.files,
+    });
+    const thread = listing.outcome?.kind === 'rendered' ? listing.outcome.thread : undefined;
+
+    expect(thread?.unread).toEqual([`${ATTACHMENTS_STORE}/Budget.xlsx`, `${ATTACHMENTS_STORE}/Plan.pdf`]);
   });
 
   // A file the record still lists is on disk, whether its message went and it would not move, or it

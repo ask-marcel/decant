@@ -154,7 +154,8 @@ export const writeCards = async (
       const name = cardNameOf(file);
       if (carded.has(name)) continue;
       carded.add(name);
-      const path = await writeCard(deps, cards, part, file, name);
+      // A file the write could not read keeps the card it had, which holds the text read out of it.
+      const path = file.kept === true ? `${cards.folder}/${name}` : await writeCard(deps, cards, part, file, name);
       if (path !== undefined) written.push(path);
     }
   }

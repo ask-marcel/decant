@@ -60,6 +60,8 @@ export type MessageFile = {
   readonly picture?: string;
   readonly text?: string;
   readonly note?: string;
+  // A file the thread held that this write could not read: its card and its files stay as they were.
+  readonly kept?: boolean;
 };
 
 type Media = ReadonlyArray<string>;
@@ -76,6 +78,9 @@ export type AttachmentTally = {
   // The name each file a message carried was written under, by the arrival it came with, so the next
   // write gives it the same one. A picture shown in a body is stored by its content, and has none.
   readonly names: Readonly<Record<string, string>>;
+  // Where in the thread's folder this write could not read what the thread held: a file whose bytes
+  // did not come, or every file of a message whose list did not. What sits under them is kept.
+  readonly unread: ReadonlyArray<string>;
 };
 
 type Placed = {
@@ -87,6 +92,7 @@ type Placed = {
   readonly media?: Media;
   readonly skipped?: ReportEntry;
   readonly failed?: ReportEntry;
+  readonly kept?: boolean;
 };
 
 // One attachment into the shared store. Its content address decides everything: a content already
@@ -140,8 +146,6 @@ type Placing = {
   readonly shared: Record<string, AttachmentRecord>;
   // Every name a file of the thread holds or this write gave out, as it lands on disk.
   readonly taken: string[];
-  // The names of the files the thread converted, whose cards hold the text read out of them.
-  readonly converted: ReadonlySet<string>;
 };
 
 // One file as a message carried it, and the name it was written under before, when it was.
@@ -156,11 +160,13 @@ const reserve = (placing: Placing, name: string): string => {
 // The name a file is written under: the one it had before, or the first one free.
 const nameOf = (place: FilePlace, placing: Placing, arrival: Arrival): string => arrival.recorded ?? freeName(place, arrival.attachment.name, placing.taken);
 
-// A file whose bytes could not be fetched gets a card saying so, but not under the name of a file the
-// thread converted: that card holds the text read out of the file, and the next write reads the card
-// back for that text, so a failure written over it would be taken for the text.
-const failedName = (place: FilePlace, placing: Placing, arrival: Arrival): string =>
-  arrival.recorded !== undefined && !placing.converted.has(arrival.recorded) ? arrival.recorded : freeName(place, arrival.attachment.name, placing.taken);
+// A file the thread held whose bytes could not be fetched keeps what it had, under the name it had: its
+// card holds the text read out of the file, and a failure written over it would be read back as the
+// text by the next write. A file the thread stored is still what it was, files and all.
+const keptAs = (placing: Placing, name: string, failed: ReportEntry): Placed => {
+  const stored = Object.values(placing.store).find((record) => record.name === name);
+  return { asName: name, paths: stored?.paths ?? [], primary: stored?.primary, media: stored?.media, failed, kept: true };
+};
 
 const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placing, arrival: Arrival, stamp: DocumentStamp): Promise<Placed> => {
   // The size cap is checked before the bytes are pulled, so a file past it is reported without ever
@@ -177,8 +183,9 @@ const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placin
   }
   const address = await addressOf(deps, messageId, attachment);
   if (!address.ok) {
-    const asName = reserve(placing, failedName(place, placing, arrival));
-    return { asName, paths: [], failed: { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` } };
+    const failed = { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` };
+    if (arrival.recorded !== undefined) return keptAs(placing, arrival.recorded, failed);
+    return { asName: reserve(placing, nameOf(place, placing, arrival)), paths: [], failed };
   }
   const hash = address.value.hash;
   // Within this thread only. A signature riding on ten messages of one conversation is converted
@@ -242,6 +249,7 @@ const messageFileOf = (attachment: MailAttachment, placed: Placed): MessageFile 
   picture: placed.picture,
   text: placed.text,
   note: placed.skipped?.reason ?? placed.failed?.reason,
+  kept: placed.kept,
 });
 
 // The files this thread already holds, as the run that wrote it last recorded them. A thread written
@@ -252,10 +260,19 @@ const heldBy = (stored: Readonly<Record<string, AttachmentRecord>>, here: string
 // Which message brought a file, and which of the files of that name in it. A mail is known by its RFC
 // id, which stays the same when the mail moves to another folder where its Graph id does not; a post in
 // a group inbox has none, and its own id never changes.
-const arrivalOf = (message: MailMessage, name: string, nth: number): string => {
+const arrivalOf = (message: MailMessage, name: string, nth: number): string => `${senderOf(message)}|${name}|${nth}`;
+
+const senderOf = (message: MailMessage): string => {
   const rfc = message.internetMessageId ?? '';
-  return `${rfc.length > 0 ? rfc : message.id}|${name}|${nth}`;
+  return rfc.length > 0 ? rfc : message.id;
 };
+
+// The names the files a message carried were written under before, which a write that cannot list
+// them must not take for gone.
+const namedFor = (place: FilePlace, message: MailMessage): ReadonlyArray<string> =>
+  Object.entries(place.names ?? {})
+    .filter(([arrival]) => arrival.startsWith(`${senderOf(message)}|`))
+    .map(([, name]) => `${place.here}/${ATTACHMENTS_FOLDER}/${name}`);
 
 // What the files of a write add up to as they are placed.
 type Tally = {
@@ -265,6 +282,7 @@ type Tally = {
   readonly failed: ReportEntry[];
   readonly byMessage: Record<string, MessageFile[]>;
   readonly names: Record<string, string>;
+  readonly unread: string[];
 };
 
 // One file a message carried, placed and added up; nothing for a file left out whole.
@@ -285,6 +303,7 @@ const placeCarried = async (deps: FileDeps, place: FilePlace, placing: Placing, 
   if (placed.failed) tally.failed.push(placed.failed);
   addAll(tally.media, placed.media ?? []);
   if (!isInlinePicture(attachment)) tally.names[arrival] = placed.asName;
+  if (placed.kept === true) tally.unread.push(`${place.here}/${ATTACHMENTS_FOLDER}/${placed.asName}`);
   return messageFileOf(attachment, placed);
 };
 
@@ -295,6 +314,7 @@ const placeMessage = async (deps: FileDeps, place: FilePlace, placing: Placing, 
   const listed = await deps.reader.attachments(part.message.id);
   if (!listed.ok) {
     tally.failed.push({ path: `message ${part.message.id}`, reason: `could not list what it carried: ${listed.error.message}` });
+    tally.unread.push(...namedFor(place, part.message));
     return;
   }
   const carried: MessageFile[] = [];
@@ -311,7 +331,6 @@ const placeMessage = async (deps: FileDeps, place: FilePlace, placing: Placing, 
 
 export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: ReadonlyArray<ThreadPart>, stamp: DocumentStamp): Promise<AttachmentTally> => {
   const store = heldBy(place.stored, place.here);
-  const converted = Object.values(store).map((record) => record.name);
   // Pictures shown inside message bodies, which the whole mailbox shares, seeded with what earlier
   // threads stored so a signature logo is written once rather than once per conversation. The names
   // the thread's files hold come first, so a new file never takes one: a name that came free when its
@@ -321,21 +340,23 @@ export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: Rea
     shared: { ...place.stored },
     // A file of a message gone that would not move aside, or one waiting on a read, is on disk until a
     // run moves it, and its name with it.
-    taken: [...Object.values(place.names ?? {}), ...converted, ...namesHeldIn(`${place.here}/${ATTACHMENTS_FOLDER}`, place.held)],
-    converted: new Set(converted),
+    taken: [...Object.values(place.names ?? {}), ...Object.values(store).map((record) => record.name), ...namesHeldIn(`${place.here}/${ATTACHMENTS_FOLDER}`, place.held)],
   };
   // A signature logo rides on every message of a thread, so the same file is offered many times.
   // Every offer is fetched and hashed rather than recognised beforehand by its name and length: a
   // spreadsheet edited and resent down a thread keeps its name, and an edit that leaves the byte
   // count untouched would pass for the version before it. The content address then dedupes the
   // repeat, here and across every other thread, so the bytes are paid for and the conversion is not.
-  const tally: Tally = { paths: [], media: [], skipped: [], failed: [], byMessage: {}, names: {} };
+  const tally: Tally = { paths: [], media: [], skipped: [], failed: [], byMessage: {}, names: {}, unread: [] };
   // Graph reports `hasAttachments: false` for a message whose only attachment is an inline image, so
   // a signature or a pasted screenshot would never be listed at all. A body showing a picture it does
   // not carry is the other half of the question, and asking it costs nothing on a message with neither.
   for (const part of parts.filter((candidate) => candidate.message.hasAttachments || carriesInlineImage(candidate.body))) {
     await placeMessage(deps, place, placing, part, stamp, tally);
   }
+  // A thread written before the names were kept cannot tell what a failure was: none of its files is
+  // taken for gone until a write that reads everything.
+  if (place.names === undefined && tally.failed.length > 0) tally.unread.push(`${place.here}/${ATTACHMENTS_FOLDER}`);
   // Both stores fold into the one the run remembers: the shared pictures so a later thread finds
   // them, this thread's files so the mailbox index names everything on disk. Only what this write
   // added or used: the fold goes by key, and a held file whose message is gone would otherwise come

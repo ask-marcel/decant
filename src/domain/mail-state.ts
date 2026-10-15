@@ -322,6 +322,16 @@ export const namesHeldIn = (folder: string, paths: ReadonlyArray<string> | undef
 
 const CARD_SUFFIX = '.md';
 
+// Whether a file is one of the files under a name in a thread's folder: the file itself, what sits
+// beside it under its name (its card, its pictures, a deck's PDF), anything in a folder of that name,
+// and what an archive or a saved mail of that name unpacked into, a folder named for it without its
+// extension.
+export const underName = (path: string, name: string): boolean => {
+  const cut = name.lastIndexOf('.');
+  const stem = cut > name.lastIndexOf('/') ? name.slice(0, cut) : name;
+  return path === name || path.startsWith(`${name}.`) || path.startsWith(`${name}/`) || path.startsWith(`${stem}/`);
+};
+
 // A map written in the order of its keys, so the state reads the same whatever order it was filled in.
 export const inKeyOrder = (map: Readonly<Record<string, string>>): Readonly<Record<string, string>> =>
   Object.fromEntries(Object.entries(map).toSorted(([left], [right]) => compareText(left, right)));

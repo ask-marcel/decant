@@ -251,6 +251,38 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(recordOf(thrice.outcome)?.files).toEqual([`${LINKED_HERE}/Rapport-2.docx.md`]);
   });
 
+  // The card of a document the thread pulled before holds its text: a failure written over it would be
+  // read back as that text. It stays as it was, and what the document had beside it is named as unread.
+  it('a linked document pulled before that cannot be pulled now keeps its card, and is named as unread', async () => {
+    const once = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: items });
+    const before = once.outcome?.kind === 'rendered' ? once.outcome.thread.record : undefined;
+
+    const twice = await run({
+      reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked },
+      drive: { failWith: { kind: 'throttled', message: 'slow down' } },
+      folder: THREAD_FOLDER,
+      file: THREAD_RELATIVE,
+      links: before?.links,
+      held: before?.files,
+      files: { texts: Object.fromEntries(once.files.written) },
+    });
+    const thread = twice.outcome?.kind === 'rendered' ? twice.outcome.thread : undefined;
+
+    expect(twice.files.written.get(REPORT_MD)).toContain('converted 01ABC');
+    expect(thread?.record.files).toEqual([REPORT_MD]);
+    expect(thread?.unread).toEqual([`${LINKED_HERE}/Rapport.docx`]);
+  });
+
+  // Any document the thread pointed at may still be linked from that message.
+  it('a message whose links cannot be listed has every linked document named as unread', async () => {
+    const { outcome } = await run({
+      reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked, failCalls: { sharepointLinks: { kind: 'transient', message: 'timeout' } } },
+      drive: items,
+    });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.unread).toEqual([LINKED_HERE]);
+  });
+
   // A card that could not be written is not on disk, so it is not one of the files the folder holds.
   it('a linked document whose card cannot be written is not listed among the files of the thread', async () => {
     const { outcome } = await run({
