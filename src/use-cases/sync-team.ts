@@ -33,7 +33,7 @@ import { writeReport } from './sync-site.ts';
 import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
 import type { ChannelPost } from '../domain/channel-post.ts';
 import { withGaveUp } from '../domain/report.ts';
-import { putAside, putBack, setAside } from './put-aside.ts';
+import { heldInPlace, putAside, putBack, setAside } from './put-aside.ts';
 import type { SetAside } from './put-aside.ts';
 import { refileAll } from './refile.ts';
 
@@ -111,22 +111,41 @@ const setAsideBefore = async (deps: SyncTeamDeps, before: PostRecord | undefined
 
 type ChannelContext = { readonly deps: SyncTeamDeps; readonly input: SyncTeamInput; readonly channel: ChannelSummary; readonly roots: Roots };
 
+const NOTHING_ASIDE: SetAside = { moved: [], failed: [] };
+
+// A write that did not happen: the version before goes back where it was, and the post is tried
+// again on the next run, three runs in all.
+const notPosted = async (context: ChannelContext, state: TeamState, post: ChannelPost, title: string, aside: SetAside, reason: string): Promise<Done> => {
+  const { deps, channel } = context;
+  for (const missed of await putBack(deps, aside)) deps.logger.warn('restore.failed', { path: missed.path, cause: missed.error.kind });
+  const attempt = nextAttempt(state.retry?.[post.id], post.lastModified, reportName(channel, title), reason);
+  // Out of tries now: named under its own heading, not as a failure the next run will try again.
+  const notes = isGivenUp(attempt, post.lastModified) ? {} : { failed: [{ path: reportName(channel, title), reason }] };
+  return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, post.id, attempt) }), counted: { failed: 1 }, notes };
+};
+
+// A version before that would not move aside, held open most often, would be lost to a write at its
+// own path, so the post waits for a run that can move it.
 const writeOne = async (context: ChannelContext, state: TeamState, planned: PlannedPost): Promise<Done> => {
   const { deps, input, channel } = context;
   const { post, file } = planned;
   const title = file.slice(file.lastIndexOf('/') + 1, -'.md'.length);
   const markdown = await deps.reader.postMarkdown(input.team.id, channel.id, post.id);
-  const aside = markdown.ok ? await setAsideBefore(deps, state.channels[channel.id]?.posts[post.id]) : undefined;
-  const written = markdown.ok
-    ? await deps.files.writeText(file, renderPostDocument({ post, team: input.team.name, channel: channel.name, markdown: markdown.value, syncedAt: deps.clock.nowIso() }))
-    : markdown;
-  if (!written.ok && aside !== undefined) for (const missed of await putBack(deps, aside)) deps.logger.warn('restore.failed', { path: missed.path, cause: missed.error.kind });
+  if (!markdown.ok) {
+    deps.logger.warn('post.failed', { post: post.id, cause: markdown.error.kind });
+    return notPosted(context, state, post, title, NOTHING_ASIDE, markdown.error.message);
+  }
+  const before = state.channels[channel.id]?.posts[post.id];
+  const aside = await setAsideBefore(deps, before);
+  const held = before?.file === file ? await heldInPlace(deps, aside) : undefined;
+  if (held !== undefined) return notPosted(context, state, post, title, aside, held);
+  const written = await deps.files.writeText(
+    file,
+    renderPostDocument({ post, team: input.team.name, channel: channel.name, markdown: markdown.value, syncedAt: deps.clock.nowIso() })
+  );
   if (!written.ok) {
     deps.logger.warn('post.failed', { post: post.id, cause: written.error.kind });
-    const attempt = nextAttempt(state.retry?.[post.id], post.lastModified, reportName(channel, title), written.error.message);
-    // Out of tries now: named under its own heading, not as a failure the next run will try again.
-    const notes = isGivenUp(attempt, post.lastModified) ? {} : { failed: [{ path: reportName(channel, title), reason: written.error.message }] };
-    return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, post.id, attempt) }), counted: { failed: 1 }, notes };
+    return notPosted(context, state, post, title, aside, written.error.message);
   }
   const record: PostRecord = { file, lastModified: post.lastModified, title, from: post.author };
   return {
