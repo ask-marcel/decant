@@ -280,7 +280,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     expect(stateAfter(files).drives['b!one']?.pending).toStrictEqual([]);
   });
 
-  it('a document renamed in SharePoint has its files moved rather than converted again', async () => {
+  it('a document renamed in SharePoint is converted again at its new place, with its earlier files put aside', async () => {
     const known = serializeSiteState({
       version: 1,
       source: { kind: 'site', ...site },
@@ -299,19 +299,23 @@ describe('syncing a SharePoint library into the knowledge base', () => {
 
     const { summary, files } = await run({ files: { texts: { [STATE_PATH]: known } }, reader: { pages: [{ items: [renamed], skipped: 0, deltaLink: 'cursor-2' }] } });
 
-    expect(summary).toEqual({ converted: 0, moved: 1, archived: 0, skipped: 0, failed: 0, queued: 0 });
+    expect(summary).toEqual({ converted: 1, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 });
     expect(files.moves).toEqual([
       {
         from: 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md',
-        to: 'kb/SharePoint sites/Espace Contoso/Documents/Archive/Contrat signe.docx.md',
+        to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md',
       },
     ]);
-    expect(stateAfter(files).drives['b!one']?.items['01ABC']?.path).toBe('Archive/Contrat signe.docx');
+    expect(files.written.get('kb/SharePoint sites/Espace Contoso/Documents/Archive/Contrat signe.docx.md')).toContain('path: Archive/Contrat signe.docx');
+    expect(stateAfter(files).drives['b!one']?.items['01ABC']).toMatchObject({
+      path: 'Archive/Contrat signe.docx',
+      outputs: ['kb/SharePoint sites/Espace Contoso/Documents/Archive/Contrat signe.docx.md'],
+    });
   });
 
-  // A file already at the new place belongs to another document, and the move is refused rather than
-  // written over it. Recorded at the new place, the document would name a file that is not its own.
-  it('a rename whose move is refused keeps the document recorded at the files it still has', async () => {
+  // The earlier files stay where they were, and the log names them: the document is recorded at the
+  // files its new conversion wrote, which are the ones that say where it is now.
+  it('a rename whose earlier files will not move aside still lands at the new place', async () => {
     const known = serializeSiteState({
       version: 1,
       source: { kind: 'site', ...site },
@@ -328,11 +332,39 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       layout: 2,
     });
     const renamed = item({ path: 'Archive/Contrat signe.docx', name: 'Contrat signe.docx' });
-    const refused = { kind: 'write-failed' as const, path: 'kb/SharePoint sites/Espace Contoso/Documents/Archive/Contrat signe.docx.md', message: 'a file is already there' };
+    const refused = { kind: 'write-failed' as const, path: 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md', message: 'held open' };
 
     const { files } = await run({ files: { texts: { [STATE_PATH]: known }, failMoveWith: refused }, reader: { pages: [{ items: [renamed], skipped: 0, deltaLink: 'cursor-2' }] } });
 
-    expect(stateAfter(files).drives['b!one']?.items['01ABC']?.outputs).toEqual(['kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md']);
+    expect(stateAfter(files).drives['b!one']?.items['01ABC']?.outputs).toEqual(['kb/SharePoint sites/Espace Contoso/Documents/Archive/Contrat signe.docx.md']);
+  });
+
+  // A run of an earlier version queued a rename as a move of the files. The entry carries the document,
+  // so the run that resumes the queue converts it at its new place, like any other rename.
+  it('a move that an earlier version left in the queue is converted at the new place', async () => {
+    const renamed = item({ path: 'Archive/Contrat signe.docx', name: 'Contrat signe.docx' });
+    const before = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
+    const queued = JSON.stringify({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      layout: 2,
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [{ kind: 'move', item: renamed, from: 'Projets/Contrat.docx', outputs: [before] }],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [before] } },
+          retry: {},
+        },
+      },
+    });
+
+    const { summary, files } = await run({ files: { texts: { [STATE_PATH]: queued, [before]: 'the contract' } } });
+
+    expect(summary.converted).toBe(1);
+    expect(files.written.has(before)).toBe(false);
+    expect(stateAfter(files).drives['b!one']?.items['01ABC']?.outputs).toEqual(['kb/SharePoint sites/Espace Contoso/Documents/Archive/Contrat signe.docx.md']);
   });
 
   it('a document deleted in SharePoint has its files put aside and is forgotten', async () => {
@@ -427,7 +459,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       reader: { pages: [{ items, skipped: 0, deltaLink: 'cursor-2' }], failItems: { broken: { kind: 'permanent', message: 'locked' } } },
     });
 
-    expect(summary).toEqual({ converted: 1, moved: 1, archived: 1, skipped: 1, failed: 1, queued: 0 });
+    expect(summary).toEqual({ converted: 2, moved: 0, archived: 1, skipped: 1, failed: 1, queued: 0 });
   });
 
   it('several libraries are synced in one run, each with its own folder', async () => {
@@ -467,7 +499,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     expect(files.written.has('kb/SharePoint sites/Espace Contoso/Site Assets/b.docx.md')).toBe(true);
   });
 
-  it('a file that cannot be moved is reported without losing what the manifest knows', async () => {
+  it('a renamed file whose earlier version cannot be put aside is still converted, and the log says so', async () => {
     const known = serializeSiteState({
       version: 1,
       source: { kind: 'site', ...site },
@@ -488,8 +520,8 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       reader: { pages: [{ items: [item({ path: 'new.docx', name: 'new.docx' })], skipped: 0, deltaLink: 'cursor-2' }] },
     });
 
-    expect(summary.moved).toBe(1);
-    expect(logger.calls.some((call) => call.event === 'move.failed')).toBe(true);
+    expect(summary.converted).toBe(1);
+    expect(logger.calls.some((call) => call.event === 'supersede.failed')).toBe(true);
   });
 
   it('a file that cannot be put aside is reported rather than silently kept', async () => {
@@ -709,7 +741,7 @@ describe('naming the step, cause and payload behind every outcome', () => {
     expect(failed?.meta).toMatchObject({ itemId: '01ABC' });
   });
 
-  it('a file that cannot be moved is logged with its id and the cause', async () => {
+  it('an earlier version that cannot be put aside before a rename is logged with its path and the cause', async () => {
     const known = serializeSiteState({
       version: 1,
       source: { kind: 'site', ...site },
@@ -728,9 +760,9 @@ describe('naming the step, cause and payload behind every outcome', () => {
       files: { texts: { [STATE_PATH]: known }, failMoveWith: { kind: 'write-failed', path: 'x', message: 'read-only volume' } },
       reader: { pages: [{ items: [item({ path: 'new.docx', name: 'new.docx' })], skipped: 0, deltaLink: 'cursor-2' }] },
     });
-    const failed = logger.calls.find((call) => call.event === 'move.failed');
+    const failed = logger.calls.find((call) => call.event === 'supersede.failed');
 
-    expect(failed?.meta).toMatchObject({ itemId: '01ABC', cause: 'write-failed' });
+    expect(failed?.meta).toEqual({ path: 'kb/SharePoint sites/Espace Contoso/Documents/old.docx.md', cause: 'write-failed' });
   });
 
   it('a file that cannot be put aside is logged with its id and the cause', async () => {
@@ -943,7 +975,7 @@ describe('reaching back only as far as the day', () => {
       since: '2025-01-01',
     });
 
-    expect(summary).toMatchObject({ converted: 2, moved: 1 });
+    expect(summary).toMatchObject({ converted: 3, moved: 0 });
   });
 
   it('moving the day earlier reads the old cursor out first, then the library whole, converting only what it had left out and still putting aside what was deleted', async () => {

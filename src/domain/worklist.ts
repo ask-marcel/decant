@@ -17,10 +17,7 @@ export type ManifestEntry = {
 
 export type Manifest = Readonly<Record<string, ManifestEntry>>;
 
-export type WorkItem =
-  | { readonly kind: 'convert'; readonly item: DriveItem }
-  | { readonly kind: 'move'; readonly item: DriveItem; readonly from: string; readonly outputs: ReadonlyArray<string> }
-  | { readonly kind: 'archive'; readonly itemId: string; readonly outputs: ReadonlyArray<string> };
+export type WorkItem = { readonly kind: 'convert'; readonly item: DriveItem } | { readonly kind: 'archive'; readonly itemId: string; readonly outputs: ReadonlyArray<string> };
 
 // A Loop workspace keeps a `.pod` manifest beside its pages: its own bookkeeping, rewritten whenever a
 // page changes, and nothing a reader can make a document of. Passed over like a folder, rather than
@@ -30,12 +27,14 @@ const MANIFEST_EXTENSION = 'pod';
 const passedOver = (item: DriveItem): boolean => item.kind === 'folder' || extensionOf(item.name) === MANIFEST_EXTENSION;
 
 // A file never filed that was last edited before the day is left out. One already filed is followed
-// whatever its date, through a move or an edit, since leaving it would leave its documents stale.
+// whatever its date, through a move or an edit, since leaving it would leave its documents stale. A
+// file renamed or moved is converted again at its new place: its files say where it is, in the front
+// matter and in the links to its pictures, and files only moved went on naming the place it left.
 const workFor = (item: DriveItem, known: ManifestEntry | undefined, since: string | undefined): WorkItem | undefined => {
   if (item.kind === 'deleted') return known === undefined ? undefined : { kind: 'archive', itemId: item.id, outputs: known.outputs };
-  if (known === undefined) return passedOver(item) || isBefore(item.lastModified, since) ? undefined : { kind: 'convert', item };
-  if (known.path !== item.path) return { kind: 'move', item, from: known.path, outputs: known.outputs };
-  return known.cTag === item.cTag || passedOver(item) ? undefined : { kind: 'convert', item };
+  if (passedOver(item)) return undefined;
+  if (known === undefined) return isBefore(item.lastModified, since) ? undefined : { kind: 'convert', item };
+  return known.cTag === item.cTag && known.path === item.path ? undefined : { kind: 'convert', item };
 };
 
 const retriedWork = (retry: RetryLedger, items: ReadonlyArray<DriveItem>): ReadonlyArray<WorkItem> =>
