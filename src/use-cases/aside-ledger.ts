@@ -3,11 +3,20 @@ import type { AsideLedger, StuckFile } from '../domain/aside-ledger.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import type { Clock } from './ports/clock.ts';
-import type { Files, FilesError } from './ports/files.ts';
+import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import { setAside } from './put-aside.ts';
+import type { NotPutAside, WriteDown } from './put-aside.ts';
 
 export type AsideLedgerDeps = { readonly clock: Clock; readonly kbRoot: string; readonly logger: Logger };
+
+export type RetryAside = () => Promise<void>;
+
+export type StuckFiles = () => Promise<ReadonlyArray<ReportEntry>>;
+
+// What a run gets from the ledger: where its sources write down the files they let go that would not
+// move under the archive, the retry at the start of the run, and what the report of the run names.
+export type AsideLedgerRun = { readonly writeDown: WriteDown; readonly retry: RetryAside; readonly stuck: StuckFiles };
 
 const ledgerPath = (kbRoot: string): string => `${kbRoot}/${ASIDE_LEDGER_NAME}`;
 
@@ -17,39 +26,16 @@ const readLedger = async (files: Files, kbRoot: string): Promise<AsideLedger> =>
   return parsed?.ok ? parseAsideLedger(parsed.value) : {};
 };
 
-// A ledger that will not save costs the record of the moves owed, not the run: the next move that
-// fails writes its file down again.
+// A ledger that will not save costs the record of the moves owed, not the run.
 const writeLedger = async (files: Files, deps: AsideLedgerDeps, ledger: AsideLedger): Promise<void> => {
   const written = await files.writeText(ledgerPath(deps.kbRoot), serializeAsideLedger(ledger));
   if (!written.ok) deps.logger.warn('aside-ledger.unsaved', { cause: written.error.kind });
 };
 
-// Every source puts what it no longer holds under the archive through this, so a move that fails is
-// caught in one place. The source has already let the file go, so the file is written down here, as
-// long as it is still on disk: the next run moves it again, and the report of the run names it. One
-// at a time, since two moves of one window can fail together, and each would read the ledger before
-// the other wrote it.
-export const withAsideLedger = (files: Files, deps: AsideLedgerDeps): Files => {
-  let writing: Promise<void> = Promise.resolve();
-  const note = async (path: string, cause: string): Promise<void> => writeLedger(files, deps, stuckAt(await readLedger(files, deps.kbRoot), path, cause, deps.clock.nowIso()));
-  const stuck = async (path: string, error: FilesError): Promise<void> => {
-    const still = await files.exists(path);
-    if (!still.ok || !still.value) return;
-    writing = writing.then(async () => note(path, `${error.kind}: ${error.message}`));
-    await writing;
-  };
-  return {
-    ...files,
-    move: async (from, to) => {
-      const moved = await files.move(from, to);
-      if (!moved.ok && to.startsWith(`${deps.kbRoot}/_archive/`)) await stuck(from, moved.error);
-      return moved;
-    },
-  };
-};
+const causeOf = (missed: NotPutAside): string => `${missed.error.kind}: ${missed.error.message}`;
 
-const onDisk = async (files: Files, entries: ReadonlyArray<StuckFile>): Promise<ReadonlyArray<StuckFile>> => {
-  const present: StuckFile[] = [];
+const onDisk = async <T extends { readonly path: string }>(files: Files, entries: ReadonlyArray<T>): Promise<ReadonlyArray<T>> => {
+  const present: T[] = [];
   for (const entry of entries) {
     const held = await files.exists(entry.path);
     if (held.ok && held.value) present.push(entry);
@@ -57,30 +43,59 @@ const onDisk = async (files: Files, entries: ReadonlyArray<StuckFile>): Promise<
   return present;
 };
 
-export type RetryAside = () => Promise<void>;
+// The ledger lists the files no source records any more that would not move under the archive, so
+// the move is still owed. It is read once, on first need, and every change after is made to the copy
+// in hand and then saved, one save at a time: a window converts several items at once, and two of
+// them can let a file go together.
+export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLedgerRun => {
+  let held: AsideLedger = {};
+  let reading: Promise<void> | undefined;
+  let saving: Promise<void> = Promise.resolve();
+  const loaded = async (): Promise<void> => {
+    reading ??= readLedger(files, deps.kbRoot).then((ledger) => {
+      held = ledger;
+    });
+    await reading;
+  };
+  const change = async (edit: (ledger: AsideLedger) => AsideLedger): Promise<void> => {
+    await loaded();
+    const next = edit(held);
+    held = next;
+    saving = saving.then(async () => writeLedger(files, deps, next));
+    await saving;
+  };
 
-// At the start of a run, before any source writes: each file the ledger holds that is still on disk
-// goes under the archive again. One that moves, and one that is gone, leave the ledger. One that
-// still will not move is written down again, through the files this runs on.
-export const createRetryAside =
-  (deps: AsideLedgerDeps & { readonly files: Files }): RetryAside =>
-  async () => {
-    const ledger = await readLedger(deps.files, deps.kbRoot);
-    if (Object.keys(ledger).length === 0) return;
-    const present = await onDisk(deps.files, Object.values(ledger));
+  // A file handed on that is gone already owes nothing.
+  const writeDown: WriteDown = async (missed) => {
+    const present = await onDisk(files, missed);
+    if (present.length === 0) return;
+    const at = deps.clock.nowIso();
+    await change((ledger) => present.reduce((carried, entry) => stuckAt(carried, entry.path, causeOf(entry), at), ledger));
+  };
+
+  // At the start of a run, before any source writes: each file still on disk goes under the archive
+  // again. One that moves, and one that is gone, leave the ledger; one that still will not move stays,
+  // with the day it first would not and the latest cause.
+  const retry: RetryAside = async () => {
+    await loaded();
+    const listed = Object.values(held);
+    if (listed.length === 0) return;
+    const present = await onDisk(files, listed);
     const aside = await setAside(
-      deps,
+      { files, clock: deps.clock, kbRoot: deps.kbRoot },
       present.map((entry) => entry.path)
     );
-    const settled = Object.keys(ledger).filter((path) => !aside.failed.some((missed) => missed.path === path));
-    await writeLedger(deps.files, deps, unstuck(await readLedger(deps.files, deps.kbRoot), settled));
+    const settled = listed.map((entry) => entry.path).filter((path) => !aside.failed.some((missed) => missed.path === path));
+    const at = deps.clock.nowIso();
+    await change((ledger) => aside.failed.reduce((carried, missed) => stuckAt(carried, missed.path, causeOf(missed), at), unstuck(ledger, settled)));
     deps.logger.info('aside.retried', { moved: aside.moved.length, stuck: aside.failed.length });
   };
 
-export type StuckFiles = () => Promise<ReadonlyArray<ReportEntry>>;
+  // What the report of the run names: each file the ledger holds that is still on disk.
+  const stuck: StuckFiles = async () => {
+    await loaded();
+    return stuckNotes(await onDisk<StuckFile>(files, Object.values(held)), deps.kbRoot);
+  };
 
-// What the report of the run names: each file the ledger holds that is still on disk.
-export const createStuckFiles =
-  (deps: { readonly files: Files; readonly kbRoot: string }): StuckFiles =>
-  async () =>
-    stuckNotes(await onDisk(deps.files, Object.values(await readLedger(deps.files, deps.kbRoot))), deps.kbRoot);
+  return { writeDown, retry, stuck };
+};

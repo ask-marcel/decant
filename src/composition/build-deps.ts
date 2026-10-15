@@ -62,7 +62,7 @@ import { parseSiteCache, serializeSiteCache } from '../domain/site-cache.ts';
 import { SINCE_SHAPE, parseSettings, serializeSettings } from '../domain/sync-window.ts';
 import { err, ok } from '../domain/result.ts';
 import type { RunSyncDeps } from '../use-cases/run-sync.ts';
-import { createRetryAside, createStuckFiles, withAsideLedger } from '../use-cases/aside-ledger.ts';
+import { createAsideLedger } from '../use-cases/aside-ledger.ts';
 import { withCursorFiles } from '../use-cases/cursor-files.ts';
 import { withSteadyWrites } from '../use-cases/steady-files.ts';
 import type { Config } from './config.ts';
@@ -193,11 +193,14 @@ const given = <T>(override: T | undefined, build: () => T): T => override ?? bui
 export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDeps => {
   const logger = given(overrides.logger, () => createWinstonLogger(config.logLevel));
   const clock = given(overrides.clock, () => createSystemClock());
-  // Every part of the run writes through these: a note is written only when its text changed, the run
-  // time and delta cursors of a sync go to a file beside its state, and a file that would not move
-  // under the archive is written down beside the knowledge base. A run that found nothing new then
-  // changes no file but those cursor files.
-  const files = withAsideLedger(withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())), logger), { clock, logger, kbRoot: config.kbRoot });
+  // Every part of the run writes through these: a note is written only when its text changed, and the
+  // run time and delta cursors of a sync go to a file beside its state. A run that found nothing new
+  // then changes no file but those cursor files.
+  const files = withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())), logger);
+  // The files a source lets go that would not move under the archive, written down beside the
+  // knowledge base: moved again before each run, and named in the report of the run.
+  const ledger = createAsideLedger(files, { clock, logger, kbRoot: config.kbRoot });
+  const writeDown = ledger.writeDown;
   // Constructing the API reaches nothing: the sign-in ladder only runs on the first Graph call.
   const api = realApi(config.interactive);
   const reader = given(overrides.reader, () => createDriveReaderFromApi(api));
@@ -211,7 +214,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const progress = given(overrides.progress, () => createStderrProgress());
   const pathBudget = config.pathBudget;
   const convertFile = createConvertFile({ reader, files, ocr, clock, logger, progress, pathBudget });
-  const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone });
+  const syncSite = createSyncSite({ reader, files, convertFile, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone, writeDown });
   const listSyncedSources = createListSyncedSources({ files, logger, kbRoot: config.kbRoot });
   const convertAttachment = createConvertAttachment({ reader: mail, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown, pathBudget });
   // Hoisted only to keep the call below on one line: Bun reports the inner lines of a multi-line
@@ -257,31 +260,29 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // A task is text with nothing hanging off it, so it needs none of the conversion machinery the
   // other sources are built out of: the reader, somewhere to write, and a clock to stamp it.
   const todo = given(overrides.todo, () => createTodoReaderFromCall(createMarcelCall(api), config.timezone));
-  const syncTodo = createSyncTodo({ reader: todo, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
+  const syncTodo = createSyncTodo({ reader: todo, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget, writeDown });
   // A channel post renders through the library, the way a mail message does, so a team needs the
   // reader, somewhere to write, and a clock, and none of the conversion machinery.
   const team = given(overrides.team, () => createTeamReaderFromCall(createMarcelCall(api)));
-  const syncTeam = createSyncTeam({ reader: team, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget, timezone: config.timezone });
+  const syncTeam = createSyncTeam({ reader: team, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget, timezone: config.timezone, writeDown });
   // The directory is enumerated through the Teams, so it borrows the team reader's listing.
   const people = given(overrides.people, () => createPeopleReaderFromCall(createMarcelCall(api)));
-  const syncPeople = createSyncPeople({ reader: people, teams: team, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
+  const syncPeople = createSyncPeople({ reader: people, teams: team, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget, writeDown });
   // The calendar counts its days where the mailbox counts them.
   const calendar = given(overrides.calendar, () => createCalendarReaderFromCall(createMarcelCall(api)));
-  const syncCalendar = createSyncCalendar({ reader: calendar, files, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone, pathBudget });
+  const syncCalendar = createSyncCalendar({ reader: calendar, files, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone, pathBudget, writeDown });
   const notebook = given(overrides.notebook, () => createNotebookReaderFromCall(createMarcelCall(api)));
-  const syncNotebook = createSyncNotebook({ reader: notebook, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
+  const syncNotebook = createSyncNotebook({ reader: notebook, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget, writeDown });
   const list = given(overrides.list, () => createListReaderFromCall(createMarcelCall(api)));
-  const syncLists = createSyncLists({ reader: list, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
+  const syncLists = createSyncLists({ reader: list, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget, writeDown });
   const plan = given(overrides.plan, () => createPlanReaderFromCall(createMarcelCall(api)));
-  const syncPlan = createSyncPlan({ reader: plan, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget });
+  const syncPlan = createSyncPlan({ reader: plan, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget, writeDown });
   const savedDrives = createSavedDrives(files, logger, config.kbRoot);
   const { cached: cachedSites, remember: rememberSites } = siteCacheAt(files, config.kbRoot, clock);
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
   // expression as never executed, so spreading this call out reads as a third of the file going
   // uncovered. See the journal entry for the same trap in `progress-bar.ts`.
-  const stuckFiles = createStuckFiles({ files, kbRoot: config.kbRoot });
-  const writeGlobalReport = createWriteGlobalReport({ files, clock, logger, listSyncedSources, kbRoot: config.kbRoot, stuckFiles });
-  const retryAside = createRetryAside({ files, clock, logger, kbRoot: config.kbRoot });
+  const writeGlobalReport = createWriteGlobalReport({ files, clock, logger, listSyncedSources, kbRoot: config.kbRoot, stuckFiles: ledger.stuck });
   const run = createRunSync({
     reader,
     prompt,
@@ -317,7 +318,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // again before any source writes. A dry run keeps and moves nothing.
   const runSync: RunSync = async (input) => {
     if (!input.dryRun) await keepZone(files, logger, config.kbRoot, config.timezone);
-    if (!input.dryRun) await retryAside();
+    if (!input.dryRun) await ledger.retry();
     return run(input);
   };
   return { logger, runSync };
