@@ -97,6 +97,14 @@ const rosters = async (deps: SyncPeopleDeps): Promise<Result<Rosters, StepError>
   return ok(listed);
 };
 
+// Rosters that name nobody while people are on record are a Graph answer gone wrong, a lost permission
+// most often, not a directory emptied in a day: the run stops before it puts every page aside.
+const emptyRosters = (state: PeopleState, listed: Rosters): Result<never, StepError> | undefined => {
+  const held = Object.keys(state.people).length;
+  if (Object.keys(listed).length > 0 || held === 0) return undefined;
+  return failed('listMembers', 'empty', `the Team rosters name nobody, and ${held} ${held === 1 ? 'person is' : 'people are'} on record: nothing was put aside`);
+};
+
 type Profiles = { readonly people: ReadonlyArray<Person>; readonly unread: ReadonlyArray<Unread> };
 
 // One call per person, a window at a time. A profile that cannot be read costs that person and not
@@ -228,6 +236,8 @@ export const createSyncPeople =
     const state: PeopleState = { ...(await loadState(deps, `${peopleRoot(deps.kbRoot)}/${PEOPLE_STATE_FILE}`)), version: PEOPLE_STATE_VERSION };
     const listed = await rosters(deps);
     if (!listed.ok) return listed;
+    const nobody = emptyRosters(state, listed.value);
+    if (nobody !== undefined) return nobody;
     const read = await profiles(deps, input, listed.value);
     const directory = assembleDirectory(read.people, Object.fromEntries(Object.entries(listed.value).map(([id, who]) => [id, who.teams])));
     const work = peopleWorklist(

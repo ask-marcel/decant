@@ -379,6 +379,34 @@ describe('syncing the people directory', () => {
     expect(done.logger.calls.map((entry) => entry.event)).toContain('people-state.unreadable');
   });
 
+  // An empty answer from Graph, a lost permission most often, would put aside every page in one run.
+  // With people on record, the run stops there, and the pages stay as they are.
+  it('rosters that name nobody, with people on record, stop the run and put no page aside', async () => {
+    const DANA_FILE = `${ROOT}/Dana Farrow.md`;
+    const JANE_FILE = `${ROOT}/Jane Doe.md`;
+    const state = withPerson(withPerson(emptyPeopleState(), 'dana', { file: DANA_FILE, name: 'Dana Farrow', fingerprint: 'x' }), 'jane', {
+      file: JANE_FILE,
+      name: 'Jane Doe',
+      fingerprint: 'y',
+    });
+    const texts = { [STATE_PATH]: serializePeopleState(state), [DANA_FILE]: 'Dana', [JANE_FILE]: 'Jane' };
+    const noTeam = await run({ teams: [], files: { texts } });
+    const noMember = await run({ reader: { members: { 'team-all': [], 'team-lead': [] } }, files: { texts } });
+
+    expect(noTeam.ok).toBe(false);
+    expect(noTeam.error).toEqual({ step: 'listMembers', cause: 'empty', message: 'the Team rosters name nobody, and 2 people are on record: nothing was put aside' });
+    expect(noTeam.files.moves).toStrictEqual([]);
+    expect(noMember.error?.cause).toBe('empty');
+    expect(noMember.files.moves).toStrictEqual([]);
+  });
+
+  it('rosters that name nobody, with one person on record, say so in the singular', async () => {
+    const state = withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: 'x' });
+    const done = await run({ teams: [], files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
+
+    expect(done.error?.message).toBe('the Team rosters name nobody, and 1 person is on record: nothing was put aside');
+  });
+
   it('a state file that cannot be saved stops the run, whether or not there was anything to write', async () => {
     const busy = await run({ files: { failWritesMatching: '.sync-state.json' } });
     expect(busy.ok).toBe(false);
