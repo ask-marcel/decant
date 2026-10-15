@@ -99,24 +99,26 @@ const addresses = (who: ReadonlyArray<Correspondent>): string =>
 // Nearly every message is of normal importance, so only the two that stand out are written.
 const standsOut = (importance: string | undefined): string => (importance === 'high' || importance === 'low' ? importance : '');
 
+// One part of the line, or nothing when the message has no value for it.
+const fact = (label: string, value: string): string => (value.length === 0 ? '' : `${label} ${value}`);
+
 // What a search finds a message by, on one line under its heading: the addresses the heading leaves
-// out, the folder the message sits in, and how it is marked. A part with nothing in it is left out,
-// and a message with nothing to say gets no line.
-const factsOf = (message: MailMessage, folder: string): string => {
-  const parts: ReadonlyArray<readonly [string, string]> = [
-    ['from', message.from?.address ?? ''],
-    ['to', addresses(message.to)],
-    ['cc', addresses(message.cc ?? [])],
-    ['folder', folder],
-    ['flag', flagWord(message.flag)],
-    ['importance', standsOut(message.importance)],
-    ['categories', (message.categories ?? []).join(', ')],
-  ];
-  return parts
-    .filter(([, value]) => value.length > 0)
-    .map(([label, value]) => `${label} ${value}`)
+// out, the folder the message sits in, whether it went out at all, and how it is marked. A part with
+// nothing in it is left out, and a message with nothing to say gets no line.
+const factsOf = (message: MailMessage, folder: string): string =>
+  [
+    fact('from', message.from?.address ?? ''),
+    fact('to', addresses(message.to)),
+    fact('cc', addresses(message.cc ?? [])),
+    fact('folder', folder),
+    // A draft reads like the mail beside it, so the line says that nobody received it.
+    message.isDraft === true ? 'not sent' : '',
+    fact('flag', flagWord(message.flag)),
+    fact('importance', standsOut(message.importance)),
+    fact('categories', (message.categories ?? []).join(', ')),
+  ]
+    .filter((part) => part.length > 0)
     .join(' · ');
-};
 
 const section = (part: ThreadPart, timezone: string, folders: Readonly<Record<string, string>>): string => {
   const facts = factsOf(part.message, folders[part.message.folderId ?? ''] ?? '');
