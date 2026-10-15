@@ -245,6 +245,20 @@ to work. The `_index.md` file of each library lists the documents, with the docu
 last at the top. Each line shows the day of the change, the path as a link, and the person who made
 the change.
 
+When you rename or move a document at the source, decant converts it again at its new path. Thus
+the front matter, the `source:` link and the links to its pictures show the new place. The earlier
+files of the document go to `_archive/`. When you rename or move a folder, Microsoft Graph sends the
+folder only, and not the documents in it. Thus the state of each library keeps its folders by id.
+decant reads each document under the old path of the folder again by id, and converts it at its new
+path.
+
+The first run of this version reads each library whole one time, to record its folders. A whole
+read shows each document of the library. Thus decant moves to `_archive/` each recorded document
+that the read does not show, and the report names it with `no longer at the source`. Graph does not
+send the name of a deleted document, and older versions of decant did not see such a deletion. This
+first run removes these documents. A run with an earlier `--since` day also reads each library
+whole, and does the same compare.
+
 Before an edit replaces a document, a task or a Teams post, decant moves the earlier version to
 `_archive/<day of the run>/`. There, it keeps the path that it had in `kb/`. A file that you delete,
 rename or move at the source goes there too. If the folder of that day already holds the path,
@@ -446,6 +460,11 @@ time, when decant gives up on it.
 
 decant reads some things on each run, for example a profile or a section of a notebook. After three
 failed runs, such a thing is still read, but it is not named as a failure again.
+
+A document whose pictures, slide render or scanned pages do not read lands without them. The report
+names the document in the list of failures, and the next run converts it again, three runs in all.
+When an edit makes a document too large, or locks it with a password, decant leaves it out. Its line
+in the report then says that its earlier version was moved aside.
 
 A password is
 the one refusal that never becomes readable by trying again, so such a file is left out the way an
@@ -1111,10 +1130,15 @@ running headless leaves no counter behind.
 
 Each run stores the cursor Graph gives it, so a second run reads only what changed: an unchanged
 library converts nothing. State is written after every single file, so stopping a run mid-way
-(Ctrl-C) loses at most the file in flight, and the next run picks up from the same place. A file
-renamed in SharePoint is moved on disk rather than converted again; a file deleted there has its
-markdown moved into `kb/_archive/<day of the run>/`, as does the earlier version of a file that an
-edit replaces.
+(Ctrl-C) loses at most the file in flight, and the next run picks up from the same place. decant
+converts a file that you rename or move in SharePoint again at its new path. The earlier files of
+that file, the files of a deleted file and the earlier version of an edited file go to
+`kb/_archive/<day of the run>/`.
+
+Microsoft Graph can refuse an old cursor (HTTP 410). Then decant reads the source again from the
+start: a mail folder, a library or the calendar. For a library, decant then moves to `_archive/` each
+recorded document that the read does not show. For the calendar, decant compares nothing, because
+the read starts at the kept day.
 
 A run that finds nothing new at the source changes no file in `kb/`, with one exception: the
 `.sync-cursor.json` beside each `.sync-state.json`. That file holds the time of the last run and the
