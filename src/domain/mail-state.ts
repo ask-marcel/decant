@@ -357,6 +357,14 @@ export const withoutRetry = (state: MailboxState, threadId: string): MailboxStat
   retry: Object.fromEntries(Object.entries(state.retry).filter(([id]) => id !== threadId)),
 });
 
+// The state without a thread whose messages are all gone: its record, the conversations that fed it,
+// and its retry entry. A conversation that brings a message again later is resolved again.
+export const withoutThread = (state: MailboxState, threadId: string): MailboxState => ({
+  ...withoutRetry(state, threadId),
+  threads: Object.fromEntries(Object.entries(state.threads).filter(([id]) => id !== threadId)),
+  conversations: Object.fromEntries(Object.entries(state.conversations).filter(([, record]) => record.threadId !== threadId)),
+});
+
 // What the queue owes on top of what the sweep found. A thread the sweep queued for itself is being
 // written from the messages the mailbox holds now, so the older attempt it remembers has nothing left
 // to answer for: it is dropped rather than counted, which is also what lets a thread that gains a

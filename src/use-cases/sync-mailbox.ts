@@ -16,6 +16,7 @@ import {
   abandonedThreads,
   emptyMailboxState,
   filesLeft,
+  filesOf,
   folderNames,
   marksChanged,
   needsRender,
@@ -23,6 +24,7 @@ import {
   renamedFolders,
   retriedThreads,
   serializeMailboxState,
+  storesWithout,
   conversationsInThread,
   threadOfConversation,
   threadsHolding,
@@ -38,6 +40,7 @@ import {
   withUnsweptFolders,
   withoutCursors,
   withoutRetry,
+  withoutThread,
   keptTitles,
   withTitles,
 } from '../domain/mail-state.ts';
@@ -53,7 +56,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn } from './thread-folders.ts';
-import { NO_LONGER_HELD, threadFilesAside, withFilesAside } from './thread-aside.ts';
+import { NO_LONGER_HELD, NO_MESSAGE_LEFT, threadAside, threadFilesAside, withFilesAside } from './thread-aside.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { ReportEntry } from '../domain/report.ts';
@@ -477,12 +480,25 @@ const renderOne = async (
     const notes = attempts >= MAX_CONVERSION_ATTEMPTS ? {} : { failed: [{ path: reportedAs(state.titles, threadId), reason: rendered.error.message }] };
     return { apply: (carried) => withRetry(carried, threadId, { attempts, reason: rendered.error.message }), counted: { failed: 1 }, notes };
   }
-  if (rendered.value.kind === 'empty') return { apply: (carried) => withoutRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
+  if (rendered.value.kind === 'empty') return emptied(deps, state, threadId);
   // What the write before held and this one did not write again: a file of a message gone, or a name
   // an older version gave. The thread no longer holds it, and the kb keeps it under the archive.
   const left = filesLeft(state.threads[threadId], rendered.value.thread.record);
   const aside = await threadFilesAside(deps, mailboxRoot(deps.kbRoot), threadId, left, NO_LONGER_HELD);
   return withFilesAside(owing(state, threadId, rendered.value.thread), left, aside);
+};
+
+// A thread whose messages are all gone. One written before goes under the archive whole and leaves
+// the state, with the conversations that fed it; one never written left nothing to put aside.
+const emptied = async (deps: SyncMailboxDeps, state: MailboxState, threadId: string): Promise<Rendered> => {
+  const known = state.threads[threadId];
+  if (known === undefined) return { apply: (carried) => withoutRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
+  const entry = await threadAside(deps, mailboxRoot(deps.kbRoot), threadId, known, NO_MESSAGE_LEFT);
+  const apply = (carried: MailboxState): MailboxState => {
+    const gone = withoutThread(carried, threadId);
+    return { ...gone, ...storesWithout(gone, filesOf(known)) };
+  };
+  return { apply, counted: { archived: 1 }, notes: { archived: [entry] } };
 };
 
 // The thread landed; one of the files it carried did not. Nothing narrower than the thread can bring

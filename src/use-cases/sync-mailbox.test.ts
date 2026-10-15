@@ -911,6 +911,52 @@ describe('the files a thread written again no longer holds', () => {
   });
 });
 
+describe('a thread with no message left at the source', () => {
+  const FOLDER = '2026-05-12-thread-1-contrat';
+  const NOTE = `kb/Mailbox/threads/${FOLDER}/contrat.md`;
+  const CARD = `kb/Mailbox/threads/${FOLDER}/_attachments/a.pdf.md`;
+  const state = (): MailboxState => {
+    const fed = withConversation(withConversation(emptyMailboxState(), 'conv-1', { threadId: 'thread-1', root: '<r@example.com>' }), 'conv-2', {
+      threadId: 'thread-1',
+      root: '<r@example.com>',
+    });
+    const other = withConversation(fed, 'conv-3', { threadId: 'thread-3', root: '<s@example.com>' });
+    const filed = withThread(other, 'thread-1', {
+      folder: FOLDER,
+      conversationIds: ['conv-1', 'conv-2'],
+      file: `threads/${FOLDER}/contrat.md`,
+      messageIds: ['m0'],
+      lastMessage: '2026-05-12T09:31:00Z',
+      attachments: [],
+      inlineImages: [],
+      files: [CARD],
+    });
+    return withRetry(filed, 'thread-1', { attempts: 1, reason: 'a.pdf: locked' });
+  };
+  const gone = [{ messages: [message({ id: 'm0', conversationId: '', isDeleted: true })], skipped: 0, deltaLink: 'c1' }];
+
+  // The note and its files are kept under the archive, and the thread leaves the state: nothing at the
+  // source is left to write it from.
+  it('goes under the archive whole, is named in the report, and leaves the state', async () => {
+    const { files, summary, notes } = await run({
+      files: { texts: { [STATE_PATH]: serializeMailboxState(state()), [NOTE]: 'note', [CARD]: 'card' } },
+      reader: { folders: [folder()], pages: gone },
+      outcome: () => ({ kind: 'empty' }),
+    });
+    const after = stateAfter(files);
+
+    expect(files.moves).toEqual([
+      { from: NOTE, to: `kb/_archive/2026-07-23/Mailbox/threads/${FOLDER}/contrat.md` },
+      { from: CARD, to: `kb/_archive/2026-07-23/Mailbox/threads/${FOLDER}/_attachments/a.pdf.md` },
+    ]);
+    expect(summary).toMatchObject({ converted: 0, archived: 1, skipped: 0 });
+    expect(notes?.archived).toEqual([{ path: `threads/${FOLDER}/contrat.md`, reason: 'no message left at the source' }]);
+    expect(after.threads).toEqual({});
+    expect(after.conversations).toEqual({ 'conv-3': { threadId: 'thread-3', root: '<s@example.com>' } });
+    expect(after.retry).toEqual({});
+  });
+});
+
 describe('what the mailbox sync reports', () => {
   it('a conversation whose messages have all gone is counted as skipped', async () => {
     const { summary } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome: () => ({ kind: 'empty' }) });

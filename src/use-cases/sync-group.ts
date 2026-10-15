@@ -8,11 +8,12 @@ import {
   withGroupRetry,
   withGroupThread,
   withoutGroupRetry,
+  withoutGroupThread,
 } from '../domain/group-state.ts';
 import type { GroupState } from '../domain/group-state.ts';
 import { threadRef } from '../domain/group-thread.ts';
 import type { GroupThread } from '../domain/group-thread.ts';
-import { abandonedThreads, filesLeft } from '../domain/mail-state.ts';
+import { abandonedThreads, filesLeft, filesOf, storesWithout } from '../domain/mail-state.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { AttachmentRecord, LinkedRecord, RetryRecord, ThreadRecord } from '../domain/mail-state.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
@@ -30,7 +31,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn } from './thread-folders.ts';
-import { NO_LONGER_HELD, threadFilesAside, withFilesAside } from './thread-aside.ts';
+import { NO_LONGER_HELD, NO_MESSAGE_LEFT, threadAside, threadFilesAside, withFilesAside } from './thread-aside.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 
@@ -144,7 +145,7 @@ const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: Grou
     const notes = attempts >= MAX_CONVERSION_ATTEMPTS ? {} : { failed: [{ path: `thread ${thread.topic}`, reason: rendered.error.message }] };
     return { apply: (carried) => withGroupRetry(carried, thread.id, { attempts, reason: rendered.error.message }), counted: { failed: 1 }, notes };
   }
-  if (rendered.value.kind === 'empty') return { apply: (carried) => withoutGroupRetry(carried, thread.id), counted: { skipped: 1 }, notes: {} };
+  if (rendered.value.kind === 'empty') return emptied(deps, state, place, thread.id);
   // What the write before held and this one did not write again, put aside as the mailbox does.
   const left = filesLeft(state.threads[thread.id], rendered.value.thread.record);
   const aside = await threadFilesAside(deps, place.root, threadId, left, NO_LONGER_HELD);
@@ -152,6 +153,19 @@ const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: Grou
 };
 
 const attemptsFor = (state: GroupState, threadId: string): number => (state.retry[threadId]?.attempts ?? 0) + 1;
+
+// A thread written before and holding no post now goes under the archive whole and leaves the state.
+// One never written left nothing to put aside.
+const emptied = async (deps: SyncGroupDeps, state: GroupState, place: GroupPlace, threadId: string): Promise<Rendered> => {
+  const known = state.threads[threadId];
+  if (known === undefined) return { apply: (carried) => withoutGroupRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
+  const entry = await threadAside(deps, place.root, threadIdOf(threadId), known, NO_MESSAGE_LEFT);
+  const apply = (carried: GroupState): GroupState => {
+    const gone = withoutGroupThread(carried, threadId);
+    return { ...gone, ...storesWithout(gone, filesOf(known)) };
+  };
+  return { apply, counted: { archived: 1 }, notes: { archived: [entry] } };
+};
 
 // The thread landed; one of the files it carried did not. The whole thread is written again next run
 // to fetch that one file, exactly as the mailbox does, because nothing narrower can be asked for.

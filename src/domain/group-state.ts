@@ -96,3 +96,9 @@ export const withoutGroupRetry = (state: GroupState, threadId: string): GroupSta
   ...state,
   retry: Object.fromEntries(Object.entries(state.retry).filter(([id]) => id !== threadId)),
 });
+
+// The state without a thread the group no longer holds: its record and its retry entry.
+export const withoutGroupThread = (state: GroupState, threadId: string): GroupState => ({
+  ...withoutGroupRetry(state, threadId),
+  threads: Object.fromEntries(Object.entries(state.threads).filter(([id]) => id !== threadId)),
+});
