@@ -15,10 +15,10 @@ const LOCKED = { kind: 'write-failed' as const, path: NOTE, message: 'EBUSY: res
 
 const ledgerOf = (text: string | undefined): Record<string, { cause: string; since: string }> => JSON.parse(text ?? '{}');
 
-const setUp = (seed: FilesFakeSeed = {}): { files: FilesFake; logger: LoggerFake; ledger: AsideLedgerRun } => {
+const setUp = (seed: FilesFakeSeed = {}, timezone = 'UTC'): { files: FilesFake; logger: LoggerFake; ledger: AsideLedgerRun } => {
   const files = createFilesFake(seed);
   const logger = createLoggerFake();
-  return { files, logger, ledger: createAsideLedger(files, { clock: createClockFake('2026-10-15T09:00:00Z'), kbRoot: 'kb', logger }) };
+  return { files, logger, ledger: createAsideLedger(files, { clock: createClockFake('2026-10-15T09:00:00Z'), kbRoot: 'kb', logger, timezone }) };
 };
 
 describe('writing down the files a source lets go that would not move under the archive', () => {
@@ -112,6 +112,15 @@ describe('naming the files still stuck in the report of the run', () => {
     });
 
     expect(await ledger.stuck()).toEqual([{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-14)' }]);
+  });
+
+  it('the day a file first would not move is told in the zone of the knowledge base', async () => {
+    const { ledger } = setUp(
+      { texts: { [LEDGER]: JSON.stringify({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T23:00:00Z' } }), [NOTE]: 'the contract' } },
+      'Asia/Shanghai'
+    );
+
+    expect(await ledger.stuck()).toEqual([{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-15)' }]);
   });
 
   it('a file this run wrote down is named as well', async () => {

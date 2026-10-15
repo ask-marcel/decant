@@ -198,7 +198,12 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // ledger holds takes that path out of it. A run that found nothing new then changes no file but those
   // cursor files. The ledger lists the files a source lets go that would not move under the archive:
   // moved again before each run, and named in the report of the run.
-  const ledger = createAsideLedger(withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())), logger), { clock, logger, kbRoot: config.kbRoot });
+  const ledger = createAsideLedger(withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())), logger), {
+    clock,
+    logger,
+    kbRoot: config.kbRoot,
+    timezone: config.timezone,
+  });
   const files = ledger.files;
   const writeDown = ledger.writeDown;
   // Constructing the API reaches nothing: the sign-in ladder only runs on the first Graph call.
