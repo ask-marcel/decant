@@ -1537,3 +1537,44 @@ describe('a document converted without a part of it', () => {
     expect(stateAfter(third.files).drives['b!one']?.items['01ABC']?.outputs).toEqual([NOTE]);
   });
 });
+
+describe('a changed document that is now left out', () => {
+  const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
+
+  // Its earlier files no longer match the source, so they go under the archive before the decision
+  // to leave it out. The report says so, since the document is no longer where it was.
+  it('a document edited past the size cap is left out, and the report says its earlier version was moved aside', async () => {
+    const known = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      layout: 2,
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [NOTE] } },
+          retry: {},
+          folders: {},
+        },
+      },
+    });
+    const grown = item({ cTag: 'c2', size: 60 * 1024 * 1024 });
+
+    const { summary, notes, files } = await run({
+      files: { texts: { [STATE_PATH]: known, [NOTE]: 'the contract' } },
+      reader: { pages: [{ items: [grown], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(summary).toMatchObject({ converted: 0, skipped: 1 });
+    expect(notes?.skipped).toEqual([{ path: 'Projets/Contrat.docx', reason: 'larger than the 50 MB cap, so its earlier version was moved aside' }]);
+    expect(files.moves).toEqual([{ from: NOTE, to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md' }]);
+  });
+
+  it('a document left out the first time it is seen says only why', async () => {
+    const { notes } = await run({ reader: { pages: [{ items: [item({ size: 60 * 1024 * 1024 })], skipped: 0, deltaLink: 'cursor-1' }] } });
+
+    expect(notes?.skipped).toEqual([{ path: 'Projets/Contrat.docx', reason: 'larger than the 50 MB cap' }]);
+  });
+});
