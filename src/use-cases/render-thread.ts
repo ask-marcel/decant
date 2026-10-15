@@ -65,6 +65,10 @@ export type RenderThreadInput = {
   // verbatim rather than recomputed, so a change to the naming rules cannot move a folder that is
   // already written and already linked to.
   readonly folder: string;
+  // The note's path from the mailbox root, as the thread was last written: absent or empty for a
+  // thread never written. Kept like the folder, so the note of a thread whose first message is gone
+  // keeps its name.
+  readonly file?: string;
   readonly maxBytes: number;
   // Files already pulled from SharePoint by an earlier thread, so one link is fetched once.
   readonly linked: Readonly<Record<string, LinkedRecord>>;
@@ -197,7 +201,8 @@ const placeOf = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailMe
   const bare = bareSubject(first.subject);
   const named = threadFolderName(dayIn(first.received, deps.timezone), input.threadId as ThreadId, slugify(bare, FOLDER_SLUG_LIMIT));
   const folder = input.folder.length === 0 ? String(named) : input.folder;
-  return { folder, relative: `threads/${folder}/${slugify(bare, FILE_SLUG_LIMIT)}.md`, here: `${deps.mailboxRoot}/threads/${folder}` };
+  const relative = input.file === undefined || input.file.length === 0 ? `threads/${folder}/${slugify(bare, FILE_SLUG_LIMIT)}.md` : input.file;
+  return { folder, relative, here: `${deps.mailboxRoot}/threads/${folder}` };
 };
 
 // Each file is named on the conversation's row as it is converted: a thread carrying a dozen
