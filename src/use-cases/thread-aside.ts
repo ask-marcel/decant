@@ -71,7 +71,7 @@ export const writtenAgain = async <S extends FileStores>(
   owing: (thread: RenderedThread) => ThreadOutcome<S>
 ): Promise<ThreadOutcome<S>> => {
   const left = filesLeft(before, thread.record);
-  if (thread.filesFailed.length > 0) return owing({ ...thread, record: stillHolding(thread.record, left, before?.names) });
+  if (thread.filesFailed.length > 0) return owing({ ...thread, record: stillHolding(thread.record, left, before) });
   const aside = await filesAside(deps, where.threadId, left);
   // A file that would not move is still on disk, so still the thread's: listed, its stored record kept,
   // and its name held, so no later file of that name writes over it.

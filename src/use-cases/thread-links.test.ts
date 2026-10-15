@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import type { ThreadRecord } from '../domain/mail-state.ts';
 import { CONV, LINK_BODIES, THREAD_FILE, THREAD_FOLDER, THREAD_ID, THREAD_RELATIVE, message, run } from '../test-helpers/thread-harness.ts';
 
 describe('following the SharePoint files a conversation points at', () => {
@@ -222,6 +223,45 @@ describe('following the SharePoint files a conversation points at', () => {
     });
 
     expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([{ path: `${THREAD_RELATIVE}: message m1`, reason: 'could not list what it links to: timeout' }]);
+  });
+
+  // Named by the document, not by the order of the messages: when the message linking an earlier
+  // document of that name goes, the later one keeps its name rather than taking the one that came free.
+  it('a linked document keeps its name when the message linking an earlier one of that name goes', async () => {
+    const other = { url: 'https://tenant.sharepoint.com/z', driveId: 'b!one', itemId: '01DEF', name: 'Rapport.docx' };
+    const both = { items: { '01ABC': REPORT, '01DEF': { ...REPORT, id: '01DEF' } } };
+    const m2 = message({ id: 'm2', received: '2026-05-13T10:00:00Z' });
+    const once = await run({ reader: { conversations: { [CONV]: [message(), m2] }, bodies: LINK_BODIES, links: { m1: linked.m1, m2: [other] } }, drive: both });
+    const recordOf = (outcome: typeof once.outcome): ThreadRecord | undefined => (outcome?.kind === 'rendered' ? outcome.thread.record : undefined);
+    const again = async (before: typeof once): Promise<typeof once> =>
+      run({
+        reader: { conversations: { [CONV]: [m2] }, bodies: LINK_BODIES, links: { m2: [other] } },
+        drive: both,
+        folder: THREAD_FOLDER,
+        file: THREAD_RELATIVE,
+        links: recordOf(before.outcome)?.links,
+        held: recordOf(before.outcome)?.files,
+        files: { texts: Object.fromEntries(before.files.written) },
+      });
+    const twice = await again(once);
+    const thrice = await again(twice);
+
+    expect(recordOf(once.outcome)?.files).toContain(`${LINKED_HERE}/Rapport-2.docx.md`);
+    expect(recordOf(twice.outcome)?.files).toEqual([`${LINKED_HERE}/Rapport-2.docx.md`]);
+    expect(recordOf(thrice.outcome)?.files).toEqual([`${LINKED_HERE}/Rapport-2.docx.md`]);
+  });
+
+  // A file the record still lists is on disk until a run moves it aside.
+  it('a new linked document does not take the name of a file the thread folder still holds', async () => {
+    const { outcome } = await run({
+      reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked },
+      drive: items,
+      folder: THREAD_FOLDER,
+      links: {},
+      held: [`${LINKED_HERE}/Rapport.docx.md`],
+    });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.files).toEqual([`${LINKED_HERE}/Rapport-2.docx.md`]);
   });
 
   // Told apart by the document they stand for, not merely counted: a thread pointing at two things
