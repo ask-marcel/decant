@@ -1,3 +1,4 @@
+import { safeSegment } from './kb-path.ts';
 import type { MailFolder } from './mail-folder.ts';
 import type { MessageMarks, MessageRecord } from './message-record.ts';
 import { parseMessageRecords, sameMarks } from './message-record.ts';
@@ -324,12 +325,14 @@ const CARD_SUFFIX = '.md';
 
 // Whether a file is one of the files under a name in a thread's folder: the file itself, what sits
 // beside it under its name (its card, its pictures, a deck's PDF), anything in a folder of that name,
-// and what an archive or a saved mail of that name unpacked into, a folder named for it without its
-// extension.
+// and what an archive or a saved mail of that name unpacked into: a folder named for it without its
+// extension, cleaned the way the converters clean every name.
 export const underName = (path: string, name: string): boolean => {
-  const cut = name.lastIndexOf('.');
-  const stem = cut > name.lastIndexOf('/') ? name.slice(0, cut) : name;
-  return path === name || path.startsWith(`${name}.`) || path.startsWith(`${name}/`) || path.startsWith(`${stem}/`);
+  const slash = name.lastIndexOf('/');
+  const base = name.slice(slash + 1);
+  const cut = base.lastIndexOf('.');
+  const unpacked = `${name.slice(0, slash + 1)}${safeSegment(cut > 0 ? base.slice(0, cut) : base)}/`;
+  return path === name || path.startsWith(`${name}.`) || path.startsWith(`${name}/`) || path.startsWith(unpacked);
 };
 
 // A map written in the order of its keys, so the state reads the same whatever order it was filled in.

@@ -1,6 +1,6 @@
 import { contentHash } from '../domain/content-hash.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
-import { disambiguateSegment, fitSegment, holdsIgnoringCase } from '../domain/kb-path.ts';
+import { disambiguateSegment } from '../domain/kb-path.ts';
 import { namesHeldIn } from '../domain/mail-state.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
 import { carriesInlineImage } from '../domain/inline-image.ts';
@@ -9,7 +9,7 @@ import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { skipReason, tooLargeReason } from '../domain/report.ts';
-import { uniqueName } from '../domain/thread-card.ts';
+import { freeName } from '../domain/thread-card.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ConvertAttachment } from './convert-attachment.ts';
@@ -127,18 +127,8 @@ const INLINE_FOLDER = '_inline';
 // healing, where showing it wordlessly would be a silent loss no run ever repaired.
 const withText = (record: AttachmentRecord | undefined): AttachmentRecord | undefined => (record?.text === undefined ? undefined : record);
 
-// The first name for a file that no file of this thread holds and no file before it in this write
-// took, compared as it lands on disk: a name cut to fit a deep disk is not the name the sender gave,
-// and a second file of that name would be cut to the same one.
-const freeName = (place: FilePlace, filename: string, taken: ReadonlyArray<string>): string => {
-  const fitted = (name: string): string => fitSegment(`${place.here}/${ATTACHMENTS_FOLDER}`, name, place.pathBudget);
-  const tried: string[] = [];
-  for (;;) {
-    const candidate = uniqueName(filename, tried);
-    if (!holdsIgnoringCase(taken, fitted(candidate))) return fitted(candidate);
-    tried.push(candidate);
-  }
-};
+// The first name for a file that no file of this thread holds and no file before it in this write took.
+const freeNameIn = (place: FilePlace, filename: string, taken: ReadonlyArray<string>): string => freeName(`${place.here}/${ATTACHMENTS_FOLDER}`, filename, taken, place.pathBudget);
 
 // What placing the files of one write works from, and adds to as it goes.
 type Placing = {
@@ -158,7 +148,7 @@ const reserve = (placing: Placing, name: string): string => {
 };
 
 // The name a file is written under: the one it had before, or the first one free.
-const nameOf = (place: FilePlace, placing: Placing, arrival: Arrival): string => arrival.recorded ?? freeName(place, arrival.attachment.name, placing.taken);
+const nameOf = (place: FilePlace, placing: Placing, arrival: Arrival): string => arrival.recorded ?? freeNameIn(place, arrival.attachment.name, placing.taken);
 
 // A file the thread held whose bytes could not be fetched keeps what it had, under the name it had: its
 // card holds the text read out of the file, and a failure written over it would be read back as the
@@ -214,7 +204,7 @@ const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placin
 // file can be replaced under its own name, and each content keeps a file of its own.
 const freshName = (place: FilePlace, placing: Placing, arrival: Arrival): string => {
   const taken = Object.values(placing.store).some((record) => record.name === arrival.recorded);
-  return taken ? freeName(place, arrival.attachment.name, placing.taken) : nameOf(place, placing, arrival);
+  return taken ? freeNameIn(place, arrival.attachment.name, placing.taken) : nameOf(place, placing, arrival);
 };
 
 // A content no store holds yet, and what is known of it by the time it is converted.

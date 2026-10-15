@@ -1,6 +1,6 @@
 import { linkDestination } from './markdown-link.ts';
 import { renderFrontMatter } from './front-matter.ts';
-import { holdsIgnoringCase, safeSegment } from './kb-path.ts';
+import { fitSegment, holdsIgnoringCase, safeSegment } from './kb-path.ts';
 import type { SafeSegment } from './kb-path.ts';
 import { dayIn } from './zoned-day.ts';
 
@@ -85,4 +85,17 @@ export const uniqueName = (filename: string, taken: ReadonlyArray<string>): Safe
     candidate = safeSegment(`${stem}-${attempt}${extension}`);
   }
   return candidate;
+};
+
+// The first name for a file in a folder that no name taken holds, compared as it lands on disk: a name
+// cut to fit a deep disk is not the name the sender gave, and a second file of that name would be cut
+// to the same one. Without a budget, nothing is cut.
+export const freeName = (folder: string, filename: string, taken: ReadonlyArray<string>, budget: number | undefined): string => {
+  const fitted = (name: string): string => fitSegment(folder, name, budget);
+  const tried: string[] = [];
+  for (;;) {
+    const candidate = uniqueName(filename, tried);
+    if (!holdsIgnoringCase(taken, fitted(candidate))) return fitted(candidate);
+    tried.push(candidate);
+  }
 };

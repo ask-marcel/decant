@@ -7,7 +7,8 @@ import type { LinkedRecord } from '../domain/mail-state.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { skipReason } from '../domain/report.ts';
-import { uniqueName } from '../domain/thread-card.ts';
+import { fitSegment, safeSegment } from '../domain/kb-path.ts';
+import { freeName } from '../domain/thread-card.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ConvertFile } from './convert-file.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
@@ -30,6 +31,8 @@ export type LinkDeps = {
   readonly sourceName: string;
   // The zone the knowledge base counts its days in, which a card tells its day in.
   readonly timezone: string;
+  // How long a path may be as decant writes it. Absent, names are not cut for length.
+  readonly pathBudget?: number;
 };
 
 // The folder a thread keeps what it pointed at in, holding the documents and the cards standing for
@@ -137,11 +140,21 @@ type Following = {
   readonly unread: string[];
 };
 
+// The name a document is written under, cut as the converter cuts it to fit a deep disk: the card takes
+// the name the document's text was written under, and reads the text back from it. A name recorded
+// before names were cut is cut the same way.
+const linkedName = (deps: LinkDeps, following: Following, key: string, link: LinkedFile): string => {
+  const folder = `${following.here}/${LINKED_FOLDER}`;
+  const named = nameFor(key, following.names, following.recorded);
+  if (named !== undefined) return fitSegment(folder, safeSegment(named), deps.pathBudget);
+  return freeName(folder, link.name, [...following.held, ...Object.values(following.names)], deps.pathBudget);
+};
+
 // One document a message pointed at. A document the thread pulled before that cannot be pulled now
 // keeps the card it had, which holds its text, and what it had beside the card is named as unread.
 const followLink = async (deps: LinkDeps, following: Following, message: MailMessage, link: LinkedFile): Promise<void> => {
   const key = `${link.driveId}:${link.itemId}`;
-  const asName = nameFor(key, following.names, following.recorded) ?? uniqueName(link.name, [...following.held, ...Object.values(following.names)]);
+  const asName = linkedName(deps, following, key, link);
   following.names[key] = asName;
   const pulled = await pulledOnce(deps, following.here, following.maxBytes, link, asName, following.linked[key]);
   if (pulled.skipped !== undefined) following.skipped.push(pulled.skipped);
