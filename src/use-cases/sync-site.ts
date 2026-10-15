@@ -37,6 +37,7 @@ import type { WorkItem } from '../domain/worklist.ts';
 import type { RunSummary } from '../domain/run-summary.ts';
 import type { ConvertFile } from './convert-file.ts';
 import { sweepDrive } from './enumerate-drive.ts';
+import { expiredCursor } from './expired-cursor.ts';
 import type { DriveSweep } from './enumerate-drive.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader, DriveReaderError, DriveSummary } from './ports/drive-reader.ts';
@@ -312,7 +313,7 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
     deps.logger.info('sync.resuming', { driveId: drive.id, pending: known.pending.length });
     return ok({ state });
   }
-  const swept = await sweepFor(deps.reader, drive.id, known, input.since);
+  const swept = await sweepFor(deps, drive.id, known, input.since);
   if (!swept.ok) return { ok: false, error: { step: 'enumerate', cause: swept.error.kind, message: swept.error.message } };
   deps.logger.info('sync.enumerated', { driveId: drive.id, items: swept.value.items.length, skipped: swept.value.skipped });
   const folders = sweptFolders(known.folders ?? {}, swept.value.items);
@@ -347,11 +348,19 @@ const readsWhole = (known: DriveState, since: string | undefined): boolean =>
 // library holds, so one recorded that it does not list was deleted at a time no delta told of.
 type Listing = DriveSweep & { readonly complete: boolean };
 
-const sweepFor = async (reader: DriveReader, driveId: string, known: DriveState, since: string | undefined): Promise<Result<Listing, DriveReaderError>> => {
-  const drained = await sweepDrive(reader, driveId, known.deltaLink);
-  if (!drained.ok) return drained;
+// Graph answers 410 to a cursor whose sync state it no longer keeps, and asks for a read from the start,
+// compared with what is held: the library is read whole, and what it does not list is gone.
+const readAgain = async (deps: SyncSiteDeps, driveId: string): Promise<Result<Listing, DriveReaderError>> => {
+  deps.logger.warn('sync.cursor-expired', { driveId });
+  const whole = await sweepDrive(deps.reader, driveId, undefined);
+  return whole.ok ? ok({ ...whole.value, complete: true }) : whole;
+};
+
+const sweepFor = async (deps: SyncSiteDeps, driveId: string, known: DriveState, since: string | undefined): Promise<Result<Listing, DriveReaderError>> => {
+  const drained = await sweepDrive(deps.reader, driveId, known.deltaLink);
+  if (!drained.ok) return expiredCursor(drained.error) ? readAgain(deps, driveId) : drained;
   if (!readsWhole(known, since)) return ok({ ...drained.value, complete: false });
-  const whole = await sweepDrive(reader, driveId, undefined);
+  const whole = await sweepDrive(deps.reader, driveId, undefined);
   if (!whole.ok) return whole;
   return ok({ ...whole.value, items: latestById([...drained.value.items, ...whole.value.items]), skipped: drained.value.skipped + whole.value.skipped, complete: true });
 };
