@@ -38,7 +38,7 @@ import type { ManifestEntry, WorkItem } from '../domain/worklist.ts';
 import type { RunSummary } from '../domain/run-summary.ts';
 import type { ConvertFile } from './convert-file.ts';
 import { sweepDrive } from './enumerate-drive.ts';
-import { expiredCursor } from './graph-status.ts';
+import { expiredCursor, notFound } from './graph-status.ts';
 import type { DriveSweep } from './enumerate-drive.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader, DriveReaderError, DriveSummary } from './ports/drive-reader.ts';
@@ -318,7 +318,7 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
   if (!swept.ok) return { ok: false, error: { step: 'enumerate', cause: swept.error.kind, message: swept.error.message } };
   deps.logger.info('sync.enumerated', { driveId: drive.id, items: swept.value.items.length, skipped: swept.value.skipped });
   const folders = sweptFolders(known.folders ?? {}, swept.value.items);
-  const followed = await followMoves(deps.reader, { driveId: drive.id, concurrency: input.concurrency }, known, swept.value.items, folders.moves);
+  const followed = await followMoves(deps, { driveId: drive.id, concurrency: input.concurrency }, known, swept.value.items, folders.moves);
   if (!followed.ok) return { ok: false, error: { step: 'enumerate', cause: followed.error.kind, message: followed.error.message } };
   if (folders.moves.length > 0) deps.logger.info('sync.folders-moved', { driveId: drive.id, folders: folders.moves.length, documents: followed.value.length });
   const items = listedItems(known, swept.value, followed.value);
@@ -391,11 +391,13 @@ const recordedPaths = (known: DriveState): Readonly<Record<string, string>> => (
 });
 
 // The documents a moved folder took with it: Graph reports the folder alone, so each document recorded
-// under the path it left is read again by id, a few at a time. One the source no longer has is gone.
-// Any other failure stops the library before its cursor moves, so the next run reads the same
-// changes, the moved folder with them, and looks again.
+// under the path it left is read again by id, a few at a time. One Graph answers 404 for is gone.
+// Another refusal that will not pass, or an answer that cannot be read, says nothing of where the
+// document is: it stays where it is recorded, named in the log. Any other failure stops the library
+// before its cursor moves, so the next run reads the same changes, the moved folder with them, and
+// looks again.
 const followMoves = async (
-  reader: DriveReader,
+  deps: SyncSiteDeps,
   where: { readonly driveId: string; readonly concurrency: number },
   known: DriveState,
   swept: ReadonlyArray<DriveItem>,
@@ -404,10 +406,12 @@ const followMoves = async (
   const ids = underMoved(recordedPaths(known), swept, moves);
   const found: DriveItem[] = [];
   for (let at = 0; at < ids.length; at += where.concurrency) {
-    const read = await Promise.all(ids.slice(at, at + where.concurrency).map(async (itemId) => ({ itemId, outcome: await reader.item({ driveId: where.driveId, itemId }) })));
+    const read = await Promise.all(ids.slice(at, at + where.concurrency).map(async (itemId) => ({ itemId, outcome: await deps.reader.item({ driveId: where.driveId, itemId }) })));
     for (const { itemId, outcome } of read) {
-      if (!outcome.ok && outcome.error.kind !== 'permanent') return outcome;
-      found.push(outcome.ok ? outcome.value : goneItem(itemId));
+      if (outcome.ok) found.push(outcome.value);
+      else if (notFound(outcome.error)) found.push(goneItem(itemId));
+      else if (outcome.error.kind !== 'permanent') return outcome;
+      else deps.logger.warn('sync.reread-failed', { driveId: where.driveId, itemId, cause: outcome.error.kind });
     }
   }
   return ok(found);
