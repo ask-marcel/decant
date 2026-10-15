@@ -49,6 +49,23 @@ describe('remembering where a site sync got to', () => {
     expect(parseSiteState({ ...written, layout: '2' })).toMatchObject({ ok: true, value: { layout: undefined } });
   });
 
+  // The folders tell which documents moved when Graph reports a folder at a new path. A state from
+  // before they were kept has none, and the sync reads that library whole once.
+  it('a state keeps the folders of each library by id, and reads folders that are not a record of paths as none', () => {
+    const library = { name: 'Documents', pending: [], items: {}, retry: {}, folders: { '01F': 'Projets', '01G': 'Projets/2026' } };
+    const state = withDrive(emptySiteState(site), 'b!one', library);
+    const written = JSON.parse(serializeSiteState(state));
+    const read = (folders: unknown): unknown => {
+      const parsed = parseSiteState({ ...written, drives: { 'b!one': { ...library, folders } } });
+      return parsed.ok ? parsed.value.drives['b!one']?.folders : 'unparsed';
+    };
+
+    expect(parseSiteState(written)).toEqual({ ok: true, value: state });
+    expect(read(['Projets'])).toBeUndefined();
+    expect(read('Projets')).toBeUndefined();
+    expect(read({ '01F': 'Projets', '01G': 42 })).toEqual({ '01F': 'Projets' });
+  });
+
   it('a state file that is not ours is rejected rather than mistaken for an empty run', () => {
     expect(parseSiteState('nope')).toEqual({ ok: false, error: { kind: 'malformed', message: 'state is not an object' } });
     expect(parseSiteState({ version: 1 })).toEqual({ ok: false, error: { kind: 'malformed', message: 'state has no source' } });

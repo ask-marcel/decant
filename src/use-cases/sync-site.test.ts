@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { DriveItem } from '../domain/drive-item.ts';
-import { serializeSiteState } from '../domain/site-state.ts';
+import { parseSiteState, serializeSiteState } from '../domain/site-state.ts';
+import type { DriveState } from '../domain/site-state.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
 import type { DriveReaderFake, DriveReaderSeed } from '../test-helpers/drive-reader-fake.ts';
@@ -1272,5 +1273,55 @@ describe('moving a library out of the day folders once', () => {
     expect(next.files.moves).toEqual([{ from: OLD, to: NEW }]);
     expect(stateAfter(next.files).drives['b!one']?.items['01ABC']?.outputs).toEqual([NEW]);
     expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
+  });
+});
+
+describe('following the folders of a library', () => {
+  const folder = (id: string, path: string): DriveItem => item({ id, kind: 'folder', name: path.split('/').at(-1) ?? path, path, cTag: '' });
+  const reads = (reader: DriveReaderFake): ReadonlyArray<string> => reader.calls.filter((call) => call === 'delta' || call.startsWith('deltaFrom'));
+  const libraryAfter = (files: FilesFake): DriveState | undefined => {
+    const saved = parseSiteState(JSON.parse(files.written.get(STATE_PATH) ?? '{}'));
+    return saved.ok ? saved.value.drives['b!one'] : undefined;
+  };
+  const recorded = (drive: Partial<DriveState> = {}): string =>
+    serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      layout: 2,
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md'] } },
+          retry: {},
+          ...drive,
+        },
+      },
+    });
+
+  it('a library read for the first time records each of its folders by id', async () => {
+    const { files } = await run({ reader: { pages: [{ items: [folder('01F', 'Projets'), item()], skipped: 0, deltaLink: 'cursor-1' }] } });
+
+    expect(libraryAfter(files)?.folders).toEqual({ '01F': 'Projets' });
+  });
+
+  // A library filed before its folders were kept holds documents whose folders were never reported.
+  // Read whole once, the library records every folder, and the runs after it follow the cursor.
+  it('a library recorded before its folders were kept is read whole once to record them, then follows its cursor', async () => {
+    const pages = [
+      { items: [], skipped: 0, deltaLink: 'cursor-2' },
+      { items: [folder('01F', 'Projets'), item()], skipped: 0, deltaLink: 'cursor-3' },
+    ];
+
+    const first = await run({ files: { texts: { [STATE_PATH]: recorded() } }, reader: { pages } });
+    const after = first.files.written.get(STATE_PATH) ?? '';
+    const second = await run({ files: { texts: { [STATE_PATH]: after } }, reader: { pages: [{ items: [], skipped: 0, deltaLink: 'cursor-4' }] } });
+
+    expect(reads(first.reader)).toEqual(['deltaFrom:cursor-1', 'delta']);
+    expect(first.summary.converted).toBe(0);
+    expect(libraryAfter(first.files)).toMatchObject({ deltaLink: 'cursor-3', folders: { '01F': 'Projets' } });
+    expect(reads(second.reader)).toEqual(['deltaFrom:cursor-3']);
   });
 });

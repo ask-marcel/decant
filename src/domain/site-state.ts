@@ -1,3 +1,4 @@
+import type { Folders } from './drive-folders.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import type { RetryEntry, RetryLedger } from './retry-policy.ts';
@@ -17,6 +18,9 @@ export type DriveState = {
   readonly pending: ReadonlyArray<WorkItem>;
   readonly items: Manifest;
   readonly retry: RetryLedger;
+  // Each folder of the library by id, at its path. Absent from a state from before they were kept,
+  // and the sync then reads the library whole once, to record them. Additive, so `STATE_VERSION` stays.
+  readonly folders?: Folders;
 };
 
 export type SiteRef = { readonly id: string; readonly name: string; readonly webUrl: string };
@@ -84,6 +88,11 @@ const parsePending = (raw: unknown): ReadonlyArray<WorkItem> => (Array.isArray(r
 // remembered carries no ledger at all and loads with an empty one, which is what it means.
 const parseRetry = (raw: unknown): RetryLedger => (isRecord(raw) ? (Object.fromEntries(Object.entries(raw).filter(([, entry]) => isRecord(entry))) as unknown as RetryLedger) : {});
 
+// Only the paths: a folder recorded as anything else is left out, and is recorded again the next
+// time a sweep reports it.
+const parseFolders = (raw: unknown): Folders | undefined =>
+  isRecord(raw) && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).filter((entry): entry is [string, string] => typeof entry[1] === 'string')) : undefined;
+
 const parseDrive = (raw: unknown): DriveState => {
   if (!isRecord(raw)) return { name: '', pending: [], items: {}, retry: {} };
   return {
@@ -93,6 +102,7 @@ const parseDrive = (raw: unknown): DriveState => {
     pending: parsePending(raw['pending']),
     items: parseManifest(raw['items']),
     retry: parseRetry(raw['retry']),
+    folders: parseFolders(raw['folders']),
   };
 };
 
