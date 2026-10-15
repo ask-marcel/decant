@@ -247,17 +247,20 @@ the change.
 
 When you rename or move a document at the source, decant converts it again at its new path. Thus
 the front matter, the `source:` link and the links to its pictures show the new place. The earlier
-files of the document go to `_archive/`. When you rename or move a folder, Microsoft Graph sends the
-folder only, and not the documents in it. Thus the state of each library keeps its folders by id.
-decant reads each document under the old path of the folder again by id, and converts it at its new
-path.
+files of the document go to `_archive/`.
 
-The first run of this version reads each library whole one time, to record its folders. A whole
-read shows each document of the library. Thus decant moves to `_archive/` each recorded document
-that the read does not show, and the report names it with `no longer at the source`. Graph does not
-send the name of a deleted document, and older versions of decant did not see such a deletion. This
-first run removes these documents. A run with an earlier `--since` day also reads each library
-whole, and does the same compare.
+When you rename or move a folder, Microsoft Graph sends the folder only, and not the documents in
+it. Thus the state of each library keeps its folders by id. decant reads each document under the old
+path of the folder again by id, and converts it at its new path. A document that Graph no longer has
+goes to `_archive/`.
+
+The first run of this version reads each library whole one time, to record its folders. When decant
+reads a library whole, it gets a list of each document of the library. Thus decant moves to
+`_archive/` each recorded document that is not in that list, and the report names it with `no
+longer at the source`. OneDrive for Business does not send the name of a deleted document, and
+older versions of decant did not see such a deletion. Thus this first run moves these documents to
+`_archive/`. A run with an earlier `--since` day also reads each library whole and compares the
+result with the state.
 
 Before an edit replaces a document, a task or a Teams post, decant moves the earlier version to
 `_archive/<day of the run>/`. There, it keeps the path that it had in `kb/`. A file that you delete,
@@ -461,10 +464,11 @@ time, when decant gives up on it.
 decant reads some things on each run, for example a profile or a section of a notebook. After three
 failed runs, such a thing is still read, but it is not named as a failure again.
 
-A document whose pictures, slide render or scanned pages do not read lands without them. The report
-names the document in the list of failures, and the next run converts it again, three runs in all.
-When an edit makes a document too large, or locks it with a password, decant leaves it out. Its line
-in the report then says that its earlier version was moved aside.
+If decant cannot read the pictures, the slide render or the scanned pages of a document, it writes
+the document without them. The report names the document in the list of failures, and the next run
+converts it again, three runs in all. When an edit makes a document too large, or locks it with a
+password, decant does not convert it. Its line in the report then gives the folder in `_archive/`
+that holds its earlier version.
 
 A password is
 the one refusal that never becomes readable by trying again, so such a file is left out the way an
@@ -1137,8 +1141,8 @@ that file, the files of a deleted file and the earlier version of an edited file
 
 Microsoft Graph can refuse an old cursor (HTTP 410). Then decant reads the source again from the
 start: a mail folder, a library or the calendar. For a library, decant then moves to `_archive/` each
-recorded document that the read does not show. For the calendar, decant compares nothing, because
-the read starts at the kept day.
+recorded document that is not in the new list. For the calendar, decant does not compare, because it
+reads only from the kept day.
 
 A run that finds nothing new at the source changes no file in `kb/`, with one exception: the
 `.sync-cursor.json` beside each `.sync-state.json`. That file holds the time of the last run and the
