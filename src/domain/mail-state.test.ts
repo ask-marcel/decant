@@ -11,6 +11,7 @@ import {
   retriedThreads,
   serializeMailboxState,
   threadOfConversation,
+  threadsHolding,
   threadsInFolders,
   withAttachment,
   withConversation,
@@ -441,6 +442,20 @@ describe('naming the folders of a mailbox', () => {
 
     expect(threadsInFolders(state, ['a'])).toEqual(['t1', 't2']);
     expect(threadsInFolders(state, [])).toStrictEqual([]);
+  });
+});
+
+describe('finding the threads a removed message was part of', () => {
+  it('the threads holding any of the ids are found, each once, in a stable order', () => {
+    const state = [
+      ['t2', ['m1', 'm2']],
+      ['t1', ['m3', 'm1']],
+      ['t3', ['m4']],
+    ].reduce((carried, [id, messageIds]) => withThread(carried, String(id), { ...thread, messageIds: messageIds as ReadonlyArray<string> }), emptyMailboxState());
+
+    expect(threadsHolding(state, ['m1', 'm9'])).toEqual(['t1', 't2']);
+    expect(threadsHolding(state, ['m9'])).toStrictEqual([]);
+    expect(threadsHolding(state, [])).toStrictEqual([]);
   });
 });
 

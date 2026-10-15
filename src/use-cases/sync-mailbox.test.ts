@@ -779,6 +779,50 @@ describe('narrowing a mailbox sync to recent mail', () => {
   });
 });
 
+describe('a message removed at the source', () => {
+  const held = withConversation(emptyMailboxState(), 'conv-1', { threadId: 'thread-1', root: '<r@example.com>' });
+  const filed = serializeMailboxState(
+    withFolderCursor(
+      withThread(held, 'thread-1', {
+        folder: '2026-05-12-thread-1-contrat',
+        conversationIds: ['conv-1'],
+        file: 'threads/2026-05-12-thread-1-contrat/contrat.md',
+        messageIds: ['m0', 'm1'],
+        lastMessage: '2026-05-12T09:31:00Z',
+        attachments: [],
+        inlineImages: [],
+        subject: 'Contrat Contoso',
+      }),
+      'AAMk-inbox',
+      'Inbox',
+      'cursor-1'
+    )
+  );
+  // What Graph sends for a message deleted, or moved out of the folder: its id and nothing else.
+  const removed = (id: string): MailMessage => message({ id, conversationId: '', isDeleted: true });
+
+  // A delta names a removed message by its id alone, with no conversation, so the thread is found by
+  // the ids it holds. Written again, it shows what the mailbox holds now.
+  it('writes again the thread that held it, named as it was written', async () => {
+    const { asked, labels } = await run({
+      files: { texts: { [STATE_PATH]: filed } },
+      reader: { folders: [folder()], pages: [{ messages: [removed('m0')], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(asked).toEqual(['conv-1']);
+    expect(labels).toEqual(['Contrat Contoso']);
+  });
+
+  it('a removed message no thread held writes nothing', async () => {
+    const { asked } = await run({
+      files: { texts: { [STATE_PATH]: filed } },
+      reader: { folders: [folder()], pages: [{ messages: [removed('m9')], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(asked).toStrictEqual([]);
+  });
+});
+
 describe('what the mailbox sync reports', () => {
   it('a conversation whose messages have all gone is counted as skipped', async () => {
     const { summary } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] }, outcome: () => ({ kind: 'empty' }) });
