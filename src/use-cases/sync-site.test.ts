@@ -1715,8 +1715,35 @@ describe('a changed document that is now left out', () => {
     });
 
     expect(summary).toMatchObject({ converted: 0, skipped: 1 });
-    expect(notes?.skipped).toEqual([{ path: 'Projets/Contrat.docx', reason: 'larger than the 50 MB cap, so its earlier version was moved aside' }]);
+    expect(notes?.skipped).toEqual([{ path: 'Projets/Contrat.docx', reason: 'larger than the 50 MB cap. Its earlier version is in _archive/2026-07-23/.' }]);
     expect(files.moves).toEqual([{ from: NOTE, to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md' }]);
+  });
+
+  it('a changed document left out whose earlier files will not move aside says only why', async () => {
+    const known = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      layout: 2,
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [NOTE] } },
+          retry: {},
+          folders: {},
+        },
+      },
+    });
+    const grown = item({ cTag: 'c2', size: 60 * 1024 * 1024 });
+
+    const { notes } = await run({
+      files: { texts: { [STATE_PATH]: known, [NOTE]: 'the contract' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'held open' } },
+      reader: { pages: [{ items: [grown], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(notes?.skipped).toEqual([{ path: 'Projets/Contrat.docx', reason: 'larger than the 50 MB cap' }]);
   });
 
   it('a document left out the first time it is seen says only why', async () => {
