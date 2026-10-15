@@ -121,7 +121,12 @@ export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number
     if (!POINTS_SOMEWHERE.test(part.body)) continue;
     const message = part.message;
     const found = await deps.reader.sharepointLinks(message.id);
-    if (!found.ok) continue;
+    // Named as failed, as a message whose attachments cannot be listed is: the thread is written again
+    // on the next run, and what the message links to is not taken for gone in the meantime.
+    if (!found.ok) {
+      failed.push({ path: `message ${message.id}`, reason: `could not list what it links to: ${found.error.message}` });
+      continue;
+    }
     for (const link of found.value) {
       const key = `${link.driveId}:${link.itemId}`;
       const asName = names[key] ?? uniqueName(link.name, Object.values(names));

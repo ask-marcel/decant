@@ -213,6 +213,17 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(files.written.has(REPORT_MD)).toBe(false);
   });
 
+  // Reported, the way a message whose attachments cannot be listed is: the thread is then written
+  // again on the next run, and what it linked to comes back rather than being taken for gone.
+  it('a message whose links the mailbox will not list is named as failed, so the thread is written again', async () => {
+    const { outcome } = await run({
+      reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked, failCalls: { sharepointLinks: { kind: 'transient', message: 'timeout' } } },
+      drive: items,
+    });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toEqual([{ path: `${THREAD_RELATIVE}: message m1`, reason: 'could not list what it links to: timeout' }]);
+  });
+
   // Told apart by the document they stand for, not merely counted: a thread pointing at two things
   // gets two cards, and a key that failed to distinguish them would silently keep one.
   it('two documents one thread pointed at each get their own card', async () => {
