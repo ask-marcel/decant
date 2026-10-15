@@ -47,15 +47,24 @@ describe('keeping the files that would not move under the archive', () => {
   it('the report names each file as the knowledge base does, with why it would not move and since when', () => {
     const ledger = stuckAt({}, NOTE, 'write-failed: EBUSY: resource busy or locked', '2026-10-14T09:00:00Z');
 
-    expect(stuckNotes(Object.values(ledger), 'kb')).toEqual([
+    expect(stuckNotes(Object.values(ledger), 'kb', 'UTC')).toEqual([
       { path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY: resource busy or locked (since 2026-10-14)' },
     ]);
   });
 
   // A path the ledger holds from another place on disk is named whole, never cut at the wrong length.
+  // A run at 07:00 in Shanghai is still the day before in UTC.
+  it('the day a file first would not move is told in the zone of the knowledge base', () => {
+    const ledger = stuckAt({}, NOTE, 'write-failed: EBUSY', '2026-10-14T23:00:00Z');
+
+    expect(stuckNotes(Object.values(ledger), 'kb', 'Asia/Shanghai')).toEqual([
+      { path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-15)' },
+    ]);
+  });
+
   it('a file outside the knowledge base is named by its whole path', () => {
     const ledger = stuckAt({}, 'elsewhere/Contrat.docx.md', 'write-failed: EBUSY', '2026-10-14T09:00:00Z');
 
-    expect(stuckNotes(Object.values(ledger), 'kb')).toEqual([{ path: 'elsewhere/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-14)' }]);
+    expect(stuckNotes(Object.values(ledger), 'kb', 'UTC')).toEqual([{ path: 'elsewhere/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-14)' }]);
   });
 });

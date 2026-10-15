@@ -2,6 +2,7 @@ import type { ReportEntry } from './report.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import { compareText } from './utilities/compare-text.ts';
+import { dayIn } from './zoned-day.ts';
 
 // A file that would not move under the archive, a file held open on Windows most often. The source
 // that put it aside has forgotten it, so it stays where it was with nothing to name it but this, and
@@ -43,12 +44,10 @@ export const stuckAt = (ledger: AsideLedger, path: string, cause: string, at: st
 
 export const unstuck = (ledger: AsideLedger, paths: ReadonlyArray<string>): AsideLedger => Object.fromEntries(Object.entries(ledger).filter(([path]) => !paths.includes(path)));
 
-const DAY_LENGTH = 10;
-
 // For the report of the run: each file as the knowledge base names it, with why it would not move
-// and since when.
-export const stuckNotes = (stuck: ReadonlyArray<StuckFile>, kbRoot: string): ReadonlyArray<ReportEntry> =>
+// and since when, the day told in the zone the knowledge base counts its days in.
+export const stuckNotes = (stuck: ReadonlyArray<StuckFile>, kbRoot: string, zone: string): ReadonlyArray<ReportEntry> =>
   stuck.map((entry) => ({
     path: entry.path.startsWith(`${kbRoot}/`) ? entry.path.slice(kbRoot.length + 1) : entry.path,
-    reason: `${entry.cause} (since ${entry.since.slice(0, DAY_LENGTH)})`,
+    reason: `${entry.cause} (since ${dayIn(entry.since, zone)})`,
   }));

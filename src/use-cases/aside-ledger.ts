@@ -10,7 +10,8 @@ import type { Logger } from './ports/logger.ts';
 import { setAside } from './put-aside.ts';
 import type { NotPutAside, WriteDown } from './put-aside.ts';
 
-export type AsideLedgerDeps = { readonly clock: Clock; readonly kbRoot: string; readonly logger: Logger };
+// `timezone` is the zone the knowledge base counts its days in, which the report gives the days in.
+export type AsideLedgerDeps = { readonly clock: Clock; readonly kbRoot: string; readonly logger: Logger; readonly timezone: string };
 
 export type RetryAside = () => Promise<void>;
 
@@ -128,7 +129,7 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
   const stuck: StuckFiles = async () => {
     await loaded();
     if (unreadable !== undefined) return [unreadableNote(unreadable)];
-    return stuckNotes(await onDisk<StuckFile>(files, Object.values(held)), deps.kbRoot);
+    return stuckNotes(await onDisk<StuckFile>(files, Object.values(held)), deps.kbRoot, deps.timezone);
   };
 
   return { files: through, writeDown, retry, stuck };
