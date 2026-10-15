@@ -892,16 +892,21 @@ describe('the files a thread written again no longer holds', () => {
     expect(files.moves.map((move) => move.from)).toEqual([B]);
   });
 
-  // A state written under another root, before the knowledge base moved, names its files there.
-  it('a file listed under another root is put aside and named by its whole path', async () => {
+  // A path spelled under another root, as a run from another folder or with another letter case
+  // spells it, can be the very file this write made: only a file in the thread's own folder moves.
+  it('a file listed under another root is left where it is, and leaves the record and the store', async () => {
     const elsewhere = `old/Mailbox/threads/${FOLDER}/_attachments/c.pdf.md`;
-    const { notes } = await run({
-      files: { texts: { [STATE_PATH]: held(record({ files: [A, elsewhere] })), [A]: 'a', [elsewhere]: 'c' } },
+    const stored = { name: 'c.pdf', paths: [elsewhere], primary: elsewhere, media: [] };
+    const { files, notes } = await run({
+      files: { texts: { [STATE_PATH]: held(record({ files: [A, elsewhere] }), { attachments: { hash: stored } }), [A]: 'a', [elsewhere]: 'c' } },
       reader: { folders: [folder()], pages },
       outcome: () => writing([A]),
     });
 
-    expect(notes?.archived).toEqual([{ path: elsewhere, reason: 'no longer in the thread' }]);
+    expect(files.moves).toStrictEqual([]);
+    expect(notes?.archived).toStrictEqual([]);
+    expect((stateAfter(files).threads['thread-1'] as ThreadRecord | undefined)?.files).toEqual([A]);
+    expect(stateAfter(files).attachments).toEqual({});
   });
 
   it('a thread that could not be written puts nothing aside and names nothing as moved', async () => {
@@ -943,30 +948,43 @@ describe('the files a thread written again no longer holds', () => {
   });
 
   // What a write could not read may be a file the thread still holds: a throttled download looks the
-  // same as a file of a message gone. The next write that reads everything decides.
-  it('a write that could not read every file puts nothing aside, and the next write that reads everything does', async () => {
+  // same as a file of a message gone. That file stays, with its name; the rest goes as usual.
+  it('a write that could not read a file the thread held keeps that file and its name, and puts aside the rest', async () => {
+    const unread = (): RenderThreadOutcome => {
+      const written = writing([]);
+      return written.kind === 'rendered'
+        ? { ...written, thread: { ...written.thread, filesFailed: [{ path: 'a.pdf', reason: 'throttled: slow down' }], unread: [`${HERE}/_attachments/a.pdf`] } }
+        : written;
+    };
+    const { files, summary } = await run({
+      files: { texts: { [STATE_PATH]: held(record({ files: [A, B], names: { 'r1|a.pdf|0': 'a.pdf', 'r0|b.pdf|0': 'b.pdf' } })), [A]: 'a', [B]: 'b' } },
+      reader: { folders: [folder()], pages },
+      outcome: unread,
+    });
+    const kept = stateAfter(files).threads['thread-1'] as ThreadRecord | undefined;
+
+    expect(files.moves.map((move) => move.from)).toEqual([B]);
+    expect(summary.archived).toBe(1);
+    expect(kept?.files).toEqual([A]);
+    expect(kept?.names).toEqual({ 'r0|b.pdf|0': 'b.pdf', 'r1|a.pdf|0': 'a.pdf' });
+  });
+
+  // A document the user cannot open fails on every write, and is no file the thread held: it keeps
+  // nothing from being put aside.
+  it('a failure on something the thread never held does not keep the files of a message gone', async () => {
     const failing = (): RenderThreadOutcome => {
       const written = writing([A]);
-      return written.kind === 'rendered' ? { ...written, thread: { ...written.thread, filesFailed: [{ path: 'b.pdf', reason: 'throttled: slow down' }] } } : written;
+      return written.kind === 'rendered'
+        ? { ...written, thread: { ...written.thread, filesFailed: [{ path: 'Plan.docx', reason: 'permanent: access denied' }], unread: [] } }
+        : written;
     };
-    const first = await run({
+    const { files } = await run({
       files: { texts: { [STATE_PATH]: held(record({ files: [A, B] })), [A]: 'a', [B]: 'b' } },
       reader: { folders: [folder()], pages },
       outcome: failing,
     });
-    const kept = stateAfter(first.files);
 
-    expect(first.files.moves).toStrictEqual([]);
-    expect(first.summary.archived).toBe(0);
-    expect((kept.threads['thread-1'] as ThreadRecord | undefined)?.files).toEqual([A, B]);
-
-    const second = await run({
-      files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '', [A]: 'a', [B]: 'b' } },
-      reader: { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'c2' }] },
-      outcome: () => writing([A]),
-    });
-
-    expect(second.files.moves.map((move) => move.from)).toEqual([B]);
+    expect(files.moves.map((move) => move.from)).toEqual([B]);
   });
 
   // Still on disk, so still the thread's: listed in its record, its stored record kept, and its name

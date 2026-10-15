@@ -95,6 +95,9 @@ export type RenderedThread = {
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
   readonly filesSkipped: ReadonlyArray<ReportEntry>;
   readonly filesFailed: ReadonlyArray<ReportEntry>;
+  // Where in the thread's folder this write could not read what the thread held. What sits under them
+  // stays: a file the thread held may be there still. Absent when the write read everything.
+  readonly unread?: ReadonlyArray<string>;
 };
 
 export type RenderThreadOutcome = { readonly kind: 'rendered'; readonly thread: RenderedThread } | { readonly kind: 'empty' };
@@ -324,6 +327,7 @@ const writeThread = async (
       attachments: attachments.store,
       filesSkipped: inThread([...attachments.skipped, ...links.skipped]),
       filesFailed: inThread([...attachments.failed, ...links.failed]),
+      unread: [...attachments.unread, ...links.unread],
     },
   });
 };

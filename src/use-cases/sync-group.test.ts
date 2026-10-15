@@ -302,17 +302,17 @@ describe('the files a group thread written again no longer holds', () => {
     expect(notes.archived).toEqual([{ path: `threads/${RECORD.folder}/_attachments/b.pdf.md`, reason: 'no longer in the thread' }]);
   });
 
-  it('a write that could not read every file puts nothing aside, and keeps listing what the thread held', async () => {
+  it('a write that could not read a file the thread held keeps that file, and puts aside the rest', async () => {
     const { files, summary } = await run({
       files: { texts: { [STATE_PATH]: held(), [A]: 'a', [B]: 'b' } },
       reader: replied,
-      outcome: () => rendered({ record: { ...RECORD, files: [A] }, filesFailed: [{ path: 'b.pdf', reason: 'throttled: slow down' }] }),
+      outcome: () => rendered({ record: { ...RECORD, files: [] }, filesFailed: [{ path: 'a.pdf', reason: 'throttled: slow down' }], unread: [`${HERE}/_attachments/a.pdf`] }),
     });
     const saved = JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
-    expect(files.moves).toStrictEqual([]);
-    expect(summary.archived).toBe(0);
-    expect(saved.threads['AAQkAD-thread'].files).toEqual([A, B]);
+    expect(files.moves.map((move: { from: string }) => move.from)).toEqual([B]);
+    expect(summary.archived).toBe(1);
+    expect(saved.threads['AAQkAD-thread'].files).toEqual([A]);
   });
 
   it('the stored records of a file put aside leave the state', async () => {

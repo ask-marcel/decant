@@ -1,4 +1,4 @@
-import { filesLeft, filesOf, stillHolding, storesWithout } from '../domain/mail-state.ts';
+import { filesLeft, filesOf, stillHolding, storesWithout, underName } from '../domain/mail-state.ts';
 import type { FileStores, ThreadRecord } from '../domain/mail-state.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import type { Logger } from './ports/logger.ts';
@@ -59,10 +59,12 @@ const withFilesAside = <S extends FileStores>(done: ThreadOutcome<S>, gone: Read
   notes: { ...done.notes, archived: aside },
 });
 
-// A thread written again, and what it no longer holds put aside. A write that could not read a file,
-// or the list of what a message carried, puts nothing aside: what it could not read may be a file the
-// thread still holds, and a throttled download looks the same as a file of a message gone. Its record
-// keeps listing the files of the write before, and the next write that reads everything decides.
+// A thread written again, and what it no longer holds put aside. Only a file in the thread's own
+// folder, as this write names it, is moved: the same file spelled under another root, as a run from
+// another folder spells it, can be one this write just made, so such a path only leaves the record.
+// What this write could not read stays as it was, with its name, since it may be a file the thread
+// still holds: a throttled download looks the same as a file of a message gone. A failure on anything
+// else keeps nothing back, so a document nobody can open does not stop the rest for good.
 export const writtenAgain = async <S extends FileStores>(
   deps: ThreadAsideDeps,
   where: { readonly root: string; readonly threadId: string },
@@ -70,13 +72,19 @@ export const writtenAgain = async <S extends FileStores>(
   thread: RenderedThread,
   owing: (thread: RenderedThread) => ThreadOutcome<S>
 ): Promise<ThreadOutcome<S>> => {
+  const here = `${where.root}/threads/${thread.record.folder}/`;
   const left = filesLeft(before, thread.record);
-  if (thread.filesFailed.length > 0) return owing({ ...thread, record: stillHolding(thread.record, left, before) });
-  const aside = await filesAside(deps, where.threadId, left);
+  const unread = left.filter((path) => (thread.unread ?? []).some((name) => underName(path, name)));
+  const aside = await filesAside(
+    deps,
+    where.threadId,
+    left.filter((path) => path.startsWith(here) && !unread.includes(path))
+  );
   // A file that would not move is still on disk, so still the thread's: listed, its stored record kept,
   // and its name held, so no later file of that name writes over it.
   const stuck = aside.failed.map((missed) => missed.path);
-  const gone = left.filter((path) => !stuck.includes(path));
+  const gone = left.filter((path) => !unread.includes(path) && !stuck.includes(path));
   const moved = aside.moved.map((move) => ({ path: relativeTo(where.root, move.from), reason: NO_LONGER_HELD }));
-  return withFilesAside(owing({ ...thread, record: stillHolding(thread.record, stuck) }), gone, moved);
+  const record = stillHolding(thread.record, [...unread, ...stuck], unread.length > 0 ? before : undefined);
+  return withFilesAside(owing({ ...thread, record }), gone, moved);
 };
