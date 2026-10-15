@@ -178,9 +178,11 @@ const pullLinked = async (deps: LinkDeps, here: string, maxBytes: number, link: 
 // One card per document the thread pointed at, beside the thread rather than in the store the
 // document itself sits in. Written here for the same reason the attachment cards are: a document
 // another thread already pulled is referenced without being fetched again, so a card written where
-// the fetching happens would exist only for the thread that got there first.
-export const writeLinkCards = async (deps: LinkDeps, threadId: string, here: string, referenced: ReadonlyArray<MessageLink>): Promise<void> => {
+// the fetching happens would exist only for the thread that got there first. Hands back the cards it
+// wrote, which the thread records with the rest of what its folder holds.
+export const writeLinkCards = async (deps: LinkDeps, threadId: string, here: string, referenced: ReadonlyArray<MessageLink>): Promise<ReadonlyArray<string>> => {
   const folder = `${here}/${LINKED_FOLDER}`;
+  const written: string[] = [];
   // One card per document, not per mention. A deck cited in four replies is one thing the thread
   // depended on, and the card says when it was first pointed at.
   const seen = new Set<string>();
@@ -209,6 +211,8 @@ export const writeLinkCards = async (deps: LinkDeps, threadId: string, here: str
       note: entry.note,
     });
     const saved = await deps.files.writeText(`${folder}/${name}`, card);
-    if (!saved.ok) deps.logger.warn('card.failed', { filename: entry.link.name, cause: saved.error.kind });
+    if (saved.ok) written.push(`${folder}/${name}`);
+    else deps.logger.warn('card.failed', { filename: entry.link.name, cause: saved.error.kind });
   }
+  return written;
 };
