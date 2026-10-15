@@ -54,7 +54,7 @@ import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
-import { folderFor, threadFoldersOn } from './thread-folders.ts';
+import { folderFor, threadFoldersOn, writtenBefore } from './thread-folders.ts';
 import { NO_MESSAGE_LEFT, threadAside, writtenAgain } from './thread-aside.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import { withGaveUp } from '../domain/report.ts';
@@ -465,9 +465,7 @@ const renderOne = async (
     // Empty until a thread has been filed somewhere, and reused verbatim from then on, so a change
     // to the naming rules never moves a folder that is already written and already linked to.
     folder: folderFor(state.threads[threadId], onDisk, threadId),
-    file: state.threads[threadId]?.file,
-    names: state.threads[threadId]?.names,
-    held: state.threads[threadId]?.files,
+    ...writtenBefore(state.threads[threadId]),
     maxBytes: input.maxBytes,
     linked: state.linked,
     attachments: state.attachments,

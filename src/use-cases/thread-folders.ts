@@ -2,6 +2,7 @@ import type { ThreadRecord } from '../domain/mail-state.ts';
 import { findThreadFolder } from '../domain/thread-folder.ts';
 import type { ThreadId } from '../domain/thread-id.ts';
 import type { Files } from './ports/files.ts';
+import type { RenderThreadInput } from './render-thread.ts';
 
 // The thread folders already on disk under a mailbox or a group inbox, listed once a run. None when
 // the folder is not there yet, which is every first run.
@@ -15,3 +16,11 @@ export const threadFoldersOn = async (files: Pick<Files, 'listDirectoryNames'>, 
 // the rules can name a thread otherwise than when its folder was made; the id cannot.
 export const folderFor = (record: ThreadRecord | undefined, onDisk: ReadonlyArray<string>, threadId: string): string =>
   record?.folder ?? findThreadFolder(onDisk, threadId as ThreadId) ?? '';
+
+// What a write takes from the thread's record besides its folder: the note's path, the names its files
+// were written under, and every file its folder holds. Nothing for a thread never written.
+export const writtenBefore = (record: ThreadRecord | undefined): Pick<RenderThreadInput, 'file' | 'names' | 'held'> => ({
+  file: record?.file,
+  names: record?.names,
+  held: record?.files,
+});
