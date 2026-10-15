@@ -497,6 +497,19 @@ const setAsideBefore = async (deps: SyncSiteDeps, held: ReadonlyArray<string>): 
 
 const NOTHING_ASIDE: SetAside = { moved: [], failed: [] };
 
+// A document left out now had its earlier files set aside first. The report says where they went,
+// the folder of the run under the archive, since the document is no longer where it was.
+const leftOutReason = (kbRoot: string, reason: string, aside: SetAside): string => {
+  const to = aside.moved[0]?.to;
+  return to === undefined
+    ? reason
+    : `${reason}. Its earlier version is in ${to
+        .slice(kbRoot.length + 1)
+        .split('/')
+        .slice(0, 2)
+        .join('/')}/.`;
+};
+
 // A document converted again at the version already recorded, to bring back a part that would not
 // read, writes over its own files: a copy of the same version under the archive for each try would
 // keep nothing worth keeping.
@@ -530,13 +543,10 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   const recorded = { path: item.path, cTag: item.cTag, outputs, modified: item.lastModified, modifiedBy: item.modifiedBy };
   const update = (manifest: DriveState): DriveState => forgetFailure(recordItem(manifest, item.id, recorded), item.id);
   if (outcome.kind === 'converted') return outcome.lost === undefined ? { update, counted: { converted: 1 } } : partly(driveState, item, recorded, outcome.lost);
-  // A document left out now had its earlier files set aside first: the report says where they went,
-  // since the document is no longer where it was.
-  const reason = skipReason(outcome.reason, input.maxBytes, item.name);
   return {
     update,
     counted: { skipped: 1 },
-    notes: { skipped: [{ path: item.path, reason: aside.moved.length === 0 ? reason : `${reason}, so its earlier version was moved aside` }] },
+    notes: { skipped: [{ path: item.path, reason: leftOutReason(deps.kbRoot, skipReason(outcome.reason, input.maxBytes, item.name), aside) }] },
   };
 };
 
