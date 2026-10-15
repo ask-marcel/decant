@@ -50,6 +50,7 @@ import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
+import { folderFor, threadFoldersOn } from './thread-folders.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { ReportEntry } from '../domain/report.ts';
@@ -431,7 +432,14 @@ type Rendered = { readonly apply: (state: MailboxState) => MailboxState; readonl
 
 // The render (with its IO) happens now; what it adds to the mailbox state comes back as a function
 // so a whole window's results fold onto the state in order, after the parallel renders.
-const renderOne = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, threadId: string, shown: string): Promise<Rendered> => {
+const renderOne = async (
+  deps: SyncMailboxDeps,
+  input: SyncMailboxInput,
+  state: MailboxState,
+  threadId: string,
+  shown: string,
+  onDisk: ReadonlyArray<string>
+): Promise<Rendered> => {
   const held = conversationsInThread(state, threadId);
   const first = held[0];
   // A queue naming a thread no conversation points at has nothing to render. It is reachable: the
@@ -445,7 +453,7 @@ const renderOne = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
     root: first.root,
     // Empty until a thread has been filed somewhere, and reused verbatim from then on, so a change
     // to the naming rules never moves a folder that is already written and already linked to.
-    folder: state.threads[threadId]?.folder ?? '',
+    folder: folderFor(state.threads[threadId], onDisk, threadId),
     file: state.threads[threadId]?.file,
     maxBytes: input.maxBytes,
     linked: state.linked,
@@ -556,6 +564,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
   let current = state;
   let summary = EMPTY;
   let notes: RunNotes = NO_NOTES;
+  const onDisk = await threadFoldersOn(deps.files, mailboxRoot(deps.kbRoot));
   deps.progress.start(current.pending.length, MAILBOX_NAME);
   for (;;) {
     if (current.pending.length === 0) break;
@@ -564,7 +573,7 @@ const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state:
       window.map((threadId) => {
         const shown = shownAs(current.titles, threadId);
         deps.progress.begin(shown);
-        return renderOne(deps, input, current, threadId, shown).then((outcome) => {
+        return renderOne(deps, input, current, threadId, shown, onDisk).then((outcome) => {
           deps.progress.step(shown);
           return outcome;
         });

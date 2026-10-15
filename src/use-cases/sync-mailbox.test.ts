@@ -358,6 +358,18 @@ describe('syncing a mailbox into the knowledge base', () => {
     expect(fresh.inputs).toHaveLength(1);
   });
 
+  // A state lost or started over knows no folder, and the naming rules can name a thread otherwise
+  // than they did when its folder was made. The id in the name is what the folder is found by.
+  it('a thread the state holds no record of is written into the folder already on disk for its id', async () => {
+    const id = threadIdOf('m1');
+    const { inputs } = await run({
+      files: { directories: { 'kb/Mailbox/threads': ['2026-05-12-0123456789-another-thread', `2026-05-11-${id}-an-older-name`] } },
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] },
+    });
+
+    expect(inputs.map((input) => input.folder)).toEqual([`2026-05-11-${id}-an-older-name`]);
+  });
+
   it('a thread filed nowhere yet is handed no folder, so the naming rules decide', async () => {
     const folders: string[] = [];
     await run({
