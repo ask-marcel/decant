@@ -1,4 +1,6 @@
 import type { ReportEntry } from './report.ts';
+import type { Result } from './result.ts';
+import { err, ok } from './result.ts';
 import { compareText } from './utilities/compare-text.ts';
 
 // A file that would not move under the archive, a file held open on Windows most often. The source
@@ -13,12 +15,22 @@ export const ASIDE_LEDGER_NAME = '.sync-aside.json';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const entryOf = (path: string, raw: unknown): ReadonlyArray<readonly [string, StuckFile]> =>
-  isRecord(raw) && typeof raw['cause'] === 'string' && typeof raw['since'] === 'string' ? [[path, { path, cause: raw['cause'], since: raw['since'] }]] : [];
+const isEntry = (raw: unknown): raw is { readonly cause: string; readonly since: string } => isRecord(raw) && typeof raw['cause'] === 'string' && typeof raw['since'] === 'string';
 
-// A ledger that cannot be read is an empty one: it lists moves a run still owes, and the next move
-// that fails writes its file down again.
-export const parseAsideLedger = (raw: unknown): AsideLedger => (isRecord(raw) ? Object.fromEntries(Object.entries(raw).flatMap(([path, entry]) => entryOf(path, entry))) : {});
+// Whole or not at all: no source records these files any more, so a ledger read in part would let the
+// rest go for good. The caller keeps one that does not read as it is.
+export const parseAsideLedger = (raw: unknown): Result<AsideLedger, string> => {
+  if (!isRecord(raw)) return err('not a ledger');
+  const entries = Object.entries(raw);
+  const stuck = entries.flatMap(([path, entry]) => (isEntry(entry) ? [{ path, cause: entry.cause, since: entry.since }] : []));
+  return stuck.length === entries.length ? ok(Object.fromEntries(stuck.map((entry) => [entry.path, entry]))) : err('an entry is not one');
+};
+
+// What the report names in place of the files when the ledger does not read.
+export const unreadableNote = (cause: string): ReportEntry => ({
+  path: ASIDE_LEDGER_NAME,
+  reason: `could not be read (${cause}): no run moves the files it lists, or adds to it, until it is repaired or deleted`,
+});
 
 // In the order of the paths, so the file changes only when the files in it do.
 export const serializeAsideLedger = (ledger: AsideLedger): string => {

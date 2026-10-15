@@ -123,11 +123,40 @@ describe('naming the files still stuck in the report of the run', () => {
       { path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY: resource busy or locked (since 2026-10-15)' },
     ]);
   });
+});
 
-  it('a ledger that cannot be read names nothing', async () => {
-    const { ledger } = setUp({ texts: { [LEDGER]: 'not json', [NOTE]: 'the contract' } });
+// What it lists is named nowhere else, so a ledger that does not read stays as it is until someone
+// repairs or deletes it, and the report of the run names it in place of its files.
+describe('a ledger that does not read', () => {
+  const unreadable = (cause: string): { path: string; reason: string } => ({
+    path: '.sync-aside.json',
+    reason: `could not be read (${cause}): no run moves the files it lists, or adds to it, until it is repaired or deleted`,
+  });
 
-    expect(await ledger.stuck()).toStrictEqual([]);
+  it('is logged and never written over: the retry, a file let go and a file landing leave it as it is', async () => {
+    const { files, logger, ledger } = setUp({ texts: { [LEDGER]: 'not json', [NOTE]: 'the contract' } });
+
+    await ledger.retry();
+    await ledger.writeDown([{ path: NOTE, error: LOCKED }]);
+    await ledger.files.writeText(TASK, 'the task');
+
+    expect(files.written.get(LEDGER)).toBe('not json');
+    expect(files.moves).toStrictEqual([]);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'aside-ledger.unreadable', meta: { cause: 'invalid-json' } });
+    expect(await ledger.stuck()).toEqual([unreadable('invalid-json')]);
+  });
+
+  it('one the disk will not read, or one that holds an entry that is not one, is kept the same way', async () => {
+    const refused = setUp({ texts: { [NOTE]: 'the contract' }, failReadWith: { kind: 'read-failed', path: LEDGER, message: 'EIO' } });
+    const odd = setUp({ texts: { [LEDGER]: JSON.stringify({ [NOTE]: 'stuck' }), [NOTE]: 'the contract' } });
+
+    await refused.ledger.writeDown([{ path: NOTE, error: LOCKED }]);
+    await odd.ledger.writeDown([{ path: NOTE, error: LOCKED }]);
+
+    expect(refused.files.writeLog).toStrictEqual([]);
+    expect(odd.files.written.get(LEDGER)).toBe(JSON.stringify({ [NOTE]: 'stuck' }));
+    expect(await refused.ledger.stuck()).toEqual([unreadable('read-failed')]);
+    expect(await odd.ledger.stuck()).toEqual([unreadable('an entry is not one')]);
   });
 });
 
