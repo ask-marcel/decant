@@ -253,6 +253,26 @@ describe('remembering where a mailbox sync got to', () => {
     });
   });
 
+  // A thread written before the list was kept has none, which is not the same as a thread whose
+  // folder holds nothing but its note: the first falls back to its attachments, the second has none.
+  it('the files a thread folder holds read back with forward slashes, and a thread written before the list was kept has none', () => {
+    const parsed = parseMailboxState({
+      version: 2,
+      source: { kind: 'mailbox' },
+      threads: {
+        listed: { ...thread, files: ['kb\\Mailbox\\threads\\T\\_attachments\\a.pdf', 7] },
+        empty: { ...thread, files: [] },
+        before: thread,
+        broken: { ...thread, files: 'a.pdf' },
+      },
+    });
+
+    expect(parsed.ok && parsed.value.threads['listed']?.files).toEqual(['kb/Mailbox/threads/T/_attachments/a.pdf']);
+    expect(parsed.ok && parsed.value.threads['empty']?.files).toStrictEqual([]);
+    expect(parsed.ok && parsed.value.threads['before']?.files).toBeUndefined();
+    expect(parsed.ok && parsed.value.threads['broken']?.files).toBeUndefined();
+  });
+
   it('an attachment keeps the primary file it named, and one that named no file at all reads back with none', () => {
     const parsed = parseMailboxState({
       version: 2,

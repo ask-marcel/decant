@@ -14,6 +14,7 @@ import { threadFolderName } from '../domain/thread-folder.ts';
 import type { ThreadId } from '../domain/thread-id.ts';
 import { FILE_SLUG_LIMIT, FOLDER_SLUG_LIMIT, slugify } from '../domain/thread-slug.ts';
 import { dayIn } from '../domain/zoned-day.ts';
+import { compareText } from '../domain/utilities/compare-text.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import type { AttachmentOutcome, ConvertAttachment, ConvertAttachmentInput } from './convert-attachment.ts';
@@ -235,6 +236,11 @@ const messageRecords = (
     })
   );
 
+// What the thread's own folder holds of what this write produced, each once and in a fixed order, so
+// a write that produced the same files leaves the state as it was. A picture shown in a body lives in
+// the store the whole mailbox shares, and is no file of the thread's.
+const heldIn = (here: string, paths: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(paths.filter((path) => path.startsWith(`${here}/`)))].toSorted(compareText);
+
 const writeThread = async (
   deps: RenderThreadDeps,
   input: RenderThreadInput,
@@ -259,7 +265,7 @@ const writeThread = async (
   // The head cites the thread's OWN cards, not the store three levels up, so a reader follows a
   // path that stays inside the folder they already opened.
   const cardPaths = await writeCards(deps, { threadId: input.threadId, here, folder: cards }, parts, attachments.byMessage);
-  await writeLinkCards(deps, input.threadId, place.here, links.referenced);
+  const linkCards = await writeLinkCards(deps, input.threadId, place.here, links.referenced);
   const attachmentRefs = cardPaths.map((path) => pathBetween(here, path));
   const inlineRefs = bodies.pictures.map((path) => pathBetween(here, path));
   // Linked files are written from the thread's own folder, exactly as attachments are: both climb out
@@ -285,6 +291,7 @@ const writeThread = async (
         lastMessage: last.received,
         attachments: attachments.paths.filter((path) => !shown.has(path)),
         inlineImages: bodies.pictures,
+        files: heldIn(here, [...attachments.paths, ...cardPaths, ...links.paths, ...linkCards]),
         subject: first.subject,
         firstMessage: first.received,
         lastFrom: last.from?.name ?? '',

@@ -24,6 +24,11 @@ export type ThreadRecord = {
   // Kept apart from the attachments because a body shows these where they stood, and a thread that
   // carried a signature logo should not read as a thread that carried a document.
   readonly inlineImages: ReadonlyArray<string>;
+  // Every file the thread's folder holds besides its note, as the last write left it: what each
+  // attachment produced, each card, and each linked document with its card. What a later write does
+  // not write again is what the thread no longer holds. Absent from a thread written before the list
+  // was kept, which only its attachments say anything about.
+  readonly files?: ReadonlyArray<string>;
   // What the index pages list a thread by: its subject, when it began, and who wrote last. Absent from
   // a thread written before they were kept, until a new message writes it again.
   readonly subject?: string;
@@ -168,6 +173,7 @@ export const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
   lastMessage: readString(raw, 'lastMessage') ?? '',
   attachments: pathList(raw['attachments']),
   inlineImages: pathList(raw['inlineImages']),
+  files: Array.isArray(raw['files']) ? pathList(raw['files']) : undefined,
   subject: readString(raw, 'subject'),
   firstMessage: readString(raw, 'firstMessage'),
   lastFrom: readString(raw, 'lastFrom'),

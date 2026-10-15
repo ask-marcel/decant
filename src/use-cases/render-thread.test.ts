@@ -107,6 +107,43 @@ describe('writing one conversation as one file', () => {
     });
   });
 
+  // What the folder holds besides the note, so a later write can tell what it no longer holds: each
+  // file an attachment produced, each card, and each linked document with its card, whether or not
+  // the file behind a card came. A picture the whole mailbox shares is not the thread's to put aside.
+  it('the thread record names every file the thread folder holds besides the note', async () => {
+    const report = { url: 'https://tenant.sharepoint.com/x', driveId: 'b!one', itemId: '01ABC', name: 'Rapport.docx' };
+    const lost = { url: 'https://tenant.sharepoint.com/y', driveId: 'b!one', itemId: '01GONE', name: 'Budget.xlsx' };
+    const attachments = {
+      m1: [
+        { id: 'att1', name: 'Contrat.docx', contentType: 'application/vnd', size: 4096, isInline: false },
+        { id: 'big', name: 'Enorme.docx', contentType: 'application/vnd', size: 60 * 1024 * 1024, isInline: false },
+        { id: 'sig', name: 'image001.png', contentType: 'image/png', size: 100, isInline: true },
+      ],
+    };
+    const item = {
+      id: '01ABC',
+      name: 'Rapport.docx',
+      kind: 'file' as const,
+      size: 4096,
+      path: 'Rapport.docx',
+      lastModified: '2026-05-11T08:00:00Z',
+      cTag: 'c1',
+      webUrl: report.url,
+    };
+    const { outcome } = await run({
+      reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, bodies: LINK_BODIES, attachments, links: { m1: [report, lost] } },
+      drive: { items: { '01ABC': item } },
+    });
+    const linked = `kb/Mailbox/threads/${THREAD_FOLDER}/_linked`;
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.files).toEqual([
+      `${ATTACHMENTS_STORE}/Contrat.docx.md`,
+      `${ATTACHMENTS_STORE}/Enorme.docx.md`,
+      `${linked}/Budget.xlsx.md`,
+      `${linked}/Rapport.docx.md`,
+    ]);
+  });
+
   // The state is written again only when its text changes, so a thread record read back from it must
   // write the keys in the order the render wrote them, or a run with no change rewrites the file.
   it('a thread record read back from the state writes the same text the render gave it', async () => {
