@@ -28,7 +28,7 @@ import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
-import { putAside, putBack, setAside } from './put-aside.ts';
+import { heldInPlace, putAside, putBack, setAside } from './put-aside.ts';
 import type { SetAside } from './put-aside.ts';
 import { refileAll } from './refile.ts';
 
@@ -87,17 +87,28 @@ const setAsideBefore = async (deps: SyncTodoDeps, before: TaskRecord | undefined
 
 type Roots = { readonly root: string };
 
+// A write that did not happen: the version before goes back where it was, and the task is tried
+// again on the next run, three runs in all.
+const notWritten = async (deps: SyncTodoDeps, state: TodoState, task: TodoTask, aside: SetAside, reason: string): Promise<Done> => {
+  for (const missed of await putBack(deps, aside)) deps.logger.warn('restore.failed', { path: missed.path, cause: missed.error.kind });
+  const attempt = nextAttempt(state.retry?.[task.id], task.lastModified, task.title, reason);
+  // Out of tries now: named under its own heading, not as a failure the next run will try again.
+  const notes = isGivenUp(attempt, task.lastModified) ? {} : { failed: [{ path: task.title, reason }] };
+  return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, task.id, attempt) }), counted: { failed: 1 }, notes };
+};
+
+// A version before that would not move aside, held open most often, would be lost to a write at its
+// own path, so the task waits for a run that can move it.
 const writeOne = async (deps: SyncTodoDeps, input: SyncTodoInput, state: TodoState, planned: PlannedTask): Promise<Done> => {
   const { task, file } = planned;
-  const aside = await setAsideBefore(deps, state.tasks[task.id]);
+  const before = state.tasks[task.id];
+  const aside = await setAsideBefore(deps, before);
+  const held = before?.file === file ? await heldInPlace(deps, aside) : undefined;
+  if (held !== undefined) return notWritten(deps, state, task, aside, held);
   const written = await deps.files.writeText(file, renderTaskDocument({ task, list: input.list.name, syncedAt: deps.clock.nowIso() }));
   if (!written.ok) {
-    for (const missed of await putBack(deps, aside)) deps.logger.warn('restore.failed', { path: missed.path, cause: missed.error.kind });
     deps.logger.warn('todo-task.failed', { task: task.id, cause: written.error.kind });
-    const attempt = nextAttempt(state.retry?.[task.id], task.lastModified, task.title, written.error.message);
-    // Out of tries now: named under its own heading, not as a failure the next run will try again.
-    const notes = isGivenUp(attempt, task.lastModified) ? {} : { failed: [{ path: task.title, reason: written.error.message }] };
-    return { apply: (carried) => ({ ...carried, retry: recordAttempt(carried.retry, task.id, attempt) }), counted: { failed: 1 }, notes };
+    return notWritten(deps, state, task, aside, written.error.message);
   }
   const record: TaskRecord = { file, lastModified: task.lastModified, title: task.title };
   return { apply: (carried) => ({ ...withTask(carried, task.id, record), retry: clearAttempt(carried.retry, task.id) }), counted: { converted: 1 }, notes: {} };

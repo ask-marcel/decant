@@ -145,6 +145,26 @@ describe('syncing a Microsoft To Do list', () => {
     expect(done.files.written.get('kb/_archive/2026-09-09/To Do/Tasks/2026-09-08/Book the venue.md')).toBe('the task as it was');
   });
 
+  // Written over, the version before would be lost: the task waits for a run that can move it.
+  it('an edit whose version before will not move aside is not written over, and is tried again on the next run', async () => {
+    const FILE = 'kb/To Do/Tasks/2026-09-08/Book the venue.md';
+    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: FILE, lastModified: '2026-09-01T09:00:00Z', title: 'Book the venue' });
+    const done = await run({
+      reader: { tasks: { 'list-1': [task({ due: '2026-09-08', notes: 'Ask about parking' })] } },
+      files: {
+        texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [FILE]: 'the task as it was' },
+        failMoveWith: { kind: 'write-failed', path: FILE, message: 'held open' },
+      },
+    });
+    const kept = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}');
+
+    expect(done.summary).toMatchObject({ converted: 0, failed: 1 });
+    expect(done.notes.failed).toEqual([{ path: 'Book the venue', reason: 'its earlier version would not move to _archive/: write-failed: held open' }]);
+    expect(done.files.written.get(FILE)).toBe('the task as it was');
+    expect(kept.tasks['AAMkAGI-task'].lastModified).toBe('2026-09-01T09:00:00Z');
+    expect(kept.retry['AAMkAGI-task']).toBeDefined();
+  });
+
   it('a write that fails puts the version before it back, so the list still holds it', async () => {
     const FILE = 'kb/To Do/Tasks/2026-09-08/Book the venue.md';
     const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: FILE, lastModified: '2026-09-01T09:00:00Z', title: 'Book the venue' });
