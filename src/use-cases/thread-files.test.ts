@@ -535,7 +535,7 @@ describe('the names a thread already gave its files', () => {
   // A name cut to fit a deep disk is compared as it is written: the cut name a held file has is not
   // the name the sender gave, and a new file of that name would be cut to the same one.
   it('a held name cut for length keeps a new file of the same name off it', async () => {
-    const long = 'Rahmenvertrag mit AEB und BEB Software bilingual Vorlage final.xlsx';
+    const long = 'Rahmenvertrag mit Contoso und Northwind bilingual Vorlage final.xlsx';
     const before = await run({ reader: { conversations: { [CONV]: [m1, m2] }, attachments: { m1: [budget('att1', long)], m2: [budget('att2', long)] } }, pathBudget: 170 });
 
     const after = await run({
