@@ -966,12 +966,17 @@ describe('the files a thread written again no longer holds', () => {
   // What a write could not read may be a file the thread still holds: a throttled download looks the
   // same as a file of a message gone. That file stays, with its name; the rest goes as usual.
   it('a write that could not read a file the thread held keeps that file and its name, and puts aside the rest', async () => {
-    const unread = (): RenderThreadOutcome => {
-      const written = writing([]);
-      return written.kind === 'rendered'
-        ? { ...written, thread: { ...written.thread, filesFailed: [{ path: 'a.pdf', reason: 'throttled: slow down' }], unread: [`${HERE}/_attachments/a.pdf`] } }
-        : written;
-    };
+    const unread = (): RenderThreadOutcome => ({
+      kind: 'rendered',
+      thread: {
+        record: record({ messageIds: ['m0', 'm1'], files: [], names: { 'r1|a.pdf|0': 'a.pdf' } }),
+        linked: {},
+        attachments: {},
+        filesSkipped: [],
+        filesFailed: [{ path: 'a.pdf', reason: 'throttled: slow down' }],
+        unread: [`${HERE}/_attachments/a.pdf`],
+      },
+    });
     const { files, summary } = await run({
       files: { texts: { [STATE_PATH]: held(record({ files: [A, B], names: { 'r1|a.pdf|0': 'a.pdf', 'r0|b.pdf|0': 'b.pdf' } })), [A]: 'a', [B]: 'b' } },
       reader: { folders: [folder()], pages },
@@ -982,7 +987,8 @@ describe('the files a thread written again no longer holds', () => {
     expect(files.moves.map((move) => move.from)).toEqual([B]);
     expect(summary.archived).toBe(1);
     expect(kept?.files).toEqual([A]);
-    expect(kept?.names).toEqual({ 'r0|b.pdf|0': 'b.pdf', 'r1|a.pdf|0': 'a.pdf' });
+    // The name of the file put aside goes with it: the record names what the thread holds.
+    expect(kept?.names).toEqual({ 'r1|a.pdf|0': 'a.pdf' });
   });
 
   // A document the user cannot open fails on every write, and is no file the thread held: it keeps

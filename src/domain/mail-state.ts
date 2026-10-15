@@ -302,13 +302,10 @@ export const filesLeft = (before: ThreadRecord | undefined, after: ThreadRecord)
 };
 
 // A record that keeps listing files the write before held and this one did not write again: they stay
-// on disk, and a later write that reads everything tells what the thread no longer holds. Given the
-// record of the write before, it keeps its names too, so a file this write could not read keeps its
-// name.
-export const stillHolding = (record: ThreadRecord, kept: ReadonlyArray<string>, before?: ThreadRecord): ThreadRecord => ({
+// on disk, and a later write that reads everything tells what the thread no longer holds.
+export const stillHolding = (record: ThreadRecord, kept: ReadonlyArray<string>): ThreadRecord => ({
   ...record,
   files: [...new Set([...(record.files ?? []), ...kept])].toSorted(compareText),
-  ...(before === undefined ? {} : { names: inKeyOrder({ ...before.names, ...record.names }), links: inKeyOrder({ ...before.links, ...record.links }) }),
 });
 
 // The names a thread's folder still holds in one of its subfolders, as its record lists them: each

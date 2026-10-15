@@ -258,19 +258,17 @@ const heldBy = (stored: Readonly<Record<string, AttachmentRecord>>, here: string
 // Which message brought a file, and which of the files of that name in it. A mail is known by its RFC
 // id, which stays the same when the mail moves to another folder where its Graph id does not; a post in
 // a group inbox has none, and its own id never changes.
-const arrivalOf = (message: MailMessage, name: string, nth: number): string => `${senderOf(message)}|${name}|${nth}`;
+const arrivalOf = (message: MailMessage, name: string, nth: number): string => `${messageKeyOf(message)}|${name}|${nth}`;
 
-const senderOf = (message: MailMessage): string => {
+const messageKeyOf = (message: MailMessage): string => {
   const rfc = message.internetMessageId ?? '';
   return rfc.length > 0 ? rfc : message.id;
 };
 
-// The names the files a message carried were written under before, which a write that cannot list
-// them must not take for gone.
-const namedFor = (place: FilePlace, message: MailMessage): ReadonlyArray<string> =>
-  Object.entries(place.names ?? {})
-    .filter(([arrival]) => arrival.startsWith(`${senderOf(message)}|`))
-    .map(([, name]) => `${place.here}/${ATTACHMENTS_FOLDER}/${name}`);
+// The files a message carried before, by arrival and name, which a write that cannot list them must
+// not take for gone.
+const recordedFor = (place: FilePlace, message: MailMessage): ReadonlyArray<readonly [string, string]> =>
+  Object.entries(place.names ?? {}).filter(([arrival]) => arrival.startsWith(`${messageKeyOf(message)}|`));
 
 // What the files of a write add up to as they are placed.
 type Tally = {
@@ -310,9 +308,13 @@ type Carrying = { readonly messageId: string; readonly attachment: MailAttachmen
 
 const placeMessage = async (deps: FileDeps, place: FilePlace, placing: Placing, part: ThreadPart, stamp: DocumentStamp, tally: Tally): Promise<void> => {
   const listed = await deps.reader.attachments(part.message.id);
+  // Every file the message carried before keeps its name and its files: none is taken for gone.
   if (!listed.ok) {
     tally.failed.push({ path: `message ${part.message.id}`, reason: `could not list what it carried: ${listed.error.message}` });
-    tally.unread.push(...namedFor(place, part.message));
+    for (const [arrival, name] of recordedFor(place, part.message)) {
+      tally.names[arrival] = name;
+      tally.unread.push(`${place.here}/${ATTACHMENTS_FOLDER}/${name}`);
+    }
     return;
   }
   const carried: MessageFile[] = [];

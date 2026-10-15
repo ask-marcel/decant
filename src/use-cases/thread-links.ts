@@ -169,6 +169,12 @@ const followLink = async (deps: LinkDeps, following: Following, message: MailMes
   addAll(following.paths, pulled.record.paths);
 };
 
+// A document is named by its item, so a message whose links went unread cannot say which were its
+// own: every document the thread linked keeps its name until a write that lists them all.
+const keepRecorded = (following: Following): void => {
+  for (const [key, name] of Object.entries(following.recorded)) if (following.names[key] === undefined) following.names[key] = name;
+};
+
 const followMessage = async (deps: LinkDeps, following: Following, part: ThreadPart): Promise<void> => {
   if (!POINTS_SOMEWHERE.test(part.body)) return;
   const found = await deps.reader.sharepointLinks(part.message.id);
@@ -178,6 +184,7 @@ const followMessage = async (deps: LinkDeps, following: Following, part: ThreadP
   if (!found.ok) {
     following.failed.push({ path: `message ${part.message.id}`, reason: `could not list what it links to: ${found.error.message}` });
     addAll(following.unread, [`${following.here}/${LINKED_FOLDER}`]);
+    keepRecorded(following);
     return;
   }
   for (const link of found.value) await followLink(deps, following, part.message, link);

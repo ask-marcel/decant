@@ -590,6 +590,7 @@ describe('the names a thread already gave its files', () => {
     const thread = listing.outcome?.kind === 'rendered' ? listing.outcome.thread : undefined;
 
     expect(thread?.unread).toEqual([`${ATTACHMENTS_STORE}/Budget.xlsx`, `${ATTACHMENTS_STORE}/Plan.pdf`]);
+    expect(thread?.record.names).toEqual(recordOf(once.outcome)?.names);
   });
 
   // A file the record still lists is on disk, whether its message went and it would not move, or it

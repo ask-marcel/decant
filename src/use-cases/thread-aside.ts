@@ -88,6 +88,5 @@ export const writtenAgain = async <S extends FileStores>(
   const stuck = aside.failed.map((missed) => missed.path);
   const gone = left.filter((path) => !unread.includes(path) && !stuck.includes(path));
   const moved = aside.moved.map((move) => ({ path: relativeTo(where.root, move.from), reason: NO_LONGER_HELD }));
-  const record = stillHolding(thread.record, [...unread, ...stuck], unread.length > 0 ? before : undefined);
-  return withFilesAside(owing({ ...thread, record }), gone, moved);
+  return withFilesAside(owing({ ...thread, record: stillHolding(thread.record, [...unread, ...stuck]) }), gone, moved);
 };

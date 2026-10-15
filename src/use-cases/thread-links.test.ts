@@ -273,6 +273,24 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(thread?.unread).toEqual([`${LINKED_HERE}/Rapport.docx`]);
   });
 
+  // Named by the item, so the message whose links went unread cannot say which were its own: every
+  // document the thread linked keeps its name until a write that lists them all.
+  it('a message whose links cannot be listed keeps the names of the documents the thread linked', async () => {
+    const once = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked }, drive: items });
+    const before = once.outcome?.kind === 'rendered' ? once.outcome.thread.record : undefined;
+
+    const twice = await run({
+      reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked, failCalls: { sharepointLinks: { kind: 'transient', message: 'timeout' } } },
+      drive: items,
+      folder: THREAD_FOLDER,
+      file: THREAD_RELATIVE,
+      links: before?.links,
+      held: before?.files,
+    });
+
+    expect(twice.outcome?.kind === 'rendered' && twice.outcome.thread.record.links).toEqual(before?.links);
+  });
+
   // Any document the thread pointed at may still be linked from that message.
   it('a message whose links cannot be listed has every linked document named as unread', async () => {
     const { outcome } = await run({
