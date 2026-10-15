@@ -1,4 +1,4 @@
-import type { ReportNotes } from './report.ts';
+import type { ReportEntry, ReportNotes } from './report.ts';
 import { renderNoteLists } from './report.ts';
 
 // One source as this run left it. The timestamp is not here but at the top of the file: every section
@@ -18,11 +18,17 @@ export type GlobalRun = {
   readonly stale: ReadonlyArray<StaleSource>;
   // Absent when the run finished; what it stopped at when it did not.
   readonly stopped?: string;
+  // The files that would not move under the archive, which no source names any more.
+  readonly stuck?: ReadonlyArray<ReportEntry>;
 };
 
 export const GLOBAL_REPORT_HEADING = '# What did not reach the knowledge base';
 
 const STALE_HEADING = '## Not rechecked by this run';
+
+const STUCK_HEADING = '## Could not be moved to the archive';
+
+const STUCK_NOTE = 'Each run tries to move these again before it starts.';
 
 const NOTHING_LEFT = 'Nothing was left behind.';
 
@@ -44,11 +50,18 @@ const section = (source: SourceSection): ReadonlyArray<string> => {
 const staleTail = (stale: ReadonlyArray<StaleSource>): ReadonlyArray<string> =>
   stale.length === 0 ? [] : [STALE_HEADING, '', ...stale.map((source) => `- ${source.name}: last ran ${source.lastRun}`), ''];
 
+// The sources have let these files go, so this is the one place that still names them.
+const stuckSection = (stuck: ReadonlyArray<ReportEntry>): ReadonlyArray<string> =>
+  stuck.length === 0 ? [] : [STUCK_HEADING, '', STUCK_NOTE, '', ...stuck.map((entry) => `- ${entry.path}: ${entry.reason}`), ''];
+
 // Rewritten whole on every run rather than appended to, so it is always the current view. The history
 // of any one source is in that source's own `_sync-report.md`, which is still appended to.
 export const renderGlobalReport = (run: GlobalRun): string => {
   const opening = run.stopped === undefined ? [] : [stoppedLine(run.stopped), ''];
-  return [GLOBAL_REPORT_HEADING, '', `Written ${run.at}.`, '', ...opening, ...run.ran.flatMap(section), ...staleTail(run.stale)].join('\n').trimEnd().concat('\n');
+  return [GLOBAL_REPORT_HEADING, '', `Written ${run.at}.`, '', ...opening, ...run.ran.flatMap(section), ...stuckSection(run.stuck ?? []), ...staleTail(run.stale)]
+    .join('\n')
+    .trimEnd()
+    .concat('\n');
 };
 
 // The time is the one line that changes on every run, so it is the one line two reports are compared

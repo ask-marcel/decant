@@ -98,6 +98,23 @@ describe('one file naming what a whole run left behind', () => {
     expect(written).toContain('The run stopped early at enumerate: token expired.');
   });
 
+  it('the files the ledger holds that would not move under the archive are named in the file', async () => {
+    const files = createFilesFake();
+    const stuck = [{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-14)' }];
+    const writeGlobalReport = createWriteGlobalReport({
+      files,
+      clock: createClockFake('2026-08-27T21:00:00Z'),
+      logger: createLoggerFake(),
+      listSyncedSources: async () => ok([]),
+      kbRoot: 'kb',
+      stuckFiles: async () => stuck,
+    });
+
+    await writeGlobalReport({ ran: [contoso], dryRun: false });
+
+    expect(files.written.get('kb/_sync-report.md')).toContain('- SharePoint sites/Espace Contoso/Documents/Contrat.docx.md: write-failed: EBUSY (since 2026-10-14)');
+  });
+
   it('a dry run writes nothing, since nothing it reports actually happened', async () => {
     const { written } = await write([contoso], { dryRun: true });
 
