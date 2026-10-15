@@ -1,4 +1,5 @@
 import { addressKindOf } from '../domain/address-kind.ts';
+import { planFile } from '../domain/conversion-plan.ts';
 import { INDEX_FILE } from '../domain/index-page.ts';
 import { libraryIndexPage } from '../domain/library-index.ts';
 import { sweptFolders, underMoved } from '../domain/drive-folders.ts';
@@ -46,7 +47,7 @@ import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
-import { putAside, putBack, setAside } from './put-aside.ts';
+import { heldInPlace, putAside, putBack, setAside } from './put-aside.ts';
 import type { SetAside } from './put-aside.ts';
 import { refileAll } from './refile.ts';
 
@@ -522,9 +523,30 @@ const atRecordedVersion = (driveState: DriveState, item: DriveItem): boolean => 
 const leftBehind = (driveState: DriveState, itemId: string, outputs: ReadonlyArray<string>): ReadonlyArray<string> =>
   ownOutputs(driveState, itemId).filter((output) => !outputs.includes(output));
 
-const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, driveState: DriveState, item: DriveItem): Promise<WorkOutcome> => {
+// An edit whose version before would not move aside, a file held open most often, would write over
+// it, and the version would be lost. The conversion waits for a run that can move it, three runs in
+// all, and the files on disk stay the current ones.
+const waiting = async (deps: SyncSiteDeps, driveState: DriveState, item: DriveItem, aside: SetAside, reason: string): Promise<WorkOutcome> => {
+  for (const missed of await putBack(deps, aside)) deps.logger.warn('restore.failed', { path: missed.path, cause: missed.error.kind });
+  const entry = nextFailure(driveState.retry[item.id], item, reason);
+  return { update: (manifest) => rememberFailure(manifest, entry), counted: { failed: 1 }, notes: givenUp(entry) ? {} : { failed: [{ path: item.path, reason }] } };
+};
+
+// What a conversion needs before it starts: the version before set aside, unless the same version is
+// written again, and the reason to wait when a file of it would not move and the conversion would
+// write over it. A document left out for its kind or its size writes nothing, so nothing stops it.
+type Ready = { readonly again: boolean; readonly aside: SetAside; readonly held?: string };
+
+const ready = async (deps: SyncSiteDeps, input: ResolvedInput, driveState: DriveState, item: DriveItem): Promise<Ready> => {
   const again = atRecordedVersion(driveState, item);
   const aside = again ? NOTHING_ASIDE : await setAsideBefore(deps, ownOutputs(driveState, item.id));
+  const inPlace = driveState.items[item.id]?.path === item.path && planFile({ name: item.name, size: item.size }, input.maxBytes).kind !== 'skip';
+  return { again, aside, held: inPlace ? await heldInPlace(deps, aside) : undefined };
+};
+
+const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, driveState: DriveState, item: DriveItem): Promise<WorkOutcome> => {
+  const { again, aside, held } = await ready(deps, input, driveState, item);
+  if (held !== undefined) return waiting(deps, driveState, item, aside, held);
   const outcome = await deps.convertFile({
     item,
     driveId: drive.id,
