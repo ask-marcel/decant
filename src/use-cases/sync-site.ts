@@ -495,8 +495,18 @@ const setAsideBefore = async (deps: SyncSiteDeps, held: ReadonlyArray<string>): 
   return aside;
 };
 
+const NOTHING_ASIDE: SetAside = { moved: [], failed: [] };
+
+// A document converted again at the version already recorded, to bring back a part that would not
+// read, writes over its own files: a copy of the same version under the archive for each try would
+// keep nothing worth keeping.
+const asideBefore = async (deps: SyncSiteDeps, driveState: DriveState, item: DriveItem): Promise<SetAside> => {
+  const held = driveState.items[item.id];
+  return held?.cTag === item.cTag && held.path === item.path ? NOTHING_ASIDE : setAsideBefore(deps, ownOutputs(driveState, item.id));
+};
+
 const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, driveState: DriveState, item: DriveItem): Promise<WorkOutcome> => {
-  const aside = await setAsideBefore(deps, ownOutputs(driveState, item.id));
+  const aside = await asideBefore(deps, driveState, item);
   const outcome = await deps.convertFile({
     item,
     driveId: drive.id,
