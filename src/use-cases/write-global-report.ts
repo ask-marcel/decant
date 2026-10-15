@@ -1,6 +1,7 @@
 import type { SourceSection, StaleSource } from '../domain/global-report.ts';
 import { renderGlobalReport, sameReport } from '../domain/global-report.ts';
 import { sourceLabel } from '../domain/sync-state.ts';
+import type { StuckFiles } from './aside-ledger.ts';
 import type { ListSyncedSources } from './list-synced-sources.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Files } from './ports/files.ts';
@@ -15,6 +16,8 @@ export type WriteGlobalReportDeps = {
   // What is already in `kb/`, so a source this run did not touch is named rather than left out.
   readonly listSyncedSources: ListSyncedSources;
   readonly kbRoot: string;
+  // The files that would not move under the archive, still on disk. Absent, none are named.
+  readonly stuckFiles?: StuckFiles;
 };
 
 // One file for the whole run, against one `_sync-report.md` per source. Same basename, one level up:
@@ -52,7 +55,8 @@ export const createWriteGlobalReport =
     if (input.dryRun || input.ran.length === 0) return undefined;
     const path = GLOBAL_REPORT_PATH(deps.kbRoot);
     const stale = await staleSources(deps, input.ran);
-    const report = renderGlobalReport({ at: deps.clock.nowIso(), ran: input.ran.map(section), stale, stopped: input.stopped });
+    const stuck = deps.stuckFiles === undefined ? [] : await deps.stuckFiles();
+    const report = renderGlobalReport({ at: deps.clock.nowIso(), ran: input.ran.map(section), stale, stopped: input.stopped, stuck });
     // Left as it is when it would say the same, so its time is that of the last run that changed it.
     const held = await deps.files.readText(path);
     if (held.ok && sameReport(held.value, report)) return path;

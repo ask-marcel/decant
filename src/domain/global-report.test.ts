@@ -112,6 +112,20 @@ Nothing was left behind.
 `);
   });
 
+  // The sources have let these files go, so this is the one place that names them, after the sources
+  // and before those the run did not touch.
+  it('the files that would not move under the archive are named in a section of their own, with why', () => {
+    const stuck = [{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-14)' }];
+    const rendered = renderGlobalReport({ at: '2026-10-15T09:00:00Z', ran: [CLEAN], stale: [{ name: 'My mailbox', lastRun: '2026-10-01T08:00:00Z' }], stuck });
+
+    expect(rendered).toContain(
+      '## Could not be moved to the archive\n\nEach run tries to move these again before it starts.\n\n- SharePoint sites/Espace Contoso/Documents/Contrat.docx.md: write-failed: EBUSY (since 2026-10-14)\n'
+    );
+    expect(rendered.indexOf('## Espace Contoso')).toBeLessThan(rendered.indexOf('## Could not be moved'));
+    expect(rendered.indexOf('## Could not be moved')).toBeLessThan(rendered.indexOf('## Not rechecked'));
+    expect(renderGlobalReport({ at: '2026-10-15T09:00:00Z', ran: [CLEAN], stale: [], stuck: [] })).not.toContain('## Could not be moved');
+  });
+
   it('a run that stopped early says so, so a file listing two sources is not read as covering twenty', () => {
     expect(renderGlobalReport({ at: '2026-08-28T20:00:00Z', ran: [CLEAN], stale: [], stopped: 'enumerate: token expired' })).toBe(`# What did not reach the knowledge base
 
