@@ -476,6 +476,14 @@ describe('the names a thread already gave its files', () => {
     expect(recordOf(thrice.outcome)?.files).toEqual([`${second}.md`]);
   });
 
+  // Its card takes the name first, so the file after it of the same name takes the next one.
+  it('a file too large to fetch is never fetched, and keeps its name ahead of a file of that name after it', async () => {
+    const once = await run({ reader: { conversations: { [CONV]: [m1, m2] }, attachments: { m1: [tooLarge('att1')], m2: [budget('att2')] } } });
+
+    expect(once.reader.calls).not.toContain('attachmentBytes:att1:m1');
+    expect(recordOf(once.outcome)?.files).toEqual([second, `${second}.md`, `${ATTACHMENTS_STORE}/Budget.xlsx.md`]);
+  });
+
   // Three namesakes, the middle one gone: the third must keep its file, which a count of files alone
   // cannot tell from a rename.
   it('the third of three files of one name keeps its name when the message of the second goes', async () => {

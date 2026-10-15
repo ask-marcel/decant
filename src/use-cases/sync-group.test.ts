@@ -406,6 +406,28 @@ describe('a group thread the group no longer lists', () => {
     expect(Object.keys(stateAfter(files).threads)).toContain('AAQkAD-thread');
   });
 
+  it('threads the group no longer lists are put aside in the order of their ids, and a thread it still lists stays', async () => {
+    const filed = (id: string): ThreadRecord => ({ ...RECORD, folder: `2026-07-20-${id}`, file: `threads/2026-07-20-${id}/note.md` });
+    const state = ['zeta', 'alpha'].reduce(
+      (carried, id) => withGroupThread(carried, id, filed(id)),
+      withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', RECORD)
+    );
+    const notes = {
+      'kb/Group inboxes/Northwind Leadership Team/threads/2026-07-20-zeta/note.md': 'z',
+      'kb/Group inboxes/Northwind Leadership Team/threads/2026-07-20-alpha/note.md': 'a',
+    };
+    const swept = await run({ files: { texts: { [STATE_PATH]: serializeGroupState(state), ...notes } } });
+
+    expect(swept.notes.archived.map((entry) => entry.path)).toEqual(['threads/2026-07-20-alpha/note.md', 'threads/2026-07-20-zeta/note.md']);
+    expect(Object.keys(stateAfter(swept.files).threads)).toEqual(['AAQkAD-thread']);
+  });
+
+  it('a group with no thread at all and nothing on record logs no warning', async () => {
+    const { logger } = await run({ reader: { threads: { '0d3b-group': [] } } });
+
+    expect(logger.calls.filter((call) => call.event === 'group.listing-empty')).toStrictEqual([]);
+  });
+
   it('a dry run moves nothing aside', async () => {
     const { files } = await run({ files: { texts: { [STATE_PATH]: held, [NOTE]: 'note' } }, reader: { threads: { '0d3b-group': [thread({ id: 'other' })] } }, dryRun: true });
 
