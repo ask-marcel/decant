@@ -1,6 +1,6 @@
 import { contentHash } from '../domain/content-hash.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
-import { disambiguateSegment, fitSegment } from '../domain/kb-path.ts';
+import { disambiguateSegment, fitSegment, holdsIgnoringCase } from '../domain/kb-path.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
 import { carriesInlineImage } from '../domain/inline-image.ts';
 import { isOpaqueName } from '../domain/opaque-name.ts';
@@ -111,6 +111,19 @@ const INLINE_FOLDER = '_inline';
 // healing, where showing it wordlessly would be a silent loss no run ever repaired.
 const withText = (record: AttachmentRecord | undefined): AttachmentRecord | undefined => (record?.text === undefined ? undefined : record);
 
+// The first name for a file that no file of this thread holds and no file before it in this write
+// took, compared as it lands on disk: a name cut to fit a deep disk is not the name the sender gave,
+// and a second file of that name would be cut to the same one.
+const freeName = (place: FilePlace, filename: string, taken: ReadonlyArray<string>): string => {
+  const fitted = (name: string): string => fitSegment(`${place.here}/${ATTACHMENTS_FOLDER}`, name, place.pathBudget);
+  const tried: string[] = [];
+  for (;;) {
+    const candidate = uniqueName(filename, tried);
+    if (!holdsIgnoringCase(taken, fitted(candidate))) return fitted(candidate);
+    tried.push(candidate);
+  }
+};
+
 const placeAttachment = async (
   deps: FileDeps,
   place: FilePlace,
@@ -128,12 +141,16 @@ const placeAttachment = async (
   // recorded. A card for a file too large to pull, or of a kind nothing reads, is the only place
   // its arrival and the reason are written down, and the body needs a name to link at.
   const inline = isInlinePicture(attachment);
-  // Told apart before it is fitted: two names alike up to the cut are still told apart by their hash.
-  const unique = uniqueName(attachment.name, taken);
-  taken.push(unique);
-  const asName = fitSegment(`${place.here}/${ATTACHMENTS_FOLDER}`, unique, place.pathBudget);
-  if (attachment.size > place.maxBytes) return { asName, paths: [], skipped: { path: attachment.name, reason: tooLargeReason(place.maxBytes) } };
+  const asName = freeName(place, attachment.name, taken);
+  // A file the thread holds already keeps the name it was written under, which `taken` started with,
+  // and takes no second one: the file joining it is numbered as though both had come in one write.
+  const held = (hash: string): boolean => !inline && store[hash] !== undefined;
+  if (attachment.size > place.maxBytes) {
+    taken.push(asName);
+    return { asName, paths: [], skipped: { path: attachment.name, reason: tooLargeReason(place.maxBytes) } };
+  }
   const address = await addressOf(deps, messageId, attachment);
+  if (!address.ok || !held(address.value.hash)) taken.push(asName);
   if (!address.ok) return { asName, paths: [], failed: { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` } };
   const hash = address.value.hash;
   // Within this thread only. A signature riding on ten messages of one conversation is converted
@@ -202,7 +219,9 @@ export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: Rea
   // Pictures shown inside message bodies, which the whole mailbox shares, seeded with what earlier
   // threads stored so a signature logo is written once rather than once per conversation.
   const shared: Record<string, AttachmentRecord> = { ...place.stored };
-  const taken: string[] = [];
+  // The names the thread's own files hold, so a new file never takes one: a name that came free when
+  // its message went still holds that message's file until the run moves it aside.
+  const taken: string[] = Object.values(store).map((record) => record.name);
   const paths: string[] = [];
   const skipped: ReportEntry[] = [];
   const failed: ReportEntry[] = [];
