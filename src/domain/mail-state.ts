@@ -293,6 +293,13 @@ export const filesLeft = (before: ThreadRecord | undefined, after: ThreadRecord)
   return filesOf(before).filter((path) => !kept.has(path));
 };
 
+// A record that keeps listing files the write before held and this one did not write again: they stay
+// on disk, and a later write that reads everything tells what the thread no longer holds.
+export const stillHolding = (record: ThreadRecord, kept: ReadonlyArray<string>): ThreadRecord => ({
+  ...record,
+  files: [...new Set([...(record.files ?? []), ...kept])].toSorted(compareText),
+});
+
 // The two stores of a mailbox or a group inbox: the attachments by content, the linked documents by
 // item.
 export type FileStores = { readonly attachments: Readonly<Record<string, AttachmentRecord>>; readonly linked: Readonly<Record<string, LinkedRecord>> };
