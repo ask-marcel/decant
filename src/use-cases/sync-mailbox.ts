@@ -15,7 +15,6 @@ import {
   MAIL_FIELDS,
   abandonedThreads,
   emptyMailboxState,
-  filesLeft,
   filesOf,
   folderNames,
   marksChanged,
@@ -56,7 +55,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn } from './thread-folders.ts';
-import { NO_LONGER_HELD, NO_MESSAGE_LEFT, threadAside, threadFilesAside, withFilesAside } from './thread-aside.ts';
+import { NO_MESSAGE_LEFT, threadAside, writtenAgain } from './thread-aside.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { ReportEntry } from '../domain/report.ts';
@@ -483,9 +482,7 @@ const renderOne = async (
   if (rendered.value.kind === 'empty') return emptied(deps, state, threadId);
   // What the write before held and this one did not write again: a file of a message gone, or a name
   // an older version gave. The thread no longer holds it, and the kb keeps it under the archive.
-  const left = filesLeft(state.threads[threadId], rendered.value.thread.record);
-  const aside = await threadFilesAside(deps, mailboxRoot(deps.kbRoot), threadId, left, NO_LONGER_HELD);
-  return withFilesAside(owing(state, threadId, rendered.value.thread), left, aside);
+  return writtenAgain(deps, { root: mailboxRoot(deps.kbRoot), threadId }, state.threads[threadId], rendered.value.thread, (thread) => owing(state, threadId, thread));
 };
 
 // A thread whose messages are all gone. One written before goes under the archive whole and leaves

@@ -14,7 +14,7 @@ import {
 import type { GroupState } from '../domain/group-state.ts';
 import { threadRef } from '../domain/group-thread.ts';
 import type { GroupThread } from '../domain/group-thread.ts';
-import { abandonedThreads, filesLeft, filesOf, storesWithout } from '../domain/mail-state.ts';
+import { abandonedThreads, filesOf, storesWithout } from '../domain/mail-state.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { AttachmentRecord, LinkedRecord, RetryRecord, ThreadRecord } from '../domain/mail-state.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
@@ -32,7 +32,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn } from './thread-folders.ts';
-import { NO_LONGER_HELD, NO_LONGER_LISTED, NO_MESSAGE_LEFT, threadAside, threadFilesAside, withFilesAside } from './thread-aside.ts';
+import { NO_LONGER_LISTED, NO_MESSAGE_LEFT, threadAside, writtenAgain } from './thread-aside.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 
@@ -148,9 +148,7 @@ const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: Grou
   }
   if (rendered.value.kind === 'empty') return emptied(deps, state, place, thread.id, NO_MESSAGE_LEFT);
   // What the write before held and this one did not write again, put aside as the mailbox does.
-  const left = filesLeft(state.threads[thread.id], rendered.value.thread.record);
-  const aside = await threadFilesAside(deps, place.root, threadId, left, NO_LONGER_HELD);
-  return withFilesAside(owing(state, thread.id, rendered.value.thread), left, aside);
+  return writtenAgain(deps, { root: place.root, threadId }, state.threads[thread.id], rendered.value.thread, (done) => owing(state, thread.id, done));
 };
 
 const attemptsFor = (state: GroupState, threadId: string): number => (state.retry[threadId]?.attempts ?? 0) + 1;

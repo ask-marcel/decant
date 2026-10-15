@@ -302,6 +302,19 @@ describe('the files a group thread written again no longer holds', () => {
     expect(notes.archived).toEqual([{ path: `threads/${RECORD.folder}/_attachments/b.pdf.md`, reason: 'no longer in the thread' }]);
   });
 
+  it('a write that could not read every file puts nothing aside, and keeps listing what the thread held', async () => {
+    const { files, summary } = await run({
+      files: { texts: { [STATE_PATH]: held(), [A]: 'a', [B]: 'b' } },
+      reader: replied,
+      outcome: () => rendered({ record: { ...RECORD, files: [A] }, filesFailed: [{ path: 'b.pdf', reason: 'throttled: slow down' }] }),
+    });
+    const saved = JSON.parse(files.written.get(STATE_PATH) ?? '{}');
+
+    expect(files.moves).toStrictEqual([]);
+    expect(summary.archived).toBe(0);
+    expect(saved.threads['AAQkAD-thread'].files).toEqual([A, B]);
+  });
+
   it('the stored records of a file put aside leave the state', async () => {
     const stored = { name: 'b.pdf', paths: [B], primary: B, media: [] };
     const { files } = await run({

@@ -898,6 +898,33 @@ describe('the files a thread written again no longer holds', () => {
     expect(stateAfter(files).linked).toEqual({});
   });
 
+  // What a write could not read may be a file the thread still holds: a throttled download looks the
+  // same as a file of a message gone. The next write that reads everything decides.
+  it('a write that could not read every file puts nothing aside, and the next write that reads everything does', async () => {
+    const failing = (): RenderThreadOutcome => {
+      const written = writing([A]);
+      return written.kind === 'rendered' ? { ...written, thread: { ...written.thread, filesFailed: [{ path: 'b.pdf', reason: 'throttled: slow down' }] } } : written;
+    };
+    const first = await run({
+      files: { texts: { [STATE_PATH]: held(record({ files: [A, B] })), [A]: 'a', [B]: 'b' } },
+      reader: { folders: [folder()], pages },
+      outcome: failing,
+    });
+    const kept = stateAfter(first.files);
+
+    expect(first.files.moves).toStrictEqual([]);
+    expect(first.summary.archived).toBe(0);
+    expect((kept.threads['thread-1'] as ThreadRecord | undefined)?.files).toEqual([A, B]);
+
+    const second = await run({
+      files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '', [A]: 'a', [B]: 'b' } },
+      reader: { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'c2' }] },
+      outcome: () => writing([A]),
+    });
+
+    expect(second.files.moves.map((move) => move.from)).toEqual([B]);
+  });
+
   it('a file that will not move is logged by its thread, and the thread is still written', async () => {
     const { summary, logger, files } = await run({
       files: { texts: { [STATE_PATH]: held(record({ files: [A, B] })), [A]: 'a', [B]: 'b' }, failMoveWith: { kind: 'write-failed', path: B, message: 'locked' } },
