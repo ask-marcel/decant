@@ -79,9 +79,10 @@ export type RenderThreadInput = {
   readonly maxBytes: number;
   // Files already pulled from SharePoint by an earlier thread, so one link is fetched once.
   readonly linked: Readonly<Record<string, LinkedRecord>>;
-  // The attachment store as earlier threads left it, keyed by content address. Carried through and
-  // handed back so the index in `_meta` names every file the mailbox holds. Consulted before
-  // converting only for the files this thread already holds, since each thread keeps its own copy.
+  // The attachment store as earlier threads left it, keyed by content address. Consulted before
+  // converting for the files this thread already holds, since each thread keeps its own copy, and for
+  // the pictures the whole mailbox shares. The render hands back the records it used or added, which
+  // the run folds in by key, so the index in `_meta` names every file the mailbox holds.
   readonly attachments: Readonly<Record<string, AttachmentRecord>>;
   // The name of each mail folder by its id, so each message says where it sits. Absent for a group
   // inbox, which has no folders.

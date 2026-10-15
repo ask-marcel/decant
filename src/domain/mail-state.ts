@@ -289,11 +289,9 @@ export const threadsInFolders = (state: MailboxState, folderIds: ReadonlyArray<s
 // Every file the thread's folder held at its last write besides the note: the list that write kept,
 // or, for a thread written before the list was kept, its attachments. Only what is inside the thread's
 // own folder: a picture shown in a body sits in the store the whole mailbox shares, and an older write
-// could list one among the attachments.
-export const filesOf = (record: ThreadRecord): ReadonlyArray<string> => {
-  if (record.folder.length === 0) return [];
-  return (record.files ?? record.attachments).filter((path) => path.includes(`/threads/${record.folder}/`));
-};
+// could list one among the attachments. A thread filed nowhere holds none, since no path is in a
+// folder with no name.
+export const filesOf = (record: ThreadRecord): ReadonlyArray<string> => (record.files ?? record.attachments).filter((path) => path.includes(`/threads/${record.folder}/`));
 
 // What the write before held and this one did not write again: what the thread no longer holds.
 export const filesLeft = (before: ThreadRecord | undefined, after: ThreadRecord): ReadonlyArray<string> => {
