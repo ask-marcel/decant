@@ -287,6 +287,17 @@ describe('the line under each heading', () => {
     expect(lineOf({ categories: [], cc: [] }, {})).toBe('from jane@example.com · to valerie@example.com · flag open · importance high');
   });
 
+  // A draft sits in the thread beside the mail that went out, and reads like it: the line says plainly
+  // that nobody received it.
+  it('a draft says it was not sent, right after its folder, and a message sent says nothing of it', () => {
+    expect(lineOf({ isDraft: true })).toContain(' · folder To_Follow · not sent · flag open · ');
+    expect(lineOf({ isDraft: true, folderId: 'AAMk-gone', flag: '', importance: 'normal', categories: [] })).toBe(
+      'from jane@example.com · to valerie@example.com · cc li.wei@northwind.example · not sent'
+    );
+    expect(lineOf({ isDraft: false })).not.toContain('not sent');
+    expect(lineOf({ isDraft: undefined })).not.toContain('not sent');
+  });
+
   it('several people in one list are written one after the other', () => {
     const to = [
       { name: 'Valerie FAIRBANKS', address: 'valerie@example.com' },
