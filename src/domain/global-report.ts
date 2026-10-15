@@ -18,7 +18,8 @@ export type GlobalRun = {
   readonly stale: ReadonlyArray<StaleSource>;
   // Absent when the run finished; what it stopped at when it did not.
   readonly stopped?: string;
-  // The files that would not move under the archive, which no source names any more.
+  // The files that would not move under the archive, which no source names any more, or the ledger
+  // of them when it does not read.
   readonly stuck?: ReadonlyArray<ReportEntry>;
 };
 

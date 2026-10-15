@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unstuck } from './aside-ledger.ts';
+import { parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unreadableNote, unstuck } from './aside-ledger.ts';
 
 const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md';
 const TASK = 'kb/To Do/Tasks/2026-09-01/Book the venue.md';
@@ -10,7 +10,8 @@ describe('keeping the files that would not move under the archive', () => {
     const text = serializeAsideLedger(ledger);
 
     expect(Object.keys(JSON.parse(text))).toEqual([NOTE, TASK]);
-    expect(parseAsideLedger(JSON.parse(text))).toEqual(ledger);
+    expect(parseAsideLedger(JSON.parse(text))).toEqual({ ok: true, value: ledger });
+    expect(parseAsideLedger(JSON.parse(serializeAsideLedger({})))).toEqual({ ok: true, value: {} });
   });
 
   // The day it first would not move says how long it has waited; the cause is the latest one.
@@ -26,14 +27,21 @@ describe('keeping the files that would not move under the archive', () => {
     expect(Object.keys(unstuck(ledger, [NOTE]))).toEqual([TASK]);
   });
 
-  // The ledger lists moves a run still owes, and the next move that fails writes its file down again.
-  it('a ledger that is not one, or an entry that is not one, reads as nothing', () => {
-    expect(parseAsideLedger('nope')).toEqual({});
-    expect(parseAsideLedger([NOTE])).toEqual({});
-    expect(parseAsideLedger({ [NOTE]: 'stuck', [TASK]: { cause: 42, since: '2026-10-15T09:00:00Z' } })).toEqual({});
-    expect(parseAsideLedger(null)).toEqual({});
-    expect(parseAsideLedger([{ cause: 'write-failed: EBUSY', since: '2026-10-15T09:00:00Z' }])).toEqual({});
-    expect(parseAsideLedger({ [NOTE]: null, [TASK]: { cause: 'write-failed: EBUSY', since: 20261015 } })).toEqual({});
+  // No source records these files any more: a ledger read in part would let the rest go for good.
+  it('a ledger that is not one, or that holds an entry that is not one, does not read at all', () => {
+    const valid = { cause: 'write-failed: EBUSY', since: '2026-10-15T09:00:00Z' };
+    const notLedgers = ['nope', [NOTE], null, [valid]];
+    const badEntries = ['stuck', null, { cause: 42, since: valid.since }, { cause: valid.cause, since: 20261015 }];
+
+    expect(notLedgers.map((raw) => parseAsideLedger(raw))).toEqual(notLedgers.map(() => ({ ok: false, error: 'not a ledger' })));
+    expect(badEntries.map((entry) => parseAsideLedger({ [NOTE]: valid, [TASK]: entry }))).toEqual(badEntries.map(() => ({ ok: false, error: 'an entry is not one' })));
+  });
+
+  it('a ledger that does not read is named in the report in place of its files, with why', () => {
+    expect(unreadableNote('invalid-json')).toEqual({
+      path: '.sync-aside.json',
+      reason: 'could not be read (invalid-json): no run moves the files it lists, or adds to it, until it is repaired or deleted',
+    });
   });
 
   it('the report names each file as the knowledge base does, with why it would not move and since when', () => {
