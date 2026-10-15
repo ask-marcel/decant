@@ -499,6 +499,31 @@ describe('the names a thread already gave its files', () => {
     expect(recordOf(thrice.outcome)?.files).toEqual([`${third}.md`, first, `${first}.md`]);
   });
 
+  // Two messages can carry one RFC id, a draft's file can be replaced: a name stays with the content it
+  // was given to, and a different content takes a name of its own rather than writing over it.
+  it('two messages with one RFC id carrying different files of one name keep both', async () => {
+    const one = message({ id: 'm1', internetMessageId: '<same@example.com>', hasAttachments: true });
+    const two = message({ id: 'm2', internetMessageId: '<same@example.com>', received: '2026-05-13T10:00:00Z', hasAttachments: true });
+    const { outcome } = await run({ reader: { conversations: { [CONV]: [one, two] }, attachments: { m1: [budget('att1', 'r.pdf')], m2: [budget('att2', 'r.pdf')] } } });
+
+    expect(recordOf(outcome)?.attachments).toEqual([
+      `${ATTACHMENTS_STORE}/r.pdf`,
+      `${ATTACHMENTS_STORE}/r.pdf.md`,
+      `${ATTACHMENTS_STORE}/r-2.pdf`,
+      `${ATTACHMENTS_STORE}/r-2.pdf.md`,
+    ]);
+  });
+
+  it('a file replaced under its own name in a draft gets a name of its own, and the one before is no longer written', async () => {
+    const draft = message({ id: 'm1', internetMessageId: '<draft@example.com>', isDraft: true, hasAttachments: true });
+    const once = await run({ reader: { conversations: { [CONV]: [draft] }, attachments: { m1: [budget('att1', 'r.pdf')] } } });
+
+    const twice = await again(once, { conversations: { [CONV]: [draft] }, attachments: { m1: [budget('att9', 'r.pdf')] } });
+
+    expect(recordOf(twice.outcome)?.attachments).toEqual([`${ATTACHMENTS_STORE}/r-2.pdf`, `${ATTACHMENTS_STORE}/r-2.pdf.md`]);
+    expect(twice.files.written.get(`${ATTACHMENTS_STORE}/r.pdf.md`)).toContain('converted att1');
+  });
+
   // Graph gives a mail a new id when it moves to another folder, where its RFC id stays.
   it('a file keeps its name when its message moves to another folder', async () => {
     const one = message({ id: 'm1', internetMessageId: '<one@example.com>', hasAttachments: true });
