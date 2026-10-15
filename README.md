@@ -177,7 +177,7 @@ A dry run keeps nothing. The change does not move a thread folder that is alread
 kb/
   .decant.json                      how far back the runs reach (a day, or all), and the time zone
   _sync-report.md                   what the last run left behind, every source in one file
-  .sync-aside.json                  each file that did not move to _archive/, and why (see Re-running)
+  .sync-aside.json                  files let go that did not move to _archive/ (see Re-running)
   _archive/2026-10-13/...           the earlier copy of each file, under the day of the run that
                                     moved it: deleted at the source, renamed, moved, or replaced by
                                     an edit (a second copy of one path that day goes under 2026-10-13-2/)
@@ -1140,17 +1140,23 @@ converts a file that you rename or move in SharePoint again at its new path. The
 that file, the files of a deleted file and the earlier version of an edited file go to
 `kb/_archive/<day of the run>/`.
 
-If decant cannot move a file to `_archive/`, decant writes the path of the file and the cause in
-`kb/.sync-aside.json`. For example, a program on Windows can hold the file open. At the start of
-each run, before it reads a source, decant tries to move each file in that list again. The section
-`## Could not be moved to the archive` of `kb/_sync-report.md` names each file that stays in the
-list. It gives the cause and the day of the first failure. A dry run does not move these files.
+If no source records a file and decant cannot move it to `_archive/`, decant writes its path and the
+cause in `kb/.sync-aside.json`. For example, a program on Windows can hold the file of an item open
+after you delete the item at the source. At the start of each run, before it reads a source, decant
+tries to move each file in that list again. When decant writes a new file at the path of a file in
+the list, it removes that path from the list. A dry run does not move these files.
 
-When an edit must go to the path of such a file, decant does not write the edit. A write at that
-path replaces the earlier version. The report of the source names the item as failed, and the next
+The section `## Could not be moved to the archive` of `kb/_sync-report.md` names each file that
+stays in the list. It gives the cause and the day of the first failure, in the time zone of the kb.
+If decant cannot read `kb/.sync-aside.json`, it does not change the file, and the section names the
+file and the cause. Then repair the file, or delete it to start a new list.
+
+When an edit must go to the path of its earlier version, and that version does not move, decant
+does not write the edit. A write at that path replaces the earlier version. The source keeps the
+earlier version and its record, and the report of the source names the item as failed. The next
 run tries the item again, three runs in all. This applies to documents, To Do tasks and Teams
-posts. When the edit goes to a new path, decant writes the edit. The path of the earlier file stays
-in the list until the file moves.
+posts. When the edit goes to a new path, decant writes the edit, and the earlier file goes into the
+list.
 
 Microsoft Graph can refuse an old cursor (HTTP 410). Then decant reads the source again from the
 start: a mail folder, a library or the calendar. For a library, decant then moves to `_archive/` each
