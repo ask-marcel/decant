@@ -115,47 +115,62 @@ const referenceOf = (link: LinkedFile, message: MailMessage, asName: string, pul
 // The name a document was given already, in this write or the one before, if it was.
 const nameFor = (key: string, names: Readonly<Record<string, string>>, recorded: Readonly<Record<string, string>>): string | undefined => names[key] ?? recorded[key];
 
+// What following the links of one write works from, and adds to as it goes.
+type Following = {
+  readonly here: string;
+  readonly maxBytes: number;
+  // The name each document was written under before, and every name the folder holds on disk.
+  readonly recorded: Readonly<Record<string, string>>;
+  readonly held: ReadonlyArray<string>;
+  readonly linked: Record<string, LinkedRecord>;
+  readonly names: Record<string, string>;
+  readonly paths: string[];
+  readonly skipped: ReportEntry[];
+  readonly failed: ReportEntry[];
+  readonly referenced: MessageLink[];
+};
+
+// One document a message pointed at.
+const followLink = async (deps: LinkDeps, following: Following, message: MailMessage, link: LinkedFile): Promise<void> => {
+  const key = `${link.driveId}:${link.itemId}`;
+  const asName = nameFor(key, following.names, following.recorded) ?? uniqueName(link.name, [...following.held, ...Object.values(following.names)]);
+  following.names[key] = asName;
+  const pulled = await pulledOnce(deps, following.here, following.maxBytes, link, asName, following.linked[key]);
+  if (pulled.skipped !== undefined) following.skipped.push(pulled.skipped);
+  if (pulled.failed !== undefined) following.failed.push(pulled.failed);
+  // Recorded whether or not it came: a card for a document nobody could pull is the only place the
+  // thread's dependence on it is written down.
+  following.referenced.push(referenceOf(link, message, asName, pulled));
+  if (pulled.record === undefined) return;
+  following.linked[key] = pulled.record;
+  addAll(following.paths, pulled.record.paths);
+};
+
+const followMessage = async (deps: LinkDeps, following: Following, part: ThreadPart): Promise<void> => {
+  if (!POINTS_SOMEWHERE.test(part.body)) return;
+  const found = await deps.reader.sharepointLinks(part.message.id);
+  // Named as failed, as a message whose attachments cannot be listed is: the thread is written again
+  // on the next run, and what the message links to is not taken for gone in the meantime.
+  if (!found.ok) {
+    following.failed.push({ path: `message ${part.message.id}`, reason: `could not list what it links to: ${found.error.message}` });
+    return;
+  }
+  for (const link of found.value) await followLink(deps, following, part.message, link);
+};
+
 export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number, parts: ReadonlyArray<ThreadPart>, before: LinksHeld): Promise<LinkedTally> => {
   // Within this thread only, the way its attachments are. The same weekly report linked from thirty
   // mails across ten threads is pulled once per thread rather than once for the mailbox: a folder
   // that has to reach into another thread to be read is not self-contained, and the document is the
   // cheap half of what a thread costs.
-  const linked: Record<string, LinkedRecord> = {};
   // One name per document, not per mention: a deck cited in four replies is one file. A document keeps
   // the name it was written under before; a new one avoids every name handed out, recorded, or held
   // on disk, so it never takes the name of a document whose message went.
-  const names: Record<string, string> = {};
   const recorded = before.links ?? {};
   const held = [...Object.values(recorded), ...namesHeldIn(`${here}/${LINKED_FOLDER}`, before.held)];
-  const paths: string[] = [];
-  const skipped: ReportEntry[] = [];
-  const failed: ReportEntry[] = [];
-  const referenced: MessageLink[] = [];
-  for (const part of parts) {
-    if (!POINTS_SOMEWHERE.test(part.body)) continue;
-    const message = part.message;
-    const found = await deps.reader.sharepointLinks(message.id);
-    // Named as failed, as a message whose attachments cannot be listed is: the thread is written again
-    // on the next run, and what the message links to is not taken for gone in the meantime.
-    if (!found.ok) {
-      failed.push({ path: `message ${message.id}`, reason: `could not list what it links to: ${found.error.message}` });
-      continue;
-    }
-    for (const link of found.value) {
-      const key = `${link.driveId}:${link.itemId}`;
-      const asName = nameFor(key, names, recorded) ?? uniqueName(link.name, [...held, ...Object.values(names)]);
-      names[key] = asName;
-      const pulled = await pulledOnce(deps, here, maxBytes, link, asName, linked[key]);
-      if (pulled.skipped !== undefined) skipped.push(pulled.skipped);
-      if (pulled.failed !== undefined) failed.push(pulled.failed);
-      // Recorded whether or not it came: a card for a document nobody could pull is the only place
-      // the thread's dependence on it is written down.
-      referenced.push(referenceOf(link, message, asName, pulled));
-      if (pulled.record === undefined) continue;
-      linked[key] = pulled.record;
-      addAll(paths, pulled.record.paths);
-    }
-  }
+  const following: Following = { here, maxBytes, recorded, held, linked: {}, names: {}, paths: [], skipped: [], failed: [], referenced: [] };
+  for (const part of parts) await followMessage(deps, following, part);
+  const { paths, linked, referenced, skipped, failed, names } = following;
   return { paths, linked, referenced, skipped, failed, names };
 };
 
