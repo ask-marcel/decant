@@ -539,6 +539,18 @@ describe('syncing the calendar', () => {
     expect(done.ok).toBe(true);
   });
 
+  it('a cursor Graph refuses for a while ends the run without a read from the start', async () => {
+    const cursor = 'https://graph/delta?token=1';
+
+    const done = await run({
+      reader: { failCursors: { [cursor]: { kind: 'transient', message: 'Graph is busy' } } },
+      files: { texts: { [STATE_PATH]: serializeCalendarState(withCursor(emptyCalendarState(), cursor)) } },
+    });
+
+    expect(done.error).toEqual({ step: 'eventsDelta', cause: 'transient', message: 'Graph is busy' });
+    expect(done.reader.calls).not.toContain('eventsDelta:fresh');
+  });
+
   it('a cursor Graph refuses for another reason ends the run naming the step', async () => {
     const cursor = 'https://graph/delta?token=1';
 
