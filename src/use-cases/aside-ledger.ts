@@ -3,7 +3,8 @@ import type { AsideLedger, StuckFile } from '../domain/aside-ledger.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import type { Clock } from './ports/clock.ts';
-import type { Files } from './ports/files.ts';
+import type { Result } from '../domain/result.ts';
+import type { Files, FilesError } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import { setAside } from './put-aside.ts';
 import type { NotPutAside, WriteDown } from './put-aside.ts';
@@ -14,9 +15,10 @@ export type RetryAside = () => Promise<void>;
 
 export type StuckFiles = () => Promise<ReadonlyArray<ReportEntry>>;
 
-// What a run gets from the ledger: where its sources write down the files they let go that would not
-// move under the archive, the retry at the start of the run, and what the report of the run names.
-export type AsideLedgerRun = { readonly writeDown: WriteDown; readonly retry: RetryAside; readonly stuck: StuckFiles };
+// What a run gets from the ledger: the files it writes through, which keep the ledger in step with
+// what lands on disk, where its sources write down the files they let go that would not move under the
+// archive, the retry at the start of the run, and what the report of the run names.
+export type AsideLedgerRun = { readonly files: Files; readonly writeDown: WriteDown; readonly retry: RetryAside; readonly stuck: StuckFiles };
 
 const ledgerPath = (kbRoot: string): string => `${kbRoot}/${ASIDE_LEDGER_NAME}`;
 
@@ -65,9 +67,29 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
     await saving;
   };
 
+  // A path a write or a move lands at holds a file of this run: the file the ledger meant there is
+  // gone, written over, and the next run must not move the new one away. Kept for the whole run, so a
+  // file let go after another landed at its path is not written down either.
+  const landedAt = new Set<string>();
+  const landed = async (path: string): Promise<void> => {
+    landedAt.add(path);
+    await loaded();
+    if (held[path] !== undefined) await change((ledger) => unstuck(ledger, [path]));
+  };
+  const after = async <T>(result: Result<T, FilesError>, path: string): Promise<Result<T, FilesError>> => {
+    if (result.ok) await landed(path);
+    return result;
+  };
+  const through: Files = {
+    ...files,
+    writeText: async (path, content) => after(await files.writeText(path, content), path),
+    writeBytes: async (path, bytes) => after(await files.writeBytes(path, bytes), path),
+    move: async (from, to) => after(await files.move(from, to), to),
+  };
+
   // A file handed on that is gone already owes nothing.
   const writeDown: WriteDown = async (missed) => {
-    const present = await onDisk(files, missed);
+    const present = (await onDisk(files, missed)).filter((entry) => !landedAt.has(entry.path));
     if (present.length === 0) return;
     const at = deps.clock.nowIso();
     await change((ledger) => present.reduce((carried, entry) => stuckAt(carried, entry.path, causeOf(entry), at), ledger));
@@ -97,5 +119,5 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
     return stuckNotes(await onDisk<StuckFile>(files, Object.values(held)), deps.kbRoot);
   };
 
-  return { writeDown, retry, stuck };
+  return { files: through, writeDown, retry, stuck };
 };
