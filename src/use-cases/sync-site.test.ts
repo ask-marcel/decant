@@ -1670,6 +1670,43 @@ describe('a document converted without a part of it', () => {
     expect(second.files.written.get(NOTE)).toContain('converted 01ABC');
   });
 
+  const owing = (outputs: ReadonlyArray<string>, retried = item()): string =>
+    serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      layout: 2,
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs, modified: '2026-05-12T09:31:00Z' } },
+          retry: { '01ABC': { item: retried, attempts: 1, reason: LOST } },
+          folders: {},
+        },
+      },
+    });
+
+  it('a retry of the version on record that writes fewer files puts the others aside', async () => {
+    const MEDIA = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.media/image-01.png';
+
+    const done = await run({
+      files: { texts: { [STATE_PATH]: owing([NOTE, MEDIA]), [NOTE]: 'the contract', [MEDIA]: 'a picture' } },
+      reader: { ...NOTHING_CHANGED, failImages: BUSY },
+    });
+
+    expect(done.files.moves).toEqual([{ from: MEDIA, to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.media/image-01.png' }]);
+    expect(stateAfter(done.files).drives['b!one']?.items['01ABC']?.outputs).toEqual([NOTE]);
+  });
+
+  it('a retry of the version on record that is now left out puts its files aside, and says where they went', async () => {
+    const done = await run({ files: { texts: { [STATE_PATH]: owing([NOTE], item({ size: 60 * 1024 * 1024 })), [NOTE]: 'the contract' } }, reader: NOTHING_CHANGED });
+
+    expect(done.files.moves).toEqual([{ from: NOTE, to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md' }]);
+    expect(done.notes?.skipped).toEqual([{ path: 'Projets/Contrat.docx', reason: 'larger than the 50 MB cap. Its earlier version is in _archive/2026-07-23/.' }]);
+  });
+
   // A whole read lists the document as it was, and the retry it is owed stays with it.
   it('a document still owed its pictures is converted again when a whole read lists it unchanged', async () => {
     const owed = serializeSiteState({

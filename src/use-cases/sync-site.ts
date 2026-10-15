@@ -512,16 +512,19 @@ const leftOutReason = (kbRoot: string, reason: string, aside: SetAside): string 
 
 // A document converted again at the version already recorded, to bring back a part that would not
 // read, writes over its own files: a copy of the same version under the archive for each try would
-// keep nothing worth keeping.
-const asideBefore = async (deps: SyncSiteDeps, driveState: DriveState, item: DriveItem): Promise<SetAside> => {
+// keep nothing worth keeping. What such a conversion no longer writes goes aside after it, so no file
+// stays behind without a record.
+const atRecordedVersion = (driveState: DriveState, item: DriveItem): boolean => {
   const held = driveState.items[item.id];
-  return held !== undefined && sameVersion(item, { cTag: held.cTag, lastModified: held.modified }) && held.path === item.path
-    ? NOTHING_ASIDE
-    : setAsideBefore(deps, ownOutputs(driveState, item.id));
+  return held !== undefined && sameVersion(item, { cTag: held.cTag, lastModified: held.modified }) && held.path === item.path;
 };
 
+const leftBehind = (driveState: DriveState, itemId: string, outputs: ReadonlyArray<string>): ReadonlyArray<string> =>
+  ownOutputs(driveState, itemId).filter((output) => !outputs.includes(output));
+
 const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, driveState: DriveState, item: DriveItem): Promise<WorkOutcome> => {
-  const aside = await asideBefore(deps, driveState, item);
+  const again = atRecordedVersion(driveState, item);
+  const aside = again ? NOTHING_ASIDE : await setAsideBefore(deps, ownOutputs(driveState, item.id));
   const outcome = await deps.convertFile({
     item,
     driveId: drive.id,
@@ -540,6 +543,7 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
     return { update: (manifest) => rememberFailure(manifest, entry), counted: { failed: 1 }, notes };
   }
   const outputs = outcome.kind === 'converted' ? outcome.outputs : [];
+  const moved = again ? await setAsideBefore(deps, leftBehind(driveState, item.id, outputs)) : aside;
   // A conversion, and a decision to leave the file alone, both settle what an earlier failure was
   // waiting on: the ledger entry goes with them.
   const recorded = { path: item.path, cTag: item.cTag, outputs, modified: item.lastModified, modifiedBy: item.modifiedBy };
@@ -548,7 +552,7 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   return {
     update,
     counted: { skipped: 1 },
-    notes: { skipped: [{ path: item.path, reason: leftOutReason(deps.kbRoot, skipReason(outcome.reason, input.maxBytes, item.name), aside) }] },
+    notes: { skipped: [{ path: item.path, reason: leftOutReason(deps.kbRoot, skipReason(outcome.reason, input.maxBytes, item.name), moved) }] },
   };
 };
 
