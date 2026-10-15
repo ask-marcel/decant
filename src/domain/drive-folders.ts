@@ -36,3 +36,12 @@ export const sweptFolders = (known: Folders, items: ReadonlyArray<DriveItem>): S
   const now = [...reported.values()].filter((item) => item.kind === 'folder').map((item) => [item.id, item.path] as const);
   return { folders: Object.fromEntries([...kept, ...now].sort(([left], [right]) => compareText(left, right))), moves };
 };
+
+// The documents a moved folder took with it, as ids: each one recorded under a path a folder left,
+// that the sweep did not report itself. Graph moved them with the folder and said nothing of them.
+export const underMoved = (paths: Readonly<Record<string, string>>, reported: ReadonlyArray<DriveItem>, moves: ReadonlyArray<FolderMove>): ReadonlyArray<string> => {
+  const seen = new Set(reported.map((item) => item.id));
+  return Object.entries(paths)
+    .filter(([id, path]) => !seen.has(id) && moves.some((move) => within(path, move.from)))
+    .map(([id]) => id);
+};

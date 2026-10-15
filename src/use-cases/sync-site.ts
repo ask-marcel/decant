@@ -1,7 +1,9 @@
 import { addressKindOf } from '../domain/address-kind.ts';
 import { INDEX_FILE } from '../domain/index-page.ts';
 import { libraryIndexPage } from '../domain/library-index.ts';
-import { sweptFolders } from '../domain/drive-folders.ts';
+import { sweptFolders, underMoved } from '../domain/drive-folders.ts';
+import type { FolderMove } from '../domain/drive-folders.ts';
+import { goneItem } from '../domain/drive-item.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { categoryFolderOf } from '../domain/kb-category.ts';
 import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
@@ -313,14 +315,19 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
   const swept = await sweepFor(deps.reader, drive.id, known, input.since);
   if (!swept.ok) return { ok: false, error: { step: 'enumerate', cause: swept.error.kind, message: swept.error.message } };
   deps.logger.info('sync.enumerated', { driveId: drive.id, items: swept.value.items.length, skipped: swept.value.skipped });
+  const folders = sweptFolders(known.folders ?? {}, swept.value.items);
+  const followed = await followMoves(deps.reader, { driveId: drive.id, concurrency: input.concurrency }, known, swept.value.items, folders.moves);
+  if (!followed.ok) return { ok: false, error: { step: 'enumerate', cause: followed.error.kind, message: followed.error.message } };
+  if (folders.moves.length > 0) deps.logger.info('sync.folders-moved', { driveId: drive.id, folders: folders.moves.length, documents: followed.value.length });
+  const items = [...swept.value.items, ...followed.value];
   const queued = {
     ...known,
     name: drive.name,
     deltaLink: swept.value.deltaLink,
     since: input.since,
-    pending: buildWorklist(swept.value.items, known.items, known.retry, input.since),
-    retry: forgetSwept(known.retry, swept.value.items),
-    folders: sweptFolders(known.folders ?? {}, swept.value.items).folders,
+    pending: buildWorklist(items, known.items, known.retry, input.since),
+    retry: forgetSwept(known.retry, items),
+    folders: folders.folders,
   };
   const next = withDrive(state, drive.id, queued);
   const saved = await save(deps.files, statePath, next, input.dryRun);
@@ -341,6 +348,35 @@ const sweepFor = async (reader: DriveReader, driveId: string, known: DriveState,
   const whole = await sweepDrive(reader, driveId, undefined);
   if (!whole.ok) return whole;
   return ok({ ...whole.value, items: latestById([...drained.value.items, ...whole.value.items]), skipped: drained.value.skipped + whole.value.skipped });
+};
+
+// Where each document recorded, or waiting on a retry, was last known to be.
+const recordedPaths = (known: DriveState): Readonly<Record<string, string>> => ({
+  ...Object.fromEntries(Object.entries(known.retry).map(([id, entry]) => [id, entry.item.path])),
+  ...Object.fromEntries(Object.entries(known.items).map(([id, entry]) => [id, entry.path])),
+});
+
+// The documents a moved folder took with it: Graph reports the folder alone, so each document recorded
+// under the path it left is read again by id, a few at a time. One the source no longer has is gone.
+// Any other failure stops the library before its cursor moves, so the next run reads the same
+// changes, the moved folder with them, and looks again.
+const followMoves = async (
+  reader: DriveReader,
+  where: { readonly driveId: string; readonly concurrency: number },
+  known: DriveState,
+  swept: ReadonlyArray<DriveItem>,
+  moves: ReadonlyArray<FolderMove>
+): Promise<Result<ReadonlyArray<DriveItem>, DriveReaderError>> => {
+  const ids = underMoved(recordedPaths(known), swept, moves);
+  const found: DriveItem[] = [];
+  for (let at = 0; at < ids.length; at += where.concurrency) {
+    const read = await Promise.all(ids.slice(at, at + where.concurrency).map(async (itemId) => ({ itemId, outcome: await reader.item({ driveId: where.driveId, itemId }) })));
+    for (const { itemId, outcome } of read) {
+      if (!outcome.ok && outcome.error.kind !== 'permanent') return outcome;
+      found.push(outcome.ok ? outcome.value : goneItem(itemId));
+    }
+  }
+  return ok(found);
 };
 
 // What the moving counter names for each item: the path it sits at, or the id of one being archived.

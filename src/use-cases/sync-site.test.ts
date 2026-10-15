@@ -1302,9 +1302,10 @@ describe('following the folders of a library', () => {
     });
 
   it('a library read for the first time records each of its folders by id', async () => {
-    const { files } = await run({ reader: { pages: [{ items: [folder('01F', 'Projets'), item()], skipped: 0, deltaLink: 'cursor-1' }] } });
+    const { files, logger } = await run({ reader: { pages: [{ items: [folder('01F', 'Projets'), item()], skipped: 0, deltaLink: 'cursor-1' }] } });
 
     expect(libraryAfter(files)?.folders).toEqual({ '01F': 'Projets' });
+    expect(logger.calls.some((call) => call.event === 'sync.folders-moved')).toBe(false);
   });
 
   // A library filed before its folders were kept holds documents whose folders were never reported.
@@ -1323,5 +1324,91 @@ describe('following the folders of a library', () => {
     expect(first.summary.converted).toBe(0);
     expect(libraryAfter(first.files)).toMatchObject({ deltaLink: 'cursor-3', folders: { '01F': 'Projets' } });
     expect(reads(second.reader)).toEqual(['deltaFrom:cursor-3']);
+  });
+
+  const BEFORE = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
+  const MOVED = item({ path: 'Contrats 2026/Contrat.docx', webUrl: 'https://tenant.sharepoint.com/sites/X/Contrats 2026/Contrat.docx' });
+
+  // Graph reports the renamed folder and nothing under it. The documents recorded under the path it
+  // left are read again by id, and each one is converted at the place it has now.
+  it('a folder renamed at the source brings its documents along, each read again by id and converted at its new place', async () => {
+    const { summary, files, reader, logger } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets' } }), [BEFORE]: 'the contract' } },
+      reader: { pages: [{ items: [folder('01F', 'Contrats 2026')], skipped: 0, deltaLink: 'cursor-2' }], items: { '01ABC': MOVED } },
+    });
+
+    expect(reader.calls).toContain('item:01ABC');
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'sync.folders-moved', meta: { driveId: 'b!one', folders: 1, documents: 1 } });
+    expect(summary).toMatchObject({ converted: 1, archived: 0, failed: 0 });
+    expect(files.written.get('kb/SharePoint sites/Espace Contoso/Documents/Contrats 2026/Contrat.docx.md')).toContain('path: Contrats 2026/Contrat.docx');
+    expect(files.written.has(BEFORE)).toBe(false);
+    expect(libraryAfter(files)?.folders).toEqual({ '01F': 'Contrats 2026' });
+    expect(libraryAfter(files)?.items['01ABC']?.path).toBe('Contrats 2026/Contrat.docx');
+  });
+
+  it('a document the sweep reports itself is not read again, and one outside the moved folder stays as it is', async () => {
+    const elsewhere = { path: 'Budget/Plan.docx', cTag: 'c1', outputs: ['kb/SharePoint sites/Espace Contoso/Documents/Budget/Plan.docx.md'] };
+    const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01PLAN': elsewhere };
+
+    const { summary, reader } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets', '01G': 'Budget' }, items }) } },
+      reader: { pages: [{ items: [folder('01F', 'Contrats 2026'), MOVED], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(reader.calls.filter((call) => call.startsWith('item:'))).toStrictEqual([]);
+    expect(summary.converted).toBe(1);
+  });
+
+  it('a document left waiting on a retry under a moved folder is read again by id as well', async () => {
+    const retry = { '01ABC': { item: item(), attempts: 1, reason: 'transient: Graph is busy' } };
+
+    const { reader, files } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets' }, items: {}, retry }) } },
+      reader: { pages: [{ items: [folder('01F', 'Contrats 2026')], skipped: 0, deltaLink: 'cursor-2' }], items: { '01ABC': MOVED } },
+    });
+
+    expect(reader.calls).toContain('item:01ABC');
+    expect(libraryAfter(files)?.items['01ABC']?.path).toBe('Contrats 2026/Contrat.docx');
+  });
+
+  it('a document under a moved folder that the source no longer has is put aside', async () => {
+    const { summary, notes } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets' } }), [BEFORE]: 'the contract' } },
+      reader: { pages: [{ items: [folder('01F', 'Contrats 2026')], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(summary.archived).toBe(1);
+    expect(notes?.archived).toEqual([{ path: 'Projets/Contrat.docx', reason: 'no longer at the source' }]);
+  });
+
+  // The cursor stays where it was, so the next run reads the same changes, the moved folder with them.
+  it('a document under a moved folder that cannot be read for now stops the library, keeping the state it had', async () => {
+    const before = recorded({ folders: { '01F': 'Projets' } });
+
+    const { ok, files } = await run({
+      files: { texts: { [STATE_PATH]: before } },
+      reader: {
+        pages: [{ items: [folder('01F', 'Contrats 2026')], skipped: 0, deltaLink: 'cursor-2' }],
+        items: { '01ABC': MOVED },
+        failItemReads: { '01ABC': { kind: 'transient', message: 'Graph is busy' } },
+      },
+    });
+
+    expect(ok).toBe(false);
+    expect(files.written.get(STATE_PATH)).toBe(before);
+  });
+
+  it('each document under a moved folder is read again once, also when several are read at a time', async () => {
+    const items = Object.fromEntries(['a', 'b', 'c'].map((id) => [id, { path: `Projets/${id}.docx`, cTag: 'c1', outputs: [`kb/x/${id}.docx.md`] }]));
+    const moved = Object.fromEntries(['a', 'b', 'c'].map((id) => [id, item({ id, name: `${id}.docx`, path: `Contrats 2026/${id}.docx` })]));
+
+    const { reader, summary } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets' }, items }) } },
+      reader: { pages: [{ items: [folder('01F', 'Contrats 2026')], skipped: 0, deltaLink: 'cursor-2' }], items: moved },
+      concurrency: 2,
+    });
+
+    expect(reader.calls.filter((call) => call.startsWith('item:'))).toEqual(['item:a', 'item:b', 'item:c']);
+    expect(summary.converted).toBe(3);
   });
 });

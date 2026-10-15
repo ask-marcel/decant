@@ -88,6 +88,10 @@ export const parseItem = (raw: unknown): DriveItem | undefined => {
   };
 };
 
+// A document a run looked for by id and the source no longer has: as good as one a sweep reports
+// deleted, which is all the sync needs to put its files aside.
+export const goneItem = (id: string): DriveItem => ({ id, name: '', kind: 'deleted', size: 0, path: '', lastModified: '', cTag: '', webUrl: '' });
+
 export const parseDriveDelta = (raw: unknown): Result<DriveDeltaPage, DriveDeltaError> => {
   if (!isRecord(raw) || !Array.isArray(raw['value'])) return err({ kind: 'malformed', message: 'delta response has no value array' });
   const parsed = raw['value'].map(parseItem);
