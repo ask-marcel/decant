@@ -405,6 +405,18 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     expect(stateAfter(files).drives['b!one']?.items['01B']?.outputs).toEqual([A_MD]);
   });
 
+  // Graph can name one item twice in a delta, and says to use the last one.
+  it('a document a delta lists twice is converted once, as it was listed last', async () => {
+    const first = item({ cTag: 'c1' });
+    const last = item({ cTag: 'c2', lastModified: '2026-05-13T09:31:00Z' });
+
+    const { summary, files, reader } = await run({ reader: { pages: [{ items: [first, last], skipped: 0, deltaLink: 'cursor-1' }] } });
+
+    expect(summary.converted).toBe(1);
+    expect(reader.calls.filter((call) => call.startsWith('markdown:'))).toHaveLength(1);
+    expect(stateAfter(files).drives['b!one']?.items['01ABC']?.cTag).toBe('c2');
+  });
+
   it('a document deleted in SharePoint has its files put aside and is forgotten', async () => {
     const known = serializeSiteState({
       version: 1,

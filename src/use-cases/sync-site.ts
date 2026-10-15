@@ -377,9 +377,10 @@ const sweepFor = async (deps: SyncSiteDeps, driveId: string, known: DriveState, 
 };
 
 // What the run decides on: the sweep, the documents a moved folder took with it, and, after a read
-// that listed the library whole, each recorded document it did not list, as one deleted.
+// that listed the library whole, each recorded document it did not list, as one deleted. Graph can
+// name one item twice in a delta, and says to use the last one: one decision for each document.
 const listedItems = (known: DriveState, swept: Listing, followed: ReadonlyArray<DriveItem>): ReadonlyArray<DriveItem> => {
-  const listed = [...swept.items, ...followed];
+  const listed = latestById([...swept.items, ...followed]);
   return swept.complete ? [...listed, ...goneFromListing(listed, known.items, known.retry)] : listed;
 };
 
