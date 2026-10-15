@@ -66,6 +66,9 @@ export const run = async (
     files?: FilesFakeSeed;
     conversationIds?: string[];
     folder?: string;
+    // The note's path as the thread record holds it, so a test can write a thread again the way the
+    // sync does.
+    file?: string;
     linked?: Record<string, { paths: string[] }>;
     attachments?: Record<string, AttachmentRecord>;
     ocr?: OcrSeed;
@@ -111,6 +114,7 @@ export const run = async (
     conversationIds: seeds.conversationIds ?? [CONV],
     root: ROOT,
     folder: seeds.folder ?? '',
+    file: seeds.file,
     maxBytes: 50 * 1024 * 1024,
     linked: seeds.linked ?? {},
     attachments: seeds.attachments ?? {},

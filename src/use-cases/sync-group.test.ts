@@ -154,6 +154,20 @@ describe('mirroring a group inbox into the knowledge base', () => {
     expect(asked[0]?.folder).toBe('2026-07-20-abc1234567-bi-monthly-leadership-meeting');
   });
 
+  // The note keeps its name the way the folder does, and a thread never written is handed none.
+  it('a thread written again is handed the path of its note, and a new thread none', async () => {
+    const held = withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', RECORD);
+    const again = await run({
+      files: { texts: { [STATE_PATH]: serializeGroupState(held) } },
+      reader: { threads: { '0d3b-group': [thread({ lastDelivered: '2026-08-10T05:40:15Z' })] } },
+    });
+    const fresh = await run();
+
+    expect(again.asked.map((input) => input.file)).toEqual([RECORD.file]);
+    expect(fresh.asked.map((input) => input.file)).toEqual([undefined]);
+    expect(fresh.asked).toHaveLength(1);
+  });
+
   it('threads are rendered oldest first, so a stopped run leaves a prefix of the history', async () => {
     const { asked } = await run({
       reader: {

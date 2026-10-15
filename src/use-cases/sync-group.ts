@@ -125,6 +125,7 @@ const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: Grou
     conversationIds: [threadRef(input.group.id, thread.id)],
     root: thread.id,
     folder: state.threads[thread.id]?.folder ?? '',
+    file: state.threads[thread.id]?.file,
     maxBytes: input.maxBytes,
     linked: state.linked,
     attachments: state.attachments,

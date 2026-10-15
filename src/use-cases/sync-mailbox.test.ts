@@ -335,6 +335,29 @@ describe('syncing a mailbox into the knowledge base', () => {
     expect(folders).toEqual(['2024-01-02-thread-1-an-older-name']);
   });
 
+  // The note keeps its name the way the folder does, so a thread whose first message is gone does not
+  // move its note to the name of the message after it.
+  it('a thread already written is handed the path of its note, and a thread never written none', async () => {
+    const held = withConversation(emptyMailboxState(), 'conv-1', { threadId: 'thread-1', root: '<r@example.com>' });
+    const filed = withThread(held, 'thread-1', {
+      folder: '2024-01-02-thread-1-an-older-name',
+      conversationIds: ['conv-1'],
+      file: 'threads/2024-01-02-thread-1-an-older-name/an-older-name.md',
+      messageIds: ['m0'],
+      lastMessage: '2026-05-11T00:00:00Z',
+      attachments: [],
+      inlineImages: [],
+    });
+    const pages = [{ messages: [message()], skipped: 0, deltaLink: 'c1' }];
+
+    const again = await run({ files: { texts: { [STATE_PATH]: serializeMailboxState(filed) } }, reader: { folders: [folder()], pages } });
+    const fresh = await run({ reader: { folders: [folder()], pages } });
+
+    expect(again.inputs.map((input) => input.file)).toEqual(['threads/2024-01-02-thread-1-an-older-name/an-older-name.md']);
+    expect(fresh.inputs.map((input) => input.file)).toEqual([undefined]);
+    expect(fresh.inputs).toHaveLength(1);
+  });
+
   it('a thread filed nowhere yet is handed no folder, so the naming rules decide', async () => {
     const folders: string[] = [];
     await run({

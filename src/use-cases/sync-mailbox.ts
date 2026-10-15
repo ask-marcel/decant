@@ -446,6 +446,7 @@ const renderOne = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
     // Empty until a thread has been filed somewhere, and reused verbatim from then on, so a change
     // to the naming rules never moves a folder that is already written and already linked to.
     folder: state.threads[threadId]?.folder ?? '',
+    file: state.threads[threadId]?.file,
     maxBytes: input.maxBytes,
     linked: state.linked,
     attachments: state.attachments,

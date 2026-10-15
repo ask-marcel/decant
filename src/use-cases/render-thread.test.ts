@@ -154,6 +154,17 @@ describe('writing one conversation as one file', () => {
     expect(JSON.stringify(threadOf(JSON.parse(text)))).toBe(text);
   });
 
+  // Named once, like its folder: the note of a thread whose first message is gone keeps its path, so a
+  // link to it still works and no second note appears beside the first.
+  it('a thread written again keeps the name its note was first written under, though its first message is gone', async () => {
+    const reply = message({ id: 'm2', subject: 'TR: Planning Northwind', received: '2026-05-13T10:00:00Z' });
+    const { outcome, files } = await run({ reader: { conversations: { [CONV]: [reply] } }, folder: THREAD_FOLDER, file: THREAD_RELATIVE });
+
+    expect(files.written.has(THREAD_FILE)).toBe(true);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.file).toBe(THREAD_RELATIVE);
+    expect(files.written.get(THREAD_FILE)).toContain(`path: ${THREAD_RELATIVE}`);
+  });
+
   it('a message in a folder the sync gave no name for is recorded with no folder name', async () => {
     const { outcome } = await run({ reader: { conversations: { [CONV]: [message({ folderId: 'AAMk-gone' })] } } });
 
