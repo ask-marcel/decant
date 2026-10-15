@@ -508,6 +508,49 @@ describe('syncing the calendar', () => {
     expect(done.reader.calls.filter((call) => call.startsWith('event:'))).toHaveLength(0);
   });
 
+  // Graph answers 410 to a cursor whose sync state it no longer keeps. The calendar is read from the
+  // start; nothing is compared, since that read reaches only as far back as the day.
+  it('a cursor Graph has expired is dropped, and the calendar is read from the start rather than failing the run', async () => {
+    const cursor = 'https://graph/delta?token=1';
+    const expired = { kind: 'permanent' as const, status: 410, message: 'syncStateNotFound' };
+
+    const done = await run({
+      reader: { failCursors: { [cursor]: expired } },
+      files: { texts: { [STATE_PATH]: serializeCalendarState(withCursor(emptyCalendarState(), cursor)) } },
+    });
+
+    expect(done.reader.calls.filter((call) => call.startsWith('eventsDelta'))).toEqual([`eventsDelta:${cursor}`, 'eventsDelta:fresh']);
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'calendar.cursor-expired', meta: {} });
+    expect(done.summary.converted).toBe(2);
+    expect(stateOf(done.files).deltaLink).toBe('https://graph/delta?token=next');
+  });
+
+  it('an expired cursor under a wider day reads the calendar from the start once', async () => {
+    const cursor = 'https://graph/delta?token=1';
+    const state = { ...withCursor(emptyCalendarState(), cursor), since: '2026-09-11' };
+
+    const done = await run({
+      since: '2026-09-01',
+      reader: { failCursors: { [cursor]: { kind: 'permanent', status: 410, message: 'syncStateNotFound' } } },
+      files: { texts: { [STATE_PATH]: serializeCalendarState(state) } },
+    });
+
+    expect(done.reader.calls.filter((call) => call.startsWith('eventsDelta'))).toEqual([`eventsDelta:${cursor}`, 'eventsDelta:fresh']);
+    expect(done.ok).toBe(true);
+  });
+
+  it('a cursor Graph refuses for another reason ends the run naming the step', async () => {
+    const cursor = 'https://graph/delta?token=1';
+
+    const done = await run({
+      reader: { failCursors: { [cursor]: { kind: 'permanent', status: 403, message: 'accessDenied' } } },
+      files: { texts: { [STATE_PATH]: serializeCalendarState(withCursor(emptyCalendarState(), cursor)) } },
+    });
+
+    expect(done.error).toEqual({ step: 'eventsDelta', cause: 'permanent', message: 'accessDenied' });
+    expect(done.reader.calls).not.toContain('eventsDelta:fresh');
+  });
+
   it('a delta that cannot be read ends the run naming the step', async () => {
     const done = await run({ reader: { failDelta: { kind: 'auth', message: 'sign-in has lapsed' } } });
 

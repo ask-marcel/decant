@@ -15,6 +15,9 @@ export type CalendarReaderSeed = {
   // The library's conversion of each attachment, keyed by attachment id.
   readonly markdown?: Readonly<Record<string, string>>;
   readonly failDelta?: CalendarReaderError;
+  // Fails the delta read from these cursors alone, the way Graph refuses a cursor it no longer keeps
+  // (410), leaving a read from the start working.
+  readonly failCursors?: Readonly<Record<string, CalendarReaderError>>;
   readonly failEvents?: ReadonlyArray<string>;
   readonly failAttachments?: ReadonlyArray<string>;
   // Events whose attachment listing itself cannot be read.
@@ -25,11 +28,13 @@ export type CalendarReaderFake = CalendarReader & { readonly calls: Array<string
 
 export const createCalendarReaderFake = (seed: CalendarReaderSeed = {}): CalendarReaderFake => {
   const calls: string[] = [];
+  const refusal = (cursor: string | undefined): CalendarReaderError | undefined => (cursor === undefined ? undefined : seed.failCursors?.[cursor]) ?? seed.failDelta;
   return {
     calls,
     eventsDelta: async (cursor) => {
       calls.push(`eventsDelta:${cursor ?? 'fresh'}`);
-      if (seed.failDelta !== undefined) return err(seed.failDelta);
+      const refused = refusal(cursor);
+      if (refused !== undefined) return err(refused);
       const changes = (cursor === undefined ? undefined : seed.changesFrom?.[cursor]) ?? seed.changes ?? [];
       return ok(seed.deltaLink === undefined ? { changes } : { changes, deltaLink: seed.deltaLink });
     },

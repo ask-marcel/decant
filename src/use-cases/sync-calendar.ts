@@ -30,6 +30,7 @@ import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
+import { expiredCursor } from './expired-cursor.ts';
 import { putAside } from './put-aside.ts';
 
 export const CALENDAR_STATE_FILE = '.sync-state.json';
@@ -323,8 +324,15 @@ const finish = async (
 // through it. It is read out first all the same, so what was removed since the last run is still put
 // aside, then the delta is read whole for what the narrower reach passed over; an event already filed
 // is fetched and left be.
+// Graph answers 410 to a cursor whose sync state it no longer keeps: the calendar is read from the
+// start, which reaches as far back as a wider day would. Nothing is compared with the ledger, since
+// that read reaches only as far back as the day, and an event before it is not gone for that.
 const deltaFor = async (deps: SyncCalendarDeps, state: CalendarState, since: string | undefined): Promise<Result<EventsDelta, CalendarReaderError>> => {
   const drained = await deps.reader.eventsDelta(state.deltaLink);
+  if (!drained.ok && expiredCursor(drained.error)) {
+    deps.logger.warn('calendar.cursor-expired', {});
+    return deps.reader.eventsDelta(undefined);
+  }
   if (!drained.ok || !widens(state.since, since)) return drained;
   const whole = await deps.reader.eventsDelta(undefined);
   return whole.ok ? ok({ ...whole.value, changes: [...drained.value.changes, ...whole.value.changes] }) : whole;
