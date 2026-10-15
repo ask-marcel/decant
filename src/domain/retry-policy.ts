@@ -27,12 +27,19 @@ export const nextFailure = (known: RetryEntry | undefined, item: DriveItem, reas
   reason,
 });
 
-// The sweep's word is the current one. Whatever it returned is being decided now, from the version
-// the source holds today, so what the ledger remembers about an earlier attempt on it is stale: a
-// document converted again, renamed, or deleted at the source has no older failure left to answer
-// for. The cost is narrow and deliberate: renaming a document whose conversion failed drops its
-// pending retry, and the rename alone does not queue a fresh one.
+const sameVersion = (entry: RetryEntry, item: DriveItem): boolean => item.kind !== 'deleted' && item.cTag === entry.item.cTag && item.path === entry.item.path;
+
+// The sweep's word is the current one for what it changed: a document it returned edited, renamed or
+// deleted is decided now, from the version the source holds today, and has no older failure left to
+// answer for. One it returned at the version that failed keeps its entry: a whole read lists every
+// document, changed or not, and a document that failed, or landed without a part of it, is still
+// owed what the entry stands for, its tries counted on.
 export const forgetSwept = (retry: RetryLedger, items: ReadonlyArray<DriveItem>): RetryLedger => {
-  const swept = new Set(items.map((item) => item.id));
-  return Object.fromEntries(Object.entries(retry).filter(([id]) => !swept.has(id)));
+  const swept = new Map(items.map((item) => [item.id, item]));
+  return Object.fromEntries(
+    Object.entries(retry).filter(([id, entry]) => {
+      const item = swept.get(id);
+      return item === undefined || sameVersion(entry, item);
+    })
+  );
 };

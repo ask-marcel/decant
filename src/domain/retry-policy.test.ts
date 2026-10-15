@@ -32,8 +32,19 @@ describe('counting what a document has cost so far', () => {
 });
 
 describe('what the sweep settles for itself', () => {
-  it('an item the sweep returned is dropped from the ledger, whatever it decided about it', () => {
+  it('an item the sweep returned changed or deleted is dropped from the ledger', () => {
     expect(forgetSwept({ '01ABC': failed() }, [file({ kind: 'deleted' })])).toEqual({});
+  });
+
+  // A whole read lists every document, changed or not. One that landed without a part of it, and one
+  // that failed, are still owed what the entry stands for, and the count of their tries goes on.
+  it('an item the sweep returned at the version that failed keeps its entry', () => {
+    expect(forgetSwept({ '01ABC': failed() }, [file()])).toEqual({ '01ABC': failed() });
+  });
+
+  it('an item the sweep returned edited, or at another path, is dropped from the ledger', () => {
+    expect(forgetSwept({ '01ABC': failed() }, [file({ cTag: 'c2' })])).toEqual({});
+    expect(forgetSwept({ '01ABC': failed() }, [file({ path: 'Archive/Roadmap.pptx' })])).toEqual({});
   });
 
   it('an item the sweep said nothing about stays in the ledger', () => {
