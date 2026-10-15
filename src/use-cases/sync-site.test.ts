@@ -1831,3 +1831,55 @@ describe('a changed document that is now left out', () => {
     expect(notes?.skipped).toEqual([{ path: 'Projets/Contrat.docx', reason: 'larger than the 50 MB cap' }]);
   });
 });
+
+// Written over, the version before would be lost: the conversion waits for a run that can move it,
+// three runs in all, and the version on disk stays the current one.
+describe('an edited document whose earlier version will not move aside', () => {
+  const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
+  const HELD = 'its earlier version would not move to _archive/: write-failed: held open';
+  const known = serializeSiteState({
+    version: 1,
+    source: { kind: 'site', ...site },
+    lastRun: '2026-07-22T09:00:00Z',
+    layout: 2,
+    drives: {
+      'b!one': {
+        name: 'Documents',
+        deltaLink: 'cursor-1',
+        pending: [],
+        items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [NOTE] } },
+        retry: {},
+        folders: {},
+      },
+    },
+  });
+
+  it('is not written over, keeps its record, and is tried again on the next run', async () => {
+    const { summary, notes, files } = await run({
+      files: { texts: { [STATE_PATH]: known, [NOTE]: 'the contract' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'held open' } },
+      reader: { pages: [{ items: [item({ cTag: 'c2' })], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(summary).toMatchObject({ converted: 0, failed: 1 });
+    expect(notes?.failed).toEqual([{ path: 'Projets/Contrat.docx', reason: HELD }]);
+    expect(files.written.get(NOTE)).toBe('the contract');
+    expect(stateAfter(files).drives['b!one']?.items['01ABC']?.cTag).toBe('c1');
+    expect(stateAfter(files).drives['b!one']?.retry['01ABC']).toMatchObject({ attempts: 1, reason: HELD });
+  });
+
+  it('still held on its third try, it is named once as given up, and its version on disk stays', async () => {
+    const twice = JSON.stringify({
+      ...JSON.parse(known),
+      drives: { 'b!one': { ...JSON.parse(known).drives['b!one'], retry: { '01ABC': { item: item({ cTag: 'c2' }), attempts: 2, reason: HELD } } } },
+    });
+
+    const { notes, files } = await run({
+      files: { texts: { [STATE_PATH]: twice, [NOTE]: 'the contract' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'held open' } },
+      reader: { pages: [{ items: [], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(notes?.failed).toStrictEqual([]);
+    expect(notes?.gaveUp).toEqual([{ path: 'Projets/Contrat.docx', reason: HELD }]);
+    expect(files.written.get(NOTE)).toBe('the contract');
+  });
+});

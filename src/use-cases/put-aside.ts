@@ -60,3 +60,13 @@ export const putBack = async (deps: Pick<PutAsideDeps, 'files'>, aside: SetAside
   }
   return failed;
 };
+
+// A file of the set that would not move and is still on disk stands in the way of a write to the same
+// path: written over, the version before would be lost. The reason says why the write waits.
+export const heldInPlace = async (deps: Pick<PutAsideDeps, 'files'>, aside: SetAside): Promise<string | undefined> => {
+  for (const missed of aside.failed) {
+    const still = await deps.files.exists(missed.path);
+    if (still.ok && still.value) return `its earlier version would not move to _archive/: ${missed.error.kind}: ${missed.error.message}`;
+  }
+  return undefined;
+};

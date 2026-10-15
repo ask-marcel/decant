@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
-import { putAside, putBack, setAside } from './put-aside.ts';
+import { heldInPlace, putAside, putBack, setAside } from './put-aside.ts';
 
 const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md';
 const PICTURE = 'kb/SharePoint sites/Espace Contoso/Documents/Contrat.docx.media/image-01.png';
@@ -98,5 +98,31 @@ describe('putting aside what an item held', () => {
       { path: NOTE, error: { kind: 'write-failed', path: NOTE, message: 'locked' } },
       { path: PICTURE, error: { kind: 'write-failed', path: NOTE, message: 'locked' } },
     ]);
+  });
+});
+
+// A file that would not move aside and is still on disk would be written over by the write that
+// asked for the move: the write waits, and the reason says why.
+describe('telling whether a file that would not move aside still stands in the way', () => {
+  const deps = (files: ReturnType<typeof createFilesFake>): { files: typeof files; clock: ReturnType<typeof createClockFake>; kbRoot: string } => ({
+    files,
+    clock: createClockFake('2026-10-13T08:00:00Z'),
+    kbRoot: 'kb',
+  });
+
+  it('a file still on disk that would not move gives the reason the write waits', async () => {
+    const files = createFilesFake({ texts: { [NOTE]: 'old' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'EBUSY' } });
+
+    const aside = await setAside(deps(files), [NOTE]);
+
+    expect(await heldInPlace(deps(files), aside)).toBe('its earlier version would not move to _archive/: write-failed: EBUSY');
+  });
+
+  it('nothing stands in the way of a write when the set moved, or when the file that would not move is gone', async () => {
+    const moved = createFilesFake({ texts: { [NOTE]: 'old' } });
+    const gone = createFilesFake({ failMoveWith: { kind: 'write-failed', path: NOTE, message: 'ENOENT' } });
+
+    expect(await heldInPlace(deps(moved), await setAside(deps(moved), [NOTE]))).toBeUndefined();
+    expect(await heldInPlace(deps(gone), await setAside(deps(gone), [NOTE]))).toBeUndefined();
   });
 });
