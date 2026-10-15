@@ -1618,6 +1618,16 @@ describe('a document converted without a part of it', () => {
     expect(stateAfter(second.files).drives['b!one']?.retry).toEqual({});
   });
 
+  // The retry converts the version that is already recorded, so it writes over its own files: a copy
+  // of the same version under _archive/ for each try would keep nothing worth keeping.
+  it('a document converted again for its pictures writes over its own files, with no copy of the same version put aside', async () => {
+    const first = await run({ reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-1' }], failImages: BUSY } });
+    const second = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '', [NOTE]: 'without its pictures' } }, reader: NOTHING_CHANGED });
+
+    expect(second.files.moves).toStrictEqual([]);
+    expect(second.files.written.get(NOTE)).toContain('converted 01ABC');
+  });
+
   // A whole read lists the document as it was, and the retry it is owed stays with it.
   it('a document still owed its pictures is converted again when a whole read lists it unchanged', async () => {
     const owed = serializeSiteState({

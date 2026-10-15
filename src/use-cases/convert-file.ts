@@ -49,7 +49,8 @@ export type ConvertFileInput = {
 } & Placement;
 
 // `lost` names what a conversion had to go without, a part of the document that would not read: the
-// document landed, and the run that asked tries it again for the rest.
+// document landed without it. A library sync tries such a document again for the rest; a mail thread
+// keeps what landed.
 export type ConvertOutcome =
   | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly lost?: string }
   | { readonly kind: 'skipped'; readonly reason: SkipReason }
