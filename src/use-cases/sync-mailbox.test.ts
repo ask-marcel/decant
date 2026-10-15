@@ -925,9 +925,15 @@ describe('the files a thread written again no longer holds', () => {
     expect(second.files.moves.map((move) => move.from)).toEqual([B]);
   });
 
-  it('a file that will not move is logged by its thread, and the thread is still written', async () => {
+  // Still on disk, so still the thread's: listed in its record, its stored record kept, and its name
+  // held, so no later file of that name writes over it before a run moves it aside.
+  it('a file that will not move is logged by its thread, and stays in the record and the store', async () => {
+    const stored = { name: 'b.pdf', paths: [B], primary: B, media: [] };
     const { summary, logger, files } = await run({
-      files: { texts: { [STATE_PATH]: held(record({ files: [A, B] })), [A]: 'a', [B]: 'b' }, failMoveWith: { kind: 'write-failed', path: B, message: 'locked' } },
+      files: {
+        texts: { [STATE_PATH]: held(record({ files: [A, B] }), { attachments: { hash: stored } }), [A]: 'a', [B]: 'b' },
+        failMoveWith: { kind: 'write-failed', path: B, message: 'locked' },
+      },
       reader: { folders: [folder()], pages },
       outcome: () => writing([A]),
     });
@@ -935,6 +941,8 @@ describe('the files a thread written again no longer holds', () => {
     expect(logger.calls).toContainEqual({ level: 'warn', event: 'archive.failed', meta: { threadId: 'thread-1', cause: 'write-failed' } });
     expect(summary).toMatchObject({ converted: 1, archived: 0 });
     expect(files.written.get(B)).toBe('b');
+    expect((stateAfter(files).threads['thread-1'] as ThreadRecord | undefined)?.files).toEqual([A, B]);
+    expect(stateAfter(files).attachments).toEqual({ hash: stored });
   });
 });
 
@@ -981,6 +989,23 @@ describe('a thread with no message left at the source', () => {
     expect(after.threads).toEqual({});
     expect(after.conversations).toEqual({ 'conv-3': { threadId: 'thread-3', root: '<s@example.com>' } });
     expect(after.retry).toEqual({});
+  });
+
+  // Left where it is, the note still reads as current, so the thread keeps its record and is tried
+  // again on the next run, three times in all.
+  it('a thread whose note will not move keeps its record and is tried again', async () => {
+    const { files, summary, notes } = await run({
+      files: { texts: { [STATE_PATH]: serializeMailboxState(state()), [NOTE]: 'note', [CARD]: 'card' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'locked' } },
+      reader: { folders: [folder()], pages: gone },
+      outcome: () => ({ kind: 'empty' }),
+    });
+    const after = stateAfter(files);
+
+    expect(summary).toMatchObject({ archived: 0, failed: 1 });
+    expect(notes?.failed).toEqual([{ path: `threads/${FOLDER}/contrat.md`, reason: 'could not be moved aside: write-failed' }]);
+    expect(Object.keys(after.threads)).toEqual(['thread-1']);
+    // The sweep queued the thread for itself, so the count of an earlier failure starts over.
+    expect(after.retry['thread-1']).toEqual({ attempts: 1, reason: 'could not be moved aside: write-failed' });
   });
 });
 

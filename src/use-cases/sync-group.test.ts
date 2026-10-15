@@ -379,6 +379,33 @@ describe('a group thread the group no longer lists', () => {
     expect(logger.calls).toContainEqual({ level: 'warn', event: 'group.listing-empty', meta: { group: '0d3b-group', threads: 1 } });
   });
 
+  it('a thread whose note will not move keeps its record and is tried again', async () => {
+    const { files, summary, notes } = await run({
+      files: { texts: { [STATE_PATH]: held, [NOTE]: 'note' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'locked' } },
+      reader: { threads: { '0d3b-group': [thread({ id: 'other', lastDelivered: '2026-07-01T00:00:00Z' })] } },
+    });
+
+    expect(summary).toMatchObject({ archived: 0, failed: 1 });
+    expect(notes.failed).toEqual([{ path: RECORD.file, reason: 'could not be moved aside: write-failed' }]);
+    expect(Object.keys(stateAfter(files).threads)).toEqual(['AAQkAD-thread']);
+    expect(stateAfter(files).retry['AAQkAD-thread']).toEqual({ attempts: 1, reason: 'could not be moved aside: write-failed' });
+  });
+
+  // Out of tries, the thread is named as given up and left where it is.
+  it('a thread whose note would not move three runs running is left alone by the fourth', async () => {
+    const tried = serializeGroupState({
+      ...withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', RECORD),
+      retry: { 'AAQkAD-thread': { attempts: 3, reason: 'could not be moved aside: write-failed' } },
+    });
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: tried, [NOTE]: 'note' } },
+      reader: { threads: { '0d3b-group': [thread({ id: 'other', lastDelivered: '2026-07-01T00:00:00Z' })] } },
+    });
+
+    expect(files.moves).toStrictEqual([]);
+    expect(Object.keys(stateAfter(files).threads)).toContain('AAQkAD-thread');
+  });
+
   it('a dry run moves nothing aside', async () => {
     const { files } = await run({ files: { texts: { [STATE_PATH]: held, [NOTE]: 'note' } }, reader: { threads: { '0d3b-group': [thread({ id: 'other' })] } }, dryRun: true });
 

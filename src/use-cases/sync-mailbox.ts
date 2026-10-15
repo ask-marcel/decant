@@ -490,12 +490,21 @@ const renderOne = async (
 const emptied = async (deps: SyncMailboxDeps, state: MailboxState, threadId: string): Promise<Rendered> => {
   const known = state.threads[threadId];
   if (known === undefined) return { apply: (carried) => withoutRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
-  const entry = await threadAside(deps, mailboxRoot(deps.kbRoot), threadId, known, NO_MESSAGE_LEFT);
+  const aside = await threadAside(deps, mailboxRoot(deps.kbRoot), threadId, known, NO_MESSAGE_LEFT);
+  if (!aside.moved) return stuckAside(state, threadId, known.file, aside.reason);
   const apply = (carried: MailboxState): MailboxState => {
     const gone = withoutThread(carried, threadId);
     return { ...gone, ...storesWithout(gone, filesOf(known)) };
   };
-  return { apply, counted: { archived: 1 }, notes: { archived: [entry] } };
+  return { apply, counted: { archived: 1 }, notes: { archived: [aside.entry] } };
+};
+
+// A thread whose note would not move keeps its record and is tried again on the next run, three times
+// in all, the way a thread that could not be written is.
+const stuckAside = (state: MailboxState, threadId: string, file: string, reason: string): Rendered => {
+  const attempts = (state.retry[threadId]?.attempts ?? 0) + 1;
+  const notes = attempts >= MAX_CONVERSION_ATTEMPTS ? {} : { failed: [{ path: file, reason }] };
+  return { apply: (carried) => withRetry(carried, threadId, { attempts, reason }), counted: { failed: 1 }, notes };
 };
 
 // The thread landed; one of the files it carried did not. Nothing narrower than the thread can bring

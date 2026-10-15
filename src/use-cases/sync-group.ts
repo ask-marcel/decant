@@ -158,12 +158,21 @@ const attemptsFor = (state: GroupState, threadId: string): number => (state.retr
 const emptied = async (deps: SyncGroupDeps, state: GroupState, place: GroupPlace, threadId: string, reason: string): Promise<Rendered> => {
   const known = state.threads[threadId];
   if (known === undefined) return { apply: (carried) => withoutGroupRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
-  const entry = await threadAside(deps, place.root, threadIdOf(threadId), known, reason);
+  const aside = await threadAside(deps, place.root, threadIdOf(threadId), known, reason);
+  if (!aside.moved) return stuckAside(state, threadId, known.file, aside.reason);
   const apply = (carried: GroupState): GroupState => {
     const gone = withoutGroupThread(carried, threadId);
     return { ...gone, ...storesWithout(gone, filesOf(known)) };
   };
-  return { apply, counted: { archived: 1 }, notes: { archived: [entry] } };
+  return { apply, counted: { archived: 1 }, notes: { archived: [aside.entry] } };
+};
+
+// A thread whose note would not move keeps its record and is tried again on the next run, three times
+// in all, the way a thread that could not be written is.
+const stuckAside = (state: GroupState, threadId: string, file: string, reason: string): Rendered => {
+  const attempts = attemptsFor(state, threadId);
+  const notes = attempts >= MAX_CONVERSION_ATTEMPTS ? {} : { failed: [{ path: file, reason }] };
+  return { apply: (carried) => withGroupRetry(carried, threadId, { attempts, reason }), counted: { failed: 1 }, notes };
 };
 
 // The thread landed; one of the files it carried did not. The whole thread is written again next run
@@ -246,10 +255,11 @@ const unlisted = async (
   place: GroupPlace,
   listing: ReadonlyArray<GroupThread>
 ): Promise<ReadonlyArray<Rendered>> => {
+  // A thread out of tries stays where it is, named as given up, as one that could not be written does.
   const gone = unlistedThreads(
     state,
     listing.map((thread) => thread.id)
-  );
+  ).filter((threadId) => (state.retry[threadId]?.attempts ?? 0) < MAX_CONVERSION_ATTEMPTS);
   if (gone.length > 0 && listing.length === 0) {
     deps.logger.warn('group.listing-empty', { group: input.group.id, threads: gone.length });
     return [];
