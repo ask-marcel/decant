@@ -106,8 +106,8 @@ const unfiled = (state: GroupState, threadId: string): boolean => state.threads[
 
 const stillOwed = (record: RetryRecord | undefined): boolean => record !== undefined && record.attempts < MAX_CONVERSION_ATTEMPTS;
 
-// The renderer is handed the two stores and hands them back with whatever it added, so folding a
-// rendered thread in is the record plus those two, not an entry-by-entry merge.
+// The renderer hands back the stored records it used or added, so folding a rendered thread in is the
+// record, and those records merged by key over the stores the state holds.
 const recordThread = (
   state: GroupState,
   threadId: string,
