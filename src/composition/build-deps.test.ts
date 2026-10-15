@@ -565,4 +565,15 @@ describe('a file that would not move under the archive', () => {
     expect(free.moves).toContainEqual({ from: NOTE, to: 'kb/_archive/2026-10-15/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md' });
     expect(JSON.parse(free.written.get(LEDGER) ?? '{}')).toEqual({});
   });
+
+  // The document still records its note and tries the edit again itself, three runs in all: moved by
+  // the ledger before that, the note would leave the document with no current copy.
+  it('a held note that its document still records is not written down', async () => {
+    const edited = { ...deleted, name: 'Contrat.docx', kind: 'file' as const, size: 4096, path: 'Contrat.docx', lastModified: '2026-10-15T08:00:00Z', cTag: 'c2' };
+    const locked = createFilesFake({ directories, texts: { [STATE]: held, [NOTE]: 'the contract' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'EBUSY' } });
+    await updateWith(locked, [{ items: [edited], skipped: 0, deltaLink: 'cursor-2' }]);
+
+    expect(locked.written.has(LEDGER)).toBe(false);
+    expect(locked.written.get(NOTE)).toBe('the contract');
+  });
 });
