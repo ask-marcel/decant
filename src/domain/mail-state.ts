@@ -33,6 +33,9 @@ export type ThreadRecord = {
   // came with: the message, and which of the files of that name in it. A file keeps its name when an
   // earlier file of that name goes. Absent from a thread written before the names were kept.
   readonly names?: Readonly<Record<string, string>>;
+  // The name each linked document was written under in the thread's folder, by the item it is at the
+  // source. Absent from a thread written before these were kept.
+  readonly links?: Readonly<Record<string, string>>;
   // What the index pages list a thread by: its subject, when it began, and who wrote last. Absent from
   // a thread written before they were kept, until a new message writes it again.
   readonly subject?: string;
@@ -179,6 +182,7 @@ export const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
   inlineImages: pathList(raw['inlineImages']),
   files: Array.isArray(raw['files']) ? pathList(raw['files']) : undefined,
   names: isRecord(raw['names']) ? textsOf(raw['names']) : undefined,
+  links: isRecord(raw['links']) ? textsOf(raw['links']) : undefined,
   subject: readString(raw, 'subject'),
   firstMessage: readString(raw, 'firstMessage'),
   lastFrom: readString(raw, 'lastFrom'),
@@ -300,12 +304,25 @@ export const filesLeft = (before: ThreadRecord | undefined, after: ThreadRecord)
 
 // A record that keeps listing files the write before held and this one did not write again: they stay
 // on disk, and a later write that reads everything tells what the thread no longer holds. Given the
-// names of the write before, it keeps those too, so a file this write could not read keeps its name.
-export const stillHolding = (record: ThreadRecord, kept: ReadonlyArray<string>, names?: Readonly<Record<string, string>>): ThreadRecord => ({
+// record of the write before, it keeps its names too, so a file this write could not read keeps its
+// name.
+export const stillHolding = (record: ThreadRecord, kept: ReadonlyArray<string>, before?: ThreadRecord): ThreadRecord => ({
   ...record,
   files: [...new Set([...(record.files ?? []), ...kept])].toSorted(compareText),
-  ...(names === undefined ? {} : { names: inKeyOrder({ ...names, ...record.names }) }),
+  ...(before === undefined ? {} : { names: inKeyOrder({ ...before.names, ...record.names }), links: inKeyOrder({ ...before.links, ...record.links }) }),
 });
+
+// The names a thread's folder still holds in one of its subfolders, as its record lists them: each
+// file, and the name a card stands for, since a card is the name of its file plus `.md`.
+export const namesHeldIn = (folder: string, paths: ReadonlyArray<string> | undefined): ReadonlyArray<string> =>
+  (paths ?? [])
+    .filter((path) => path.startsWith(`${folder}/`))
+    .flatMap((path) => {
+      const name = path.slice(folder.length + 1);
+      return name.endsWith(CARD_SUFFIX) ? [name, name.slice(0, -CARD_SUFFIX.length)] : [name];
+    });
+
+const CARD_SUFFIX = '.md';
 
 // A map written in the order of its keys, so the state reads the same whatever order it was filled in.
 export const inKeyOrder = (map: Readonly<Record<string, string>>): Readonly<Record<string, string>> =>

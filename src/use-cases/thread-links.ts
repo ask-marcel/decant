@@ -2,6 +2,7 @@ import { relative as pathBetween } from 'node:path/posix';
 import { withoutFrontMatter } from '../domain/front-matter.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
 import { renderLinkCard } from '../domain/link-card.ts';
+import { namesHeldIn } from '../domain/mail-state.ts';
 import type { LinkedRecord } from '../domain/mail-state.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import type { ReportEntry } from '../domain/report.ts';
@@ -69,7 +70,14 @@ export type LinkedTally = {
   readonly referenced: ReadonlyArray<MessageLink>;
   readonly skipped: ReadonlyArray<ReportEntry>;
   readonly failed: ReadonlyArray<ReportEntry>;
+  // The name each document was written under, by the item it is at the source, so the next write
+  // gives it the same one.
+  readonly names: Readonly<Record<string, string>>;
 };
+
+// What the thread held when it was last written: the name each linked document was written under, and
+// every file of its folder. Empty for a thread never written.
+export type LinksHeld = { readonly links?: Readonly<Record<string, string>>; readonly held?: ReadonlyArray<string> };
 
 // A file already pulled for another thread is referenced, not fetched again: the same weekly report
 // linked from thirty mails is one document on disk.
@@ -104,15 +112,21 @@ const referenceOf = (link: LinkedFile, message: MailMessage, asName: string, pul
   note: (pulled.skipped ?? pulled.failed)?.reason ?? pulled.note,
 });
 
-export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number, parts: ReadonlyArray<ThreadPart>): Promise<LinkedTally> => {
+// The name a document was given already, in this write or the one before, if it was.
+const nameFor = (key: string, names: Readonly<Record<string, string>>, recorded: Readonly<Record<string, string>>): string | undefined => names[key] ?? recorded[key];
+
+export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number, parts: ReadonlyArray<ThreadPart>, before: LinksHeld): Promise<LinkedTally> => {
   // Within this thread only, the way its attachments are. The same weekly report linked from thirty
   // mails across ten threads is pulled once per thread rather than once for the mailbox: a folder
   // that has to reach into another thread to be read is not self-contained, and the document is the
   // cheap half of what a thread costs.
   const linked: Record<string, LinkedRecord> = {};
-  // One name per document, not per mention: a deck cited in four replies is one file. The names
-  // already handed out are what a new one has to avoid, so the map is the taken list.
+  // One name per document, not per mention: a deck cited in four replies is one file. A document keeps
+  // the name it was written under before; a new one avoids every name handed out, recorded, or held
+  // on disk, so it never takes the name of a document whose message went.
   const names: Record<string, string> = {};
+  const recorded = before.links ?? {};
+  const held = [...Object.values(recorded), ...namesHeldIn(`${here}/${LINKED_FOLDER}`, before.held)];
   const paths: string[] = [];
   const skipped: ReportEntry[] = [];
   const failed: ReportEntry[] = [];
@@ -129,7 +143,7 @@ export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number
     }
     for (const link of found.value) {
       const key = `${link.driveId}:${link.itemId}`;
-      const asName = names[key] ?? uniqueName(link.name, Object.values(names));
+      const asName = nameFor(key, names, recorded) ?? uniqueName(link.name, [...held, ...Object.values(names)]);
       names[key] = asName;
       const pulled = await pulledOnce(deps, here, maxBytes, link, asName, linked[key]);
       if (pulled.skipped !== undefined) skipped.push(pulled.skipped);
@@ -142,7 +156,7 @@ export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number
       addAll(paths, pulled.record.paths);
     }
   }
-  return { paths, linked, referenced, skipped, failed };
+  return { paths, linked, referenced, skipped, failed, names };
 };
 
 // The same route a file found by walking a library takes. A linked document is read for its own

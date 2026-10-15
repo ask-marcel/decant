@@ -1,6 +1,7 @@
 import { contentHash } from '../domain/content-hash.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { disambiguateSegment, fitSegment, holdsIgnoringCase } from '../domain/kb-path.ts';
+import { namesHeldIn } from '../domain/mail-state.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
 import { carriesInlineImage } from '../domain/inline-image.ts';
 import { isOpaqueName } from '../domain/opaque-name.ts';
@@ -256,13 +257,6 @@ const arrivalOf = (message: MailMessage, name: string, nth: number): string => {
   return `${rfc.length > 0 ? rfc : message.id}|${name}|${nth}`;
 };
 
-// The files in the thread's attachment folder that its record still lists: a file of a message gone
-// that would not move aside, or one waiting on a read, is on disk until a run moves it.
-const onDisk = (place: FilePlace): ReadonlyArray<string> => {
-  const folder = `${place.here}/${ATTACHMENTS_FOLDER}/`;
-  return (place.held ?? []).filter((path) => path.startsWith(folder)).map((path) => path.slice(folder.length));
-};
-
 // What the files of a write add up to as they are placed.
 type Tally = {
   readonly paths: string[];
@@ -325,7 +319,9 @@ export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: Rea
   const placing: Placing = {
     store,
     shared: { ...place.stored },
-    taken: [...Object.values(place.names ?? {}), ...converted, ...onDisk(place)],
+    // A file of a message gone that would not move aside, or one waiting on a read, is on disk until a
+    // run moves it, and its name with it.
+    taken: [...Object.values(place.names ?? {}), ...converted, ...namesHeldIn(`${place.here}/${ATTACHMENTS_FOLDER}`, place.held)],
     converted: new Set(converted),
   };
   // A signature logo rides on every message of a thread, so the same file is offered many times.

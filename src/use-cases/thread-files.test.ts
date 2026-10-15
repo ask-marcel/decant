@@ -518,13 +518,14 @@ describe('the names a thread already gave its files', () => {
   });
 
   // A file the record still lists is on disk, whether its message went and it would not move, or it
-  // is waiting on a read: a new file of that name takes the next one.
+  // is waiting on a read: a new file of that name takes the next one. A card alone is enough, since a
+  // card is the name of its file plus `.md`.
   it('a new file does not take the name of a file the thread folder still holds', async () => {
     const { outcome } = await run({
       reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1', 'Old.pdf')] } },
       folder: THREAD_FOLDER,
       names: {},
-      held: [`${ATTACHMENTS_STORE}/Old.pdf`, `${ATTACHMENTS_STORE}/Old.pdf.md`],
+      held: [`${ATTACHMENTS_STORE}/Old.pdf.md`],
     });
 
     expect(recordOf(outcome)?.attachments).not.toContain(`${ATTACHMENTS_STORE}/Old.pdf.md`);

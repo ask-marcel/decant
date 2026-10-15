@@ -74,6 +74,8 @@ export type RenderThreadInput = {
   // as the thread was last written: a file keeps its name, and a new one takes none that is on disk.
   readonly names?: Readonly<Record<string, string>>;
   readonly held?: ReadonlyArray<string>;
+  // The name each linked document was written under, by the item it is at the source.
+  readonly links?: Readonly<Record<string, string>>;
   readonly maxBytes: number;
   // Files already pulled from SharePoint by an earlier thread, so one link is fetched once.
   readonly linked: Readonly<Record<string, LinkedRecord>>;
@@ -273,7 +275,7 @@ const writeThread = async (
   };
   const attachments = await attachmentsOf(reading, filePlace, parts, stamp);
   const following = { ...deps, convertFile: (converting: ConvertFileInput): Promise<ConvertOutcome> => announcedLink(deps, input.label, converting) };
-  const links = await linkedFiles(following, place.here, input.maxBytes, parts);
+  const links = await linkedFiles(following, place.here, input.maxBytes, parts, { links: input.links, held: input.held });
   // Everything the thread carried sits inside the thread's own folder, so every reference below is
   // relative to `here` and stays within the directory a reader already has open.
   const here = place.here;
@@ -311,6 +313,7 @@ const writeThread = async (
         inlineImages: bodies.pictures,
         files: heldIn(here, [...attachments.paths, ...cardPaths, ...links.paths, ...linkCards]),
         names: inKeyOrder(attachments.names),
+        links: inKeyOrder(links.names),
         subject: first.subject,
         firstMessage: first.received,
         lastFrom: last.from?.name ?? '',
