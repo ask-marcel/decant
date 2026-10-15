@@ -283,6 +283,25 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(outcome?.kind === 'rendered' && outcome.thread.unread).toEqual([LINKED_HERE]);
   });
 
+  // The converter cuts a long name to fit a deep disk, and the card has to take the same name: the card
+  // reads the document's text back from it, and two files would leave the text beside a card without it.
+  it('a linked document whose name is cut for length has one card, under the name its text was written under', async () => {
+    const long = {
+      url: 'https://tenant.sharepoint.com/y',
+      driveId: 'b!one',
+      itemId: '01LONG',
+      name: 'Rahmenvertrag mit Contoso und Northwind bilingual Vorlage final Fassung zwei.docx',
+    };
+    const drive = { items: { '01LONG': { ...REPORT, id: '01LONG', name: long.name, path: long.name } } };
+    const { outcome, files } = await run({ reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: { m1: [long] } }, drive, pathBudget: 170 });
+    const held = outcome?.kind === 'rendered' ? (outcome.thread.record.files ?? []) : [];
+
+    expect(held).toHaveLength(1);
+    expect(held[0]).toMatch(/-[0-9a-f]{8}\.docx\.md$/);
+    expect(files.written.get(held[0] ?? '')).toContain('converted 01LONG');
+    expect(files.written.get(held[0] ?? '')).toContain(`linked_from: "${THREAD_ID}"`);
+  });
+
   // A card that could not be written is not on disk, so it is not one of the files the folder holds.
   it('a linked document whose card cannot be written is not listed among the files of the thread', async () => {
     const { outcome } = await run({

@@ -110,7 +110,7 @@ export const run = async (
     timezone: 'Europe/Paris',
     pathBudget: seeds.pathBudget,
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(seeds.ocr), logger, unpackArchive: drive.localArchive, convertLocal: drive.localMarkdown }),
-    convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger, progress: createProgressFake() }),
+    convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger, progress: createProgressFake(), pathBudget: seeds.pathBudget }),
   });
   const result = await render({
     threadId: THREAD_ID,

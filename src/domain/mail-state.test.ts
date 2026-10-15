@@ -16,6 +16,7 @@ import {
   threadOfConversation,
   threadsHolding,
   threadsInFolders,
+  underName,
   withAttachment,
   withConversation,
   withFolderCursor,
@@ -492,6 +493,31 @@ describe('telling which files a thread no longer holds', () => {
       attachments: { kept: stores.attachments.kept, elsewhere: stores.attachments.elsewhere },
       linked: { 'b!one:01DEF': { paths: [`${HERE}/_linked/Plan.docx.md`] } },
     });
+  });
+});
+
+describe('telling the files under a name in a thread folder', () => {
+  const AT = 'kb/Mailbox/threads/T/_attachments';
+
+  it('a file, its card, its pictures and what it unpacked into are under its name, and a namesake is not', () => {
+    expect(underName(`${AT}/Plan.pdf`, `${AT}/Plan.pdf`)).toBe(true);
+    expect(underName(`${AT}/Plan.pdf.md`, `${AT}/Plan.pdf`)).toBe(true);
+    expect(underName(`${AT}/Plan.pdf.media/image-01.png`, `${AT}/Plan.pdf`)).toBe(true);
+    expect(underName(`${AT}/Projet X/Contrat.docx.md`, `${AT}/Projet X.zip`)).toBe(true);
+    expect(underName(`${AT}/Plan-2.pdf`, `${AT}/Plan.pdf`)).toBe(false);
+    expect(underName(`${AT}/Planning.pdf`, `${AT}/Plan.pdf`)).toBe(false);
+  });
+
+  // The converters name the folder an archive or a saved mail unpacks into the way they name any
+  // segment: no space or dot at its end, a device name of Windows made safe.
+  it('what an archive unpacked into is under its name as the converter cleaned it', () => {
+    expect(underName(`${AT}/Minutes/part-1.md`, `${AT}/Minutes .eml`)).toBe(true);
+    expect(underName(`${AT}/CON_/part-1.md`, `${AT}/CON.zip`)).toBe(true);
+  });
+
+  it('everything in a folder is under the name of the folder', () => {
+    expect(underName('kb/Mailbox/threads/T/_linked/Rapport.docx.md', 'kb/Mailbox/threads/T/_linked')).toBe(true);
+    expect(underName('kb/Mailbox/threads/T/_attachments/Rapport.docx.md', 'kb/Mailbox/threads/T/_linked')).toBe(false);
   });
 });
 
