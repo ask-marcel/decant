@@ -38,20 +38,28 @@ const workFor = (item: DriveItem, known: ManifestEntry | undefined, since: strin
   return known.cTag === item.cTag && known.path === item.path ? undefined : { kind: 'convert', item };
 };
 
-const retriedWork = (retry: RetryLedger, items: ReadonlyArray<DriveItem>): ReadonlyArray<WorkItem> =>
-  Object.values(forgetSwept(retry, items))
+// What the ledger still holds decides for its documents: one with tries left is converted again, as
+// the sweep holds it when the sweep listed it, and one out of tries is left alone.
+const retriedWork = (owed: RetryLedger, items: ReadonlyArray<DriveItem>): ReadonlyArray<WorkItem> => {
+  const listed = new Map(items.map((item) => [item.id, item]));
+  return Object.values(owed)
     .filter((entry) => !givenUp(entry))
-    .map((entry) => ({ kind: 'convert', item: entry.item }));
+    .map((entry) => ({ kind: 'convert', item: listed.get(entry.item.id) ?? entry.item }));
+};
 
 const sortKey = (work: WorkItem): string => (work.kind === 'archive' ? ` ${work.itemId}` : `${work.item.lastModified} ${work.item.id}`);
 
 // Oldest change first, so a run stopped halfway resumes exactly where it left off, with the id as
 // tie-break so two documents saved in the same second keep a stable order between runs. What failed
 // last time is queued alongside, sorted by the same key: a retry is ordinary work, not a tail.
-export const buildWorklist = (items: ReadonlyArray<DriveItem>, manifest: Manifest, retry: RetryLedger = {}, since?: string): ReadonlyArray<WorkItem> =>
-  [...items.map((item) => workFor(item, manifest[item.id], since)).filter((work): work is WorkItem => work !== undefined), ...retriedWork(retry, items)].sort((left, right) =>
-    compareText(sortKey(left), sortKey(right))
-  );
+export const buildWorklist = (items: ReadonlyArray<DriveItem>, manifest: Manifest, retry: RetryLedger = {}, since?: string): ReadonlyArray<WorkItem> => {
+  const owed = forgetSwept(retry, items);
+  const swept = items
+    .filter((item) => owed[item.id] === undefined)
+    .map((item) => workFor(item, manifest[item.id], since))
+    .filter((work): work is WorkItem => work !== undefined);
+  return [...swept, ...retriedWork(owed, items)].sort((left, right) => compareText(sortKey(left), sortKey(right)));
+};
 
 // A whole read of a library lists every document it holds. One recorded, or waiting on a retry, that
 // the read does not list was deleted at a time no delta told of, so it goes as one a sweep reports

@@ -110,6 +110,22 @@ describe('bringing back a file whose conversion failed', () => {
     expect(buildWorklist([file({ kind: 'deleted' })], {}, { '01ABC': failed() })).toStrictEqual([]);
   });
 
+  it('a file still owed a retry that the sweep lists unchanged is queued once, as the sweep holds it', () => {
+    const listed = file({ lastModified: '2026-05-13T00:00:00Z' });
+
+    expect(buildWorklist([listed], {}, { '01ABC': failed({ lastModified: '2026-05-12T00:00:00Z' }) })).toEqual([{ kind: 'convert', item: listed }]);
+  });
+
+  it('a recorded file still owed the rest of its conversion is queued again when the sweep lists it unchanged', () => {
+    const manifest = { '01ABC': { path: 'Projets/Roadmap.pptx', cTag: 'c1', outputs: ['Projets/Roadmap.pptx.md'] } };
+
+    expect(buildWorklist([file()], manifest, { '01ABC': failed() })).toEqual([{ kind: 'convert', item: file() }]);
+  });
+
+  it('a file given up on is not queued again when the sweep lists it unchanged', () => {
+    expect(buildWorklist([file()], {}, { '01ABC': failed({}, 3) })).toStrictEqual([]);
+  });
+
   it('a file that has failed three times is left alone', () => {
     expect(buildWorklist([], {}, { '01ABC': failed({}, 3) })).toStrictEqual([]);
   });

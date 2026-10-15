@@ -1579,6 +1579,36 @@ describe('a document converted without a part of it', () => {
     expect(stateAfter(second.files).drives['b!one']?.retry).toEqual({});
   });
 
+  // A whole read lists the document as it was, and the retry it is owed stays with it.
+  it('a document still owed its pictures is converted again when a whole read lists it unchanged', async () => {
+    const owed = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      layout: 2,
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          since: '2026-01-01',
+          pending: [],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [NOTE] } },
+          retry: { '01ABC': { item: item(), attempts: 1, reason: LOST } },
+          folders: {},
+        },
+      },
+    });
+    const pages = [
+      { items: [], skipped: 0, deltaLink: 'cursor-2' },
+      { items: [item()], skipped: 0, deltaLink: 'cursor-3' },
+    ];
+
+    const done = await run({ files: { texts: { [STATE_PATH]: owed } }, reader: { pages }, since: '2025-01-01' });
+
+    expect(done.summary).toMatchObject({ converted: 1, failed: 0 });
+    expect(stateAfter(done.files).drives['b!one']?.retry).toEqual({});
+  });
+
   it('a document still without its pictures on its third try is named once as given up, and keeps what it wrote', async () => {
     const twice = serializeSiteState({
       version: 1,
