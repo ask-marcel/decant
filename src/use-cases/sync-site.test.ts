@@ -1431,6 +1431,23 @@ describe('following the folders of a library', () => {
     expect(notes?.archived).toEqual([{ path: 'Projets/Contrat.docx', reason: 'no longer at the source' }]);
   });
 
+  // Only Graph's 404 says that the document is gone. Another refusal, or an answer that cannot be read,
+  // says nothing of where the document is, so it stays where it is recorded, named in the log.
+  it('a document under a moved folder that Graph will not describe stays where it is recorded, and the log names it', async () => {
+    const { summary, files, logger } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets' } }), [BEFORE]: 'the contract' } },
+      reader: {
+        pages: [{ items: [folder('01F', 'Contrats 2026')], skipped: 0, deltaLink: 'cursor-2' }],
+        failItemReads: { '01ABC': { kind: 'permanent', status: 400, message: 'invalidRequest' } },
+      },
+    });
+
+    expect(summary).toMatchObject({ converted: 0, archived: 0 });
+    expect(files.written.has(BEFORE)).toBe(true);
+    expect(libraryAfter(files)?.items['01ABC']?.path).toBe('Projets/Contrat.docx');
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'sync.reread-failed', meta: { driveId: 'b!one', itemId: '01ABC', cause: 'permanent' } });
+  });
+
   // The cursor stays where it was, so the next run reads the same changes, the moved folder with them.
   it('a document under a moved folder that cannot be read for now stops the library, keeping the state it had', async () => {
     const before = recorded({ folders: { '01F': 'Projets' } });

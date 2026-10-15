@@ -10,3 +10,8 @@ const statusOf = (error: DriveReaderError): number | undefined => ({ status: und
 const EXPIRED = 410;
 
 export const expiredCursor = (error: DriveReaderError): boolean => statusOf(error) === EXPIRED;
+
+// What Graph answers for an item it does not have: deleted, or moved out of the library.
+const NOT_FOUND = 404;
+
+export const notFound = (error: DriveReaderError): boolean => statusOf(error) === NOT_FOUND;
