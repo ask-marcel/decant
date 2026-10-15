@@ -128,6 +128,40 @@ describe('syncing the channels of a Microsoft Team', () => {
     expect(done.files.written.get('kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-01/Post a.md')).toBe('before the reply');
   });
 
+  // Written over, the version before the reply would be lost: the post waits for a run that can move it.
+  it('a post whose version before will not move aside is not written over, and is tried again on the next run', async () => {
+    const FILE = `${ROOT}/General/2026-09-01/Post a.md`;
+    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'a', { file: FILE, lastModified: '2026-09-01T09:00:00Z', title: 'Post a' });
+    const replied = post('a', '2026-09-08T09:00:00Z', { created: '2026-09-01T09:00:00Z' });
+    const done = await run({
+      reader: { posts: { [GENERAL.id]: [replied] } },
+      files: { texts: { [STATE_PATH]: serializeTeamState(state), [FILE]: 'before the reply' }, failMoveWith: { kind: 'write-failed', path: FILE, message: 'held open' } },
+    });
+    const kept = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}');
+
+    expect(done.summary).toMatchObject({ converted: 0, failed: 1 });
+    expect(done.notes.failed).toEqual([{ path: 'General/Post a', reason: 'its earlier version would not move to _archive/: write-failed: held open' }]);
+    expect(done.files.written.get(FILE)).toBe('before the reply');
+    expect(kept.channels[GENERAL.id].posts.a.lastModified).toBe('2026-09-01T09:00:00Z');
+  });
+
+  // At a new path nothing is written over: the post lands, and the copy left behind is only logged here.
+  it('a retitled post whose version before will not move aside is written at its new path all the same', async () => {
+    const OLD = `${ROOT}/General/2026-09-01/Post a.md`;
+    const NEW = `${ROOT}/General/2026-09-01/Kick-off.md`;
+    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'a', { file: OLD, lastModified: '2026-09-01T09:00:00Z', title: 'Post a' });
+    const retitled = post('a', '2026-09-08T09:00:00Z', { created: '2026-09-01T09:00:00Z', subject: 'Kick-off' });
+    const done = await run({
+      reader: { posts: { [GENERAL.id]: [retitled] }, markdown: { a: '### the kick-off is booked' } },
+      files: { texts: { [STATE_PATH]: serializeTeamState(state), [OLD]: 'the post as it was' }, failMoveWith: { kind: 'write-failed', path: OLD, message: 'held open' } },
+    });
+
+    expect(done.summary).toMatchObject({ converted: 1, failed: 0 });
+    expect(done.files.written.get(NEW)).toContain('the kick-off is booked');
+    expect(stateOf(done.files).channels[GENERAL.id]?.posts['a']?.file).toBe(NEW);
+    expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'supersede.failed', meta: { path: OLD, cause: 'write-failed' } });
+  });
+
   it('a post that will not write puts the version before it back', async () => {
     const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'a', {
       file: `${ROOT}/General/2026-09-08/Post a.md`,
@@ -137,6 +171,24 @@ describe('syncing the channels of a Microsoft Team', () => {
     const done = await run({ files: { texts: { [STATE_PATH]: serializeTeamState(state), [`${ROOT}/General/2026-09-08/Post a.md`]: 'before' }, failWritesMatching: 'Post a.md' } });
 
     expect(done.files.written.get(`${ROOT}/General/2026-09-08/Post a.md`)).toBe('before');
+  });
+
+  // Nothing is set aside before the post is read, so a post that will not render moves nothing.
+  it('a post that will not render or will not write is logged with its cause, and its version before stays in place', async () => {
+    const FILE = `${ROOT}/General/2026-09-08/Post a.md`;
+    const held = {
+      texts: {
+        [STATE_PATH]: serializeTeamState(withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'a', { file: FILE, lastModified: 'old', title: 'Post a' })),
+        [FILE]: 'before',
+      },
+    };
+    const unread = await run({ reader: { failPosts: ['a'] }, files: held });
+    const unwritten = await run({ files: { ...held, failWritesMatching: 'Post a.md' } });
+
+    expect(unread.files.moves).toStrictEqual([]);
+    expect(unread.files.written.get(FILE)).toBe('before');
+    expect(unread.logger.calls).toContainEqual({ level: 'warn', event: 'post.failed', meta: { post: 'a', cause: 'permanent' } });
+    expect(unwritten.logger.calls).toContainEqual({ level: 'warn', event: 'post.failed', meta: { post: 'a', cause: 'write-failed' } });
   });
 
   // The first layout filed a post under the day it last changed; its id is the moment it was posted.
