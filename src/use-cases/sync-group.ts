@@ -29,6 +29,7 @@ import type { Logger } from './ports/logger.ts';
 import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
+import { folderFor, threadFoldersOn } from './thread-folders.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 
@@ -115,16 +116,20 @@ const recordThread = (
 
 type Rendered = { readonly apply: (state: GroupState) => GroupState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
 
-const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: GroupState, root: string, thread: GroupThread): Promise<Rendered> => {
+// Where the group's own folder is, and the thread folders already on disk under it.
+type GroupPlace = { readonly root: string; readonly onDisk: ReadonlyArray<string> };
+
+const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: GroupState, place: GroupPlace, thread: GroupThread): Promise<Rendered> => {
+  const threadId = threadIdOf(thread.id);
   const rendered = await deps.renderThreadFor(
-    root,
+    place.root,
     input.group.name
   )({
-    threadId: threadIdOf(thread.id),
+    threadId,
     label: thread.topic,
     conversationIds: [threadRef(input.group.id, thread.id)],
     root: thread.id,
-    folder: state.threads[thread.id]?.folder ?? '',
+    folder: folderFor(state.threads[thread.id], place.onDisk, threadId),
     file: state.threads[thread.id]?.file,
     maxBytes: input.maxBytes,
     linked: state.linked,
@@ -224,13 +229,14 @@ const render = async (
   let current = state;
   let summary = EMPTY;
   let notes = NO_NOTES;
+  const place = { root, onDisk: await threadFoldersOn(deps.files, root) };
   deps.progress.start(threads.length, `${input.group.name} (group inbox)`);
   for (let at = 0; at < threads.length; at += input.concurrency) {
     const window = threads.slice(at, at + input.concurrency);
     const results = await Promise.all(
       window.map((thread) => {
         deps.progress.begin(thread.topic);
-        return renderOne(deps, input, current, root, thread).then((outcome) => {
+        return renderOne(deps, input, current, place, thread).then((outcome) => {
           deps.progress.step(thread.topic);
           return outcome;
         });

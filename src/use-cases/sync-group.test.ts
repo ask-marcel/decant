@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { emptyGroupState, serializeGroupState, withGroupThread } from '../domain/group-state.ts';
 import { threadRef } from '../domain/group-thread.ts';
+import { threadIdOf } from '../domain/thread-id.ts';
 import type { GroupThread } from '../domain/group-thread.ts';
 import type { ThreadRecord } from '../domain/mail-state.ts';
 import { err, ok } from '../domain/result.ts';
@@ -152,6 +153,17 @@ describe('mirroring a group inbox into the knowledge base', () => {
 
     expect(summary.converted).toBe(1);
     expect(asked[0]?.folder).toBe('2026-07-20-abc1234567-bi-monthly-leadership-meeting');
+  });
+
+  // A state that could not be read starts over, and the folder of each thread is found again by the
+  // id in its name rather than made a second time.
+  it('a thread the state holds no record of is written into the folder already on disk for its id', async () => {
+    const id = threadIdOf('AAQkAD-thread');
+    const { asked } = await run({
+      files: { directories: { 'kb/Group inboxes/Northwind Leadership Team/threads': ['2026-07-19-0123456789-other', `2026-07-19-${id}-bi-monthly-meeting`] } },
+    });
+
+    expect(asked.map((input) => input.folder)).toEqual([`2026-07-19-${id}-bi-monthly-meeting`]);
   });
 
   // The note keeps its name the way the folder does, and a thread never written is handed none.
