@@ -506,3 +506,42 @@ describe('telling the reader which post is being written', () => {
     expect([...done.progress.steps].sort((left, right) => left.localeCompare(right))).toEqual(['Post a', 'Post b']);
   });
 });
+
+// A retitled post no longer holds its earlier file, so a file that would not move is handed on to be
+// written down. A post that waits for its earlier file keeps it, and hands on nothing.
+describe('handing on the earlier file of a post', () => {
+  const OLD = `${ROOT}/General/2026-09-01/Post a.md`;
+
+  const handing = async (subject: string): Promise<ReadonlyArray<string>> => {
+    const handed: string[] = [];
+    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'a', { file: OLD, lastModified: '2026-09-01T09:00:00Z', title: 'Post a' });
+    const files = createFilesFake({
+      texts: { [STATE_PATH]: serializeTeamState(state), [OLD]: 'the post as it was' },
+      failMoveWith: { kind: 'write-failed', path: OLD, message: 'held open' },
+    });
+    const reader = createTeamReaderFake({
+      posts: { [GENERAL.id]: [post('a', '2026-09-08T09:00:00Z', { created: '2026-09-01T09:00:00Z', subject })] },
+      deltaLinks: { [GENERAL.id]: 'next' },
+    });
+    const writeDown = async (missed: ReadonlyArray<{ readonly path: string }>): Promise<void> => {
+      handed.push(...missed.map((entry) => entry.path));
+    };
+    const syncTeam = createSyncTeam({
+      reader,
+      files,
+      clock: createClockFake('2026-09-11T14:00:00Z'),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      kbRoot: 'kb',
+      timezone: 'UTC',
+      writeDown,
+    });
+    await syncTeam({ team: TEAM, channels: [GENERAL], dryRun: false, concurrency: 4 });
+    return handed;
+  };
+
+  it('a retitled post hands on its earlier file, and one that waits for it hands on nothing', async () => {
+    expect(await handing('Kick-off')).toEqual([OLD]);
+    expect(await handing('Post a')).toStrictEqual([]);
+  });
+});

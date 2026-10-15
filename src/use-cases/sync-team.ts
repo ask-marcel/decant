@@ -33,8 +33,8 @@ import { writeReport } from './sync-site.ts';
 import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
 import type { ChannelPost } from '../domain/channel-post.ts';
 import { withGaveUp } from '../domain/report.ts';
-import { heldInPlace, putAside, putBack, setAside } from './put-aside.ts';
-import type { SetAside } from './put-aside.ts';
+import { heldInPlace, letGo, putAside, putBack, setAside } from './put-aside.ts';
+import type { SetAside, WriteDown } from './put-aside.ts';
 import { refileAll } from './refile.ts';
 
 export const TEAM_STATE_FILE = '.sync-state.json';
@@ -51,6 +51,9 @@ export type SyncTeamDeps = {
   readonly pathBudget?: number;
   // The zone the knowledge base counts its days in, which the channel page lists each post under.
   readonly timezone: string;
+  // Where the files this sync lets go that would not move under the archive are written down, so a
+  // later run moves them. Absent, such a file is only logged.
+  readonly writeDown?: WriteDown;
 };
 
 // A team is synced channel by channel, the way a site is synced library by library, and for the
@@ -147,6 +150,8 @@ const writeOne = async (context: ChannelContext, state: TeamState, planned: Plan
     deps.logger.warn('post.failed', { post: post.id, cause: written.error.kind });
     return notPosted(context, state, post, title, aside, written.error.message);
   }
+  // Landed: a file of the version before that would not move is no longer the post's.
+  await letGo(deps, aside);
   const record: PostRecord = { file, lastModified: post.lastModified, title, from: post.author };
   return {
     apply: (carried) => ({ ...withPost(carried, channel.id, channel.name, post.id, record), retry: clearAttempt(carried.retry, post.id) }),

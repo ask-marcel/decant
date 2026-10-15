@@ -47,8 +47,8 @@ import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
-import { heldInPlace, putAside, putBack, setAside } from './put-aside.ts';
-import type { SetAside } from './put-aside.ts';
+import { heldInPlace, letGo, putAside, putBack, setAside } from './put-aside.ts';
+import type { SetAside, WriteDown } from './put-aside.ts';
 import { refileAll } from './refile.ts';
 
 export const STATE_FILE_NAME = '.sync-state.json';
@@ -63,6 +63,9 @@ export type SyncSiteDeps = {
   readonly kbRoot: string;
   // The zone the knowledge base counts its days in, which the library page lists each document under.
   readonly timezone: string;
+  // Where the files this sync lets go that would not move under the archive are written down, so a
+  // later run moves them. Absent, such a file is only logged.
+  readonly writeDown?: WriteDown;
 };
 
 export type SyncSiteInput = {
@@ -566,6 +569,8 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   }
   const outputs = outcome.kind === 'converted' ? outcome.outputs : [];
   const moved = again ? await setAsideBefore(deps, leftBehind(driveState, item.id, outputs)) : aside;
+  // Settled: a file of the version before that would not move is no longer the document's.
+  await letGo(deps, moved);
   // A conversion, and a decision to leave the file alone, both settle what an earlier failure was
   // waiting on: the ledger entry goes with them.
   const recorded = { path: item.path, cTag: item.cTag, outputs, modified: item.lastModified, modifiedBy: item.modifiedBy };

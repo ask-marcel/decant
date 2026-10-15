@@ -469,3 +469,42 @@ describe('syncing a Microsoft To Do list', () => {
     expect(Object.keys(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry)).toEqual(['AAMkAGI-task']);
   });
 });
+
+// A task that lands under another day no longer holds its earlier file, so a file that would not move
+// is handed on to be written down. A task that waits for its earlier file keeps it, and hands on nothing.
+describe('handing on the earlier file of a task', () => {
+  const OLD = 'kb/To Do/Tasks/2026-09-01/Book the venue.md';
+
+  const handing = async (due: string): Promise<{ handed: ReadonlyArray<string>; files: FilesFake }> => {
+    const handed: string[] = [];
+    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: OLD, lastModified: '2026-09-01T09:00:00Z', title: 'Book the venue' });
+    const files = createFilesFake({
+      texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [OLD]: 'the task as it was' },
+      failMoveWith: { kind: 'write-failed', path: OLD, message: 'held open' },
+    });
+    const writeDown = async (missed: ReadonlyArray<{ readonly path: string }>): Promise<void> => {
+      handed.push(...missed.map((entry) => entry.path));
+    };
+    const reader = createTodoReaderFake({ tasks: { 'list-1': [task({ due, notes: 'Ask about parking' })] } });
+    const syncTodo = createSyncTodo({
+      reader,
+      files,
+      clock: createClockFake('2026-09-09T14:00:00Z'),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      kbRoot: 'kb',
+      writeDown,
+    });
+    await syncTodo({ list: LIST, dryRun: false, concurrency: 4 });
+    return { handed, files };
+  };
+
+  it('a task that lands under another day hands on its earlier file, and one that waits for it hands on nothing', async () => {
+    const moved = await handing('2026-09-20');
+    const waiting = await handing('2026-09-01');
+
+    expect(moved.files.written.get('kb/To Do/Tasks/2026-09-20/Book the venue.md')).toContain('# Book the venue');
+    expect(moved.handed).toEqual([OLD]);
+    expect(waiting.handed).toStrictEqual([]);
+  });
+});
