@@ -4,7 +4,6 @@ import { libraryIndexPage } from '../domain/library-index.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { categoryFolderOf } from '../domain/kb-category.ts';
 import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
-import { refiledOutputs } from '../domain/output-paths.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { PEOPLE_NAME, emptyPeopleState, parsePeopleState } from '../domain/people-state.ts';
@@ -21,7 +20,6 @@ import {
   recordItem,
   refileDrive,
   rememberFailure,
-  renameItem,
   serializeSiteState,
   withDrive,
 } from '../domain/site-state.ts';
@@ -400,15 +398,17 @@ const mergeNotes = (left: RunNotes, right: Partial<RunNotes>): RunNotes => {
 // function so a whole window's updates fold onto the manifest in order, after the parallel IO.
 type WorkOutcome = { readonly update: (drive: DriveState) => DriveState; readonly counted: Partial<RunSummary>; readonly notes?: Partial<RunNotes> };
 
+// A move a run of an earlier version queued carries its item, so it is converted at its new place
+// like any other renamed document.
 const applyWork = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, driveState: DriveState, work: WorkItem): Promise<WorkOutcome> => {
   if (work.kind === 'archive') return archiveOutputs(deps, input, drive, driveState, work.itemId, work.outputs);
-  if (work.kind === 'move') return moveOutputs(deps, input, drive, work.item, work.from, work.outputs);
   return convertOne(deps, input, drive, driveState, work.item);
 };
 
-// A document converted again after an edit lands at the paths it had, so the version before it is
-// set aside first, under the day of the run: the knowledge base keeps its old versions without any
-// help from git. A conversion that fails puts that version back, and it stays the current one.
+// A document converted again, after an edit or a move, has the version before it set aside first,
+// under the day of the run: the knowledge base keeps its old versions without any help from git, and
+// a move leaves nothing at the place the document left. A conversion that fails puts that version
+// back, and it stays the current one.
 const setAsideBefore = async (deps: SyncSiteDeps, held: ReadonlyArray<string>): Promise<SetAside> => {
   const aside = await setAside(deps, held);
   for (const missed of aside.failed) deps.logger.warn('supersede.failed', { path: missed.path, cause: missed.error.kind });
@@ -441,20 +441,6 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   const update = (manifest: DriveState): DriveState => forgetFailure(recordItem(manifest, item.id, recorded), item.id);
   if (outcome.kind === 'converted') return { update, counted: { converted: 1 } };
   return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason: skipReason(outcome.reason, input.maxBytes, item.name) }] } };
-};
-
-// A file that will not move to its new place, one already there or held open, stays recorded where it
-// is: recorded at the new place, the document would name a file that is not its own.
-const moveOutputs = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, item: DriveItem, from: string, outputs: ReadonlyArray<string>): Promise<WorkOutcome> => {
-  const targets = refiledOutputs(libraryRootOf(deps.kbRoot, input.segment, drive), from, item.path, outputs);
-  const moved: string[] = [];
-  for (const [index, target] of targets.entries()) {
-    const source = outputs[index] ?? target;
-    const done = source === target ? undefined : await deps.files.move(source, target);
-    if (done !== undefined && !done.ok) deps.logger.warn('move.failed', { itemId: item.id, cause: done.error.kind });
-    moved.push(done === undefined || done.ok ? target : source);
-  }
-  return { update: (manifest) => renameItem(manifest, item.id, item.path, moved), counted: { moved: 1 } };
 };
 
 const archiveOutputs = async (

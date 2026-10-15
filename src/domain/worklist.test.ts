@@ -32,10 +32,10 @@ describe('deciding what the next run has to do', () => {
     expect(buildWorklist([file()], manifest)).toEqual([{ kind: 'convert', item: file() }]);
   });
 
-  it('a file only renamed is moved on disk instead of being converted again', () => {
+  it('a file only renamed is converted again at its new place, so its files name where it is now', () => {
     const manifest = { '01ABC': { path: 'Projets/Ancien nom.pptx', cTag: 'c1', outputs: ['Projets/Ancien nom.pptx.md'] } };
 
-    expect(buildWorklist([file()], manifest)).toEqual([{ kind: 'move', item: file(), from: 'Projets/Ancien nom.pptx', outputs: ['Projets/Ancien nom.pptx.md'] }]);
+    expect(buildWorklist([file()], manifest)).toEqual([{ kind: 'convert', item: file() }]);
   });
 
   it('a file deleted in SharePoint has everything it produced archived', () => {
@@ -69,11 +69,11 @@ describe('deciding what the next run has to do', () => {
     expect(buildWorklist([folder], manifest)).toStrictEqual([]);
   });
 
-  it('a renamed folder is moved on disk so its whole subtree follows', () => {
+  it('a renamed folder needs no work of its own, since a folder converts to nothing', () => {
     const folder = file({ id: '01F', kind: 'folder', name: 'Projets 2026', path: 'Projets 2026' });
     const manifest = { '01F': { path: 'Projets', cTag: 'c1', outputs: [] } };
 
-    expect(buildWorklist([folder], manifest)).toEqual([{ kind: 'move', item: folder, from: 'Projets', outputs: [] }]);
+    expect(buildWorklist([folder], manifest)).toStrictEqual([]);
   });
 
   it('the oldest change is queued first so an interrupted run resumes in order', () => {
