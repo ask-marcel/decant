@@ -28,8 +28,8 @@ import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
-import { heldInPlace, putAside, putBack, setAside } from './put-aside.ts';
-import type { SetAside } from './put-aside.ts';
+import { heldInPlace, letGo, putAside, putBack, setAside } from './put-aside.ts';
+import type { SetAside, WriteDown } from './put-aside.ts';
 import { refileAll } from './refile.ts';
 
 export const TODO_STATE_FILE = '.sync-state.json';
@@ -44,6 +44,9 @@ export type SyncTodoDeps = {
   // How long a path may be as decant writes it: Windows' limit less what stands in front of the
   // knowledge base on disk. Absent, names are not cut for length.
   readonly pathBudget?: number;
+  // Where the files this sync lets go that would not move under the archive are written down, so a
+  // later run moves them. Absent, such a file is only logged.
+  readonly writeDown?: WriteDown;
 };
 
 // No size cap and no concurrency question worth asking about the bytes: a task is a few hundred
@@ -110,6 +113,8 @@ const writeOne = async (deps: SyncTodoDeps, input: SyncTodoInput, state: TodoSta
     deps.logger.warn('todo-task.failed', { task: task.id, cause: written.error.kind });
     return notWritten(deps, state, task, aside, written.error.message);
   }
+  // Landed: a file of the version before that would not move is no longer the task's.
+  await letGo(deps, aside);
   const record: TaskRecord = { file, lastModified: task.lastModified, title: task.title };
   return { apply: (carried) => ({ ...withTask(carried, task.id, record), retry: clearAttempt(carried.retry, task.id) }), counted: { converted: 1 }, notes: {} };
 };

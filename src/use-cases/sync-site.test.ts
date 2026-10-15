@@ -1882,4 +1882,49 @@ describe('an edited document whose earlier version will not move aside', () => {
     expect(notes?.gaveUp).toEqual([{ path: 'Projets/Contrat.docx', reason: HELD }]);
     expect(files.written.get(NOTE)).toBe('the contract');
   });
+
+  // Moved, the document no longer holds its earlier note, so a note that would not move is handed on
+  // to be written down. Held in place, the document keeps it, and hands on nothing.
+  const handing = async (texts: Record<string, string>, seed: DriveReaderSeed): Promise<ReadonlyArray<string>> => {
+    const handed: string[] = [];
+    const files = createFilesFake({ texts, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'held open' } });
+    const reader = createDriveReaderFake(seed);
+    const clock = createClockFake();
+    const convertFile = createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() });
+    const writeDown = async (missed: ReadonlyArray<{ readonly path: string }>): Promise<void> => {
+      handed.push(...missed.map((entry) => entry.path));
+    };
+    const syncSite = createSyncSite({ reader, files, logger: createLoggerFake(), progress: createProgressFake(), clock, kbRoot: 'kb', timezone: 'UTC', convertFile, writeDown });
+    await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+    return handed;
+  };
+  const edited = (over: Partial<DriveItem>): DriveReaderSeed => ({ pages: [{ items: [item({ cTag: 'c2', ...over })], skipped: 0, deltaLink: 'cursor-2' }] });
+
+  it('moved to another folder, it lands there and hands on its earlier note; held in place, it hands on nothing', async () => {
+    expect(await handing({ [STATE_PATH]: known, [NOTE]: 'the contract' }, edited({ path: 'Archives/Contrat.docx' }))).toEqual([NOTE]);
+    expect(await handing({ [STATE_PATH]: known, [NOTE]: 'the contract' }, edited({}))).toStrictEqual([]);
+  });
+
+  it('converted again at the version on record, it hands on a file it no longer writes', async () => {
+    const MEDIA = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.media/image-01.png';
+    const owed = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      layout: 2,
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [NOTE, MEDIA], modified: '2026-05-12T09:31:00Z' } },
+          retry: { '01ABC': { item: item(), attempts: 1, reason: 'the pictures could not be read' } },
+          folders: {},
+        },
+      },
+    });
+    const seed = { pages: [{ items: [], skipped: 0, deltaLink: 'cursor-2' }], failImages: { kind: 'transient' as const, message: 'Graph is busy' } };
+
+    expect(await handing({ [STATE_PATH]: owed, [NOTE]: 'the contract', [MEDIA]: 'a picture' }, seed)).toEqual([MEDIA]);
+  });
 });
