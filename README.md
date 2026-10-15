@@ -560,11 +560,14 @@ deleted message. The report names each file with `no longer in the thread`. When
 no message of a thread, the note and all the files of the thread go to `_archive/` together. The
 report names the note with `no message left at the source`.
 
-When decant cannot read a file or the list of files of a message, it moves no file of that thread.
-The next run writes the thread again, and that write moves the files that the thread no longer
-holds. decant can fail to move a file, for example a file that is open on Windows. Such a file stays
-in the thread, and the next write of the thread tries again. When the note of a thread with no
-message cannot move, decant keeps the thread. It tries again on the next run, three times in all.
+When decant cannot read a file that a thread holds, it keeps that file and its card as they are.
+This also applies to all the files of a message when decant cannot read the list of its files. The
+report names the failure, and the next run writes the thread again. decant moves the other files
+that the thread no longer holds as usual.
+
+decant can fail to move a file, for example a file that is open on Windows. Such a file stays in the
+thread, and the next write of the thread tries again. When the note of a thread with no message
+cannot move, decant keeps the thread. It tries again on the next run, three times in all.
 
 Each file in a thread keeps the name that it got first, also a file with only a card, and also a
 linked document. A new file does not get the name of a file that the thread holds. This rule also
