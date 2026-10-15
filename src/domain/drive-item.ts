@@ -62,13 +62,16 @@ const modifiedByOf = (item: Record<string, unknown>): string | undefined => {
   return isRecord(by) && isRecord(by['user']) ? readString(by['user'], 'displayName') : undefined;
 };
 
+// OneDrive for Business leaves the name out of a deleted item: its id is all a sweep needs of it.
+const nameOf = (item: Record<string, unknown>): string | undefined => readString(item, 'name') ?? (item['deleted'] === undefined ? undefined : '');
+
 // Exported for the single-item read as well as the sweep: a file reached by a link in an email is
 // the same kind of thing as a file found by walking a library, and reading it twice two ways is how
 // the two drift apart.
 export const parseItem = (raw: unknown): DriveItem | undefined => {
   if (!isRecord(raw)) return undefined;
   const id = readString(raw, 'id');
-  const name = readString(raw, 'name');
+  const name = nameOf(raw);
   if (id === undefined || name === undefined) return undefined;
   const folders = parentFolders(raw);
   const size = raw['size'];
