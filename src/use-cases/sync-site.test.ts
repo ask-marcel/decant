@@ -368,6 +368,43 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     expect(stateAfter(files).drives['b!one']?.items['01ABC']?.outputs).toEqual(['kb/SharePoint sites/Espace Contoso/Documents/Archive/Contrat signe.docx.md']);
   });
 
+  // The document now at A.docx is converted first and writes A.docx.md. The record of the other one
+  // still names A.docx.md when its turn comes, but the file is no longer its own to set aside.
+  it('two documents that swap their names both keep their new files', async () => {
+    const A_MD = 'kb/SharePoint sites/Espace Contoso/Documents/A.docx.md';
+    const B_MD = 'kb/SharePoint sites/Espace Contoso/Documents/B.docx.md';
+    const known = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      layout: 2,
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01A': { path: 'A.docx', cTag: 'c1', outputs: [A_MD] }, '01B': { path: 'B.docx', cTag: 'c1', outputs: [B_MD] } },
+          retry: {},
+          folders: {},
+        },
+      },
+    });
+    const swapped = [
+      item({ id: '01A', name: 'B.docx', path: 'B.docx', lastModified: '2026-05-13T09:00:00Z' }),
+      item({ id: '01B', name: 'A.docx', path: 'A.docx', lastModified: '2026-05-12T09:00:00Z' }),
+    ];
+
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: known, [A_MD]: 'a', [B_MD]: 'b' } },
+      reader: { pages: [{ items: swapped, skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(files.written.has(A_MD)).toBe(true);
+    expect(files.written.has(B_MD)).toBe(true);
+    expect(stateAfter(files).drives['b!one']?.items['01A']?.outputs).toEqual([B_MD]);
+    expect(stateAfter(files).drives['b!one']?.items['01B']?.outputs).toEqual([A_MD]);
+  });
+
   it('a document deleted in SharePoint has its files put aside and is forgotten', async () => {
     const known = serializeSiteState({
       version: 1,

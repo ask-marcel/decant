@@ -19,6 +19,7 @@ import {
   emptySiteState,
   forgetFailure,
   forgetItem,
+  ownOutputs,
   parseSiteState,
   recordItem,
   refileDrive,
@@ -490,7 +491,7 @@ const setAsideBefore = async (deps: SyncSiteDeps, held: ReadonlyArray<string>): 
 };
 
 const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, driveState: DriveState, item: DriveItem): Promise<WorkOutcome> => {
-  const aside = await setAsideBefore(deps, driveState.items[item.id]?.outputs ?? []);
+  const aside = await setAsideBefore(deps, ownOutputs(driveState, item.id));
   const outcome = await deps.convertFile({
     item,
     driveId: drive.id,
