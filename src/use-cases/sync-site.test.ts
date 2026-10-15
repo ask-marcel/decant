@@ -1417,6 +1417,37 @@ describe('following the folders of a library', () => {
     expect(Object.keys(libraryAfter(files)?.items ?? {})).toEqual(['01ABC']);
   });
 
+  // The sweep stops when Graph hands back a page it already gave: what it holds then is part of the
+  // library, and the documents on the pages it never reached are not gone for that.
+  it('a whole read that stops short of the end of the library puts nothing aside, keeps the cursor it had, and is read whole again next time', async () => {
+    const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01LATER': { path: 'Later.docx', cTag: 'c1', outputs: ['kb/x/Later.docx.md'] } };
+    const pages = [
+      { items: [], skipped: 0, deltaLink: 'cursor-2' },
+      { items: [item()], skipped: 0, nextLink: 'page-2' },
+      { items: [], skipped: 0, nextLink: 'page-2' },
+    ];
+
+    const { summary, files } = await run({ files: { texts: { [STATE_PATH]: recorded({ items }) } }, reader: { pages } });
+
+    expect(summary.archived).toBe(0);
+    expect(libraryAfter(files)?.deltaLink).toBe('cursor-2');
+    expect(libraryAfter(files)?.folders).toBeUndefined();
+  });
+
+  // Without its cursor, the run reads the library from the root, which lists it whole: once, and
+  // compared with what is recorded.
+  it('a library whose cursor was lost is read whole once, and puts aside what that read no longer lists', async () => {
+    const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01GONE': { path: 'Old.docx', cTag: 'c1', outputs: ['kb/x/Old.docx.md'] } };
+
+    const { summary, reader } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ deltaLink: undefined, items }) } },
+      reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }] },
+    });
+
+    expect(reads(reader)).toEqual(['delta']);
+    expect(summary.archived).toBe(1);
+  });
+
   it('a wider day puts aside what the whole read no longer lists, and drops a retry the read does not list', async () => {
     const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01GONE': { path: 'Old.docx', cTag: 'c1', outputs: ['kb/x/Old.docx.md'] } };
     const retry = { '01LOST': { item: item({ id: '01LOST', name: 'Lost.pdf', path: 'Lost.pdf' }), attempts: 1, reason: 'transient: Graph is busy' } };

@@ -320,8 +320,7 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
   const followed = await followMoves(deps.reader, { driveId: drive.id, concurrency: input.concurrency }, known, swept.value.items, folders.moves);
   if (!followed.ok) return { ok: false, error: { step: 'enumerate', cause: followed.error.kind, message: followed.error.message } };
   if (folders.moves.length > 0) deps.logger.info('sync.folders-moved', { driveId: drive.id, folders: folders.moves.length, documents: followed.value.length });
-  const listed = [...swept.value.items, ...followed.value];
-  const items = swept.value.complete ? [...listed, ...goneFromListing(listed, known.items, known.retry)] : listed;
+  const items = listedItems(known, swept.value, followed.value);
   const queued = {
     ...known,
     name: drive.name,
@@ -329,7 +328,7 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
     since: input.since,
     pending: buildWorklist(items, known.items, known.retry, input.since),
     retry: forgetSwept(known.retry, items),
-    folders: folders.folders,
+    folders: swept.value.complete || known.folders !== undefined ? folders.folders : undefined,
   };
   const next = withDrive(state, drive.id, queued);
   const saved = await save(deps.files, statePath, next, input.dryRun);
@@ -344,25 +343,43 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
 const readsWhole = (known: DriveState, since: string | undefined): boolean =>
   known.deltaLink !== undefined && (widens(known.since, since) || (known.folders === undefined && Object.keys(known.items).length > 0));
 
-// What a sweep found, and whether it read the library whole. A whole read lists every document the
-// library holds, so one recorded that it does not list was deleted at a time no delta told of.
+// What a sweep found, and whether it listed the library whole: a read from the root that reached the
+// cursor closing it. Such a read lists every document the library holds, so one recorded that it does
+// not list was deleted at a time no delta told of. A read that stopped short, on a page Graph handed
+// back twice, lists part of it, and what it did not reach is not gone for that.
 type Listing = DriveSweep & { readonly complete: boolean };
+
+const listing = (sweep: DriveSweep, fromRoot: boolean): Listing => ({ ...sweep, complete: fromRoot && sweep.deltaLink !== undefined });
 
 // Graph answers 410 to a cursor whose sync state it no longer keeps, and asks for a read from the start,
 // compared with what is held: the library is read whole, and what it does not list is gone.
 const readAgain = async (deps: SyncSiteDeps, driveId: string): Promise<Result<Listing, DriveReaderError>> => {
   deps.logger.warn('sync.cursor-expired', { driveId });
   const whole = await sweepDrive(deps.reader, driveId, undefined);
-  return whole.ok ? ok({ ...whole.value, complete: true }) : whole;
+  return whole.ok ? ok(listing(whole.value, true)) : whole;
 };
 
+// A whole read that stopped short hands back no cursor, so the one the drain reached is kept, and the
+// next run reads on from there.
 const sweepFor = async (deps: SyncSiteDeps, driveId: string, known: DriveState, since: string | undefined): Promise<Result<Listing, DriveReaderError>> => {
   const drained = await sweepDrive(deps.reader, driveId, known.deltaLink);
   if (!drained.ok) return expiredCursor(drained.error) ? readAgain(deps, driveId) : drained;
-  if (!readsWhole(known, since)) return ok({ ...drained.value, complete: false });
+  if (!readsWhole(known, since)) return ok(listing(drained.value, known.deltaLink === undefined));
   const whole = await sweepDrive(deps.reader, driveId, undefined);
   if (!whole.ok) return whole;
-  return ok({ ...whole.value, items: latestById([...drained.value.items, ...whole.value.items]), skipped: drained.value.skipped + whole.value.skipped, complete: true });
+  return ok({
+    items: latestById([...drained.value.items, ...whole.value.items]),
+    skipped: drained.value.skipped + whole.value.skipped,
+    deltaLink: whole.value.deltaLink ?? drained.value.deltaLink,
+    complete: whole.value.deltaLink !== undefined,
+  });
+};
+
+// What the run decides on: the sweep, the documents a moved folder took with it, and, after a read
+// that listed the library whole, each recorded document it did not list, as one deleted.
+const listedItems = (known: DriveState, swept: Listing, followed: ReadonlyArray<DriveItem>): ReadonlyArray<DriveItem> => {
+  const listed = [...swept.items, ...followed];
+  return swept.complete ? [...listed, ...goneFromListing(listed, known.items, known.retry)] : listed;
 };
 
 // Where each document recorded, or waiting on a retry, was last known to be.
