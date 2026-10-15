@@ -165,6 +165,13 @@ describe('writing one conversation as one file', () => {
     expect(files.written.get(THREAD_FILE)).toContain(`path: ${THREAD_RELATIVE}`);
   });
 
+  // An older state can hold a record with no note path, which is the same as holding none.
+  it('a thread recorded with no note path gets the name the naming rules give', async () => {
+    const { files } = await run({ reader: { conversations: { [CONV]: [message()] } }, folder: THREAD_FOLDER, file: '' });
+
+    expect(files.written.has(THREAD_FILE)).toBe(true);
+  });
+
   it('a message in a folder the sync gave no name for is recorded with no folder name', async () => {
     const { outcome } = await run({ reader: { conversations: { [CONV]: [message({ folderId: 'AAMk-gone' })] } } });
 

@@ -481,7 +481,11 @@ describe('telling which files a thread no longer holds', () => {
     const record = (primary: string): AttachmentRecord => ({ name: 'a.pdf', paths: [primary], primary, media: [] });
     const stores = {
       attachments: { gone: record(`${HERE}/_attachments/a.pdf.md`), kept: record(`${HERE}/_attachments/b.pdf.md`), elsewhere: record('kb/Mailbox/_inline/logo.png') },
-      linked: { 'b!one:01ABC': { paths: [`${HERE}/_linked/Rapport.docx.md`] }, 'b!one:01DEF': { paths: [`${HERE}/_linked/Plan.docx.md`] } },
+      linked: {
+        'b!one:01ABC': { paths: [`${HERE}/_linked/Rapport.docx.md`] },
+        'b!one:01DEF': { paths: [`${HERE}/_linked/Plan.docx.md`] },
+        'b!one:01GHI': { paths: [`${HERE}/_linked/Deck.pptx.md`, `${HERE}/_linked/Rapport.docx.md`] },
+      },
     };
 
     expect(storesWithout(stores, [`${HERE}/_attachments/a.pdf.md`, `${HERE}/_linked/Rapport.docx.md`])).toEqual({

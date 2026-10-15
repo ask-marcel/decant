@@ -251,6 +251,17 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(recordOf(thrice.outcome)?.files).toEqual([`${LINKED_HERE}/Rapport-2.docx.md`]);
   });
 
+  // A card that could not be written is not on disk, so it is not one of the files the folder holds.
+  it('a linked document whose card cannot be written is not listed among the files of the thread', async () => {
+    const { outcome } = await run({
+      reader: { conversations: { [CONV]: [message()] }, bodies: LINK_BODIES, links: linked },
+      drive: items,
+      files: { failWritesMatching: '/_linked/' },
+    });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.files).toStrictEqual([]);
+  });
+
   // A file the record still lists is on disk until a run moves it aside.
   it('a new linked document does not take the name of a file the thread folder still holds', async () => {
     const { outcome } = await run({

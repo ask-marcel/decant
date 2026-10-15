@@ -892,6 +892,29 @@ describe('the files a thread written again no longer holds', () => {
     expect(files.moves.map((move) => move.from)).toEqual([B]);
   });
 
+  // A state written under another root, before the knowledge base moved, names its files there.
+  it('a file listed under another root is put aside and named by its whole path', async () => {
+    const elsewhere = `old/Mailbox/threads/${FOLDER}/_attachments/c.pdf.md`;
+    const { notes } = await run({
+      files: { texts: { [STATE_PATH]: held(record({ files: [A, elsewhere] })), [A]: 'a', [elsewhere]: 'c' } },
+      reader: { folders: [folder()], pages },
+      outcome: () => writing([A]),
+    });
+
+    expect(notes?.archived).toEqual([{ path: elsewhere, reason: 'no longer in the thread' }]);
+  });
+
+  it('a thread that could not be written puts nothing aside and names nothing as moved', async () => {
+    const { files, notes } = await run({
+      files: { texts: { [STATE_PATH]: held(record({ files: [A, B] })), [A]: 'a', [B]: 'b' } },
+      reader: { folders: [folder()], pages },
+      failThread: 'conv-1',
+    });
+
+    expect(files.moves).toStrictEqual([]);
+    expect(notes?.archived).toStrictEqual([]);
+  });
+
   // Nothing is there to keep, so nothing is reported.
   it('a file listed but not on disk is passed over without a word', async () => {
     const { files, summary, notes } = await run({
@@ -976,7 +999,15 @@ describe('a thread with no message left at the source', () => {
       threadId: 'thread-1',
       root: '<r@example.com>',
     });
-    const other = withConversation(fed, 'conv-3', { threadId: 'thread-3', root: '<s@example.com>' });
+    const other = withThread(withConversation(fed, 'conv-3', { threadId: 'thread-3', root: '<s@example.com>' }), 'thread-3', {
+      folder: '2026-05-10-thread-3-other',
+      conversationIds: ['conv-3'],
+      file: 'threads/2026-05-10-thread-3-other/other.md',
+      messageIds: ['m3'],
+      lastMessage: '2026-05-10T09:31:00Z',
+      attachments: [],
+      inlineImages: [],
+    });
     const filed = withThread(other, 'thread-1', {
       folder: FOLDER,
       conversationIds: ['conv-1', 'conv-2'],
@@ -1007,7 +1038,7 @@ describe('a thread with no message left at the source', () => {
     ]);
     expect(summary).toMatchObject({ converted: 0, archived: 1, skipped: 0 });
     expect(notes?.archived).toEqual([{ path: `threads/${FOLDER}/contrat.md`, reason: 'no message left at the source' }]);
-    expect(after.threads).toEqual({});
+    expect(Object.keys(after.threads)).toEqual(['thread-3']);
     expect(after.conversations).toEqual({ 'conv-3': { threadId: 'thread-3', root: '<s@example.com>' } });
     expect(after.retry).toEqual({});
   });
@@ -1024,7 +1055,7 @@ describe('a thread with no message left at the source', () => {
 
     expect(summary).toMatchObject({ archived: 0, failed: 1 });
     expect(notes?.failed).toEqual([{ path: `threads/${FOLDER}/contrat.md`, reason: 'could not be moved aside: write-failed' }]);
-    expect(Object.keys(after.threads)).toEqual(['thread-1']);
+    expect(after.threads['thread-1']).toMatchObject({ folder: FOLDER, file: `threads/${FOLDER}/contrat.md` });
     // The sweep queued the thread for itself, so the count of an earlier failure starts over.
     expect(after.retry['thread-1']).toEqual({ attempts: 1, reason: 'could not be moved aside: write-failed' });
   });
