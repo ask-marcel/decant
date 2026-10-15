@@ -499,6 +499,49 @@ describe('the names a thread already gave its files', () => {
     expect(recordOf(thrice.outcome)?.files).toEqual([`${third}.md`, first, `${first}.md`]);
   });
 
+  // A file the thread never held has no card to keep: the failure gets one, under the file's name, and
+  // nothing of the thread is held back for it.
+  it('a new file whose bytes cannot be fetched gets a card saying why, under its own name', async () => {
+    const { outcome, files } = await run({
+      reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1')] }, failCalls: { attachmentBytes: { kind: 'throttled', message: 'slow down' } } },
+      folder: THREAD_FOLDER,
+      names: {},
+      held: [],
+    });
+
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Budget.xlsx.md`)).toContain('throttled: slow down');
+    expect(outcome?.kind === 'rendered' && outcome.thread.unread).toStrictEqual([]);
+  });
+
+  // Its content is held by another thread only, so this thread converts it again, under the name the
+  // thread gave it first rather than the next one free.
+  it('a file whose content the thread does not store keeps the name it was written under', async () => {
+    const once = await run({ reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1')] } } });
+
+    const twice = await run({
+      reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1')] } },
+      folder: THREAD_FOLDER,
+      file: THREAD_RELATIVE,
+      names: recordOf(once.outcome)?.names,
+      held: recordOf(once.outcome)?.files,
+      files: { texts: Object.fromEntries(once.files.written) },
+    });
+
+    expect(recordOf(twice.outcome)?.files).toEqual(recordOf(once.outcome)?.files);
+  });
+
+  // A thread written before the names were kept cannot tell what a failure was, so none of its files
+  // is taken for gone until a write that reads everything.
+  it('a thread written before the names were kept has its whole attachment folder named as unread on a failure', async () => {
+    const { outcome } = await run({
+      reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1')] }, failCalls: { attachmentBytes: { kind: 'throttled', message: 'slow down' } } },
+      folder: THREAD_FOLDER,
+      held: [`${ATTACHMENTS_STORE}/Budget.xlsx`],
+    });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.unread).toEqual([ATTACHMENTS_STORE]);
+  });
+
   // Two messages can carry one RFC id, a draft's file can be replaced: a name stays with the content it
   // was given to, and a different content takes a name of its own rather than writing over it.
   it('two messages with one RFC id carrying different files of one name keep both', async () => {
