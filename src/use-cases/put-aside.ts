@@ -1,9 +1,14 @@
 import type { Clock } from './ports/clock.ts';
 import type { Files, FilesError } from './ports/files.ts';
 
-export type PutAsideDeps = { readonly files: Pick<Files, 'exists' | 'move'>; readonly clock: Clock; readonly kbRoot: string };
-
 export type NotPutAside = { readonly path: string; readonly error: FilesError };
+
+// Where a source hands the files it lets go that would not move under the archive: no record names
+// them any more, so this is what keeps the move owed. A file a source keeps is never handed here.
+export type WriteDown = (missed: ReadonlyArray<NotPutAside>) => Promise<void>;
+
+// Absent `writeDown`, a file that would not move is only logged by its source.
+export type PutAsideDeps = { readonly files: Pick<Files, 'exists' | 'move'>; readonly clock: Clock; readonly kbRoot: string; readonly writeDown?: WriteDown };
 
 const DAY_LENGTH = 10;
 
@@ -48,7 +53,18 @@ export const setAside = async (deps: PutAsideDeps, outputs: ReadonlyArray<string
   return { moved, failed };
 };
 
-export const putAside = async (deps: PutAsideDeps, outputs: ReadonlyArray<string>): Promise<ReadonlyArray<NotPutAside>> => (await setAside(deps, outputs)).failed;
+// A set its source lets go, the record that named it gone or naming other files now: what would not
+// move is written down.
+export const letGo = async (deps: PutAsideDeps, aside: SetAside): Promise<void> => {
+  if (aside.failed.length > 0) await deps.writeDown?.(aside.failed);
+};
+
+// What an item held, put aside for good: the item is gone, or its files are other ones now.
+export const putAside = async (deps: PutAsideDeps, outputs: ReadonlyArray<string>): Promise<ReadonlyArray<NotPutAside>> => {
+  const aside = await setAside(deps, outputs);
+  await letGo(deps, aside);
+  return aside.failed;
+};
 
 // The files a set put aside go back where they were: the edit they made room for did not land, and
 // the version before it is still the current one.

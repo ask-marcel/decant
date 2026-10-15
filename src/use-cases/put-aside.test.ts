@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createFilesFake } from '../test-helpers/files-fake.ts';
-import { heldInPlace, putAside, putBack, setAside } from './put-aside.ts';
+import { heldInPlace, letGo, putAside, putBack, setAside } from './put-aside.ts';
 
 const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md';
 const PICTURE = 'kb/SharePoint sites/Espace Contoso/Documents/Contrat.docx.media/image-01.png';
@@ -124,5 +124,40 @@ describe('telling whether a file that would not move aside still stands in the w
 
     expect(await heldInPlace(deps(moved), await setAside(deps(moved), [NOTE]))).toBeUndefined();
     expect(await heldInPlace(deps(gone), await setAside(deps(gone), [NOTE]))).toBeUndefined();
+  });
+});
+
+// No record names a file a source lets go, so what would not move is handed on to be written down,
+// and a later run moves it.
+describe('handing on the files a source lets go that would not move', () => {
+  const handing = (): { handed: string[]; writeDown: (missed: ReadonlyArray<{ readonly path: string }>) => Promise<void> } => {
+    const handed: string[] = [];
+    const writeDown = async (missed: ReadonlyArray<{ readonly path: string }>): Promise<void> => {
+      handed.push(...missed.map((entry) => entry.path));
+    };
+    return { handed, writeDown };
+  };
+
+  it('a file put aside for good that would not move is handed on, and one that moved is not', async () => {
+    const locked = handing();
+    const free = handing();
+    const held = createFilesFake({ texts: { [NOTE]: 'old' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'EBUSY' } });
+    const loose = createFilesFake({ texts: { [NOTE]: 'old' } });
+
+    await putAside({ files: held, clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb', writeDown: locked.writeDown }, [NOTE]);
+    await putAside({ files: loose, clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb', writeDown: free.writeDown }, [NOTE]);
+
+    expect(locked.handed).toEqual([NOTE]);
+    expect(free.handed).toStrictEqual([]);
+  });
+
+  it('a set a source lets go after its write landed hands on what would not move', async () => {
+    const { handed, writeDown } = handing();
+    const files = createFilesFake({ texts: { [NOTE]: 'old', [PICTURE]: 'p' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'EBUSY' } });
+    const deps = { files, clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb', writeDown };
+
+    await letGo(deps, await setAside(deps, [NOTE, PICTURE]));
+
+    expect(handed).toEqual([NOTE, PICTURE]);
   });
 });

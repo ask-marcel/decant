@@ -30,6 +30,7 @@ import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextA
 import { withGaveUp } from '../domain/report.ts';
 import type { Unread } from '../domain/retry-ledger.ts';
 import { putAside } from './put-aside.ts';
+import type { WriteDown } from './put-aside.ts';
 
 export const PEOPLE_STATE_FILE = '.sync-state.json';
 
@@ -48,6 +49,9 @@ export type SyncPeopleDeps = {
   // How long a path may be as decant writes it: Windows' limit less what stands in front of the
   // knowledge base on disk. Absent, names are not cut for length.
   readonly pathBudget?: number;
+  // Where the files this sync lets go that would not move under the archive are written down, so a
+  // later run moves them. Absent, such a file is only logged.
+  readonly writeDown?: WriteDown;
 };
 
 export type SyncPeopleInput = { readonly dryRun: boolean; readonly concurrency: number };
