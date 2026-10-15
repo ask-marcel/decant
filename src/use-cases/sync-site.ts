@@ -1,6 +1,7 @@
 import { addressKindOf } from '../domain/address-kind.ts';
 import { INDEX_FILE } from '../domain/index-page.ts';
 import { libraryIndexPage } from '../domain/library-index.ts';
+import { sweptFolders } from '../domain/drive-folders.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { categoryFolderOf } from '../domain/kb-category.ts';
 import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
@@ -319,6 +320,7 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
     since: input.since,
     pending: buildWorklist(swept.value.items, known.items, known.retry, input.since),
     retry: forgetSwept(known.retry, swept.value.items),
+    folders: sweptFolders(known.folders ?? {}, swept.value.items).folders,
   };
   const next = withDrive(state, drive.id, queued);
   const saved = await save(deps.files, statePath, next, input.dryRun);
@@ -326,12 +328,16 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
 };
 
 // A day earlier than the one the cursor was taken under: what the cursor passed over never comes back
-// through it. It is read out first all the same, so what was deleted or moved since the last run is
-// still seen, then the library is read whole for what the narrower reach passed over; a document
-// already filed at the same version is left as it is.
+// through it. A library filed before its folders were kept: the folders of the documents it holds were
+// never reported, and only a whole read reports them. Either way the cursor is read out first all the
+// same, so what was deleted or moved since the last run is still seen, then the library is read whole;
+// a document already filed at the same version is left as it is.
+const readsWhole = (known: DriveState, since: string | undefined): boolean =>
+  known.deltaLink !== undefined && (widens(known.since, since) || (known.folders === undefined && Object.keys(known.items).length > 0));
+
 const sweepFor = async (reader: DriveReader, driveId: string, known: DriveState, since: string | undefined): Promise<Result<DriveSweep, DriveReaderError>> => {
   const drained = await sweepDrive(reader, driveId, known.deltaLink);
-  if (!drained.ok || !widens(known.since, since)) return drained;
+  if (!drained.ok || !readsWhole(known, since)) return drained;
   const whole = await sweepDrive(reader, driveId, undefined);
   if (!whole.ok) return whole;
   return ok({ ...whole.value, items: latestById([...drained.value.items, ...whole.value.items]), skipped: drained.value.skipped + whole.value.skipped });
