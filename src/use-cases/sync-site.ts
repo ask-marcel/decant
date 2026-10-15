@@ -30,7 +30,7 @@ import { parseJson } from '../domain/utilities/parse-json.ts';
 import { forgetSwept, givenUp, nextFailure } from '../domain/retry-policy.ts';
 import type { RetryEntry } from '../domain/retry-policy.ts';
 import { latestById, widens } from '../domain/sync-window.ts';
-import { buildWorklist } from '../domain/worklist.ts';
+import { buildWorklist, goneFromListing } from '../domain/worklist.ts';
 import type { ReportEntry, ReportNotes, ReportRun } from '../domain/report.ts';
 import { appendReportRun, hasSomethingToReport, skipReason } from '../domain/report.ts';
 import type { WorkItem } from '../domain/worklist.ts';
@@ -319,7 +319,8 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
   const followed = await followMoves(deps.reader, { driveId: drive.id, concurrency: input.concurrency }, known, swept.value.items, folders.moves);
   if (!followed.ok) return { ok: false, error: { step: 'enumerate', cause: followed.error.kind, message: followed.error.message } };
   if (folders.moves.length > 0) deps.logger.info('sync.folders-moved', { driveId: drive.id, folders: folders.moves.length, documents: followed.value.length });
-  const items = [...swept.value.items, ...followed.value];
+  const listed = [...swept.value.items, ...followed.value];
+  const items = swept.value.complete ? [...listed, ...goneFromListing(listed, known.items, known.retry)] : listed;
   const queued = {
     ...known,
     name: drive.name,
@@ -342,12 +343,17 @@ const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveS
 const readsWhole = (known: DriveState, since: string | undefined): boolean =>
   known.deltaLink !== undefined && (widens(known.since, since) || (known.folders === undefined && Object.keys(known.items).length > 0));
 
-const sweepFor = async (reader: DriveReader, driveId: string, known: DriveState, since: string | undefined): Promise<Result<DriveSweep, DriveReaderError>> => {
+// What a sweep found, and whether it read the library whole. A whole read lists every document the
+// library holds, so one recorded that it does not list was deleted at a time no delta told of.
+type Listing = DriveSweep & { readonly complete: boolean };
+
+const sweepFor = async (reader: DriveReader, driveId: string, known: DriveState, since: string | undefined): Promise<Result<Listing, DriveReaderError>> => {
   const drained = await sweepDrive(reader, driveId, known.deltaLink);
-  if (!drained.ok || !readsWhole(known, since)) return drained;
+  if (!drained.ok) return drained;
+  if (!readsWhole(known, since)) return ok({ ...drained.value, complete: false });
   const whole = await sweepDrive(reader, driveId, undefined);
   if (!whole.ok) return whole;
-  return ok({ ...whole.value, items: latestById([...drained.value.items, ...whole.value.items]), skipped: drained.value.skipped + whole.value.skipped });
+  return ok({ ...whole.value, items: latestById([...drained.value.items, ...whole.value.items]), skipped: drained.value.skipped + whole.value.skipped, complete: true });
 };
 
 // Where each document recorded, or waiting on a retry, was last known to be.

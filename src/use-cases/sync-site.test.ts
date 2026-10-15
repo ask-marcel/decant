@@ -1186,7 +1186,7 @@ describe('moving a library out of the day folders once', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      drives: { 'b!one': { name: 'Documents', deltaLink: 'c1', pending: [], items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs } }, retry } },
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'c1', pending: [], items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs } }, retry, folders: {} } },
     });
   const OLD = 'kb/SharePoint sites/Espace Contoso/Documents/2026-05-12/Projets/Contrat.docx.md';
   const NEW = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
@@ -1220,6 +1220,7 @@ describe('moving a library out of the day folders once', () => {
           pending: [{ kind: 'archive', itemId: '01OLD', outputs: [GONE] }],
           items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [OLD] }, '01OLD': { path: 'Old.docx', cTag: 'c1', outputs: [GONE] } },
           retry: {},
+          folders: {},
         },
       },
     });
@@ -1396,6 +1397,53 @@ describe('following the folders of a library', () => {
 
     expect(ok).toBe(false);
     expect(files.written.get(STATE_PATH)).toBe(before);
+  });
+
+  // A whole read lists every document the library holds: one recorded that it does not list was deleted
+  // at a time no delta told of, as a deletion Graph sent without a name was before.
+  it('the first whole read of a library recorded before its folders were kept puts aside what it no longer lists', async () => {
+    const GONE = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Old.docx.md';
+    const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01GONE': { path: 'Projets/Old.docx', cTag: 'c1', outputs: [GONE] } };
+    const pages = [
+      { items: [], skipped: 0, deltaLink: 'cursor-2' },
+      { items: [item()], skipped: 0, deltaLink: 'cursor-3' },
+    ];
+
+    const { summary, notes, files } = await run({ files: { texts: { [STATE_PATH]: recorded({ items }), [GONE]: 'the old one' } }, reader: { pages } });
+
+    expect(summary).toMatchObject({ converted: 0, archived: 1 });
+    expect(notes?.archived).toEqual([{ path: 'Projets/Old.docx', reason: 'no longer at the source' }]);
+    expect(files.moves).toEqual([{ from: GONE, to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/Documents/Projets/Old.docx.md' }]);
+    expect(Object.keys(libraryAfter(files)?.items ?? {})).toEqual(['01ABC']);
+  });
+
+  it('a wider day puts aside what the whole read no longer lists, and drops a retry the read does not list', async () => {
+    const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01GONE': { path: 'Old.docx', cTag: 'c1', outputs: ['kb/x/Old.docx.md'] } };
+    const retry = { '01LOST': { item: item({ id: '01LOST', name: 'Lost.pdf', path: 'Lost.pdf' }), attempts: 1, reason: 'transient: Graph is busy' } };
+    const pages = [
+      { items: [], skipped: 0, deltaLink: 'cursor-2' },
+      { items: [item()], skipped: 0, deltaLink: 'cursor-3' },
+    ];
+
+    const { summary, files } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ since: '2026-01-01', folders: {}, items, retry }) } },
+      reader: { pages },
+      since: '2025-01-01',
+    });
+
+    expect(summary).toMatchObject({ converted: 0, archived: 1, failed: 0 });
+    expect(libraryAfter(files)?.retry).toEqual({});
+  });
+
+  it('a read that follows the cursor puts nothing aside for what it does not list', async () => {
+    const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01PLAN': { path: 'Plan.docx', cTag: 'c1', outputs: ['kb/x/Plan.docx.md'] } };
+
+    const { summary } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ folders: {}, items }) } },
+      reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(summary.archived).toBe(0);
   });
 
   it('each document under a moved folder is read again once, also when several are read at a time', async () => {
