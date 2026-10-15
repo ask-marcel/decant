@@ -260,6 +260,11 @@ export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: Rea
     byMessage[part.message.id] = carried;
   }
   // Both stores fold into the one the run remembers: the shared pictures so a later thread finds
-  // them, this thread's files so the mailbox index names everything on disk.
-  return { paths, store: { ...shared, ...store }, byMessage, media, skipped, failed };
+  // them, this thread's files so the mailbox index names everything on disk. Only what this write
+  // added or used: the fold goes by key, and a held file whose message is gone would otherwise come
+  // back after the run put it aside.
+  const written = new Set(paths);
+  const pictures = Object.fromEntries(Object.entries(shared).filter(([hash, record]) => place.stored[hash] !== record));
+  const kept = Object.fromEntries(Object.entries(store).filter(([, record]) => written.has(record.primary)));
+  return { paths, store: { ...pictures, ...kept }, byMessage, media, skipped, failed };
 };
