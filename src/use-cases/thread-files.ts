@@ -204,9 +204,17 @@ const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placin
     if (inline) reserve(placing, nameOf(place, placing, arrival));
     return { asName: seen.name, paths: seen.paths, primary: seen.primary, picture: inline ? seen.primary : undefined, text: seen.text, media: seen.media };
   }
-  const asName = reserve(placing, nameOf(place, placing, arrival));
+  const asName = reserve(placing, freshName(place, placing, arrival));
   const fresh: Fresh = { messageId, attachment, stamp, asName, hash, inline, rendered: address.value.rendered };
   return convertFresh(deps, place, inline ? placing.shared : placing.store, fresh);
+};
+
+// The name a content the thread does not hold yet is written under. Not the name it had before when
+// the thread stores another content under that name: two messages can carry one RFC id, and a draft's
+// file can be replaced under its own name, and each content keeps a file of its own.
+const freshName = (place: FilePlace, placing: Placing, arrival: Arrival): string => {
+  const taken = Object.values(placing.store).some((record) => record.name === arrival.recorded);
+  return taken ? freeName(place, arrival.attachment.name, placing.taken) : nameOf(place, placing, arrival);
 };
 
 // A content no store holds yet, and what is known of it by the time it is converted.
