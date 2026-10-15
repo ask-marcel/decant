@@ -306,8 +306,8 @@ const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
     swept.value.state,
     swept.value.messages.filter((message) => message.isDeleted).map((message) => message.id)
   );
-  const extra = updating(state) ? Object.keys(state.threads).sort(compareText) : [...new Set([...renamed, ...removed])];
-  return finishQueue(deps, input, { ...swept.value.state, since: input.since, fields: MAIL_FIELDS }, statePath, { messages: swept.value.messages, extra });
+  const extra = updating(state) ? Object.keys(state.threads).sort(compareText) : renamed;
+  return finishQueue(deps, input, { ...swept.value.state, since: input.since, fields: MAIL_FIELDS }, statePath, { messages: swept.value.messages, extra, removed });
 };
 
 // The addresses the mailbox sends from, read again on every sweep. A failed read keeps the ones held
@@ -351,8 +351,10 @@ const sweptFrom = (deps: SyncMailboxDeps, state: MailboxState, since: string | u
   return withoutCursors(state);
 };
 
-// What the sweep brought back, and the threads to write again whatever it brought.
-type Found = { readonly messages: ReadonlyArray<MailMessage>; readonly extra: ReadonlyArray<string> };
+// What the sweep brought back, the threads to write again whatever it brought, and the threads that
+// held a message it says was removed. A removal is news even for a thread out of tries: the write it
+// brings may find nothing left, which puts the thread aside.
+type Found = { readonly messages: ReadonlyArray<MailMessage>; readonly extra: ReadonlyArray<string>; readonly removed: ReadonlyArray<string> };
 
 // Whether a thread already in the knowledge base holds this conversation.
 const recorded = (state: MailboxState, conversationId: string): boolean => {
@@ -376,7 +378,7 @@ const finishQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state
   const dirty = dirtyOf(state, found.messages, input.since);
   deps.logger.info('mail.enumerated', { messages: found.messages.length, conversations: conversationsOf(found.messages, input.since).length, queued: dirty.length });
   const resolved = await resolveThreads(deps, state, dirty);
-  const extra = found.extra.filter((threadId) => (resolved.retry[threadId]?.attempts ?? 0) < MAX_CONVERSION_ATTEMPTS);
+  const extra = [...found.extra.filter((threadId) => (resolved.retry[threadId]?.attempts ?? 0) < MAX_CONVERSION_ATTEMPTS), ...found.removed];
   const fresh = [...new Set([...threadsToRender(resolved, dirty), ...extra])];
   const titles = { ...recordedTitles(resolved, extra), ...titlesOf(resolved, dirty) };
   const queued = withTitles(withPending(cleared(resolved, fresh), [...fresh, ...retriedThreads(resolved.retry, fresh)]), titles);

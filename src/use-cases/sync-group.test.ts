@@ -391,6 +391,21 @@ describe('a group thread the group no longer lists', () => {
     expect(stateAfter(files).retry['AAQkAD-thread']).toEqual({ attempts: 1, reason: 'could not be moved aside: write-failed' });
   });
 
+  // Out of tries because it could not be written, a thread is still put aside once the group deletes
+  // it: putting it aside needs no write.
+  it('a thread out of tries because it could not be written is still put aside once the group no longer lists it', async () => {
+    const given = serializeGroupState({
+      ...withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', RECORD),
+      retry: { 'AAQkAD-thread': { attempts: 3, reason: 'thread refused' } },
+    });
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: given, [NOTE]: 'note' } },
+      reader: { threads: { '0d3b-group': [thread({ id: 'other', lastDelivered: '2026-07-01T00:00:00Z' })] } },
+    });
+
+    expect(files.moves.map((move) => move.from)).toEqual([NOTE]);
+  });
+
   // Out of tries, the thread is named as given up and left where it is.
   it('a thread whose note would not move three runs running is left alone by the fourth', async () => {
     const tried = serializeGroupState({

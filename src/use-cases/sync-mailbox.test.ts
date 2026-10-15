@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { MailFolder } from '../domain/mail-folder.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
-import { serializeMailboxState, emptyMailboxState, withConversation, withFolderCursor, withRetry, withThread } from '../domain/mail-state.ts';
+import { serializeMailboxState, emptyMailboxState, parseMailboxState, withConversation, withFolderCursor, withRetry, withThread } from '../domain/mail-state.ts';
 import type { MailboxState, ThreadRecord } from '../domain/mail-state.ts';
 import type { MessageRecord } from '../domain/message-record.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
@@ -821,6 +821,10 @@ describe('a message removed at the source', () => {
   );
   // What Graph sends for a message deleted, or moved out of the folder: its id and nothing else.
   const removed = (id: string): MailMessage => message({ id, conversationId: '', isDeleted: true });
+  const parseFiled = (): MailboxState => {
+    const parsed = parseMailboxState(JSON.parse(filed));
+    return parsed.ok ? parsed.value : emptyMailboxState();
+  };
 
   // A delta names a removed message by its id alone, with no conversation, so the thread is found by
   // the ids it holds. Written again, it shows what the mailbox holds now.
@@ -832,6 +836,18 @@ describe('a message removed at the source', () => {
 
     expect(asked).toEqual(['conv-1']);
     expect(labels).toEqual(['Contrat Contoso']);
+  });
+
+  // Out of tries, a thread is not written again for its own sake; a message removed is news, and the
+  // write it brings may find nothing left, which puts the thread aside.
+  it('writes again a thread out of tries, once the message it held is removed', async () => {
+    const given = serializeMailboxState(withRetry(parseFiled(), 'thread-1', { attempts: 3, reason: 'thread refused' }));
+    const { asked } = await run({
+      files: { texts: { [STATE_PATH]: given } },
+      reader: { folders: [folder()], pages: [{ messages: [removed('m0')], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(asked).toEqual(['conv-1']);
   });
 
   it('a removed message no thread held writes nothing', async () => {
