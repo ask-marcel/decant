@@ -31,7 +31,7 @@ import type { Logger } from './ports/logger.ts';
 import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
-import { folderFor, threadFoldersOn } from './thread-folders.ts';
+import { folderFor, threadFoldersOn, writtenBefore } from './thread-folders.ts';
 import { NO_LONGER_LISTED, NO_MESSAGE_LEFT, threadAside, writtenAgain } from './thread-aside.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
@@ -133,9 +133,7 @@ const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: Grou
     conversationIds: [threadRef(input.group.id, thread.id)],
     root: thread.id,
     folder: folderFor(state.threads[thread.id], place.onDisk, threadId),
-    file: state.threads[thread.id]?.file,
-    names: state.threads[thread.id]?.names,
-    held: state.threads[thread.id]?.files,
+    ...writtenBefore(state.threads[thread.id]),
     maxBytes: input.maxBytes,
     linked: state.linked,
     attachments: state.attachments,
