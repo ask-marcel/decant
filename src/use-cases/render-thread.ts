@@ -4,6 +4,7 @@ import { inReceivedOrder } from '../domain/mail-message.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import { messageRecordOf } from '../domain/message-record.ts';
 import type { MessageRecord } from '../domain/message-record.ts';
+import { inKeyOrder } from '../domain/mail-state.ts';
 import type { AttachmentRecord, LinkedRecord, ThreadRecord } from '../domain/mail-state.ts';
 import { renderFrontMatter } from '../domain/front-matter.ts';
 import type { Result } from '../domain/result.ts';
@@ -69,6 +70,10 @@ export type RenderThreadInput = {
   // thread never written. Kept like the folder, so the note of a thread whose first message is gone
   // keeps its name.
   readonly file?: string;
+  // The name each file a message carried was written under, and every file the thread's folder held,
+  // as the thread was last written: a file keeps its name, and a new one takes none that is on disk.
+  readonly names?: Readonly<Record<string, string>>;
+  readonly held?: ReadonlyArray<string>;
   readonly maxBytes: number;
   // Files already pulled from SharePoint by an earlier thread, so one link is fetched once.
   readonly linked: Readonly<Record<string, LinkedRecord>>;
@@ -257,7 +262,15 @@ const writeThread = async (
   const relative = place.relative;
   const stamp = stampFor(deps, input, first, last);
   const reading = { ...deps, convertAttachment: (converting: ConvertAttachmentInput): Promise<AttachmentOutcome> => announced(deps, input.label, converting) };
-  const filePlace = { here: place.here, mailboxRoot: deps.mailboxRoot, maxBytes: input.maxBytes, stored: input.attachments, pathBudget: deps.pathBudget };
+  const filePlace = {
+    here: place.here,
+    mailboxRoot: deps.mailboxRoot,
+    maxBytes: input.maxBytes,
+    stored: input.attachments,
+    names: input.names,
+    held: input.held,
+    pathBudget: deps.pathBudget,
+  };
   const attachments = await attachmentsOf(reading, filePlace, parts, stamp);
   const following = { ...deps, convertFile: (converting: ConvertFileInput): Promise<ConvertOutcome> => announcedLink(deps, input.label, converting) };
   const links = await linkedFiles(following, place.here, input.maxBytes, parts);
@@ -297,6 +310,7 @@ const writeThread = async (
         attachments: attachments.paths.filter((path) => !shown.has(path)),
         inlineImages: bodies.pictures,
         files: heldIn(here, [...attachments.paths, ...cardPaths, ...links.paths, ...linkCards]),
+        names: inKeyOrder(attachments.names),
         subject: first.subject,
         firstMessage: first.received,
         lastFrom: last.from?.name ?? '',

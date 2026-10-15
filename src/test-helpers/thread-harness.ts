@@ -69,6 +69,9 @@ export const run = async (
     // The note's path as the thread record holds it, so a test can write a thread again the way the
     // sync does.
     file?: string;
+    // The names and the files the thread record holds, the same way.
+    names?: Record<string, string>;
+    held?: ReadonlyArray<string>;
     linked?: Record<string, { paths: string[] }>;
     attachments?: Record<string, AttachmentRecord>;
     ocr?: OcrSeed;
@@ -115,6 +118,8 @@ export const run = async (
     root: ROOT,
     folder: seeds.folder ?? '',
     file: seeds.file,
+    names: seeds.names,
+    held: seeds.held,
     maxBytes: 50 * 1024 * 1024,
     linked: seeds.linked ?? {},
     attachments: seeds.attachments ?? {},
