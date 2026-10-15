@@ -3,7 +3,7 @@ import { contentHash } from '../domain/content-hash.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
 import { tooLargeReason } from '../domain/report.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
-import { ATTACHMENTS_STORE, CONV, INLINE_STORE, THREAD_FILE, THREAD_RELATIVE, bytesOf, message, run, storedName } from '../test-helpers/thread-harness.ts';
+import { ATTACHMENTS_STORE, CONV, INLINE_STORE, THREAD_FILE, THREAD_FOLDER, THREAD_RELATIVE, bytesOf, message, run, storedName } from '../test-helpers/thread-harness.ts';
 
 describe('keeping what a conversation carried', () => {
   const withAttachment = {
@@ -376,5 +376,77 @@ describe('an email attached to an email', () => {
     const { outcome } = await run({ reader: seed });
 
     expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toEqual([`${ATTACHMENTS_STORE}/${renderedName(EMBEDDED.name)}.md`]);
+  });
+});
+
+describe('the names a thread already gave its files', () => {
+  const budget = (id: string, name = 'Budget.xlsx'): { id: string; name: string; contentType: string; size: number; isInline: boolean } => ({
+    id,
+    name,
+    contentType: 'application/vnd',
+    size: 4096,
+    isInline: false,
+  });
+  const second = `${ATTACHMENTS_STORE}/Budget-2.xlsx`;
+  const third = `${ATTACHMENTS_STORE}/Budget-3.xlsx`;
+  const m1 = message({ id: 'm1', hasAttachments: true });
+  const m2 = message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true });
+  const m3 = message({ id: 'm3', received: '2026-05-14T10:00:00Z', hasAttachments: true });
+
+  const storedBy = (outcome: Awaited<ReturnType<typeof run>>['outcome']): ReadonlyArray<string> => (outcome?.kind === 'rendered' ? outcome.thread.record.attachments : []);
+  const heldBy = (outcome: Awaited<ReturnType<typeof run>>['outcome']): Record<string, AttachmentRecord> => (outcome?.kind === 'rendered' ? { ...outcome.thread.attachments } : {});
+
+  // The file a message kept stays under the name it was written under, and the new one takes a name
+  // no file of the thread holds: given the name that came free, it wrote over the file kept there.
+  it('a message gone from the thread leaves the names of the files after it as they were, and a new file takes a name no held file has', async () => {
+    const before = await run({ reader: { conversations: { [CONV]: [m1, m2] }, attachments: { m1: [budget('att1')], m2: [budget('att2')] } } });
+
+    const after = await run({
+      reader: { conversations: { [CONV]: [m2, m3] }, attachments: { m2: [budget('att2')], m3: [budget('att3')] } },
+      folder: THREAD_FOLDER,
+      attachments: heldBy(before.outcome),
+      files: { texts: Object.fromEntries(before.files.written) },
+    });
+
+    expect(storedBy(after.outcome)).toEqual([second, `${second}.md`, third, `${third}.md`]);
+    expect(after.reader.calls).not.toContain('attachmentMarkdown:att2:m2');
+    expect(after.files.written.get(`${second}.md`)).toContain('converted att2');
+  });
+
+  // Written in one go, the two files take the first two names: a held file takes no new name of its
+  // own, so the file that joins it is numbered as though both had come together.
+  it('a reply carrying a new file of the same name numbers it right after the held one', async () => {
+    const before = await run({ reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1')] } } });
+
+    const after = await run({
+      reader: { conversations: { [CONV]: [m1, m2] }, attachments: { m1: [budget('att1')], m2: [budget('att2')] } },
+      folder: THREAD_FOLDER,
+      attachments: heldBy(before.outcome),
+      files: { texts: Object.fromEntries(before.files.written) },
+    });
+
+    expect(storedBy(after.outcome)).toEqual([`${ATTACHMENTS_STORE}/Budget.xlsx`, `${ATTACHMENTS_STORE}/Budget.xlsx.md`, second, `${second}.md`]);
+  });
+
+  // A name cut to fit a deep disk is compared as it is written: the cut name a held file has is not
+  // the name the sender gave, and a new file of that name would be cut to the same one.
+  it('a held name cut for length keeps a new file of the same name off it', async () => {
+    const long = 'Rahmenvertrag mit AEB und BEB Software bilingual Vorlage final.xlsx';
+    const before = await run({ reader: { conversations: { [CONV]: [m1, m2] }, attachments: { m1: [budget('att1', long)], m2: [budget('att2', long)] } }, pathBudget: 170 });
+
+    const after = await run({
+      reader: { conversations: { [CONV]: [m2, m3] }, attachments: { m2: [budget('att2', long)], m3: [budget('att3', long)] } },
+      folder: THREAD_FOLDER,
+      attachments: heldBy(before.outcome),
+      files: { texts: Object.fromEntries(before.files.written) },
+      pathBudget: 170,
+    });
+    const was = storedBy(before.outcome);
+    const now = storedBy(after.outcome);
+
+    expect(was).toHaveLength(4);
+    expect(now).toHaveLength(4);
+    expect(now.slice(0, 2)).toEqual(was.slice(2, 4));
+    expect(now.slice(2).filter((path) => was.includes(path))).toStrictEqual([]);
   });
 });
