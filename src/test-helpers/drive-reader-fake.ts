@@ -36,6 +36,9 @@ export type DriveReaderSeed = {
   readonly bytes?: Readonly<Record<string, Uint8Array>>;
   readonly archiveEntries?: ReadonlyArray<ArchiveEntry>;
   readonly failItems?: Readonly<Record<string, DriveReaderError>>;
+  // Fails the single-item read of these ids alone, the way Graph does when it is busy for a while,
+  // leaving the delta and the conversions working.
+  readonly failItemReads?: Readonly<Record<string, DriveReaderError>>;
   readonly failWith?: DriveReaderError;
   // Fails only the calls that follow a cursor, so a sweep can break halfway through its pages.
   readonly failFrom?: DriveReaderError;
@@ -86,7 +89,8 @@ export const createDriveReaderFake = (seed: DriveReaderSeed = {}): DriveReaderFa
     },
     item: async (ref) => {
       calls.push(`item:${ref.itemId}`);
-      if (seed.failWith) return err(seed.failWith);
+      const refused = seed.failItemReads?.[ref.itemId] ?? seed.failWith;
+      if (refused) return err(refused);
       const found = seed.items?.[ref.itemId];
       return found === undefined ? missing(`item ${ref.itemId}`) : ok(found);
     },
