@@ -378,10 +378,15 @@ const finishQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state
   const dirty = dirtyOf(state, found.messages, input.since);
   deps.logger.info('mail.enumerated', { messages: found.messages.length, conversations: conversationsOf(found.messages, input.since).length, queued: dirty.length });
   const resolved = await resolveThreads(deps, state, dirty);
-  const extra = [...found.extra.filter((threadId) => (resolved.retry[threadId]?.attempts ?? 0) < MAX_CONVERSION_ATTEMPTS), ...found.removed];
-  const fresh = [...new Set([...threadsToRender(resolved, dirty), ...extra])];
-  const titles = { ...recordedTitles(resolved, extra), ...titlesOf(resolved, dirty) };
-  const queued = withTitles(withPending(cleared(resolved, fresh), [...fresh, ...retriedThreads(resolved.retry, fresh)]), titles);
+  const outOfTries = (threadId: string): boolean => (resolved.retry[threadId]?.attempts ?? 0) >= MAX_CONVERSION_ATTEMPTS;
+  const extra = [...found.extra, ...found.removed].filter((threadId) => !outOfTries(threadId));
+  const swept = [...new Set([...threadsToRender(resolved, dirty), ...extra])];
+  // A thread out of tries that held a removed message is written once more, keeping its count: the
+  // write may find nothing left, which puts it aside, and a write that fails again leaves it given up.
+  const onceMore = found.removed.filter((threadId) => outOfTries(threadId) && !swept.includes(threadId));
+  const fresh = [...swept, ...onceMore];
+  const titles = { ...recordedTitles(resolved, [...extra, ...onceMore]), ...titlesOf(resolved, dirty) };
+  const queued = withTitles(withPending(cleared(resolved, swept), [...fresh, ...retriedThreads(resolved.retry, fresh)]), titles);
   const saved = await save(deps.files, statePath, queued, input.dryRun);
   return saved.ok ? ok(queued) : saved;
 };

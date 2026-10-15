@@ -850,6 +850,19 @@ describe('a message removed at the source', () => {
     expect(asked).toEqual(['conv-1']);
   });
 
+  // One more write, not three: a thread out of tries keeps its count, so a write that fails again
+  // leaves it given up rather than starting it over.
+  it('a thread out of tries whose write fails again after a removal stays given up', async () => {
+    const given = serializeMailboxState(withRetry(parseFiled(), 'thread-1', { attempts: 3, reason: 'thread refused' }));
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: given } },
+      reader: { folders: [folder()], pages: [{ messages: [removed('m0')], skipped: 0, deltaLink: 'cursor-2' }] },
+      failThread: 'conv-1',
+    });
+
+    expect(stateAfter(files).retry['thread-1']).toEqual({ attempts: 4, reason: 'thread refused' });
+  });
+
   it('a removed message no thread held writes nothing', async () => {
     const { asked } = await run({
       files: { texts: { [STATE_PATH]: filed } },
