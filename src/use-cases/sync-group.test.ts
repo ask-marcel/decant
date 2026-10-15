@@ -335,6 +335,44 @@ describe('a group thread with no post left', () => {
   });
 });
 
+describe('a group thread the group no longer lists', () => {
+  const NOTE = `kb/Group inboxes/Northwind Leadership Team/${RECORD.file}`;
+  const held = serializeGroupState(withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', RECORD));
+
+  // The listing is whole on every run, so a thread missing from it was deleted in the group.
+  it('goes under the archive whole, is named in the report, and leaves the state', async () => {
+    const other = thread({ id: 'other', topic: 'Offsite agenda', lastDelivered: '2026-08-10T05:40:15Z' });
+    const { files, summary, notes, asked } = await run({
+      files: { texts: { [STATE_PATH]: held, [NOTE]: 'note' } },
+      reader: { threads: { '0d3b-group': [other] } },
+      outcome: () => rendered({ record: { ...RECORD, folder: 'other-folder', file: 'threads/other-folder/offsite-agenda.md' } }),
+    });
+
+    expect(asked.map((input) => input.root)).toEqual(['other']);
+    expect(files.moves).toEqual([{ from: NOTE, to: `kb/_archive/2026-07-23/Group inboxes/Northwind Leadership Team/${RECORD.file}` }]);
+    expect(summary).toMatchObject({ converted: 1, archived: 1 });
+    expect(notes.archived).toEqual([{ path: RECORD.file, reason: 'no longer at the source' }]);
+    expect(Object.keys(stateAfter(files).threads)).toEqual(['other']);
+  });
+
+  // A group the user can no longer read refuses the listing; an empty answer is most often a fault,
+  // and taking it at its word would move the whole inbox aside.
+  it('an empty listing moves nothing aside, and the run says so in the log', async () => {
+    const { files, logger, summary } = await run({ files: { texts: { [STATE_PATH]: held, [NOTE]: 'note' } }, reader: { threads: { '0d3b-group': [] } } });
+
+    expect(files.moves).toStrictEqual([]);
+    expect(summary.archived).toBe(0);
+    expect(Object.keys(stateAfter(files).threads)).toEqual(['AAQkAD-thread']);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'group.listing-empty', meta: { group: '0d3b-group', threads: 1 } });
+  });
+
+  it('a dry run moves nothing aside', async () => {
+    const { files } = await run({ files: { texts: { [STATE_PATH]: held, [NOTE]: 'note' } }, reader: { threads: { '0d3b-group': [thread({ id: 'other' })] } }, dryRun: true });
+
+    expect(files.moves).toStrictEqual([]);
+  });
+});
+
 describe('naming a group inbox in a report', () => {
   it('a group run names itself a group inbox, so a site of the same name reads apart', async () => {
     const outcome = (): RenderThreadOutcome => rendered({ filesFailed: [{ path: 'budget.xlsx', reason: 'locked' }] });
