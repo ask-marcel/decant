@@ -177,6 +177,7 @@ A dry run keeps nothing. The change does not move a thread folder that is alread
 kb/
   .decant.json                      how far back the runs reach (a day, or all), and the time zone
   _sync-report.md                   what the last run left behind, every source in one file
+  .sync-aside.json                  each file that did not move to _archive/, and why (see Re-running)
   _archive/2026-10-13/...           the earlier copy of each file, under the day of the run that
                                     moved it: deleted at the source, renamed, moved, or replaced by
                                     an edit (a second copy of one path that day goes under 2026-10-13-2/)
@@ -1138,6 +1139,18 @@ library converts nothing. State is written after every single file, so stopping 
 converts a file that you rename or move in SharePoint again at its new path. The earlier files of
 that file, the files of a deleted file and the earlier version of an edited file go to
 `kb/_archive/<day of the run>/`.
+
+If decant cannot move a file to `_archive/`, decant writes the path of the file and the cause in
+`kb/.sync-aside.json`. For example, a program on Windows can hold the file open. At the start of
+each run, before it reads a source, decant tries to move each file in that list again. The section
+`## Could not be moved to the archive` of `kb/_sync-report.md` names each file that stays in the
+list. It gives the cause and the day of the first failure. A dry run does not move these files.
+
+When an edit must go to the path of such a file, decant does not write the edit. A write at that
+path replaces the earlier version. The report of the source names the item as failed, and the next
+run tries the item again, three runs in all. This applies to documents, To Do tasks and Teams
+posts. When the edit goes to a new path, decant writes the edit. The path of the earlier file stays
+in the list until the file moves.
 
 Microsoft Graph can refuse an old cursor (HTTP 410). Then decant reads the source again from the
 start: a mail folder, a library or the calendar. For a library, decant then moves to `_archive/` each
