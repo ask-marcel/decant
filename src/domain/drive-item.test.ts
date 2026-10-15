@@ -68,6 +68,17 @@ describe('reading a page of changes from a document library', () => {
     expect(page.ok && page.value.items[0]?.kind).toBe('deleted');
   });
 
+  // OneDrive for Business leaves the name out of a deleted item. Dropped for it, every document
+  // deleted in a library stayed in the knowledge base as if it were still at the source.
+  it('an item deleted since the last run is reported as deleted when Graph names it by its id alone', () => {
+    const page = parseDriveDelta({ value: [{ id: '01ABC', deleted: { state: 'deleted' } }] });
+
+    expect(page.ok && page.value).toEqual({
+      items: [{ id: '01ABC', name: '', kind: 'deleted', size: 0, path: '', lastModified: '', cTag: '', webUrl: '', modifiedBy: undefined }],
+      skipped: 0,
+    });
+  });
+
   it('the cursor for the next page is handed back ready to be called again', () => {
     const page = parseDriveDelta({ value: [], '@odata.nextLink': 'https://graph.microsoft.com/v1.0/drives/b!one/root/delta?%24skiptoken=abc' });
 
