@@ -1583,6 +1583,29 @@ describe('following the folders of a library', () => {
     expect(files.written.get(STATE_PATH)).toBe(before);
   });
 
+  it('a failed read by id under a moved folder ends the library with the step, the cause and the message', async () => {
+    const files = createFilesFake({ texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets' } }) } });
+    const reader = createDriveReaderFake({
+      pages: [{ items: [folder('01F', 'Contrats 2026')], skipped: 0, deltaLink: 'cursor-2' }],
+      failItemReads: { '01ABC': { kind: 'transient', message: 'Graph is busy' } },
+    });
+    const clock = createClockFake();
+    const syncSite = createSyncSite({
+      reader,
+      files,
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      clock,
+      kbRoot: 'kb',
+      timezone: 'UTC',
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
+    });
+
+    const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+
+    expect(result).toEqual({ ok: false, error: { step: 'enumerate', cause: 'transient', message: 'Graph is busy' } });
+  });
+
   it('each document under a moved folder is read again once, also when several are read at a time', async () => {
     const items = Object.fromEntries(['a', 'b', 'c'].map((id) => [id, { path: `Projets/${id}.docx`, cTag: 'c1', outputs: [`kb/x/${id}.docx.md`] }]));
     const moved = Object.fromEntries(['a', 'b', 'c'].map((id) => [id, item({ id, name: `${id}.docx`, path: `Contrats 2026/${id}.docx` })]));

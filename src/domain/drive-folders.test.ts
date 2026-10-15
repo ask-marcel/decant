@@ -29,6 +29,12 @@ describe('keeping the folders of a library by id', () => {
     });
   });
 
+  // A delta also returns the folders above each document that changed, so most folders it reports are
+  // where they were.
+  it('a folder reported at the path it has is no move', () => {
+    expect(sweptFolders({ '01F': 'Projets' }, [folder('01F', 'Projets')])).toEqual({ folders: { '01F': 'Projets' }, moves: [] });
+  });
+
   it('a folder the sweep says nothing of keeps its path, unless a folder it sits in moved', () => {
     const known = { '01A': 'Projets', '01B': 'Projets/2026', '01C': 'Projets/2026/Contrats', '01D': 'Projets 2025', '01E': 'Budget' };
 
