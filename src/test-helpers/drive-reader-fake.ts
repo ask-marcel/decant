@@ -42,6 +42,9 @@ export type DriveReaderSeed = {
   readonly failWith?: DriveReaderError;
   // Fails only the calls that follow a cursor, so a sweep can break halfway through its pages.
   readonly failFrom?: DriveReaderError;
+  // Fails the read of these cursors alone, the way Graph refuses a cursor it no longer keeps (410),
+  // leaving a read from the start working.
+  readonly failCursors?: Readonly<Record<string, DriveReaderError>>;
 };
 
 const NOBODY: SiteMembers = { owners: [], members: [], sharePointGroups: [], sharingLinks: [], note: '' };
@@ -100,7 +103,8 @@ export const createDriveReaderFake = (seed: DriveReaderSeed = {}): DriveReaderFa
     },
     deltaFrom: async (cursor) => {
       calls.push(`deltaFrom:${cursor}`);
-      if (seed.failWith) return err(seed.failWith);
+      const refused = seed.failCursors?.[cursor] ?? seed.failWith;
+      if (refused) return err(refused);
       if (seed.failFrom && pageIndex > 0) return err(seed.failFrom);
       return nextPage();
     },

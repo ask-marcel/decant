@@ -1446,6 +1446,36 @@ describe('following the folders of a library', () => {
     expect(summary.archived).toBe(0);
   });
 
+  // Graph answers 410 to a cursor whose sync state it no longer keeps, and asks for a read from the
+  // start compared with what is held.
+  it('a library whose cursor Graph has expired is read whole again, puts aside what it no longer lists, and keeps the new cursor', async () => {
+    const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01GONE': { path: 'Old.docx', cTag: 'c1', outputs: ['kb/x/Old.docx.md'] } };
+    const expired = { kind: 'permanent' as const, status: 410, message: 'resyncRequired: the sync state is not found' };
+
+    const { summary, files, reader, logger } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ folders: {}, items }) } },
+      reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }], failCursors: { 'cursor-1': expired } },
+    });
+
+    expect(reads(reader)).toEqual(['deltaFrom:cursor-1', 'delta']);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'sync.cursor-expired', meta: { driveId: 'b!one' } });
+    expect(summary).toMatchObject({ converted: 0, archived: 1 });
+    expect(libraryAfter(files)?.deltaLink).toBe('cursor-9');
+  });
+
+  it('a cursor Graph refuses for another reason stops the library, keeping the state it had', async () => {
+    const before = recorded({ folders: {} });
+
+    const { ok, files, reader } = await run({
+      files: { texts: { [STATE_PATH]: before } },
+      reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }], failCursors: { 'cursor-1': { kind: 'permanent', status: 403, message: 'accessDenied' } } },
+    });
+
+    expect(ok).toBe(false);
+    expect(reads(reader)).toEqual(['deltaFrom:cursor-1']);
+    expect(files.written.get(STATE_PATH)).toBe(before);
+  });
+
   it('each document under a moved folder is read again once, also when several are read at a time', async () => {
     const items = Object.fromEntries(['a', 'b', 'c'].map((id) => [id, { path: `Projets/${id}.docx`, cTag: 'c1', outputs: [`kb/x/${id}.docx.md`] }]));
     const moved = Object.fromEntries(['a', 'b', 'c'].map((id) => [id, item({ id, name: `${id}.docx`, path: `Contrats 2026/${id}.docx` })]));

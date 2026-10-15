@@ -53,6 +53,7 @@ import type { Progress } from './ports/progress.ts';
 import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
+import { expiredCursor } from './expired-cursor.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn, writtenBefore } from './thread-folders.ts';
 import type { FoldersOnDisk } from './thread-folders.ts';
@@ -175,20 +176,16 @@ const RESOLVING = `${MAILBOX_NAME}, new conversations`;
 
 const messagesRead = (count: number): string => (count === 1 ? '1 message read' : `${count} messages read`);
 
-// What Outlook answers a cursor older than the few generations of a folder's sync state it keeps.
+// Outlook keeps a few generations of a folder's sync state, and expires a cursor older than those.
 // Every read from a saved cursor that is not saved in turn, a dry run's or an interrupted run's, moves
 // those generations on, so a cursor can expire between two runs that did nothing wrong.
-const EXPIRED = 410;
-
-const expired = (error: MailReaderError): boolean => error.kind === 'permanent' && error.status === EXPIRED;
-
 // A cursor Outlook has expired is worth nothing, and nothing but reading the folder from the start
 // brings the folder back. What is already filed stays as it is: a conversation is written again only
 // when it holds a message the state has not seen, so the cost is the read, not the writing.
 const firstPage = async (deps: SyncMailboxDeps, folder: MailFolder, cursor: string | undefined): Promise<Result<MailDeltaPage, MailReaderError>> => {
   if (cursor === undefined) return deps.reader.folderDelta(folder.id);
   const resumed = await deps.reader.deltaFrom(cursor);
-  if (resumed.ok || !expired(resumed.error)) return resumed;
+  if (resumed.ok || !expiredCursor(resumed.error)) return resumed;
   deps.logger.warn('mail.cursor-expired', { folderId: folder.id });
   return deps.reader.folderDelta(folder.id);
 };
