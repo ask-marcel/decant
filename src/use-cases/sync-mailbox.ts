@@ -55,6 +55,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn, writtenBefore } from './thread-folders.ts';
+import type { FoldersOnDisk } from './thread-folders.ts';
 import { NO_MESSAGE_LEFT, threadAside, writtenAgain } from './thread-aside.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import { withGaveUp } from '../domain/report.ts';
@@ -443,14 +444,7 @@ type Rendered = { readonly apply: (state: MailboxState) => MailboxState; readonl
 
 // The render (with its IO) happens now; what it adds to the mailbox state comes back as a function
 // so a whole window's results fold onto the state in order, after the parallel renders.
-const renderOne = async (
-  deps: SyncMailboxDeps,
-  input: SyncMailboxInput,
-  state: MailboxState,
-  threadId: string,
-  shown: string,
-  onDisk: ReadonlyArray<string>
-): Promise<Rendered> => {
+const renderOne = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, threadId: string, shown: string, onDisk: FoldersOnDisk): Promise<Rendered> => {
   const held = conversationsInThread(state, threadId);
   const first = held[0];
   // A queue naming a thread no conversation points at has nothing to render. It is reachable: the

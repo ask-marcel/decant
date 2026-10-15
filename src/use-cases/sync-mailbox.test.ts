@@ -370,6 +370,27 @@ describe('syncing a mailbox into the knowledge base', () => {
     expect(inputs.map((input) => input.folder)).toEqual([`2026-05-11-${id}-an-older-name`]);
   });
 
+  // A record from an older state can hold no folder at all, which is the same as holding none.
+  it('a thread recorded with no folder is written into the folder already on disk for its id', async () => {
+    const id = threadIdOf('<r@example.com>');
+    const held = withConversation(emptyMailboxState(), 'conv-1', { threadId: id, root: '<r@example.com>' });
+    const blank = withThread(held, id, {
+      folder: '',
+      conversationIds: ['conv-1'],
+      file: '',
+      messageIds: ['m0'],
+      lastMessage: '2026-05-11T00:00:00Z',
+      attachments: [],
+      inlineImages: [],
+    });
+    const { inputs } = await run({
+      files: { texts: { [STATE_PATH]: serializeMailboxState(blank) }, directories: { 'kb/Mailbox/threads': [`2026-05-11-${id}-an-older-name`] } },
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] },
+    });
+
+    expect(inputs.map((input) => input.folder)).toEqual([`2026-05-11-${id}-an-older-name`]);
+  });
+
   it('a thread filed nowhere yet is handed no folder, so the naming rules decide', async () => {
     const folders: string[] = [];
     await run({

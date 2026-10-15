@@ -32,6 +32,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn, writtenBefore } from './thread-folders.ts';
+import type { FoldersOnDisk } from './thread-folders.ts';
 import { NO_LONGER_LISTED, NO_MESSAGE_LEFT, threadAside, writtenAgain } from './thread-aside.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
@@ -120,7 +121,7 @@ const recordThread = (
 type Rendered = { readonly apply: (state: GroupState) => GroupState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
 
 // Where the group's own folder is, and the thread folders already on disk under it.
-type GroupPlace = { readonly root: string; readonly onDisk: ReadonlyArray<string> };
+type GroupPlace = { readonly root: string; readonly onDisk: FoldersOnDisk };
 
 const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: GroupState, place: GroupPlace, thread: GroupThread): Promise<Rendered> => {
   const threadId = threadIdOf(thread.id);
