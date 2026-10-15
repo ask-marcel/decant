@@ -512,3 +512,57 @@ describe('a run that finds nothing new', () => {
     expect(changedBy(quiet)).toEqual(['kb/SharePoint sites/Espace Contoso/.sync-cursor.json']);
   });
 });
+
+// A file held open on Windows will not move under the archive. The source lets it go all the same,
+// so the ledger beside the knowledge base is what keeps it: named in the report of the run, and moved
+// by the first run that finds it free.
+describe('a file that would not move under the archive', () => {
+  const STATE = 'kb/SharePoint sites/Espace Contoso/.sync-state.json';
+  const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md';
+  const LEDGER = 'kb/.sync-aside.json';
+  const directories = { kb: ['SharePoint sites'], 'kb/SharePoint sites': ['Espace Contoso'] };
+  const held = JSON.stringify({
+    version: 1,
+    source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://x' },
+    lastRun: '',
+    layout: 2,
+    drives: {
+      'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [], items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: [NOTE] } }, retry: {}, folders: {} },
+    },
+  });
+  const deleted = { id: '01ABC', name: '', kind: 'deleted' as const, size: 0, path: '', lastModified: '', cTag: '', webUrl: '' };
+
+  const updateWith = async (files: ReturnType<typeof createFilesFake>, pages: ReadonlyArray<DriveDeltaPage>): Promise<void> => {
+    await buildDeps(configFor({}), {
+      files,
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake({ pages }),
+      mail: createMailReaderFake(),
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
+      people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
+      notebook: createNotebookReaderFake(),
+      list: createListReaderFake(),
+      plan: createPlanReaderFake(),
+      ocr: createOcrFake(),
+      prompt: createPromptFake(),
+      clock: createClockFake('2026-10-15T09:00:00Z'),
+    }).runSync({ command: 'update', driveIds: [], maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+  };
+
+  it('is written down, named in the report of the run, and moved under the archive by the next run', async () => {
+    const locked = createFilesFake({ directories, texts: { [STATE]: held, [NOTE]: 'the contract' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'EBUSY' } });
+    await updateWith(locked, [{ items: [deleted], skipped: 0, deltaLink: 'cursor-2' }]);
+
+    expect(JSON.parse(locked.written.get(LEDGER) ?? '{}')).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-15T09:00:00Z' } });
+    expect(locked.written.get('kb/_sync-report.md')).toContain('- SharePoint sites/Espace Contoso/Documents/Contrat.docx.md: write-failed: EBUSY (since 2026-10-15)');
+
+    const free = createFilesFake({ directories, texts: Object.fromEntries(locked.written) });
+    await updateWith(free, [{ items: [], skipped: 0, deltaLink: 'cursor-3' }]);
+
+    expect(free.moves).toContainEqual({ from: NOTE, to: 'kb/_archive/2026-10-15/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md' });
+    expect(JSON.parse(free.written.get(LEDGER) ?? '{}')).toEqual({});
+  });
+});

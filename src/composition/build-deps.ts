@@ -62,6 +62,7 @@ import { parseSiteCache, serializeSiteCache } from '../domain/site-cache.ts';
 import { SINCE_SHAPE, parseSettings, serializeSettings } from '../domain/sync-window.ts';
 import { err, ok } from '../domain/result.ts';
 import type { RunSyncDeps } from '../use-cases/run-sync.ts';
+import { createRetryAside, createStuckFiles, withAsideLedger } from '../use-cases/aside-ledger.ts';
 import { withCursorFiles } from '../use-cases/cursor-files.ts';
 import { withSteadyWrites } from '../use-cases/steady-files.ts';
 import type { Config } from './config.ts';
@@ -191,11 +192,12 @@ const given = <T>(override: T | undefined, build: () => T): T => override ?? bui
 
 export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDeps => {
   const logger = given(overrides.logger, () => createWinstonLogger(config.logLevel));
-  // Every part of the run writes through these two: a note is written only when its text changed, and
-  // the run time and delta cursors of a sync go to a file beside its state. A run that found nothing
-  // new then changes no file but those cursor files.
-  const files = withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())), logger);
   const clock = given(overrides.clock, () => createSystemClock());
+  // Every part of the run writes through these: a note is written only when its text changed, the run
+  // time and delta cursors of a sync go to a file beside its state, and a file that would not move
+  // under the archive is written down beside the knowledge base. A run that found nothing new then
+  // changes no file but those cursor files.
+  const files = withAsideLedger(withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())), logger), { clock, logger, kbRoot: config.kbRoot });
   // Constructing the API reaches nothing: the sign-in ladder only runs on the first Graph call.
   const api = realApi(config.interactive);
   const reader = given(overrides.reader, () => createDriveReaderFromApi(api));
@@ -277,7 +279,9 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // Kept to few lines on purpose: Bun's line coverage reports the inner lines of a multi-line
   // expression as never executed, so spreading this call out reads as a third of the file going
   // uncovered. See the journal entry for the same trap in `progress-bar.ts`.
-  const writeGlobalReport = createWriteGlobalReport({ files, clock, logger, listSyncedSources, kbRoot: config.kbRoot });
+  const stuckFiles = createStuckFiles({ files, kbRoot: config.kbRoot });
+  const writeGlobalReport = createWriteGlobalReport({ files, clock, logger, listSyncedSources, kbRoot: config.kbRoot, stuckFiles });
+  const retryAside = createRetryAside({ files, clock, logger, kbRoot: config.kbRoot });
   const run = createRunSync({
     reader,
     prompt,
@@ -309,9 +313,11 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     writeGlobalReport,
   });
   // Kept before the run starts, so a knowledge base made before the zone was kept keeps it from the
-  // next run on, whatever that run does. A dry run keeps nothing.
+  // next run on, whatever that run does. The files that would not move under the archive are moved
+  // again before any source writes. A dry run keeps and moves nothing.
   const runSync: RunSync = async (input) => {
     if (!input.dryRun) await keepZone(files, logger, config.kbRoot, config.timezone);
+    if (!input.dryRun) await retryAside();
     return run(input);
   };
   return { logger, runSync };
