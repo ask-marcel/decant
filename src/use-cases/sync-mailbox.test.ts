@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import type { MailFolder } from '../domain/mail-folder.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import { serializeMailboxState, emptyMailboxState, withConversation, withFolderCursor, withRetry, withThread } from '../domain/mail-state.ts';
-import type { MailboxState } from '../domain/mail-state.ts';
+import type { MailboxState, ThreadRecord } from '../domain/mail-state.ts';
 import type { MessageRecord } from '../domain/message-record.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import { err, ok } from '../domain/result.ts';
@@ -820,6 +820,94 @@ describe('a message removed at the source', () => {
     });
 
     expect(asked).toStrictEqual([]);
+  });
+});
+
+describe('the files a thread written again no longer holds', () => {
+  const FOLDER = '2026-05-12-thread-1-contrat';
+  const HERE = `kb/Mailbox/threads/${FOLDER}`;
+  const A = `${HERE}/_attachments/a.pdf.md`;
+  const B = `${HERE}/_attachments/b.pdf.md`;
+  const record = (over: Partial<ThreadRecord> = {}): ThreadRecord => ({
+    folder: FOLDER,
+    conversationIds: ['conv-1'],
+    file: `threads/${FOLDER}/contrat.md`,
+    messageIds: ['m0'],
+    lastMessage: '2026-05-12T09:31:00Z',
+    attachments: [],
+    inlineImages: [],
+    ...over,
+  });
+  const held = (thread: ThreadRecord, over: Partial<MailboxState> = {}): string =>
+    serializeMailboxState({ ...withThread(withConversation(emptyMailboxState(), 'conv-1', { threadId: 'thread-1', root: '<r@example.com>' }), 'thread-1', thread), ...over });
+  // A new message in the thread is what sends it to be written again.
+  const pages = [{ messages: [message()], skipped: 0, deltaLink: 'c1' }];
+  const writing = (files: ReadonlyArray<string>): RenderThreadOutcome => ({
+    kind: 'rendered',
+    thread: { record: record({ messageIds: ['m0', 'm1'], files }), linked: {}, attachments: {}, filesSkipped: [], filesFailed: [] },
+  });
+
+  // Moved, not deleted: the thread no longer holds the file, and the kb keeps the old version.
+  it('a file the thread no longer holds goes under the archive and is named in the report', async () => {
+    const { files, summary, notes } = await run({
+      files: { texts: { [STATE_PATH]: held(record({ files: [A, B] })), [A]: 'a', [B]: 'b' } },
+      reader: { folders: [folder()], pages },
+      outcome: () => writing([A]),
+    });
+
+    expect(files.moves).toEqual([{ from: B, to: `kb/_archive/2026-07-23/Mailbox/threads/${FOLDER}/_attachments/b.pdf.md` }]);
+    expect(summary).toMatchObject({ converted: 1, archived: 1 });
+    expect(notes?.archived).toEqual([{ path: `threads/${FOLDER}/_attachments/b.pdf.md`, reason: 'no longer in the thread' }]);
+    expect(files.written.get('kb/Mailbox/_sync-report.md')).toContain(`- threads/${FOLDER}/_attachments/b.pdf.md: no longer in the thread`);
+  });
+
+  it('a thread written before its files were listed goes by its attachments', async () => {
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: held(record({ attachments: [A, B] })), [A]: 'a', [B]: 'b' } },
+      reader: { folders: [folder()], pages },
+      outcome: () => writing([A]),
+    });
+
+    expect(files.moves.map((move) => move.from)).toEqual([B]);
+  });
+
+  // Nothing is there to keep, so nothing is reported.
+  it('a file listed but not on disk is passed over without a word', async () => {
+    const { files, summary, notes } = await run({
+      files: { texts: { [STATE_PATH]: held(record({ files: [A, B] })), [A]: 'a' } },
+      reader: { folders: [folder()], pages },
+      outcome: () => writing([A]),
+    });
+
+    expect(files.moves).toStrictEqual([]);
+    expect(summary.archived).toBe(0);
+    expect(notes?.archived).toStrictEqual([]);
+  });
+
+  // A record left behind would hand a later message carrying the same file a path that is no longer
+  // there, and the indexes would list it.
+  it('the stored records of a file put aside leave the state', async () => {
+    const stored = { name: 'b.pdf', paths: [B], primary: B, media: [] };
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: held(record({ files: [A, B] }), { attachments: { hash: stored }, linked: { 'b!one:01ABC': { paths: [B] } } }), [A]: 'a', [B]: 'b' } },
+      reader: { folders: [folder()], pages },
+      outcome: () => writing([A]),
+    });
+
+    expect(stateAfter(files).attachments).toEqual({});
+    expect(stateAfter(files).linked).toEqual({});
+  });
+
+  it('a file that will not move is logged by its thread, and the thread is still written', async () => {
+    const { summary, logger, files } = await run({
+      files: { texts: { [STATE_PATH]: held(record({ files: [A, B] })), [A]: 'a', [B]: 'b' }, failMoveWith: { kind: 'write-failed', path: B, message: 'locked' } },
+      reader: { folders: [folder()], pages },
+      outcome: () => writing([A]),
+    });
+
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'archive.failed', meta: { threadId: 'thread-1', cause: 'write-failed' } });
+    expect(summary).toMatchObject({ converted: 1, archived: 0 });
+    expect(files.written.get(B)).toBe('b');
   });
 });
 

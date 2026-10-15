@@ -12,7 +12,7 @@ import {
 import type { GroupState } from '../domain/group-state.ts';
 import { threadRef } from '../domain/group-thread.ts';
 import type { GroupThread } from '../domain/group-thread.ts';
-import { abandonedThreads } from '../domain/mail-state.ts';
+import { abandonedThreads, filesLeft } from '../domain/mail-state.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { AttachmentRecord, LinkedRecord, RetryRecord, ThreadRecord } from '../domain/mail-state.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
@@ -30,6 +30,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn } from './thread-folders.ts';
+import { NO_LONGER_HELD, threadFilesAside, withFilesAside } from './thread-aside.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 
@@ -144,7 +145,10 @@ const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: Grou
     return { apply: (carried) => withGroupRetry(carried, thread.id, { attempts, reason: rendered.error.message }), counted: { failed: 1 }, notes };
   }
   if (rendered.value.kind === 'empty') return { apply: (carried) => withoutGroupRetry(carried, thread.id), counted: { skipped: 1 }, notes: {} };
-  return owing(state, thread.id, rendered.value.thread);
+  // What the write before held and this one did not write again, put aside as the mailbox does.
+  const left = filesLeft(state.threads[thread.id], rendered.value.thread.record);
+  const aside = await threadFilesAside(deps, place.root, threadId, left, NO_LONGER_HELD);
+  return withFilesAside(owing(state, thread.id, rendered.value.thread), left, aside);
 };
 
 const attemptsFor = (state: GroupState, threadId: string): number => (state.retry[threadId]?.attempts ?? 0) + 1;
@@ -176,6 +180,7 @@ const counted = (summary: RunSummary, results: ReadonlyArray<Rendered>): RunSumm
     (carried, done) => ({
       ...carried,
       converted: carried.converted + (done.counted.converted ?? 0),
+      archived: carried.archived + (done.counted.archived ?? 0),
       skipped: carried.skipped + (done.counted.skipped ?? 0),
       failed: carried.failed + (done.counted.failed ?? 0),
     }),
@@ -188,7 +193,7 @@ const noted = (notes: RunNotes, results: ReadonlyArray<Rendered>): RunNotes =>
       skipped: [...carried.skipped, ...(done.notes.skipped ?? [])],
       failed: [...carried.failed, ...(done.notes.failed ?? [])],
       givenUp: [...carried.givenUp, ...(done.notes.givenUp ?? [])],
-      archived: carried.archived,
+      archived: [...carried.archived, ...(done.notes.archived ?? [])],
     }),
     notes
   );
