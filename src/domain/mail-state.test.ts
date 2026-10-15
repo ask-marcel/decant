@@ -3,6 +3,8 @@ import type { AttachmentRecord } from './mail-state.ts';
 import {
   countThreads,
   emptyMailboxState,
+  filesLeft,
+  filesOf,
   folderNames,
   marksChanged,
   needsRender,
@@ -10,6 +12,7 @@ import {
   renamedFolders,
   retriedThreads,
   serializeMailboxState,
+  storesWithout,
   threadOfConversation,
   threadsHolding,
   threadsInFolders,
@@ -442,6 +445,49 @@ describe('naming the folders of a mailbox', () => {
 
     expect(threadsInFolders(state, ['a'])).toEqual(['t1', 't2']);
     expect(threadsInFolders(state, [])).toStrictEqual([]);
+  });
+});
+
+describe('telling which files a thread no longer holds', () => {
+  const HERE = 'kb/Mailbox/threads/2026-05-12-a3f9c1e0d2-contrat';
+  const written = { ...thread, files: [`${HERE}/_attachments/a.pdf`, `${HERE}/_attachments/a.pdf.md`, `${HERE}/_linked/Rapport.docx.md`] };
+
+  it('a thread holds the files its last write listed, and a thread written before the list its attachments', () => {
+    const before = { ...thread, attachments: [`${HERE}/_attachments/a.pdf.md`] };
+
+    expect(filesOf(written)).toEqual(written.files);
+    expect(filesOf(before)).toEqual([`${HERE}/_attachments/a.pdf.md`]);
+  });
+
+  // A picture shown in a body sits in the store the whole mailbox shares, and an older write could
+  // list one among the attachments. It is not the thread's to put aside.
+  it('a file outside the thread folder is not one of its files, and a thread filed nowhere holds none', () => {
+    const shared = { ...thread, attachments: ['kb/Mailbox/_inline/logo-ab12.png', `${HERE}/_attachments/a.pdf.md`] };
+
+    expect(filesOf(shared)).toEqual([`${HERE}/_attachments/a.pdf.md`]);
+    expect(filesOf({ ...written, folder: '' })).toStrictEqual([]);
+  });
+
+  it('what the write before held and this one did not write is what the thread no longer holds', () => {
+    const now = { ...written, files: [`${HERE}/_attachments/a.pdf.md`, `${HERE}/_attachments/b.pdf.md`] };
+
+    expect(filesLeft(written, now)).toEqual([`${HERE}/_attachments/a.pdf`, `${HERE}/_linked/Rapport.docx.md`]);
+    expect(filesLeft(undefined, now)).toStrictEqual([]);
+    expect(filesLeft(written, written)).toStrictEqual([]);
+  });
+
+  // A record left behind would hand a later write a file that is no longer there.
+  it('the stored records of files put aside go, and every other record stays', () => {
+    const record = (primary: string): AttachmentRecord => ({ name: 'a.pdf', paths: [primary], primary, media: [] });
+    const stores = {
+      attachments: { gone: record(`${HERE}/_attachments/a.pdf.md`), kept: record(`${HERE}/_attachments/b.pdf.md`), elsewhere: record('kb/Mailbox/_inline/logo.png') },
+      linked: { 'b!one:01ABC': { paths: [`${HERE}/_linked/Rapport.docx.md`] }, 'b!one:01DEF': { paths: [`${HERE}/_linked/Plan.docx.md`] } },
+    };
+
+    expect(storesWithout(stores, [`${HERE}/_attachments/a.pdf.md`, `${HERE}/_linked/Rapport.docx.md`])).toEqual({
+      attachments: { kept: stores.attachments.kept, elsewhere: stores.attachments.elsewhere },
+      linked: { 'b!one:01DEF': { paths: [`${HERE}/_linked/Plan.docx.md`] } },
+    });
   });
 });
 

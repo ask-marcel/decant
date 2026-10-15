@@ -3,6 +3,7 @@ import { contentHash } from '../domain/content-hash.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
 import { tooLargeReason } from '../domain/report.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
+import { compareText } from '../domain/utilities/compare-text.ts';
 import { ATTACHMENTS_STORE, CONV, INLINE_STORE, THREAD_FILE, THREAD_FOLDER, THREAD_RELATIVE, bytesOf, message, run, storedName } from '../test-helpers/thread-harness.ts';
 
 describe('keeping what a conversation carried', () => {
@@ -426,6 +427,24 @@ describe('the names a thread already gave its files', () => {
     });
 
     expect(storedBy(after.outcome)).toEqual([`${ATTACHMENTS_STORE}/Budget.xlsx`, `${ATTACHMENTS_STORE}/Budget.xlsx.md`, second, `${second}.md`]);
+  });
+
+  // Folded into the state by key, so a record handed back that the thread no longer holds would come
+  // back after the run took it out. A new picture goes to the store the whole mailbox shares.
+  it('the store a write hands back holds the files it used or added, not a held file whose message is gone', async () => {
+    const logo = { id: 'sig', name: 'image001.png', contentType: 'image/png', size: 100, isInline: true };
+    const before = await run({ reader: { conversations: { [CONV]: [m1, m2] }, attachments: { m1: [budget('att1')], m2: [budget('att2', 'Plan.xlsx')] } } });
+    const other = { name: 'Other.pdf', paths: ['kb/Mailbox/threads/other/_attachments/Other.pdf'], primary: 'kb/Mailbox/threads/other/_attachments/Other.pdf', media: [] };
+
+    const after = await run({
+      reader: { conversations: { [CONV]: [m2] }, attachments: { m2: [budget('att2', 'Plan.xlsx'), logo] } },
+      folder: THREAD_FOLDER,
+      attachments: { ...heldBy(before.outcome), elsewhere: other },
+      files: { texts: Object.fromEntries(before.files.written) },
+    });
+    const handed = after.outcome?.kind === 'rendered' ? Object.keys(after.outcome.thread.attachments).toSorted(compareText) : [];
+
+    expect(handed).toEqual([contentHash(bytesOf('att2')), contentHash(bytesOf('sig'))].toSorted(compareText));
   });
 
   // A name cut to fit a deep disk is compared as it is written: the cut name a held file has is not

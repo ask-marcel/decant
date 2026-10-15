@@ -277,6 +277,37 @@ export const threadsInFolders = (state: MailboxState, folderIds: ReadonlyArray<s
     .sort(compareText);
 };
 
+// Every file the thread's folder held at its last write besides the note: the list that write kept,
+// or, for a thread written before the list was kept, its attachments. Only what is inside the thread's
+// own folder: a picture shown in a body sits in the store the whole mailbox shares, and an older write
+// could list one among the attachments.
+export const filesOf = (record: ThreadRecord): ReadonlyArray<string> => {
+  if (record.folder.length === 0) return [];
+  return (record.files ?? record.attachments).filter((path) => path.includes(`/threads/${record.folder}/`));
+};
+
+// What the write before held and this one did not write again: what the thread no longer holds.
+export const filesLeft = (before: ThreadRecord | undefined, after: ThreadRecord): ReadonlyArray<string> => {
+  if (before === undefined) return [];
+  const kept = new Set(filesOf(after));
+  return filesOf(before).filter((path) => !kept.has(path));
+};
+
+// The two stores of a mailbox or a group inbox: the attachments by content, the linked documents by
+// item.
+export type FileStores = { readonly attachments: Readonly<Record<string, AttachmentRecord>>; readonly linked: Readonly<Record<string, LinkedRecord>> };
+
+// The stores without the records of files put aside: an attachment whose file to link went, and a
+// linked document one of whose files went. Left behind, a record would hand a later write a file that
+// is no longer there.
+export const storesWithout = (stores: FileStores, paths: ReadonlyArray<string>): FileStores => {
+  const gone = new Set(paths);
+  return {
+    attachments: Object.fromEntries(Object.entries(stores.attachments).filter(([, record]) => !gone.has(record.primary))),
+    linked: Object.fromEntries(Object.entries(stores.linked).filter(([, record]) => !record.paths.some((path) => gone.has(path)))),
+  };
+};
+
 // The threads holding one of these messages, by key. A delta names a message removed from a folder by
 // its id alone, with no conversation, so its thread is found by the ids each thread was written with.
 export const threadsHolding = (state: MailboxState, messageIds: ReadonlyArray<string>): ReadonlyArray<string> => {
