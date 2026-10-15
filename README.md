@@ -1147,7 +1147,8 @@ reads only from the kept day.
 A run that finds nothing new at the source changes no file in `kb/`, with one exception: the
 `.sync-cursor.json` beside each `.sync-state.json`. That file holds the time of the last run and the
 delta cursors, which change on each run. If the cursor file is lost or does not agree with the
-state, the next run reads the source whole one time.
+state, the next run reads the source whole one time. For a library, decant then also moves to
+`_archive/` each recorded document that is not in the new list.
 
 decant writes a file only when its content changes. The `synced_at` line does not count, so
 `synced_at` gives the time of the last real change. decant writes each file beside its place and
