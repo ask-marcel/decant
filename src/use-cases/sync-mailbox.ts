@@ -53,7 +53,7 @@ import type { Progress } from './ports/progress.ts';
 import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
-import { expiredCursor } from './expired-cursor.ts';
+import { expiredCursor } from './graph-status.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn, writtenBefore } from './thread-folders.ts';
 import type { FoldersOnDisk } from './thread-folders.ts';

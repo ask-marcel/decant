@@ -38,7 +38,7 @@ import type { ManifestEntry, WorkItem } from '../domain/worklist.ts';
 import type { RunSummary } from '../domain/run-summary.ts';
 import type { ConvertFile } from './convert-file.ts';
 import { sweepDrive } from './enumerate-drive.ts';
-import { expiredCursor } from './expired-cursor.ts';
+import { expiredCursor } from './graph-status.ts';
 import type { DriveSweep } from './enumerate-drive.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader, DriveReaderError, DriveSummary } from './ports/drive-reader.ts';

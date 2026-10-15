@@ -1543,6 +1543,16 @@ describe('following the folders of a library', () => {
     expect(libraryAfter(files)?.deltaLink).toBe('cursor-9');
   });
 
+  it('a cursor Graph refuses for a while stops the library without reading it whole', async () => {
+    const { ok, reader } = await run({
+      files: { texts: { [STATE_PATH]: recorded({ folders: {} }) } },
+      reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }], failCursors: { 'cursor-1': { kind: 'transient', message: 'Graph is busy' } } },
+    });
+
+    expect(ok).toBe(false);
+    expect(reads(reader)).toEqual(['deltaFrom:cursor-1']);
+  });
+
   it('a cursor Graph refuses for another reason stops the library, keeping the state it had', async () => {
     const before = recorded({ folders: {} });
 

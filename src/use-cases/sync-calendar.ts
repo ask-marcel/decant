@@ -30,7 +30,7 @@ import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
-import { expiredCursor } from './expired-cursor.ts';
+import { expiredCursor } from './graph-status.ts';
 import { putAside } from './put-aside.ts';
 
 export const CALENDAR_STATE_FILE = '.sync-state.json';
