@@ -134,6 +134,8 @@ const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: Grou
     root: thread.id,
     folder: folderFor(state.threads[thread.id], place.onDisk, threadId),
     file: state.threads[thread.id]?.file,
+    names: state.threads[thread.id]?.names,
+    held: state.threads[thread.id]?.files,
     maxBytes: input.maxBytes,
     linked: state.linked,
     attachments: state.attachments,

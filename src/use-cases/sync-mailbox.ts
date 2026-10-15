@@ -466,6 +466,8 @@ const renderOne = async (
     // to the naming rules never moves a folder that is already written and already linked to.
     folder: folderFor(state.threads[threadId], onDisk, threadId),
     file: state.threads[threadId]?.file,
+    names: state.threads[threadId]?.names,
+    held: state.threads[threadId]?.files,
     maxBytes: input.maxBytes,
     linked: state.linked,
     attachments: state.attachments,

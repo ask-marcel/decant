@@ -2,7 +2,8 @@ import { describe, expect, it } from 'bun:test';
 import { contentHash } from '../domain/content-hash.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
 import { tooLargeReason } from '../domain/report.ts';
-import type { AttachmentRecord } from '../domain/mail-state.ts';
+import type { AttachmentRecord, ThreadRecord } from '../domain/mail-state.ts';
+import type { MailReaderSeed } from '../test-helpers/mail-reader-fake.ts';
 import { compareText } from '../domain/utilities/compare-text.ts';
 import { ATTACHMENTS_STORE, CONV, INLINE_STORE, THREAD_FILE, THREAD_FOLDER, THREAD_RELATIVE, bytesOf, message, run, storedName } from '../test-helpers/thread-harness.ts';
 
@@ -445,6 +446,89 @@ describe('the names a thread already gave its files', () => {
     const handed = after.outcome?.kind === 'rendered' ? Object.keys(after.outcome.thread.attachments).toSorted(compareText) : [];
 
     expect(handed).toEqual([contentHash(bytesOf('att2')), contentHash(bytesOf('sig'))].toSorted(compareText));
+  });
+
+  const recordOf = (outcome: Awaited<ReturnType<typeof run>>['outcome']): ThreadRecord | undefined => (outcome?.kind === 'rendered' ? outcome.thread.record : undefined);
+  // Written again the way the sync does it: from the store, the names and the files the write before
+  // left, into the folder and the note it was filed under.
+  const again = async (before: Awaited<ReturnType<typeof run>>, reader: MailReaderSeed): Promise<Awaited<ReturnType<typeof run>>> =>
+    run({
+      reader,
+      folder: THREAD_FOLDER,
+      file: THREAD_RELATIVE,
+      attachments: heldBy(before.outcome),
+      names: recordOf(before.outcome)?.names,
+      held: recordOf(before.outcome)?.files,
+      files: { texts: Object.fromEntries(before.files.written) },
+    });
+  const tooLarge = (id: string, name = 'Budget.xlsx'): ReturnType<typeof budget> => ({ ...budget(id, name), size: 60 * 1024 * 1024 });
+
+  // A card is all a file too large to fetch leaves, and it keeps its name as a converted file does:
+  // the name does not move up when an earlier file of that name goes, neither now nor a write later.
+  it('a file that left only a card keeps its name when an earlier file of that name goes, write after write', async () => {
+    const once = await run({ reader: { conversations: { [CONV]: [m1, m2] }, attachments: { m1: [budget('att1')], m2: [tooLarge('att2')] } } });
+    const reader = { conversations: { [CONV]: [m2] }, attachments: { m2: [tooLarge('att2')] } };
+    const twice = await again(once, reader);
+    const thrice = await again(twice, reader);
+
+    expect(recordOf(once.outcome)?.files).toContain(`${second}.md`);
+    expect(recordOf(twice.outcome)?.files).toEqual([`${second}.md`]);
+    expect(recordOf(thrice.outcome)?.files).toEqual([`${second}.md`]);
+  });
+
+  // Three namesakes, the middle one gone: the third must keep its file, which a count of files alone
+  // cannot tell from a rename.
+  it('the third of three files of one name keeps its name when the message of the second goes', async () => {
+    const once = await run({
+      reader: { conversations: { [CONV]: [m1, m2, m3] }, attachments: { m1: [budget('att1')], m2: [budget('att2')], m3: [tooLarge('att3')] } },
+    });
+    const reader = { conversations: { [CONV]: [m1, m3] }, attachments: { m1: [budget('att1')], m3: [tooLarge('att3')] } };
+    const twice = await again(once, reader);
+    const thrice = await again(twice, reader);
+    const first = `${ATTACHMENTS_STORE}/Budget.xlsx`;
+
+    expect(recordOf(twice.outcome)?.files).toEqual([`${third}.md`, first, `${first}.md`]);
+    expect(recordOf(thrice.outcome)?.files).toEqual([`${third}.md`, first, `${first}.md`]);
+  });
+
+  // Graph gives a mail a new id when it moves to another folder, where its RFC id stays.
+  it('a file keeps its name when its message moves to another folder', async () => {
+    const one = message({ id: 'm1', internetMessageId: '<one@example.com>', hasAttachments: true });
+    const two = message({ id: 'm2', internetMessageId: '<two@example.com>', received: '2026-05-13T10:00:00Z', hasAttachments: true });
+    const once = await run({ reader: { conversations: { [CONV]: [one, two] }, attachments: { m1: [tooLarge('att1', 'Plan.pdf')], m2: [tooLarge('att2', 'Plan.pdf')] } } });
+
+    const twice = await again(once, { conversations: { [CONV]: [{ ...two, id: 'm2-moved' }] }, attachments: { 'm2-moved': [tooLarge('att2', 'Plan.pdf')] } });
+
+    expect(recordOf(twice.outcome)?.files).toEqual([`${ATTACHMENTS_STORE}/Plan-2.pdf.md`]);
+  });
+
+  // A card holds the text read out of its file, and the next write reads the card back for that text:
+  // a failure card written over it would be taken for the text.
+  it('a file converted before whose bytes cannot be fetched keeps its card, and the failure gets a card of its own', async () => {
+    const once = await run({ reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1')] } } });
+
+    const twice = await again(once, {
+      conversations: { [CONV]: [m1] },
+      attachments: { m1: [budget('att1')] },
+      failCalls: { attachmentBytes: { kind: 'throttled', message: 'slow down' } },
+    });
+
+    expect(twice.files.written.get(`${ATTACHMENTS_STORE}/Budget.xlsx.md`)).toContain('converted att1');
+    expect(twice.files.written.get(`${second}.md`)).toContain('throttled: slow down');
+  });
+
+  // A file the record still lists is on disk, whether its message went and it would not move, or it
+  // is waiting on a read: a new file of that name takes the next one.
+  it('a new file does not take the name of a file the thread folder still holds', async () => {
+    const { outcome } = await run({
+      reader: { conversations: { [CONV]: [m1] }, attachments: { m1: [budget('att1', 'Old.pdf')] } },
+      folder: THREAD_FOLDER,
+      names: {},
+      held: [`${ATTACHMENTS_STORE}/Old.pdf`, `${ATTACHMENTS_STORE}/Old.pdf.md`],
+    });
+
+    expect(recordOf(outcome)?.attachments).not.toContain(`${ATTACHMENTS_STORE}/Old.pdf.md`);
+    expect(recordOf(outcome)?.files).toContain(`${ATTACHMENTS_STORE}/Old-2.pdf.md`);
   });
 
   // A name cut to fit a deep disk is compared as it is written: the cut name a held file has is not

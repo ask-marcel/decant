@@ -9,6 +9,7 @@ import { ok } from '../domain/result.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { skipReason, tooLargeReason } from '../domain/report.ts';
 import { uniqueName } from '../domain/thread-card.ts';
+import type { MailMessage } from '../domain/mail-message.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ConvertAttachment } from './convert-attachment.ts';
 import type { MailAttachment, MailReader, MailReaderError } from './ports/mail-reader.ts';
@@ -31,6 +32,11 @@ export type FilePlace = {
   readonly mailboxRoot: string;
   readonly maxBytes: number;
   readonly stored: Readonly<Record<string, AttachmentRecord>>;
+  // The name each file a message carried was written under at the thread's last write, by the arrival
+  // it came with, and every file the thread's folder held then. Absent for a thread never written,
+  // and for one written before they were kept.
+  readonly names?: Readonly<Record<string, string>>;
+  readonly held?: ReadonlyArray<string>;
   // How long a path may be as decant writes it. Absent, names are not cut for length.
   readonly pathBudget?: number;
 };
@@ -66,6 +72,9 @@ export type AttachmentTally = {
   readonly media: Media;
   readonly skipped: ReadonlyArray<ReportEntry>;
   readonly failed: ReadonlyArray<ReportEntry>;
+  // The name each file a message carried was written under, by the arrival it came with, so the next
+  // write gives it the same one. A picture shown in a body is stored by its content, and has none.
+  readonly names: Readonly<Record<string, string>>;
 };
 
 type Placed = {
@@ -130,10 +139,12 @@ type Placing = {
   readonly shared: Record<string, AttachmentRecord>;
   // Every name a file of the thread holds or this write gave out, as it lands on disk.
   readonly taken: string[];
+  // The names of the files the thread converted, whose cards hold the text read out of them.
+  readonly converted: ReadonlySet<string>;
 };
 
-// One file as a message carried it.
-type Arrival = { readonly messageId: string; readonly attachment: MailAttachment };
+// One file as a message carried it, and the name it was written under before, when it was.
+type Arrival = { readonly messageId: string; readonly attachment: MailAttachment; readonly recorded?: string };
 
 // A name is held once for the thread, however many files ask for it.
 const reserve = (placing: Placing, name: string): string => {
@@ -141,8 +152,14 @@ const reserve = (placing: Placing, name: string): string => {
   return name;
 };
 
-// The name a file is written under: the first one free.
-const nameOf = (place: FilePlace, placing: Placing, arrival: Arrival): string => freeName(place, arrival.attachment.name, placing.taken);
+// The name a file is written under: the one it had before, or the first one free.
+const nameOf = (place: FilePlace, placing: Placing, arrival: Arrival): string => arrival.recorded ?? freeName(place, arrival.attachment.name, placing.taken);
+
+// A file whose bytes could not be fetched gets a card saying so, but not under the name of a file the
+// thread converted: that card holds the text read out of the file, and the next write reads the card
+// back for that text, so a failure written over it would be taken for the text.
+const failedName = (place: FilePlace, placing: Placing, arrival: Arrival): string =>
+  arrival.recorded !== undefined && !placing.converted.has(arrival.recorded) ? arrival.recorded : freeName(place, arrival.attachment.name, placing.taken);
 
 const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placing, arrival: Arrival, stamp: DocumentStamp): Promise<Placed> => {
   // The size cap is checked before the bytes are pulled, so a file past it is reported without ever
@@ -159,7 +176,7 @@ const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placin
   }
   const address = await addressOf(deps, messageId, attachment);
   if (!address.ok) {
-    const asName = reserve(placing, nameOf(place, placing, arrival));
+    const asName = reserve(placing, failedName(place, placing, arrival));
     return { asName, paths: [], failed: { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` } };
   }
   const hash = address.value.hash;
@@ -231,6 +248,21 @@ const messageFileOf = (attachment: MailAttachment, placed: Placed): MessageFile 
 const heldBy = (stored: Readonly<Record<string, AttachmentRecord>>, here: string): Record<string, AttachmentRecord> =>
   Object.fromEntries(Object.entries(stored).filter(([, record]) => record.primary.startsWith(`${here}/`)));
 
+// Which message brought a file, and which of the files of that name in it. A mail is known by its RFC
+// id, which stays the same when the mail moves to another folder where its Graph id does not; a post in
+// a group inbox has none, and its own id never changes.
+const arrivalOf = (message: MailMessage, name: string, nth: number): string => {
+  const rfc = message.internetMessageId ?? '';
+  return `${rfc.length > 0 ? rfc : message.id}|${name}|${nth}`;
+};
+
+// The files in the thread's attachment folder that its record still lists: a file of a message gone
+// that would not move aside, or one waiting on a read, is on disk until a run moves it.
+const onDisk = (place: FilePlace): ReadonlyArray<string> => {
+  const folder = `${place.here}/${ATTACHMENTS_FOLDER}/`;
+  return (place.held ?? []).filter((path) => path.startsWith(folder)).map((path) => path.slice(folder.length));
+};
+
 // What the files of a write add up to as they are placed.
 type Tally = {
   readonly paths: string[];
@@ -238,12 +270,15 @@ type Tally = {
   readonly skipped: ReportEntry[];
   readonly failed: ReportEntry[];
   readonly byMessage: Record<string, MessageFile[]>;
+  readonly names: Record<string, string>;
 };
 
 // One file a message carried, placed and added up; nothing for a file left out whole.
-const placeCarried = async (deps: FileDeps, place: FilePlace, placing: Placing, carrying: Arrival, stamp: DocumentStamp, tally: Tally): Promise<MessageFile | undefined> => {
-  const { attachment } = carrying;
-  const placed = await placeAttachment(deps, place, placing, carrying, stamp);
+const placeCarried = async (deps: FileDeps, place: FilePlace, placing: Placing, carrying: Carrying, stamp: DocumentStamp, tally: Tally): Promise<MessageFile | undefined> => {
+  const { attachment, arrival } = carrying;
+  // Named as this write named it already, for a message held twice, as a mail copied to two folders.
+  const recorded = tally.names[arrival] ?? place.names?.[arrival];
+  const placed = await placeAttachment(deps, place, placing, { messageId: carrying.messageId, attachment, recorded }, stamp);
   addAll(tally.paths, placed.paths);
   // Dropped entirely, and not reported: a file nothing can read, named by a machine id, is the
   // decoration a sharing notification is built from. It gets no card and no line in the thread,
@@ -255,8 +290,12 @@ const placeCarried = async (deps: FileDeps, place: FilePlace, placing: Placing, 
   if (placed.skipped) tally.skipped.push(placed.skipped);
   if (placed.failed) tally.failed.push(placed.failed);
   addAll(tally.media, placed.media ?? []);
+  if (!isInlinePicture(attachment)) tally.names[arrival] = placed.asName;
   return messageFileOf(attachment, placed);
 };
+
+// A file as one message carried it, and the arrival it is known by.
+type Carrying = { readonly messageId: string; readonly attachment: MailAttachment; readonly arrival: string };
 
 const placeMessage = async (deps: FileDeps, place: FilePlace, placing: Placing, part: ThreadPart, stamp: DocumentStamp, tally: Tally): Promise<void> => {
   const listed = await deps.reader.attachments(part.message.id);
@@ -265,8 +304,12 @@ const placeMessage = async (deps: FileDeps, place: FilePlace, placing: Placing, 
     return;
   }
   const carried: MessageFile[] = [];
+  const counted = new Map<string, number>();
   for (const attachment of listed.value) {
-    const file = await placeCarried(deps, place, placing, { messageId: part.message.id, attachment }, stamp, tally);
+    const nth = counted.get(attachment.name) ?? 0;
+    counted.set(attachment.name, nth + 1);
+    const carrying = { messageId: part.message.id, attachment, arrival: arrivalOf(part.message, attachment.name, nth) };
+    const file = await placeCarried(deps, place, placing, carrying, stamp, tally);
     if (file !== undefined) carried.push(file);
   }
   tally.byMessage[part.message.id] = carried;
@@ -274,17 +317,23 @@ const placeMessage = async (deps: FileDeps, place: FilePlace, placing: Placing, 
 
 export const attachmentsOf = async (deps: FileDeps, place: FilePlace, parts: ReadonlyArray<ThreadPart>, stamp: DocumentStamp): Promise<AttachmentTally> => {
   const store = heldBy(place.stored, place.here);
+  const converted = Object.values(store).map((record) => record.name);
   // Pictures shown inside message bodies, which the whole mailbox shares, seeded with what earlier
   // threads stored so a signature logo is written once rather than once per conversation. The names
   // the thread's files hold come first, so a new file never takes one: a name that came free when its
   // message went still holds that message's file until the run moves it aside.
-  const placing: Placing = { store, shared: { ...place.stored }, taken: Object.values(store).map((record) => record.name) };
+  const placing: Placing = {
+    store,
+    shared: { ...place.stored },
+    taken: [...Object.values(place.names ?? {}), ...converted, ...onDisk(place)],
+    converted: new Set(converted),
+  };
   // A signature logo rides on every message of a thread, so the same file is offered many times.
   // Every offer is fetched and hashed rather than recognised beforehand by its name and length: a
   // spreadsheet edited and resent down a thread keeps its name, and an edit that leaves the byte
   // count untouched would pass for the version before it. The content address then dedupes the
   // repeat, here and across every other thread, so the bytes are paid for and the conversion is not.
-  const tally: Tally = { paths: [], media: [], skipped: [], failed: [], byMessage: {} };
+  const tally: Tally = { paths: [], media: [], skipped: [], failed: [], byMessage: {}, names: {} };
   // Graph reports `hasAttachments: false` for a message whose only attachment is an inline image, so
   // a signature or a pasted screenshot would never be listed at all. A body showing a picture it does
   // not carry is the other half of the question, and asking it costs nothing on a message with neither.

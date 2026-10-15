@@ -29,6 +29,10 @@ export type ThreadRecord = {
   // not write again is what the thread no longer holds. Absent from a thread written before the list
   // was kept, which only its attachments say anything about.
   readonly files?: ReadonlyArray<string>;
+  // The name each file a message carried was written under in the thread's folder, by the arrival it
+  // came with: the message, and which of the files of that name in it. A file keeps its name when an
+  // earlier file of that name goes. Absent from a thread written before the names were kept.
+  readonly names?: Readonly<Record<string, string>>;
   // What the index pages list a thread by: its subject, when it began, and who wrote last. Absent from
   // a thread written before they were kept, until a new message writes it again.
   readonly subject?: string;
@@ -174,6 +178,7 @@ export const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
   attachments: pathList(raw['attachments']),
   inlineImages: pathList(raw['inlineImages']),
   files: Array.isArray(raw['files']) ? pathList(raw['files']) : undefined,
+  names: isRecord(raw['names']) ? textsOf(raw['names']) : undefined,
   subject: readString(raw, 'subject'),
   firstMessage: readString(raw, 'firstMessage'),
   lastFrom: readString(raw, 'lastFrom'),
@@ -294,11 +299,17 @@ export const filesLeft = (before: ThreadRecord | undefined, after: ThreadRecord)
 };
 
 // A record that keeps listing files the write before held and this one did not write again: they stay
-// on disk, and a later write that reads everything tells what the thread no longer holds.
-export const stillHolding = (record: ThreadRecord, kept: ReadonlyArray<string>): ThreadRecord => ({
+// on disk, and a later write that reads everything tells what the thread no longer holds. Given the
+// names of the write before, it keeps those too, so a file this write could not read keeps its name.
+export const stillHolding = (record: ThreadRecord, kept: ReadonlyArray<string>, names?: Readonly<Record<string, string>>): ThreadRecord => ({
   ...record,
   files: [...new Set([...(record.files ?? []), ...kept])].toSorted(compareText),
+  ...(names === undefined ? {} : { names: inKeyOrder({ ...names, ...record.names }) }),
 });
+
+// A map written in the order of its keys, so the state reads the same whatever order it was filled in.
+export const inKeyOrder = (map: Readonly<Record<string, string>>): Readonly<Record<string, string>> =>
+  Object.fromEntries(Object.entries(map).toSorted(([left], [right]) => compareText(left, right)));
 
 // The two stores of a mailbox or a group inbox: the attachments by content, the linked documents by
 // item.
