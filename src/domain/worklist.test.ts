@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { DriveItem } from './drive-item.ts';
 import type { RetryEntry } from './retry-policy.ts';
-import { buildWorklist } from './worklist.ts';
+import { buildWorklist, goneFromListing } from './worklist.ts';
 
 const file = (over: Partial<DriveItem> = {}): DriveItem => ({
   id: '01ABC',
@@ -119,5 +119,30 @@ describe('bringing back a file whose conversion failed', () => {
     const swept = [file({ id: 'c', path: 'c.docx', lastModified: '2026-05-03T00:00:00Z' }), file({ id: 'a', path: 'a.docx', lastModified: '2026-05-01T00:00:00Z' })];
 
     expect(buildWorklist(swept, {}, ledger).map((work) => (work.kind === 'archive' ? work.itemId : work.item.id))).toEqual(['a', 'b', 'c']);
+  });
+});
+
+// A whole read lists every document the library holds. What the state records and the read does not
+// list was deleted at a time no delta told of it, so it goes as one the sweep reports deleted.
+describe('comparing a whole read of a library with what is recorded', () => {
+  const manifest = {
+    '01ABC': { path: 'Projets/Roadmap.pptx', cTag: 'c1', outputs: ['Projets/Roadmap.pptx.md'] },
+    '01GONE': { path: 'Projets/Old.docx', cTag: 'c1', outputs: ['Projets/Old.docx.md'] },
+  };
+  const retry = { '01LOST': { item: file({ id: '01LOST', path: 'Lost.pdf' }), attempts: 1, reason: 'transient: gateway timeout' } };
+
+  it('a recorded file or a retry the whole read does not list is gone, and nothing else is', () => {
+    expect(goneFromListing([file()], manifest, retry).map((item) => [item.id, item.kind])).toEqual([
+      ['01GONE', 'deleted'],
+      ['01LOST', 'deleted'],
+    ]);
+  });
+
+  it('a recorded file the whole read does not list has its files archived, and a retry it does not list is dropped', () => {
+    const listed = [file()];
+
+    expect(buildWorklist([...listed, ...goneFromListing(listed, manifest, retry)], manifest, retry)).toEqual([
+      { kind: 'archive', itemId: '01GONE', outputs: ['Projets/Old.docx.md'] },
+    ]);
   });
 });

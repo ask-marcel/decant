@@ -1,4 +1,5 @@
 import { extensionOf } from './conversion-plan.ts';
+import { goneItem } from './drive-item.ts';
 import type { DriveItem } from './drive-item.ts';
 import type { RetryLedger } from './retry-policy.ts';
 import { forgetSwept, givenUp } from './retry-policy.ts';
@@ -51,3 +52,11 @@ export const buildWorklist = (items: ReadonlyArray<DriveItem>, manifest: Manifes
   [...items.map((item) => workFor(item, manifest[item.id], since)).filter((work): work is WorkItem => work !== undefined), ...retriedWork(retry, items)].sort((left, right) =>
     compareText(sortKey(left), sortKey(right))
   );
+
+// A whole read of a library lists every document it holds. One recorded, or waiting on a retry, that
+// the read does not list was deleted at a time no delta told of, so it goes as one a sweep reports
+// deleted: its files under the archive, its retry dropped.
+export const goneFromListing = (items: ReadonlyArray<DriveItem>, manifest: Manifest, retry: RetryLedger): ReadonlyArray<DriveItem> => {
+  const listed = new Set(items.map((item) => item.id));
+  return [...new Set([...Object.keys(manifest), ...Object.keys(retry)])].filter((id) => !listed.has(id)).map(goneItem);
+};
