@@ -16,6 +16,9 @@ const NO_LONGER_HELD = 'no longer in the thread';
 export const NO_MESSAGE_LEFT = 'no message left at the source';
 export const NO_LONGER_LISTED = 'no longer at the source';
 
+// Why a thread put aside whole is still there: its note would not move.
+export const NOT_MOVED = 'could not be moved aside';
+
 const relativeTo = (root: string, path: string): string => (path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path);
 
 // The files of a thread go under `_archive/` together, those still on disk: a file listed and never
@@ -41,7 +44,7 @@ export const threadAside = async (deps: ThreadAsideDeps, root: string, threadId:
   const note = `${root}/${record.file}`;
   const aside = await filesAside(deps, threadId, [note, ...filesOf(record)]);
   const stuck = aside.failed.find((missed) => missed.path === note);
-  return stuck === undefined ? { moved: true, entry: { path: record.file, reason } } : { moved: false, reason: `could not be moved aside: ${stuck.error.kind}` };
+  return stuck === undefined ? { moved: true, entry: { path: record.file, reason } } : { moved: false, reason: `${NOT_MOVED}: ${stuck.error.kind}` };
 };
 
 // What one thread's write adds to a run, folded onto the state after the window's writes.

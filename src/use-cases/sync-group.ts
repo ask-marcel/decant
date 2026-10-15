@@ -33,7 +33,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn, writtenBefore } from './thread-folders.ts';
 import type { FoldersOnDisk } from './thread-folders.ts';
-import { NO_LONGER_LISTED, NO_MESSAGE_LEFT, threadAside, writtenAgain } from './thread-aside.ts';
+import { NOT_MOVED, NO_LONGER_LISTED, NO_MESSAGE_LEFT, threadAside, writtenAgain } from './thread-aside.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 
@@ -246,6 +246,9 @@ const abandonedNotes = (notes: RunNotes, before: GroupState, after: GroupState, 
 
 const labelOf = (input: SyncGroupInput): string => sourceLabel({ name: input.group.name, kind: 'group' });
 
+// A thread whose note would not move aside, out of tries.
+const stuckFor = (record: RetryRecord | undefined): boolean => record !== undefined && record.attempts >= MAX_CONVERSION_ATTEMPTS && record.reason.startsWith(NOT_MOVED);
+
 // The threads on record that the group no longer lists, each put aside whole. An empty listing while
 // threads are on record moves nothing: it is most often a fault, and taken at its word it would move
 // the whole inbox aside.
@@ -256,11 +259,12 @@ const unlisted = async (
   place: GroupPlace,
   listing: ReadonlyArray<GroupThread>
 ): Promise<ReadonlyArray<Rendered>> => {
-  // A thread out of tries stays where it is, named as given up, as one that could not be written does.
+  // A thread whose note would not move three times is left where it is, named as given up. One out of
+  // tries because it could not be written goes all the same: putting it aside needs no write.
   const gone = unlistedThreads(
     state,
     listing.map((thread) => thread.id)
-  ).filter((threadId) => (state.retry[threadId]?.attempts ?? 0) < MAX_CONVERSION_ATTEMPTS);
+  ).filter((threadId) => !stuckFor(state.retry[threadId]));
   if (gone.length > 0 && listing.length === 0) {
     deps.logger.warn('group.listing-empty', { group: input.group.id, threads: gone.length });
     return [];
