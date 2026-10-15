@@ -8,6 +8,7 @@ import {
   withGroupRetry,
   withGroupThread,
   withoutGroupRetry,
+  unlistedThreads,
   withoutGroupThread,
 } from '../domain/group-state.ts';
 import type { GroupState } from '../domain/group-state.ts';
@@ -31,7 +32,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn } from './thread-folders.ts';
-import { NO_LONGER_HELD, NO_MESSAGE_LEFT, threadAside, threadFilesAside, withFilesAside } from './thread-aside.ts';
+import { NO_LONGER_HELD, NO_LONGER_LISTED, NO_MESSAGE_LEFT, threadAside, threadFilesAside, withFilesAside } from './thread-aside.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 
@@ -145,7 +146,7 @@ const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: Grou
     const notes = attempts >= MAX_CONVERSION_ATTEMPTS ? {} : { failed: [{ path: `thread ${thread.topic}`, reason: rendered.error.message }] };
     return { apply: (carried) => withGroupRetry(carried, thread.id, { attempts, reason: rendered.error.message }), counted: { failed: 1 }, notes };
   }
-  if (rendered.value.kind === 'empty') return emptied(deps, state, place, thread.id);
+  if (rendered.value.kind === 'empty') return emptied(deps, state, place, thread.id, NO_MESSAGE_LEFT);
   // What the write before held and this one did not write again, put aside as the mailbox does.
   const left = filesLeft(state.threads[thread.id], rendered.value.thread.record);
   const aside = await threadFilesAside(deps, place.root, threadId, left, NO_LONGER_HELD);
@@ -154,12 +155,12 @@ const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: Grou
 
 const attemptsFor = (state: GroupState, threadId: string): number => (state.retry[threadId]?.attempts ?? 0) + 1;
 
-// A thread written before and holding no post now goes under the archive whole and leaves the state.
-// One never written left nothing to put aside.
-const emptied = async (deps: SyncGroupDeps, state: GroupState, place: GroupPlace, threadId: string): Promise<Rendered> => {
+// A thread written before and holding no post now, or gone from the group, goes under the archive
+// whole and leaves the state. One never written left nothing to put aside.
+const emptied = async (deps: SyncGroupDeps, state: GroupState, place: GroupPlace, threadId: string, reason: string): Promise<Rendered> => {
   const known = state.threads[threadId];
   if (known === undefined) return { apply: (carried) => withoutGroupRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
-  const entry = await threadAside(deps, place.root, threadIdOf(threadId), known, NO_MESSAGE_LEFT);
+  const entry = await threadAside(deps, place.root, threadIdOf(threadId), known, reason);
   const apply = (carried: GroupState): GroupState => {
     const gone = withoutGroupThread(carried, threadId);
     return { ...gone, ...storesWithout(gone, filesOf(known)) };
@@ -237,6 +238,29 @@ const abandonedNotes = (notes: RunNotes, before: GroupState, after: GroupState, 
 
 const labelOf = (input: SyncGroupInput): string => sourceLabel({ name: input.group.name, kind: 'group' });
 
+// The threads on record that the group no longer lists, each put aside whole. An empty listing while
+// threads are on record moves nothing: it is most often a fault, and taken at its word it would move
+// the whole inbox aside.
+const unlisted = async (
+  deps: SyncGroupDeps,
+  input: SyncGroupInput,
+  state: GroupState,
+  place: GroupPlace,
+  listing: ReadonlyArray<GroupThread>
+): Promise<ReadonlyArray<Rendered>> => {
+  const gone = unlistedThreads(
+    state,
+    listing.map((thread) => thread.id)
+  );
+  if (gone.length > 0 && listing.length === 0) {
+    deps.logger.warn('group.listing-empty', { group: input.group.id, threads: gone.length });
+    return [];
+  }
+  const results: Rendered[] = [];
+  for (const threadId of gone) results.push(await emptied(deps, state, place, threadId, NO_LONGER_LISTED));
+  return results;
+};
+
 const render = async (
   deps: SyncGroupDeps,
   input: SyncGroupInput,
@@ -249,6 +273,10 @@ const render = async (
   let summary = EMPTY;
   let notes = NO_NOTES;
   const place = { root, onDisk: await threadFoldersOn(deps.files, root) };
+  const gone = await unlisted(deps, input, current, place, listing);
+  current = gone.reduce((carried, done) => done.apply(carried), current);
+  summary = counted(summary, gone);
+  notes = noted(notes, gone);
   deps.progress.start(threads.length, `${input.group.name} (group inbox)`);
   for (let at = 0; at < threads.length; at += input.concurrency) {
     const window = threads.slice(at, at + input.concurrency);

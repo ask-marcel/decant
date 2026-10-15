@@ -11,8 +11,9 @@ export type ThreadAsideDeps = PutAsideDeps & { readonly logger: Logger };
 // Why a file of a thread went under the archive while the thread stayed.
 export const NO_LONGER_HELD = 'no longer in the thread';
 
-// Why a whole thread went under the archive.
+// Why a whole thread went under the archive: its messages are gone, or the thread itself is.
 export const NO_MESSAGE_LEFT = 'no message left at the source';
+export const NO_LONGER_LISTED = 'no longer at the source';
 
 const relativeTo = (root: string, path: string): string => (path.startsWith(`${root}/`) ? path.slice(root.length + 1) : path);
 

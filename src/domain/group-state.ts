@@ -4,6 +4,7 @@ import type { SafeRelPath } from './kb-path.ts';
 import { attachmentOf, linkedOf, mapOf, retryOf, threadOf } from './mail-state.ts';
 import type { AttachmentRecord, LinkedRecord, RetryRecord, ThreadRecord } from './mail-state.ts';
 import type { Result } from './result.ts';
+import { compareText } from './utilities/compare-text.ts';
 import { err, ok } from './result.ts';
 
 export const GROUP_STATE_VERSION = 1;
@@ -96,6 +97,15 @@ export const withoutGroupRetry = (state: GroupState, threadId: string): GroupSta
   ...state,
   retry: Object.fromEntries(Object.entries(state.retry).filter(([id]) => id !== threadId)),
 });
+
+// The threads on record that the listing no longer holds, by key. The listing is whole on every run,
+// there being no cursor, so a thread missing from it was deleted in the group.
+export const unlistedThreads = (state: GroupState, listed: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const held = new Set(listed);
+  return Object.keys(state.threads)
+    .filter((threadId) => !held.has(threadId))
+    .sort(compareText);
+};
 
 // The state without a thread the group no longer holds: its record and its retry entry.
 export const withoutGroupThread = (state: GroupState, threadId: string): GroupState => ({
