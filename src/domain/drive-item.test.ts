@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseDriveDelta } from './drive-item.ts';
+import { parseDriveDelta, sameVersion } from './drive-item.ts';
 
 const fileItem = {
   id: '01ABC',
@@ -159,5 +159,21 @@ describe('reading a page of changes from a document library', () => {
     const page = parseDriveDelta({ value: [{ ...fileItem, size: undefined }] });
 
     expect(page.ok && page.value.items[0]?.size).toBe(0);
+  });
+});
+
+// The cTag changes with the content alone. OneDrive for Business can leave it out of a changed item,
+// and then the day and time of the last change are what is left to tell two versions apart by.
+describe('telling two versions of a document apart', () => {
+  it('two versions with a cTag each are told apart by it, whatever their dates', () => {
+    expect(sameVersion({ cTag: 'c1', lastModified: '2026-05-12T09:31:00Z' }, { cTag: 'c1', lastModified: '2026-05-13T10:00:00Z' })).toBe(true);
+    expect(sameVersion({ cTag: 'c1', lastModified: '2026-05-12T09:31:00Z' }, { cTag: 'c2', lastModified: '2026-05-12T09:31:00Z' })).toBe(false);
+  });
+
+  it('a version without a cTag is told apart by the day and time of its last change', () => {
+    expect(sameVersion({ cTag: '', lastModified: '2026-05-12T09:31:00Z' }, { cTag: '', lastModified: '2026-05-12T09:31:00Z' })).toBe(true);
+    expect(sameVersion({ cTag: '', lastModified: '2026-05-12T09:31:00Z' }, { cTag: '', lastModified: '2026-05-13T10:00:00Z' })).toBe(false);
+    expect(sameVersion({ cTag: 'c1', lastModified: '2026-05-12T09:31:00Z' }, { cTag: '', lastModified: '2026-05-13T10:00:00Z' })).toBe(false);
+    expect(sameVersion({ cTag: '', lastModified: '2026-05-12T09:31:00Z' }, { cTag: 'c1', lastModified: '2026-05-12T09:31:00Z' })).toBe(true);
   });
 });

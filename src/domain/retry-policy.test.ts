@@ -26,6 +26,11 @@ describe('counting what a document has cost so far', () => {
     expect(nextFailure(failed({}, 2), file({ cTag: 'c2' }), 'permanent: locked').attempts).toBe(1);
   });
 
+  it('a failure of a version edited since starts the count again when Graph sends no cTag', () => {
+    expect(nextFailure(failed({ cTag: '' }, 2), file({ cTag: '', lastModified: '2026-05-13T10:00:00Z' }), 'permanent: locked').attempts).toBe(1);
+    expect(nextFailure(failed({ cTag: '' }, 2), file({ cTag: '' }), 'permanent: locked').attempts).toBe(3);
+  });
+
   it('a file failing for the first time is on its first try', () => {
     expect(nextFailure(undefined, file(), 'permanent: locked').attempts).toBe(1);
   });
@@ -45,6 +50,11 @@ describe('what the sweep settles for itself', () => {
   it('an item the sweep returned edited, or at another path, is dropped from the ledger', () => {
     expect(forgetSwept({ '01ABC': failed() }, [file({ cTag: 'c2' })])).toEqual({});
     expect(forgetSwept({ '01ABC': failed() }, [file({ path: 'Archive/Roadmap.pptx' })])).toEqual({});
+  });
+
+  it('an item the sweep returned edited is dropped from the ledger when Graph sends no cTag, by the day and time it changed', () => {
+    expect(forgetSwept({ '01ABC': failed({ cTag: '' }) }, [file({ cTag: '', lastModified: '2026-05-13T10:00:00Z' })])).toEqual({});
+    expect(forgetSwept({ '01ABC': failed({ cTag: '' }) }, [file({ cTag: '' })])).toEqual({ '01ABC': failed({ cTag: '' }) });
   });
 
   it('an item the sweep said nothing about stays in the ledger', () => {

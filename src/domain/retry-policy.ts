@@ -1,9 +1,10 @@
+import { sameVersion } from './drive-item.ts';
 import type { DriveItem } from './drive-item.ts';
 
 // One document the source handed over and this tool could not turn into anything, kept whole so the
 // next run can convert it without asking Graph for it again. The version it failed at is the item's
-// own `cTag`: a document edited since is a different thing to have failed on, and starts its count
-// over. Without this record a failure disappears, because the cursor moved on when it was swept and
+// own (`sameVersion`): a document edited since is a different thing to have failed on, and starts its
+// count over. Without this record a failure disappears, because the cursor moved on when it was swept and
 // a delta only ever reports what changed since.
 export type RetryEntry = {
   readonly item: DriveItem;
@@ -23,11 +24,11 @@ export const givenUp = (entry: RetryEntry): boolean => entry.attempts >= MAX_CON
 
 export const nextFailure = (known: RetryEntry | undefined, item: DriveItem, reason: string): RetryEntry => ({
   item,
-  attempts: known === undefined || known.item.cTag !== item.cTag ? 1 : known.attempts + 1,
+  attempts: known === undefined || !sameVersion(known.item, item) ? 1 : known.attempts + 1,
   reason,
 });
 
-const sameVersion = (entry: RetryEntry, item: DriveItem): boolean => item.kind !== 'deleted' && item.cTag === entry.item.cTag && item.path === entry.item.path;
+const failedAgain = (entry: RetryEntry, item: DriveItem): boolean => item.kind !== 'deleted' && sameVersion(entry.item, item) && item.path === entry.item.path;
 
 // The sweep's word is the current one for what it changed: a document it returned edited, renamed or
 // deleted is decided now, from the version the source holds today, and has no older failure left to
@@ -39,7 +40,7 @@ export const forgetSwept = (retry: RetryLedger, items: ReadonlyArray<DriveItem>)
   return Object.fromEntries(
     Object.entries(retry).filter(([id, entry]) => {
       const item = swept.get(id);
-      return item === undefined || sameVersion(entry, item);
+      return item === undefined || failedAgain(entry, item);
     })
   );
 };

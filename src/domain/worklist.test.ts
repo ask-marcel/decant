@@ -32,6 +32,15 @@ describe('deciding what the next run has to do', () => {
     expect(buildWorklist([file()], manifest)).toEqual([{ kind: 'convert', item: file() }]);
   });
 
+  it('a file edited at the source is queued again when Graph sends it without a cTag, by the day and time it changed', () => {
+    const manifest = { '01ABC': { path: 'Projets/Roadmap.pptx', cTag: '', outputs: ['Projets/Roadmap.pptx.md'], modified: '2026-05-12T09:31:00Z' } };
+
+    expect(buildWorklist([file({ cTag: '', lastModified: '2026-05-13T10:00:00Z' })], manifest)).toEqual([
+      { kind: 'convert', item: file({ cTag: '', lastModified: '2026-05-13T10:00:00Z' }) },
+    ]);
+    expect(buildWorklist([file({ cTag: '' })], manifest)).toStrictEqual([]);
+  });
+
   it('a file only renamed is converted again at its new place, so its files name where it is now', () => {
     const manifest = { '01ABC': { path: 'Projets/Ancien nom.pptx', cTag: 'c1', outputs: ['Projets/Ancien nom.pptx.md'] } };
 

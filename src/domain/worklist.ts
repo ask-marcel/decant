@@ -1,5 +1,5 @@
 import { extensionOf } from './conversion-plan.ts';
-import { goneItem } from './drive-item.ts';
+import { goneItem, sameVersion } from './drive-item.ts';
 import type { DriveItem } from './drive-item.ts';
 import type { RetryLedger } from './retry-policy.ts';
 import { forgetSwept, givenUp } from './retry-policy.ts';
@@ -35,7 +35,7 @@ const workFor = (item: DriveItem, known: ManifestEntry | undefined, since: strin
   if (item.kind === 'deleted') return known === undefined ? undefined : { kind: 'archive', itemId: item.id, outputs: known.outputs };
   if (passedOver(item)) return undefined;
   if (known === undefined) return isBefore(item.lastModified, since) ? undefined : { kind: 'convert', item };
-  return known.cTag === item.cTag && known.path === item.path ? undefined : { kind: 'convert', item };
+  return sameVersion(item, { cTag: known.cTag, lastModified: known.modified }) && known.path === item.path ? undefined : { kind: 'convert', item };
 };
 
 // What the ledger still holds decides for its documents: one with tries left is converted again, as

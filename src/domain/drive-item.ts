@@ -88,6 +88,14 @@ export const parseItem = (raw: unknown): DriveItem | undefined => {
   };
 };
 
+// What two versions of a document are told apart by: the cTag, which changes with the content alone.
+// OneDrive for Business can leave it out of a changed item, and then the day and time of the last
+// change are what is left. A record keeps that day as `modified`.
+export type Versioned = { readonly cTag: string; readonly lastModified?: string };
+
+export const sameVersion = (left: Versioned, right: Versioned): boolean =>
+  left.cTag !== '' && right.cTag !== '' ? left.cTag === right.cTag : left.lastModified === right.lastModified;
+
 // A document a run looked for by id and the source no longer has: as good as one a sweep reports
 // deleted, which is all the sync needs to put its files aside.
 export const goneItem = (id: string): DriveItem => ({ id, name: '', kind: 'deleted', size: 0, path: '', lastModified: '', cTag: '', webUrl: '' });

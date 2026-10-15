@@ -3,7 +3,7 @@ import { INDEX_FILE } from '../domain/index-page.ts';
 import { libraryIndexPage } from '../domain/library-index.ts';
 import { sweptFolders, underMoved } from '../domain/drive-folders.ts';
 import type { FolderMove } from '../domain/drive-folders.ts';
-import { goneItem } from '../domain/drive-item.ts';
+import { goneItem, sameVersion } from '../domain/drive-item.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { categoryFolderOf } from '../domain/kb-category.ts';
 import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
@@ -515,7 +515,9 @@ const leftOutReason = (kbRoot: string, reason: string, aside: SetAside): string 
 // keep nothing worth keeping.
 const asideBefore = async (deps: SyncSiteDeps, driveState: DriveState, item: DriveItem): Promise<SetAside> => {
   const held = driveState.items[item.id];
-  return held?.cTag === item.cTag && held.path === item.path ? NOTHING_ASIDE : setAsideBefore(deps, ownOutputs(driveState, item.id));
+  return held !== undefined && sameVersion(item, { cTag: held.cTag, lastModified: held.modified }) && held.path === item.path
+    ? NOTHING_ASIDE
+    : setAsideBefore(deps, ownOutputs(driveState, item.id));
 };
 
 const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, driveState: DriveState, item: DriveItem): Promise<WorkOutcome> => {
