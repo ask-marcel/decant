@@ -15,6 +15,7 @@ import {
   MAIL_FIELDS,
   abandonedThreads,
   emptyMailboxState,
+  filesLeft,
   folderNames,
   marksChanged,
   needsRender,
@@ -52,6 +53,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn } from './thread-folders.ts';
+import { NO_LONGER_HELD, threadFilesAside, withFilesAside } from './thread-aside.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { ReportEntry } from '../domain/report.ts';
@@ -476,7 +478,11 @@ const renderOne = async (
     return { apply: (carried) => withRetry(carried, threadId, { attempts, reason: rendered.error.message }), counted: { failed: 1 }, notes };
   }
   if (rendered.value.kind === 'empty') return { apply: (carried) => withoutRetry(carried, threadId), counted: { skipped: 1 }, notes: {} };
-  return owing(state, threadId, rendered.value.thread);
+  // What the write before held and this one did not write again: a file of a message gone, or a name
+  // an older version gave. The thread no longer holds it, and the kb keeps it under the archive.
+  const left = filesLeft(state.threads[threadId], rendered.value.thread.record);
+  const aside = await threadFilesAside(deps, mailboxRoot(deps.kbRoot), threadId, left, NO_LONGER_HELD);
+  return withFilesAside(owing(state, threadId, rendered.value.thread), left, aside);
 };
 
 // The thread landed; one of the files it carried did not. Nothing narrower than the thread can bring
@@ -537,6 +543,7 @@ const tallied = (summary: RunSummary, results: ReadonlyArray<Rendered>): RunSumm
     (carried, done) => ({
       ...carried,
       converted: carried.converted + (done.counted.converted ?? 0),
+      archived: carried.archived + (done.counted.archived ?? 0),
       skipped: carried.skipped + (done.counted.skipped ?? 0),
       failed: carried.failed + (done.counted.failed ?? 0),
     }),
@@ -550,7 +557,7 @@ const noted = (notes: RunNotes, results: ReadonlyArray<Rendered>): RunNotes =>
       skipped: [...carried.skipped, ...(done.notes.skipped ?? [])],
       failed: [...carried.failed, ...(done.notes.failed ?? [])],
       givenUp: [...carried.givenUp, ...(done.notes.givenUp ?? [])],
-      archived: carried.archived,
+      archived: [...carried.archived, ...(done.notes.archived ?? [])],
     }),
     notes
   );

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { emptyGroupState, serializeGroupState, withGroupThread } from '../domain/group-state.ts';
+import type { GroupState } from '../domain/group-state.ts';
 import { threadRef } from '../domain/group-thread.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import type { GroupThread } from '../domain/group-thread.ts';
@@ -278,6 +279,40 @@ describe('mirroring a group inbox into the knowledge base', () => {
     const saved = JSON.parse(files.written.get(STATE_PATH) ?? '{}');
 
     expect(saved.linked).toEqual({ 'https://x/Spec.docx': { paths: ['_linked/Spec.docx.md'] } });
+  });
+});
+
+describe('the files a group thread written again no longer holds', () => {
+  const HERE = `kb/Group inboxes/Northwind Leadership Team/threads/${RECORD.folder}`;
+  const A = `${HERE}/_attachments/a.pdf.md`;
+  const B = `${HERE}/_attachments/b.pdf.md`;
+  const replied = { threads: { '0d3b-group': [thread({ lastDelivered: '2026-08-10T05:40:15Z' })] } };
+  const held = (over: Partial<GroupState> = {}): string =>
+    serializeGroupState({ ...withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', { ...RECORD, files: [A, B] }), ...over });
+
+  it('a file the thread no longer holds goes under the archive and is named in the report', async () => {
+    const { files, summary, notes } = await run({
+      files: { texts: { [STATE_PATH]: held(), [A]: 'a', [B]: 'b' } },
+      reader: replied,
+      outcome: () => rendered({ record: { ...RECORD, files: [A] } }),
+    });
+
+    expect(files.moves).toEqual([{ from: B, to: `kb/_archive/2026-07-23/Group inboxes/Northwind Leadership Team/threads/${RECORD.folder}/_attachments/b.pdf.md` }]);
+    expect(summary).toMatchObject({ converted: 1, archived: 1 });
+    expect(notes.archived).toEqual([{ path: `threads/${RECORD.folder}/_attachments/b.pdf.md`, reason: 'no longer in the thread' }]);
+  });
+
+  it('the stored records of a file put aside leave the state', async () => {
+    const stored = { name: 'b.pdf', paths: [B], primary: B, media: [] };
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: held({ attachments: { hash: stored }, linked: { 'b!one:01ABC': { paths: [B] } } }), [A]: 'a', [B]: 'b' } },
+      reader: replied,
+      outcome: () => rendered({ record: { ...RECORD, files: [A] } }),
+    });
+    const saved = JSON.parse(files.written.get(STATE_PATH) ?? '{}');
+
+    expect(saved.attachments).toEqual({});
+    expect(saved.linked).toEqual({});
   });
 });
 
