@@ -24,6 +24,7 @@ import {
   serializeMailboxState,
   conversationsInThread,
   threadOfConversation,
+  threadsHolding,
   threadsInFolders,
   withAttachment,
   withConversation,
@@ -294,7 +295,13 @@ const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
   // A folder renamed at the source changes the line under every message in it, and no delta says so:
   // renaming a folder changes none of its messages.
   const renamed = threadsInFolders(swept.value.state, renamedFolders(folderNames(state), folderNames(swept.value.state)));
-  const extra = updating(state) ? Object.keys(state.threads).sort(compareText) : renamed;
+  // A message deleted, or moved out of a folder, comes back as its id alone. Its thread is written
+  // again from what the mailbox holds now: without it, or with it in the folder it moved to.
+  const removed = threadsHolding(
+    swept.value.state,
+    swept.value.messages.filter((message) => message.isDeleted).map((message) => message.id)
+  );
+  const extra = updating(state) ? Object.keys(state.threads).sort(compareText) : [...new Set([...renamed, ...removed])];
   return finishQueue(deps, input, { ...swept.value.state, since: input.since, fields: MAIL_FIELDS }, statePath, { messages: swept.value.messages, extra });
 };
 

@@ -277,6 +277,16 @@ export const threadsInFolders = (state: MailboxState, folderIds: ReadonlyArray<s
     .sort(compareText);
 };
 
+// The threads holding one of these messages, by key. A delta names a message removed from a folder by
+// its id alone, with no conversation, so its thread is found by the ids each thread was written with.
+export const threadsHolding = (state: MailboxState, messageIds: ReadonlyArray<string>): ReadonlyArray<string> => {
+  const wanted = new Set(messageIds);
+  return Object.entries(state.threads)
+    .filter(([, record]) => record.messageIds.some((id) => wanted.has(id)))
+    .map(([threadId]) => threadId)
+    .sort(compareText);
+};
+
 // Every folder read again from the start, each keeping its name.
 export const withoutCursors = (state: MailboxState): MailboxState => ({
   ...state,
