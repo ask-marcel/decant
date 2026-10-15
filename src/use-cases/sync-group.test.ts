@@ -316,6 +316,25 @@ describe('the files a group thread written again no longer holds', () => {
   });
 });
 
+describe('a group thread with no post left', () => {
+  const NOTE = `kb/Group inboxes/Northwind Leadership Team/${RECORD.file}`;
+
+  it('goes under the archive whole, is named in the report, and leaves the state', async () => {
+    const held = { ...withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', RECORD), retry: { 'AAQkAD-thread': { attempts: 1, reason: 'a.pdf: locked' } } };
+    const { files, summary, notes } = await run({
+      files: { texts: { [STATE_PATH]: serializeGroupState(held), [NOTE]: 'note' } },
+      reader: { threads: { '0d3b-group': [thread({ lastDelivered: '2026-08-10T05:40:15Z' })] } },
+      outcome: () => ({ kind: 'empty' }),
+    });
+
+    expect(files.moves).toEqual([{ from: NOTE, to: `kb/_archive/2026-07-23/Group inboxes/Northwind Leadership Team/${RECORD.file}` }]);
+    expect(summary).toMatchObject({ converted: 0, archived: 1, skipped: 0 });
+    expect(notes.archived).toEqual([{ path: RECORD.file, reason: 'no message left at the source' }]);
+    expect(stateAfter(files).threads).toEqual({});
+    expect(stateAfter(files).retry).toEqual({});
+  });
+});
+
 describe('naming a group inbox in a report', () => {
   it('a group run names itself a group inbox, so a site of the same name reads apart', async () => {
     const outcome = (): RenderThreadOutcome => rendered({ filesFailed: [{ path: 'budget.xlsx', reason: 'locked' }] });
