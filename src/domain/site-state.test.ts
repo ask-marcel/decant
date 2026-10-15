@@ -10,7 +10,6 @@ import {
   recordItem,
   refileDrive,
   rememberFailure,
-  renameItem,
   serializeSiteState,
   withDrive,
 } from './site-state.ts';
@@ -116,16 +115,6 @@ describe('recording what happened to one document', () => {
     const two = recordItem(drive, '01DEF', { path: 'Budget.xlsx', cTag: 'c2', outputs: ['Budget.xlsx.md'] });
 
     expect(Object.keys(forgetItem(two, '01ABC').items)).toStrictEqual(['01DEF']);
-  });
-
-  it('a renamed document keeps its version but records its new place and files', () => {
-    const updated = renameItem(drive, '01ABC', 'Archive/Contrat.docx', ['Archive/Contrat.docx.md']);
-
-    expect(updated.items['01ABC']).toEqual({ path: 'Archive/Contrat.docx', cTag: 'c1', outputs: ['Archive/Contrat.docx.md'] });
-  });
-
-  it('renaming something never recorded leaves the manifest untouched', () => {
-    expect(renameItem(drive, '01OTHER', 'x', [])).toEqual(drive);
   });
 });
 

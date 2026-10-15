@@ -132,11 +132,6 @@ export const forgetFailure = (drive: DriveState, itemId: string): DriveState => 
   return { ...drive, retry: Object.fromEntries(remaining) };
 };
 
-export const renameItem = (drive: DriveState, itemId: string, path: string, outputs: ReadonlyArray<string>): DriveState => {
-  const known = drive.items[itemId];
-  return known === undefined ? drive : recordItem(drive, itemId, { ...known, path, outputs });
-};
-
 export type Refiled = { readonly drive: DriveState; readonly moves: ReadonlyArray<{ readonly from: string; readonly to: string }> };
 
 const WRITE_FAILED = 'write-failed';

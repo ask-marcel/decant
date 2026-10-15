@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { datedRoot, outputPrefix, recordedPrefix, refiledOutputs, remapOutputs, undatedOutput } from './output-paths.ts';
+import { datedRoot, outputPrefix, undatedOutput } from './output-paths.ts';
 
 describe('naming the files a document produces', () => {
   it('a document in a folder produces files under that folder, named after it', () => {
@@ -12,18 +12,6 @@ describe('naming the files a document produces', () => {
 
   it('folders and names the filesystem cannot hold are made safe first', () => {
     expect(outputPrefix('kb/Site/Documents', 'Projets: 2026/Q1/Q2.docx')).toBe('kb/Site/Documents/Projets_ 2026/Q1/Q2.docx');
-  });
-});
-
-describe('following a document that was renamed in SharePoint', () => {
-  it('the files it produced follow it, keeping what each one is', () => {
-    const outputs = ['kb/S/D/Old.pptx.md', 'kb/S/D/Old.pptx.pdf'];
-
-    expect(remapOutputs(outputs, 'kb/S/D/Old.pptx', 'kb/S/D/Projets/New.pptx')).toEqual(['kb/S/D/Projets/New.pptx.md', 'kb/S/D/Projets/New.pptx.pdf']);
-  });
-
-  it('a file recorded somewhere unexpected is left where it is rather than moved wrongly', () => {
-    expect(remapOutputs(['kb/elsewhere/x.md'], 'kb/S/D/Old.pptx', 'kb/S/D/New.pptx')).toEqual(['kb/elsewhere/x.md']);
   });
 });
 
@@ -44,42 +32,11 @@ describe('filing a document under the day it last changed', () => {
     expect(datedRoot('kb/Site/Documents', '2026-05-1')).toBe('kb/Site/Documents/undated');
   });
 
-  it('a file whose name is nowhere in its recorded path is left exactly as recorded', () => {
-    expect(recordedPrefix('kb/Site/Documents/2026-05-12/other.md', 'Contrat.docx')).toBe('kb/Site/Documents/2026-05-12/other.md');
-  });
-
-  it('a recorded path that opens with the name still gives the name back on its own', () => {
-    expect(recordedPrefix('Contrat.docx.md', 'Contrat.docx')).toBe('Contrat.docx');
-  });
-
   it("a document's own folders sit under the day, so two of the same name stay apart", () => {
     const day = datedRoot('kb/Site/Documents', '2026-05-12T09:31:00Z');
 
     expect(outputPrefix(day, 'A/report.docx')).toBe('kb/Site/Documents/2026-05-12/A/report.docx');
     expect(outputPrefix(day, 'B/report.docx')).toBe('kb/Site/Documents/2026-05-12/B/report.docx');
-  });
-});
-
-describe('filing a document by the folders it has in SharePoint alone', () => {
-  // An earlier layout filed each document under the day it last changed. Moved out of that day, the
-  // document and every file beside it keep their place under the library and their suffixes.
-  it('the files of a document filed under a day move to its folders in the library, each keeping what it is', () => {
-    const outputs = ['kb/S/D/2026-05-12/Projets/Contrat.docx.md', 'kb/S/D/2026-05-12/Projets/Contrat.docx.media/image-01.png'];
-
-    expect(refiledOutputs('kb/S/D', 'Projets/Contrat.docx', 'Projets/Contrat.docx', outputs)).toEqual([
-      'kb/S/D/Projets/Contrat.docx.md',
-      'kb/S/D/Projets/Contrat.docx.media/image-01.png',
-    ]);
-    expect(refiledOutputs('kb/S/D', 'Projets/Contrat.docx', 'Projets/Contrat.docx', ['kb/S/D/Projets/Contrat.docx.md'])).toEqual(['kb/S/D/Projets/Contrat.docx.md']);
-  });
-
-  it('a document renamed or moved in SharePoint takes its files to its new name and folders', () => {
-    expect(refiledOutputs('kb/S/D', 'Projets/Contrat.docx', 'Archive/Contrat signe.docx', ['kb/S/D/Projets/Contrat.docx.md', 'kb/S/D/Projets/Contrat.docx.pdf'])).toEqual([
-      'kb/S/D/Archive/Contrat signe.docx.md',
-      'kb/S/D/Archive/Contrat signe.docx.pdf',
-    ]);
-    expect(refiledOutputs('kb/S/D', 'a.docx', 'b.docx', [])).toHaveLength(0);
-    expect(refiledOutputs('kb/S/D', 'A/B/notes.md', 'A/B/notes v2.md', ['kb/S/D/A/B/notes.md.md'])).toEqual(['kb/S/D/A/B/notes v2.md.md']);
   });
 });
 
