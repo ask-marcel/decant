@@ -33,7 +33,7 @@ import { latestById, widens } from '../domain/sync-window.ts';
 import { buildWorklist, goneFromListing } from '../domain/worklist.ts';
 import type { ReportEntry, ReportNotes, ReportRun } from '../domain/report.ts';
 import { appendReportRun, hasSomethingToReport, skipReason } from '../domain/report.ts';
-import type { WorkItem } from '../domain/worklist.ts';
+import type { ManifestEntry, WorkItem } from '../domain/worklist.ts';
 import type { RunSummary } from '../domain/run-summary.ts';
 import type { ConvertFile } from './convert-file.ts';
 import { sweepDrive } from './enumerate-drive.ts';
@@ -496,8 +496,20 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   // waiting on: the ledger entry goes with them.
   const recorded = { path: item.path, cTag: item.cTag, outputs, modified: item.lastModified, modifiedBy: item.modifiedBy };
   const update = (manifest: DriveState): DriveState => forgetFailure(recordItem(manifest, item.id, recorded), item.id);
-  if (outcome.kind === 'converted') return { update, counted: { converted: 1 } };
+  if (outcome.kind === 'converted') return outcome.lost === undefined ? { update, counted: { converted: 1 } } : partly(driveState, item, recorded, outcome.lost);
   return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason: skipReason(outcome.reason, input.maxBytes, item.name) }] } };
+};
+
+// A document that landed without a part of it, its pictures or its slides: recorded at what it wrote,
+// counted as failed as well, and tried again on the next run for the rest, three times in all, as one
+// that failed is.
+const partly = (driveState: DriveState, item: DriveItem, recorded: ManifestEntry, lost: string): WorkOutcome => {
+  const entry = nextFailure(driveState.retry[item.id], item, lost);
+  return {
+    update: (manifest) => rememberFailure(recordItem(manifest, item.id, recorded), entry),
+    counted: { converted: 1, failed: 1 },
+    notes: givenUp(entry) ? {} : { failed: [{ path: item.path, reason: lost }] },
+  };
 };
 
 const archiveOutputs = async (

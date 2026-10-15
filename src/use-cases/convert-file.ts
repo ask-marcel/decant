@@ -48,8 +48,10 @@ export type ConvertFileInput = {
   readonly maxBytes: number;
 } & Placement;
 
+// `lost` names what a conversion had to go without, a part of the document that would not read: the
+// document landed, and the run that asked tries it again for the rest.
 export type ConvertOutcome =
-  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string> }
+  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly lost?: string }
   | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
 
@@ -59,6 +61,8 @@ type Context = {
   readonly dir: string;
   readonly name: string;
   readonly stamp: DocumentStamp;
+  // Each part the conversion had to go without, said once in the outcome.
+  readonly lost: string[];
 };
 
 // Reported under the item's path, which is the label the counter names it by: a step drawn against
@@ -101,6 +105,7 @@ const withImages = async (context: Context, body: string): Promise<Result<{ read
   const found = await context.deps.reader.images(ref);
   if (!found.ok) {
     context.deps.logger.warn('images.failed', { itemId: context.input.item.id, path: context.input.item.path, cause: found.error.kind });
+    context.lost.push(`the pictures could not be read: ${found.error.kind}: ${found.error.message}`);
     return ok({ body, paths: [] });
   }
   if (found.value.length === 0) return ok({ body, paths: [] });
@@ -167,7 +172,7 @@ const convertSlides = async (context: Context): Promise<ConvertOutcome> => {
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
   saying(context, 'rendering the slides');
   const rendered = await context.deps.reader.pdf(ref);
-  if (!rendered.ok && rendered.error.kind === 'unrenderable' && !isLegacyDeck(context)) return slideTextAlone(context);
+  if (!rendered.ok && rendered.error.kind === 'unrenderable' && !isLegacyDeck(context)) return slideTextAlone(context, rendered.error);
   if (!rendered.ok) return failure(rendered.error);
   const pdfPath = `${context.dir}/${context.name}.pdf`;
   const wrotePdf = await context.deps.files.writeBytes(pdfPath, rendered.value);
@@ -175,9 +180,10 @@ const convertSlides = async (context: Context): Promise<ConvertOutcome> => {
   return withSlideText(context, pdfPath);
 };
 
-const slideTextAlone = async (context: Context): Promise<ConvertOutcome> => {
+const slideTextAlone = async (context: Context, refused: DriveReaderError): Promise<ConvertOutcome> => {
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
   context.deps.logger.warn('render.refused', { itemId: context.input.item.id, path: context.input.item.path });
+  context.lost.push(`the slides could not be rendered: ${refused.kind}: ${refused.message}`);
   const text = await context.deps.reader.markdown(ref);
   if (!text.ok) return failure(text.error);
   const written = await writeMarkdown(context, `${context.name}.md`, context.stamp, `${NO_SLIDES_NOTE}\n\n${text.value}`.trim());
@@ -207,6 +213,7 @@ const pdfText = async (context: Context, ref: ItemRef, extracted: string): Promi
   if (extracted.trim().length > 0) return ok({ body: extracted, paths: [] });
   saying(context, 'reading the pages');
   const pages = await context.deps.reader.images(ref);
+  if (!pages.ok) context.lost.push(`the pages could not be read: ${pages.error.kind}: ${pages.error.message}`);
   if (!pages.ok || pages.value.length === 0) return ok({ body: SCANNED_PDF_NOTE, paths: [] });
   const placed = await placeImages(context.deps, context.dir, context.name, pages.value, (what) => saying(context, what));
   return placed.ok ? ok({ body: `${SCANNED_PDF_NOTE}${placed.value.section}`, paths: placed.value.paths }) : placed;
@@ -335,6 +342,8 @@ export const createConvertFile =
     const decision = planFile({ name: input.item.name, size: input.item.size }, input.maxBytes);
     if (decision.kind === 'skip') return { kind: 'skipped', reason: decision.reason };
     const dir = targetDir(input);
-    const context = { deps, input, dir, name: fitSegment(dir, safeSegment(input.asName ?? input.item.name), deps.pathBudget), stamp: stampFor(input, deps.clock) };
-    return CONVERTERS[decision.route](context);
+    const lost: string[] = [];
+    const context = { deps, input, dir, name: fitSegment(dir, safeSegment(input.asName ?? input.item.name), deps.pathBudget), stamp: stampFor(input, deps.clock), lost };
+    const outcome = await CONVERTERS[decision.route](context);
+    return outcome.kind === 'converted' && lost.length > 0 ? { ...outcome, lost: lost.join('; ') } : outcome;
   };

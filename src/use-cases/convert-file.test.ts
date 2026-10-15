@@ -269,7 +269,11 @@ describe('converting one document out of a library', () => {
     );
     const written = files.written.get('kb/Espace Contoso/Documents/Roadmap.pptx.md') ?? '';
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Roadmap.pptx.md'] });
+    expect(outcome).toEqual({
+      kind: 'converted',
+      outputs: ['kb/Espace Contoso/Documents/Roadmap.pptx.md'],
+      lost: 'the slides could not be rendered: unrenderable: HTTP 406 with no error body (path: /transform/pdf)',
+    });
     expect(written).toContain('## Slide 1');
     expect(written).toContain('could not be rendered');
     expect(written).not.toContain('pdf: ./Roadmap.pptx.pdf');
@@ -389,7 +393,11 @@ describe('converting one document out of a library', () => {
     );
     const written = files.written.get('kb/Espace Contoso/Documents/Scan.pdf.md') ?? '';
 
-    expect(outcome).toEqual({ kind: 'converted', outputs: ['kb/Espace Contoso/Documents/Scan.pdf', 'kb/Espace Contoso/Documents/Scan.pdf.md'] });
+    expect(outcome).toEqual({
+      kind: 'converted',
+      outputs: ['kb/Espace Contoso/Documents/Scan.pdf', 'kb/Espace Contoso/Documents/Scan.pdf.md'],
+      lost: 'the pages could not be read: permanent: no pages here',
+    });
     expect(written).toContain('carries no text layer');
     expect(written).not.toContain('## Images');
   });
@@ -775,6 +783,18 @@ describe('keeping the pictures a document embeds', () => {
     const { outcome } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, files: { failWriteWith: { kind: 'write-failed', path: 'x', message: 'disk full' } } });
 
     expect(outcome.kind).toBe('failed');
+  });
+
+  // The document is the point and lands without them, but the outcome says what it went without, so
+  // the run that asked can try it again for the rest.
+  it('a document whose pictures could not be read says what it went without', async () => {
+    const { outcome } = await run({}, { reader: { failImages: { kind: 'transient', message: 'Graph is busy' }, markdown: { '01ABC': 'Body.' } } });
+
+    expect(outcome).toEqual({
+      kind: 'converted',
+      outputs: ['kb/Espace Contoso/Documents/Projets/Contrat.docx.md'],
+      lost: 'the pictures could not be read: transient: Graph is busy',
+    });
   });
 
   it('pictures that could not be read are logged and none are claimed as written', async () => {

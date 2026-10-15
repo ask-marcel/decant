@@ -1490,3 +1490,50 @@ describe('following the folders of a library', () => {
     expect(summary.converted).toBe(3);
   });
 });
+
+// The document is the point, and it lands without the part that would not read. The run counts it as
+// failed as well, and the next run converts it again for the rest, three times in all.
+describe('a document converted without a part of it', () => {
+  const BUSY = { kind: 'transient' as const, message: 'Graph is busy' };
+  const LOST = 'the pictures could not be read: transient: Graph is busy';
+  const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
+  const NOTHING_CHANGED = { pages: [{ items: [], skipped: 0, deltaLink: 'cursor-2' }] };
+
+  it('a document whose pictures could not be read lands, is counted as failed, and the next run tries it again for them', async () => {
+    const first = await run({ reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-1' }], failImages: BUSY } });
+    const second = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } }, reader: NOTHING_CHANGED });
+
+    expect(first.summary).toMatchObject({ converted: 1, failed: 1 });
+    expect(first.notes?.failed).toEqual([{ path: 'Projets/Contrat.docx', reason: LOST }]);
+    expect(stateAfter(first.files).drives['b!one']?.items['01ABC']?.outputs).toEqual([NOTE]);
+    expect(stateAfter(first.files).drives['b!one']?.retry['01ABC']).toMatchObject({ attempts: 1, reason: LOST });
+    expect(second.summary).toMatchObject({ converted: 1, failed: 0 });
+    expect(stateAfter(second.files).drives['b!one']?.retry).toEqual({});
+  });
+
+  it('a document still without its pictures on its third try is named once as given up, and keeps what it wrote', async () => {
+    const twice = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      layout: 2,
+      drives: {
+        'b!one': {
+          name: 'Documents',
+          deltaLink: 'cursor-1',
+          pending: [],
+          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [NOTE] } },
+          retry: { '01ABC': { item: item(), attempts: 2, reason: LOST } },
+          folders: {},
+        },
+      },
+    });
+
+    const third = await run({ files: { texts: { [STATE_PATH]: twice } }, reader: { ...NOTHING_CHANGED, failImages: BUSY } });
+
+    expect(third.summary).toMatchObject({ converted: 1, failed: 1 });
+    expect(third.notes?.failed).toStrictEqual([]);
+    expect(third.notes?.gaveUp).toEqual([{ path: 'Projets/Contrat.docx', reason: LOST }]);
+    expect(stateAfter(third.files).drives['b!one']?.items['01ABC']?.outputs).toEqual([NOTE]);
+  });
+});
