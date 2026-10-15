@@ -497,7 +497,14 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   const recorded = { path: item.path, cTag: item.cTag, outputs, modified: item.lastModified, modifiedBy: item.modifiedBy };
   const update = (manifest: DriveState): DriveState => forgetFailure(recordItem(manifest, item.id, recorded), item.id);
   if (outcome.kind === 'converted') return outcome.lost === undefined ? { update, counted: { converted: 1 } } : partly(driveState, item, recorded, outcome.lost);
-  return { update, counted: { skipped: 1 }, notes: { skipped: [{ path: item.path, reason: skipReason(outcome.reason, input.maxBytes, item.name) }] } };
+  // A document left out now had its earlier files set aside first: the report says where they went,
+  // since the document is no longer where it was.
+  const reason = skipReason(outcome.reason, input.maxBytes, item.name);
+  return {
+    update,
+    counted: { skipped: 1 },
+    notes: { skipped: [{ path: item.path, reason: aside.moved.length === 0 ? reason : `${reason}, so its earlier version was moved aside` }] },
+  };
 };
 
 // A document that landed without a part of it, its pictures or its slides: recorded at what it wrote,
