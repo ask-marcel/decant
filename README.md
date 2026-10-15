@@ -508,8 +508,9 @@ sender.
 
 The line of data gives the addresses, the folder of the message, the flag (`open` or `complete`),
 the importance and the categories. It has only the parts that have a value, and it shows the
-importance only when it is high or low. decant does not know the name of a subfolder of Deleted
-Items, Junk Email, Drafts or Outbox. Thus a message in such a subfolder has no folder in its line.
+importance only when it is high or low. For a draft, the line has `not sent` after the folder.
+decant does not know the name of a subfolder of Deleted Items, Junk Email, Drafts or Outbox. Thus a
+message in such a subfolder has no folder in its line.
 
 `_meta/messages.jsonl` has one line for each message of each thread, in the sequence of the time of
 the messages. Each run writes the file again from the state. The fields are:
@@ -545,8 +546,24 @@ name, decant writes again each thread with a message in that folder. When you on
 decant does not write its thread again.
 
 decant does not read Deleted Items, Junk Email, Drafts and Outbox for changes. Thus a new flag on a
-message in these folders does not write its thread again. Also, a message that you move into one of
-these folders keeps its earlier folder in its line.
+message in these folders does not write its thread again.
+
+When a message is deleted, or moved out of a folder that decant reads, the next run writes its
+thread again. A message that you move to Deleted Items stays in the note, and its line names Deleted
+Items. A message that the mailbox no longer holds goes out of the note. When you delete a message
+from Deleted Items, decant does not see it, because it does not read that folder. The note changes
+at the next write of the thread.
+
+When decant writes a thread again, each file that the thread no longer holds goes to
+`kb/_archive/<day of the run>/`, at the path that it had in `kb/`. An example is the attachment of a
+deleted message. The report names each file with `no longer in the thread`. When the mailbox holds
+no message of a thread, the note and all the files of the thread go to `_archive/` together. The
+report names the note with `no message left at the source`.
+
+Each file in a thread keeps the name that it got first. A new file does not get the name of a file
+that the thread holds. This rule also applies after a message before it goes. The note also keeps
+its first name. When the state file is missing, decant finds the folder of each thread by the id in
+the name of the folder.
 
 When decant finds a mailbox from before this version, it updates the mailbox one time. The first run
 reads each mail folder again from the start, and writes each thread again. Then each note has the
@@ -934,6 +951,13 @@ in a post body is pulled into `_linked/`. The three commands this needs arrived 
 Group threads are not tracked by a delta the way a mailbox folder is, because Graph offers none.
 Each run lists a group's threads newest first and stops at the newest post it already holds, so a
 thread that has been replied to comes back and an untouched one does not.
+
+Each run gets the list of all the threads of the group. When a thread that decant wrote is not in
+the list, the group no longer holds it. decant then moves its note and its files to
+`kb/_archive/<day of the run>/`, and the report names it with `no longer at the source`. When the
+list has no thread at all, decant moves no file, because an empty list can be an error. decant does
+not see a post that is deleted from a thread that stays, until the thread gets a new post. Files
+that a thread no longer holds go to `_archive/` as in the mailbox.
 
 A thread that could not be written is remembered and asked for again on the next run, three tries
 in all, whatever the dates say. It has to be remembered rather than found again: a thread that
