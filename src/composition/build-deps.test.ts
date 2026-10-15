@@ -531,6 +531,7 @@ describe('a file that would not move under the archive', () => {
     },
   });
   const deleted = { id: '01ABC', name: '', kind: 'deleted' as const, size: 0, path: '', lastModified: '', cTag: '', webUrl: '' };
+  const edited = { ...deleted, name: 'Contrat.docx', kind: 'file' as const, size: 4096, path: 'Contrat.docx', lastModified: '2026-10-15T08:00:00Z', cTag: 'c2' };
 
   const updateWith = async (files: ReturnType<typeof createFilesFake>, pages: ReadonlyArray<DriveDeltaPage>): Promise<void> => {
     await buildDeps(configFor({}), {
@@ -569,11 +570,26 @@ describe('a file that would not move under the archive', () => {
   // The document still records its note and tries the edit again itself, three runs in all: moved by
   // the ledger before that, the note would leave the document with no current copy.
   it('a held note that its document still records is not written down', async () => {
-    const edited = { ...deleted, name: 'Contrat.docx', kind: 'file' as const, size: 4096, path: 'Contrat.docx', lastModified: '2026-10-15T08:00:00Z', cTag: 'c2' };
     const locked = createFilesFake({ directories, texts: { [STATE]: held, [NOTE]: 'the contract' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'EBUSY' } });
     await updateWith(locked, [{ items: [edited], skipped: 0, deltaLink: 'cursor-2' }]);
 
     expect(locked.written.has(LEDGER)).toBe(false);
     expect(locked.written.get(NOTE)).toBe('the contract');
+  });
+
+  // Another document that lands at the path holds it now: moved by the next run, its note would leave
+  // that document with no current copy.
+  it('a file written down and then written over by another document leaves the ledger, and the next run leaves the new note', async () => {
+    const busy = { kind: 'write-failed' as const, path: NOTE, message: 'EBUSY' };
+    const locked = createFilesFake({ directories, texts: { [STATE]: held, [NOTE]: 'the contract' }, failMoveWith: busy });
+    await updateWith(locked, [{ items: [deleted], skipped: 0, deltaLink: 'cursor-2' }]);
+    const reused = createFilesFake({ directories, texts: Object.fromEntries(locked.written), failMoveWith: busy });
+    await updateWith(reused, [{ items: [{ ...edited, id: '01XYZ' }], skipped: 0, deltaLink: 'cursor-3' }]);
+    const free = createFilesFake({ directories, texts: Object.fromEntries(reused.written) });
+    await updateWith(free, [{ items: [], skipped: 0, deltaLink: 'cursor-4' }]);
+
+    expect(JSON.parse(reused.written.get(LEDGER) ?? '{}')).toEqual({});
+    expect(free.moves).toStrictEqual([]);
+    expect(free.written.get(NOTE)).toContain('converted 01XYZ');
   });
 });

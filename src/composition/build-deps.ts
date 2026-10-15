@@ -193,13 +193,13 @@ const given = <T>(override: T | undefined, build: () => T): T => override ?? bui
 export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDeps => {
   const logger = given(overrides.logger, () => createWinstonLogger(config.logLevel));
   const clock = given(overrides.clock, () => createSystemClock());
-  // Every part of the run writes through these: a note is written only when its text changed, and the
-  // run time and delta cursors of a sync go to a file beside its state. A run that found nothing new
-  // then changes no file but those cursor files.
-  const files = withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())), logger);
-  // The files a source lets go that would not move under the archive, written down beside the
-  // knowledge base: moved again before each run, and named in the report of the run.
-  const ledger = createAsideLedger(files, { clock, logger, kbRoot: config.kbRoot });
+  // Every part of the run writes through these: a note is written only when its text changed, the run
+  // time and delta cursors of a sync go to a file beside its state, and a file that lands at a path the
+  // ledger holds takes that path out of it. A run that found nothing new then changes no file but those
+  // cursor files. The ledger lists the files a source lets go that would not move under the archive:
+  // moved again before each run, and named in the report of the run.
+  const ledger = createAsideLedger(withCursorFiles(withSteadyWrites(given(overrides.files, () => createBunFiles())), logger), { clock, logger, kbRoot: config.kbRoot });
+  const files = ledger.files;
   const writeDown = ledger.writeDown;
   // Constructing the API reaches nothing: the sign-in ladder only runs on the first Graph call.
   const api = realApi(config.interactive);

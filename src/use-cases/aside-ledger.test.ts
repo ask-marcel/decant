@@ -130,3 +130,52 @@ describe('naming the files still stuck in the report of the run', () => {
     expect(await ledger.stuck()).toStrictEqual([]);
   });
 });
+
+describe('keeping the ledger in step with what lands on disk', () => {
+  const listed = JSON.stringify({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z' } });
+
+  // The file the ledger meant is gone, written over: moved by the next run, the new file would leave
+  // its own source with no current copy.
+  it('a file written at a path the ledger holds takes it out, and the next run leaves the new file in place', async () => {
+    const { files, ledger } = setUp({ texts: { [LEDGER]: listed, [NOTE]: 'the contract' } });
+
+    await ledger.files.writeText(NOTE, 'the new contract');
+    await ledger.retry();
+
+    expect(ledgerOf(files.written.get(LEDGER))).toEqual({});
+    expect(files.moves).toStrictEqual([]);
+    expect(files.written.get(NOTE)).toBe('the new contract');
+  });
+
+  it('bytes written, or a file moved, to a path the ledger holds take it out as well', async () => {
+    const bytes = setUp({ texts: { [LEDGER]: listed, [NOTE]: 'the contract' } });
+    const moved = setUp({ texts: { [LEDGER]: listed, [TASK]: 'the task' } });
+
+    await bytes.ledger.files.writeBytes(NOTE, new Uint8Array([1]));
+    await moved.ledger.files.move(TASK, NOTE);
+
+    expect(ledgerOf(bytes.files.written.get(LEDGER))).toEqual({});
+    expect(ledgerOf(moved.files.written.get(LEDGER))).toEqual({});
+  });
+
+  it('a write elsewhere, or one that fails, leaves the ledger as it is', async () => {
+    const elsewhere = setUp({ texts: { [LEDGER]: listed, [NOTE]: 'the contract' } });
+    const refused = setUp({ texts: { [LEDGER]: listed, [NOTE]: 'the contract' }, failWriteWith: { kind: 'write-failed', path: NOTE, message: 'EBUSY' } });
+
+    await elsewhere.ledger.files.writeText(TASK, 'the task');
+    await refused.ledger.files.writeText(NOTE, 'the new contract');
+
+    expect(elsewhere.files.written.get(LEDGER)).toBe(listed);
+    expect(refused.files.written.get(LEDGER)).toBe(listed);
+  });
+
+  // In one window, a file can land at a path before another item lets go of its own file there.
+  it('a file let go at a path another file landed at in this run is not written down', async () => {
+    const { files, ledger } = setUp({ texts: { [NOTE]: 'the contract' } });
+
+    await ledger.files.writeText(NOTE, 'the new contract');
+    await ledger.writeDown([{ path: NOTE, error: LOCKED }]);
+
+    expect(files.written.has(LEDGER)).toBe(false);
+  });
+});
