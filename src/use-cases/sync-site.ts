@@ -360,8 +360,8 @@ const readAgain = async (deps: SyncSiteDeps, driveId: string): Promise<Result<Li
   return whole.ok ? ok(listing(whole.value, true)) : whole;
 };
 
-// A whole read that stopped short hands back no cursor, so the one the drain reached is kept, and the
-// next run reads on from there.
+// A whole read that stopped short hands back no cursor, and none is kept: the next run reads the
+// library from the root again, which a cursor kept from the drain would hide for a wider day.
 const sweepFor = async (deps: SyncSiteDeps, driveId: string, known: DriveState, since: string | undefined): Promise<Result<Listing, DriveReaderError>> => {
   const drained = await sweepDrive(deps.reader, driveId, known.deltaLink);
   if (!drained.ok) return expiredCursor(drained.error) ? readAgain(deps, driveId) : drained;
@@ -371,7 +371,7 @@ const sweepFor = async (deps: SyncSiteDeps, driveId: string, known: DriveState, 
   return ok({
     items: latestById([...drained.value.items, ...whole.value.items]),
     skipped: drained.value.skipped + whole.value.skipped,
-    deltaLink: whole.value.deltaLink ?? drained.value.deltaLink,
+    deltaLink: whole.value.deltaLink,
     complete: whole.value.deltaLink !== undefined,
   });
 };

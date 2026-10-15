@@ -1485,7 +1485,7 @@ describe('following the folders of a library', () => {
 
   // The sweep stops when Graph hands back a page it already gave: what it holds then is part of the
   // library, and the documents on the pages it never reached are not gone for that.
-  it('a whole read that stops short of the end of the library puts nothing aside, keeps the cursor it had, and is read whole again next time', async () => {
+  it('a whole read that stops short of the end of the library puts nothing aside, keeps no cursor, and is read whole again next time', async () => {
     const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01LATER': { path: 'Later.docx', cTag: 'c1', outputs: ['kb/x/Later.docx.md'] } };
     const pages = [
       { items: [], skipped: 0, deltaLink: 'cursor-2' },
@@ -1496,8 +1496,27 @@ describe('following the folders of a library', () => {
     const { summary, files } = await run({ files: { texts: { [STATE_PATH]: recorded({ items }) } }, reader: { pages } });
 
     expect(summary.archived).toBe(0);
-    expect(libraryAfter(files)?.deltaLink).toBe('cursor-2');
+    expect(libraryAfter(files)?.deltaLink).toBeUndefined();
     expect(libraryAfter(files)?.folders).toBeUndefined();
+  });
+
+  // The day is kept with the run, so a cursor kept from the drain would hide, on the next run, what the
+  // short read did not reach: the documents between the two days that were never filed.
+  it('a wider day whose whole read stops short has the library read from the root on the next run', async () => {
+    const pages = [
+      { items: [], skipped: 0, deltaLink: 'cursor-2' },
+      { items: [item()], skipped: 0, nextLink: 'page-2' },
+      { items: [], skipped: 0, nextLink: 'page-2' },
+    ];
+
+    const first = await run({ files: { texts: { [STATE_PATH]: recorded({ since: '2026-01-01', folders: {} }) } }, reader: { pages }, since: '2025-01-01' });
+    const second = await run({
+      files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } },
+      reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }] },
+      since: '2025-01-01',
+    });
+
+    expect(reads(second.reader)).toEqual(['delta']);
   });
 
   // Without its cursor, the run reads the library from the root, which lists it whole: once, and
