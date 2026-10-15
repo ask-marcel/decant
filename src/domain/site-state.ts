@@ -135,6 +135,20 @@ export const forgetItem = (drive: DriveState, itemId: string): DriveState => {
   return forgetFailure({ ...drive, items: Object.fromEntries(remaining) }, itemId);
 };
 
+// The files a document's record names that no other record holds. A document that took the path
+// another one left, earlier in the same run, holds those files now: they are not the first one's to
+// set aside.
+export const ownOutputs = (drive: DriveState, itemId: string): ReadonlyArray<string> => {
+  const outputs = drive.items[itemId]?.outputs ?? [];
+  if (outputs.length === 0) return outputs;
+  const others = new Set(
+    Object.entries(drive.items)
+      .filter(([id]) => id !== itemId)
+      .flatMap(([, entry]) => entry.outputs)
+  );
+  return outputs.filter((output) => !others.has(output));
+};
+
 export const rememberFailure = (drive: DriveState, entry: RetryEntry): DriveState => ({ ...drive, retry: { ...drive.retry, [entry.item.id]: entry } });
 
 export const forgetFailure = (drive: DriveState, itemId: string): DriveState => {
