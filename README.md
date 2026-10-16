@@ -677,12 +677,19 @@ One file per event as the calendar holds it: a single meeting, a recurring serie
 carrying its rule in words, an exception to a series as its own file. Expanded occurrences would be
 fifty-two identical files for a weekly meeting.
 
-The note of an exception names its series under its title, with a link: `Part of the series
-[Monthly review](<../2026-01-05/Monthly review.md>).` The note of a series lists its exceptions under
-`## Exceptions`, each with a link. When a series gets or loses an exception, decant writes the note
-of the series again in the same run. A series that decant wrote before this version gets these links
-when decant reads the calendar whole. To read it whole one time, delete
-`kb/Calendar/.sync-cursor.json`, then run `decant update`.
+The note of an exception shows its series below its title, with a link: `Part of the series
+[Monthly review](<../2026-01-05/Monthly review.md>).` The note of a series shows its exceptions below
+`## Exceptions`, each with a link. When a series gets a new exception, or an exception of it goes,
+decant writes the series note again in the same run. A link shows an event with no subject as
+`event <id>`, the name of its note. decant does not write again the note of an exception that starts
+before the date from How far back. Such a note can keep a link to a note of the series that moved to
+`_archive/`.
+
+A series that decant wrote before this version gets these links when decant reads all of the
+calendar. To read all of the calendar one time:
+
+1. Delete `kb/Calendar/.sync-cursor.json`.
+2. Run `decant update`.
 
 ```yaml
 ---
