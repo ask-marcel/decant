@@ -164,6 +164,23 @@ describe('syncing the people directory', () => {
     expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to Dana Farrow.');
   });
 
+  // A manager whose profile will not read this run still has a page on disk, so the pages of the
+  // reports keep their link and are not written again for it.
+  it('a manager whose profile cannot be read keeps the link on the pages of the reports, and none is written again for it', async () => {
+    const teams = { dana: ['NORTHWIND EMPLOYEES', 'Leadership'], jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
+    const state = withPerson(
+      withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: fingerprintOf('dana', [DANA, JANE], teams) }),
+      'jane',
+      { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [DANA, JANE], teams) }
+    );
+    const texts = { [STATE_PATH]: serializePeopleState(state) };
+    const quiet = await run({ reader: { failProfiles: ['dana'] }, files: { texts } });
+    const edited = await run({ reader: { failProfiles: ['dana'], profiles: { ...PROFILES, jane: { ...JANE, title: 'COO' } } }, files: { texts } });
+
+    expect(quiet.files.writeLog.filter((path) => path.endsWith('Jane Doe.md'))).toStrictEqual([]);
+    expect(edited.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to [Dana Farrow](<Dana Farrow.md>)');
+  });
+
   it('a run where nobody changed writes nothing but its own state file', async () => {
     const teams = { dana: ['NORTHWIND EMPLOYEES', 'Leadership'], jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
     const state = withPerson(

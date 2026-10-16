@@ -129,13 +129,14 @@ const profiles = async (deps: SyncPeopleDeps, input: SyncPeopleInput, listed: Ro
 
 const baseName = (file: string): string => file.slice(file.lastIndexOf('/') + 1);
 
-// Where a colleague's page is, for the links between pages. Only a colleague has one: a manager
-// who has left is named without a link rather than linked to a page about to be put aside.
-const filesOf = (planned: ReadonlyArray<PlannedPerson>, directory: ReadonlyArray<Colleague>, state: PeopleState): FileOf => {
+// Where a colleague's page is, for the links between pages. Only a colleague has one, and a person
+// whose profile would not read this run, whose page stays: a manager who has left is named without a
+// link rather than linked to a page about to be put aside.
+const filesOf = (planned: ReadonlyArray<PlannedPerson>, directory: ReadonlyArray<Colleague>, state: PeopleState, kept: ReadonlySet<string>): FileOf => {
   const files = new Map(planned.map((entry) => [entry.colleague.person.id, baseName(entry.file)]));
-  for (const colleague of directory) {
-    const record = state.people[colleague.person.id];
-    if (!files.has(colleague.person.id) && record !== undefined) files.set(colleague.person.id, baseName(record.file));
+  for (const id of [...directory.map((colleague) => colleague.person.id), ...kept]) {
+    const record = state.people[id];
+    if (!files.has(id) && record !== undefined) files.set(id, baseName(record.file));
   }
   return (id) => files.get(id);
 };
@@ -239,7 +240,9 @@ export const createSyncPeople =
     const nobody = emptyRosters(state, listed.value);
     if (nobody !== undefined) return nobody;
     const read = await profiles(deps, input, listed.value);
-    const directory = assembleDirectory(read.people, Object.fromEntries(Object.entries(listed.value).map(([id, who]) => [id, who.teams])));
+    // A person whose profile would not read keeps the page on record, and so does the link to it.
+    const kept = new Set(read.unread.map((entry) => entry.id).filter((id) => state.people[id] !== undefined));
+    const directory = assembleDirectory(read.people, Object.fromEntries(Object.entries(listed.value).map(([id, who]) => [id, who.teams])), kept);
     const work = peopleWorklist(
       state,
       directory,
@@ -247,7 +250,7 @@ export const createSyncPeople =
     );
     if (input.dryRun) return ok({ id: PEOPLE_ID, source: PEOPLE_NAME, summary: { ...EMPTY, queued: work.write.length }, notes: NO_NOTES });
     const planned = planPersonFiles(peopleRoot(deps.kbRoot), work.write, state, deps.pathBudget);
-    const fileOf = filesOf(planned, directory, state);
+    const fileOf = filesOf(planned, directory, state, kept);
     // Every profile is read on every run, since the rosters are read whole: one Graph will not hand
     // over is named as a failure for three runs, then given up on.
     const tried = triedReads(
