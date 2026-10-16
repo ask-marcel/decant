@@ -3,7 +3,7 @@ import { renderFrontMatter, withFrontMatter, withoutFrontMatter } from './front-
 import type { FrontMatterField } from './front-matter.ts';
 import { htmlToText } from './html-text.ts';
 import { isCalendar, renderCalendar } from './icalendar.ts';
-import { withoutJoinBlocks } from './join-block.ts';
+import { joinLine, withoutJoinBlocks } from './join-block.ts';
 import { NO_TEXT_NOTE } from './kb-document.ts';
 import { linkDestination } from './markdown-link.ts';
 import { unwrapSafelinks } from './safelink.ts';
@@ -66,9 +66,11 @@ const attachmentLine = (attachment: EventAttachmentLink): string => `- [${attach
 const titleOf = (event: CalendarEvent): string => (event.subject.length > 0 ? event.subject : `event ${event.id}`);
 
 // Outlook wraps each link of an invitation in a scanner of its own, as it does in mail, and the
-// wrapper comes off the same way. The join block goes whole: `online_meeting:` holds the link to join.
+// wrapper comes off the same way. The join block goes. Graph gives the link to join of a Teams or a
+// Skype meeting, and `online_meeting:` holds it. For any other (Zoom, Meet, a Teams block pasted into
+// an appointment) Graph gives none, so the link stays on one line where its block was.
 const bodyOf = (input: RenderEventInput): string => {
-  const said = withoutJoinBlocks(unwrapSafelinks(htmlToText(input.event.body)));
+  const said = withoutJoinBlocks(unwrapSafelinks(htmlToText(input.event.body)), input.event.joinUrl.length > 0 ? undefined : joinLine);
   return [
     `# ${titleOf(input.event)}`,
     ...(said.length === 0 ? [] : ['', said]),
