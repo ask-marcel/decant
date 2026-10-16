@@ -26,7 +26,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { TeamReader } from './ports/team-reader.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
-import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { UNREAD, clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { Unread } from '../domain/retry-ledger.ts';
 import { putAside } from './put-aside.ts';
@@ -227,6 +227,12 @@ const writeOrgChart = async (deps: SyncPeopleDeps, directory: ReadonlyArray<Coll
   if (!written.ok) deps.logger.warn('org-chart.failed', { cause: written.error.kind });
 };
 
+// The chart is drawn from the profiles that read, so one drawn while a profile would not read left
+// that person out. It is drawn again when a page was written or put aside, and when a profile the
+// ledger held as unread reads again, though no page changes for it.
+const chartOwed = (state: PeopleState, work: { readonly write: ReadonlyArray<unknown>; readonly archive: ReadonlyArray<unknown> }, read: ReadonlyArray<Person>): boolean =>
+  work.write.length + work.archive.length > 0 || read.some((person) => state.retry?.[person.id]?.version === UNREAD);
+
 const finish = async (deps: SyncPeopleDeps, input: SyncPeopleInput, before: PeopleState, done: Progressing): Promise<Result<SourceRun, StepError>> => {
   const saved = await save(deps, done.state);
   if (!saved.ok) return saved;
@@ -268,6 +274,6 @@ export const createSyncPeople =
     const folded = fold(written.value, await Promise.all(work.archive.map((entry) => archiveGone(deps, entry))));
     // Whoever left every roster leaves the ledger too: given up on, they would be named in every report.
     const done = { ...folded, state: { ...folded.state, retry: heldAttempts(folded.state.retry, new Set(Object.keys(listed.value))) } };
-    if (work.write.length + work.archive.length > 0) await writeOrgChart(deps, directory, fileOf);
+    if (chartOwed(state, work, read.people)) await writeOrgChart(deps, directory, fileOf);
     return finish(deps, input, state, done);
   };
