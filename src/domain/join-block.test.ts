@@ -95,6 +95,48 @@ describe('the join block a meeting invitation carries', () => {
     expect(withoutJoinBlocks('Passcode: aB3cD4 opens the safe.')).toBe('Passcode: aB3cD4 opens the safe.');
   });
 
+  // Only a link to join, or a line that opens with the meeting's ID, tells a block from words a sender
+  // put between two rules.
+  it('keeps words between two rules that only name Teams or a meeting ID', () => {
+    const agenda = [RULE, '1. Microsoft Teams rollout', '2. Budget', RULE].join('\n');
+    const signature = ['Thanks,', RULE, 'Chat with me on Microsoft Teams', RULE].join('\n');
+    const question = [RULE, 'Could you send the meeting ID for Thursday?', RULE].join('\n');
+
+    expect(withoutJoinBlocks(agenda)).toBe(agenda);
+    expect(withoutJoinBlocks(signature)).toBe(signature);
+    expect(withoutJoinBlocks(question)).toBe(question);
+  });
+
+  // Teams puts a shorter rule inside its block, before the dial-in numbers, and a reply quoted under a
+  // mail can open with one: only a rule like the one that opened a block closes it.
+  it('a Teams block runs to the rule like the one that opened it, past a shorter rule', () => {
+    const block = [
+      RULE,
+      'Microsoft Teams Need help?',
+      `[Join the meeting now](${JOIN})`,
+      'Meeting ID: 123 456 789 012',
+      'Passcode: aB3cD4',
+      '_'.repeat(40),
+      'Dial in by phone',
+      '+1 555-0100,,123456789# United States, Seattle',
+      'Phone conference ID: 123 456 789#',
+      'For organizers: Meeting options | Reset dial-in PIN',
+      RULE,
+    ];
+    const open = [RULE, 'Microsoft Teams Need help?', `[Join the meeting now](${JOIN})`, 'Agenda: the budget.', '_'.repeat(32), 'From: Jane Doe'].join('\n');
+
+    expect(withoutJoinBlocks(['Agenda below.', ...block, 'Bring the figures.'].join('\n'))).toBe('Agenda below.\nBring the figures.');
+    expect(withoutJoinBlocks(open)).toBe(open);
+  });
+
+  // A second invitation that opens first means the one before it never reached its local numbers.
+  it('a Zoom block runs no further than the next invitation', () => {
+    const first = ['Join Zoom Meeting', 'https://us02web.zoom.us/j/1', 'Agenda: the budget.'];
+    const second = ['Join Zoom Meeting', 'https://us02web.zoom.us/j/2', 'Meeting ID: 2', 'Find your local number: https://us02web.zoom.us/u/abc'];
+
+    expect(withoutJoinBlocks([...first, ...second, 'See you.'].join('\n'))).toBe([...first, 'See you.'].join('\n'));
+  });
+
   // A link this code does not know is still the way into the meeting, so a block asked to leave its
   // link and holding none it knows stays whole; asked for nothing, it goes.
   it('a block with no link to join it knows stays whole when its link is asked for, and goes when not', () => {
