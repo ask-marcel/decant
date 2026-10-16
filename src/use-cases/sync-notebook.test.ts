@@ -165,6 +165,7 @@ describe('syncing a OneNote notebook', () => {
     expect(done.summary).toMatchObject({ converted: 2 });
     expect(stateOf(done.files).pages['a']?.file).toBe(`${ROOT}/Meetings/Kick-off.md`);
     expect(done.files.moves.map((move) => move.from)).toEqual([`${OLD}/Kick-off.md`, `${OLD}/Retro.md`]);
+    expect(done.progress.started.map((start) => start.total)).toEqual([2]);
     expect(dry.summary.queued).toBe(2);
   });
 
