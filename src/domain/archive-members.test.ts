@@ -33,6 +33,7 @@ describe('a link from one member of an archive to another', () => {
     const named = new Map([...files, ['Rapport (2).html', `${FOLDER}/Rapport (2).html.md`]]);
 
     expect(linkMembers('[Week 2](pages/week%202.html "Week 2")', 'index.html', named)).toBe('[Week 2](<pages/week 2.html.md> "Week 2")');
+    expect(linkMembers('[Week 2](pages/week%202.html\n  "Week 2")', 'index.html', named)).toBe('[Week 2](<pages/week 2.html.md>\n  "Week 2")');
     expect(linkMembers('[Report](Rapport%20\\(2\\).html)', 'index.html', named)).toBe('[Report](<Rapport (2).html.md>)');
     expect(linkMembers('[Report](<Rapport \\(2\\).html>)', 'index.html', named)).toBe('[Report](<Rapport (2).html.md>)');
     expect(linkMembers('[![Logo](logo.png)](pages/week%202.html)', 'index.html', named)).toBe('[![Logo](logo.png)](<pages/week 2.html.md>)');
