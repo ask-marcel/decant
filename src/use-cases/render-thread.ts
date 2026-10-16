@@ -24,7 +24,7 @@ import type { AttachmentTally, MessageFile, PicturesOfRun } from './thread-files
 import { rewriteBodies, writeCards } from './thread-documents.ts';
 import type { ConvertFile, ConvertFileInput, ConvertOutcome } from './convert-file.ts';
 import { linkedFiles, writeLinkCards } from './thread-links.ts';
-import type { CarriedFile, LinkedTally } from './thread-links.ts';
+import type { AttachedCopy, LinkedTally } from './thread-links.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
@@ -262,7 +262,7 @@ const heldIn = (here: string, paths: ReadonlyArray<string>): ReadonlyArray<strin
 
 // The files this write's messages carried, which a linked document can be the same as. A picture shown
 // in a body is no file a document is.
-const carriedFiles = (byMessage: AttachmentTally['byMessage']): ReadonlyArray<CarriedFile> =>
+const carriedFiles = (byMessage: AttachmentTally['byMessage']): ReadonlyArray<AttachedCopy> =>
   Object.values(byMessage).flatMap((files) =>
     files.flatMap((file) => (file.hash === undefined || file.picture !== undefined ? [] : [{ name: file.attachment.name, hash: file.hash, card: `${file.asName}.md` }]))
   );
