@@ -20,12 +20,11 @@ import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import type { AttachmentOutcome, ConvertAttachment, ConvertAttachmentInput } from './convert-attachment.ts';
 import { ATTACHMENTS_FOLDER, attachmentsOf } from './thread-files.ts';
-import type { PicturesOfRun } from './thread-files.ts';
-import type { MessageFile } from './thread-files.ts';
+import type { AttachmentTally, MessageFile, PicturesOfRun } from './thread-files.ts';
 import { rewriteBodies, writeCards } from './thread-documents.ts';
 import type { ConvertFile, ConvertFileInput, ConvertOutcome } from './convert-file.ts';
 import { linkedFiles, writeLinkCards } from './thread-links.ts';
-import type { LinkedTally } from './thread-links.ts';
+import type { CarriedFile, LinkedTally } from './thread-links.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
 import type { Files } from './ports/files.ts';
@@ -261,6 +260,13 @@ const messageRecords = (
 // the store the whole mailbox shares, and is no file of the thread's.
 const heldIn = (here: string, paths: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(paths.filter((path) => path.startsWith(`${here}/`)))].toSorted(compareText);
 
+// The files this write's messages carried, which a linked document can be the same as. A picture shown
+// in a body is no file a document is.
+const carriedFiles = (byMessage: AttachmentTally['byMessage']): ReadonlyArray<CarriedFile> =>
+  Object.values(byMessage).flatMap((files) =>
+    files.flatMap((file) => (file.hash === undefined || file.picture !== undefined ? [] : [{ name: file.attachment.name, hash: file.hash, card: `${file.asName}.md` }]))
+  );
+
 const writeThread = async (
   deps: RenderThreadDeps & { readonly pictures: PicturesOfRun },
   input: RenderThreadInput,
@@ -283,7 +289,10 @@ const writeThread = async (
   };
   const attachments = await attachmentsOf(reading, filePlace, parts, stamp);
   const following = { ...deps, convertFile: (converting: ConvertFileInput): Promise<ConvertOutcome> => announcedLink(deps, input.label, converting) };
-  const links = await linkedFiles(following, place.here, input.maxBytes, parts, { links: input.links, held: input.held });
+  const links = await linkedFiles(following, { here: place.here, maxBytes: input.maxBytes, carried: carriedFiles(attachments.byMessage) }, parts, {
+    links: input.links,
+    held: input.held,
+  });
   // Everything the thread carried sits inside the thread's own folder, so every reference below is
   // relative to `here` and stays within the directory a reader already has open.
   const here = place.here;

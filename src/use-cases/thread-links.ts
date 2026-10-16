@@ -7,11 +7,15 @@ import type { LinkedRecord } from '../domain/mail-state.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { skipReason } from '../domain/report.ts';
-import { fitSegment, safeSegment } from '../domain/kb-path.ts';
+import { contentHash } from '../domain/content-hash.ts';
+import { fitSegment, safeSegment, sameIgnoringCase } from '../domain/kb-path.ts';
+import { linkDestination } from '../domain/markdown-link.ts';
 import { freeName } from '../domain/thread-card.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ConvertFile } from './convert-file.ts';
+import type { DriveItem } from '../domain/drive-item.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
+import { ATTACHMENTS_FOLDER } from './thread-files.ts';
 import type { Files } from './ports/files.ts';
 import type { LinkedFile, MailReader } from './ports/mail-reader.ts';
 import type { Logger } from './ports/logger.ts';
@@ -21,7 +25,7 @@ import type { Logger } from './ports/logger.ts';
 // never reads a message, never lists an attachment, and never touches the mailbox root.
 export type LinkDeps = {
   readonly reader: Pick<MailReader, 'sharepointLinks'>;
-  readonly drive: Pick<DriveReader, 'item'>;
+  readonly drive: Pick<DriveReader, 'item' | 'bytes'>;
   readonly files: Pick<Files, 'readText' | 'writeText'>;
   readonly convertFile: ConvertFile;
   readonly logger: Logger;
@@ -88,6 +92,13 @@ export type LinkedTally = {
 // every file of its folder. Empty for a thread never written.
 export type LinksHeld = { readonly links?: Readonly<Record<string, string>>; readonly held?: ReadonlyArray<string> };
 
+// A file a message of this write carried, by the name it came by: a linked document with its bytes is
+// that file, and is not pulled a second time.
+export type CarriedFile = { readonly name: string; readonly hash: string; readonly card: string };
+
+// Where this write's linked documents go, how big one may be, and what its messages carried.
+export type LinksPlace = { readonly here: string; readonly maxBytes: number; readonly carried: ReadonlyArray<CarriedFile> };
+
 // Asked only of a message whose text carries one. `extract-sharepoint-links-in-mail` costs a Graph
 // call per message and fetches the message again to scan it, and a full run over this mailbox spent
 // a thousand of those to find thirty-six links. The body is already in hand, so it decides.
@@ -105,8 +116,8 @@ const addAll = (into: string[], paths: ReadonlyArray<string>): void => {
 };
 
 // A document this thread already pulled is referenced again rather than fetched again.
-const pulledOnce = async (deps: LinkDeps, here: string, maxBytes: number, link: LinkedFile, asName: string, already: LinkedRecord | undefined): Promise<Pulled> =>
-  already === undefined ? pullLinked(deps, here, maxBytes, link, asName) : { record: already };
+const pulledOnce = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, asName: string, already: LinkedRecord | undefined): Promise<Pulled> =>
+  already === undefined ? pullLinked(deps, place, link, asName) : { record: already };
 
 const referenceOf = (link: LinkedFile, message: MailMessage, asName: string, pulled: Pulled): MessageLink => ({
   link,
@@ -124,8 +135,8 @@ const nameFor = (key: string, names: Readonly<Record<string, string>>, recorded:
 
 // What following the links of one write works from, and adds to as it goes.
 type Following = {
+  readonly place: LinksPlace;
   readonly here: string;
-  readonly maxBytes: number;
   // The name each document was written under before, and every name the folder holds on disk.
   readonly recorded: Readonly<Record<string, string>>;
   readonly held: ReadonlyArray<string>;
@@ -154,7 +165,7 @@ const followLink = async (deps: LinkDeps, following: Following, message: MailMes
   const key = `${link.driveId}:${link.itemId}`;
   const asName = linkedName(deps, following, key, link);
   following.names[key] = asName;
-  const pulled = await pulledOnce(deps, following.here, following.maxBytes, link, asName, following.linked[key]);
+  const pulled = await pulledOnce(deps, following.place, link, asName, following.linked[key]);
   if (pulled.skipped !== undefined) following.skipped.push(pulled.skipped);
   if (pulled.failed !== undefined) following.failed.push(pulled.failed);
   const kept = pulled.failed !== undefined && following.recorded[key] !== undefined;
@@ -188,7 +199,8 @@ const followMessage = async (deps: LinkDeps, following: Following, part: ThreadP
   for (const link of found.value) await followLink(deps, following, part.message, link);
 };
 
-export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number, parts: ReadonlyArray<ThreadPart>, before: LinksHeld): Promise<LinkedTally> => {
+export const linkedFiles = async (deps: LinkDeps, place: LinksPlace, parts: ReadonlyArray<ThreadPart>, before: LinksHeld): Promise<LinkedTally> => {
+  const { here } = place;
   // Within this thread only, the way its attachments are. The same weekly report linked from thirty
   // mails across ten threads is pulled once per thread rather than once for the mailbox: a folder
   // that has to reach into another thread to be read is not self-contained, and the document is the
@@ -198,7 +210,7 @@ export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number
   // on disk, so it never takes the name of a document whose message went.
   const recorded = before.links ?? {};
   const held = [...Object.values(recorded), ...namesHeldIn(`${here}/${LINKED_FOLDER}`, before.held)];
-  const following: Following = { here, maxBytes, recorded, held, linked: {}, names: {}, paths: [], skipped: [], failed: [], referenced: [], unread: [] };
+  const following: Following = { place, here, recorded, held, linked: {}, names: {}, paths: [], skipped: [], failed: [], referenced: [], unread: [] };
   for (const part of parts) await followMessage(deps, following, part);
   // A thread written before the names were kept cannot tell what a failure was: none of its linked
   // documents is taken for gone until a write that reads everything.
@@ -211,7 +223,23 @@ export const linkedFiles = async (deps: LinkDeps, here: string, maxBytes: number
 // metadata first, because the name in the link cannot say when the file changed, how big it is, or
 // what kind of thing it is: the day decides the folder, the size decides whether it is pulled at
 // all, and the kind decides whether a deck also renders a PDF beside its text.
-const pullLinked = async (deps: LinkDeps, here: string, maxBytes: number, link: LinkedFile, asName: string): Promise<Pulled> => {
+// A document a message of the thread also carried, when its bytes are that file's: the name says when
+// to compare, since Graph's size for an attachment is not its byte count, and the bytes decide.
+const carriedAs = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, item: DriveItem): Promise<CarriedFile | undefined> => {
+  const named = place.carried.filter((file) => sameIgnoringCase(file.name, item.name));
+  if (named.length === 0) return undefined;
+  const bytes = await deps.drive.bytes({ driveId: link.driveId, itemId: link.itemId });
+  const hash = bytes.ok ? contentHash(bytes.value) : undefined;
+  return named.find((file) => file.hash === hash);
+};
+
+const carriedNote = (file: CarriedFile): string => {
+  const card = linkDestination(['..', ATTACHMENTS_FOLDER, file.card].join('/'));
+  return `It is the same file as one a message of this thread carried, so it is not kept twice: [${file.name}](${card}).`;
+};
+
+const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, asName: string): Promise<Pulled> => {
+  const { here, maxBytes } = place;
   const { driveId, itemId, name } = link;
   const found = await deps.drive.item({ driveId, itemId });
   if (!found.ok) {
@@ -224,6 +252,8 @@ const pullLinked = async (deps: LinkDeps, here: string, maxBytes: number, link: 
   // for having no extension, so a thread saying plainly that a folder was shared reported a file it
   // could not read. The card still stands, being the record that the thread depended on it.
   if (found.value.kind === 'folder') return { note: 'It is a folder at the source, so there was nothing to pull.', lastModified, modifiedBy };
+  const twin = await carriedAs(deps, place, link, found.value);
+  if (twin !== undefined) return { note: carriedNote(twin), lastModified, modifiedBy };
   const outcome = await deps.convertFile({
     item: found.value,
     driveId,

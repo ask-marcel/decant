@@ -427,4 +427,32 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(files.written.has(THREAD_FILE)).toBe(true);
     expect(logger.calls.some((call) => call.event === 'linked.failed')).toBe(true);
   });
+
+  // A file attached to a message and linked from it is one file: a second copy under `_linked/` held the
+  // same text twice. Graph's size for an attachment is not its byte count, so the name says when to
+  // compare, and the bytes decide.
+  const carried = { m1: [{ id: 'att1', name: 'Rapport.docx', contentType: 'application/vnd', size: 4096, isInline: false }] };
+  const attachedAndLinked = { conversations: { [CONV]: [message({ hasAttachments: true })] }, bodies: LINK_BODIES, links: linked, attachments: carried };
+
+  it('a linked document a message also carried is not pulled when its bytes are the attachment`s, and its card links to the attachment', async () => {
+    const { files, drive } = await run({ reader: attachedAndLinked, drive: { ...items, bytes: { '01ABC': new TextEncoder().encode('bytes att1') } } });
+    const card = files.written.get(REPORT_MD) ?? '';
+
+    expect(card).toContain('[Rapport.docx](../_attachments/Rapport.docx.md)');
+    expect(card).not.toContain('converted 01ABC');
+    expect(drive.calls.filter((call) => call.startsWith('markdown:'))).toStrictEqual([]);
+  });
+
+  it('a linked document with the name of an attachment but other bytes is pulled as any other', async () => {
+    const { files } = await run({ reader: attachedAndLinked, drive: items });
+
+    expect(files.written.get(REPORT_MD)).toContain('converted 01ABC');
+  });
+
+  it('a linked document with the name of an attachment whose bytes will not come is pulled as any other, and named as failed', async () => {
+    const { outcome, files } = await run({ reader: attachedAndLinked, drive: { ...items, failItems: { '01ABC': { kind: 'transient', message: 'timed out' } } } });
+
+    expect(files.written.get(REPORT_MD)).not.toContain('the same file');
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed.some((entry) => entry.path.endsWith(': Rapport.docx'))).toBe(true);
+  });
 });
