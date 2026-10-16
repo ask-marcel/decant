@@ -120,6 +120,15 @@ describe('converting one document out of a library', () => {
     expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd/Fwd.eml.md')).toContain('Le contrat signé, 合同.');
   });
 
+  // The same email attached to a mail loses the wrapper, so it does in a library too.
+  it('a saved email in a library gives each link Outlook wrapped as where it goes', async () => {
+    const wrapped = 'https://nam02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Foffer&data=05%7C02&reserved=0';
+    const eml = ['Subject: Offer', 'Content-Type: text/plain', '', `See ${wrapped}`].join('\r\n');
+    const { files } = await run({ name: 'Offer.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Offer/Offer.eml.md')).toContain('See https://example.com/offer');
+  });
+
   it('a saved email in a library whose message cannot be written is reported', async () => {
     const eml = ['Subject: Fwd', 'Content-Type: text/plain', '', 'body'].join('\r\n');
     const { outcome } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } }, files: { failWritesMatching: 'Fwd.eml.md' } });
