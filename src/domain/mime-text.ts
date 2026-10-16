@@ -59,8 +59,10 @@ const decodeBase64Text = (body: string): string => {
   }
 };
 
+// A soft break, an `=` at the end of a line, joins the line to the next; the last line of a part can end
+// in one, with nothing after it.
 const decodeQuotedPrintable = (body: string): string =>
-  body.replace(/=\r?\n/g, '').replace(/=([\dA-Fa-f]{2})/g, (_, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)));
+  body.replace(/=(?:\r?\n|$)/g, '').replace(/=([\dA-Fa-f]{2})/g, (_, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16)));
 
 // A subject or a file name in any other script travels as `=?utf-8?B?...?=`: base64 for the `B`
 // form, quoted-printable with an underscore standing in for a space for the `Q` one, in the charset

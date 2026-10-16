@@ -269,6 +269,17 @@ describe('the parts of a saved email, however a client writes them', () => {
     expect(readMime(sent).parts).toStrictEqual([CARRIED]);
   });
 
+  // A soft break ends a quoted-printable line that goes on, and the last line of a part can end in one.
+  it('reads a quoted-printable text whose last line ends in a soft break as the text it was', () => {
+    const soft = multipart(['Content-Type: text/plain', 'Content-Transfer-Encoding: quoted-printable', '', 'the bo=', 'dy=']);
+
+    expect(readMime(soft).text).toBe('**Subject:** Carried\n\nthe body');
+  });
+
+  it('reads a part of headers and no body as a part, not its headers as the text', () => {
+    expect(readMime(multipart(['Content-Type: text/plain', ''], TEXT)).text).toBe('**Subject:** Carried');
+  });
+
   it('reads an encoding named in capitals as the one it names', () => {
     const shouted = multipart(['Content-Type: application/pdf; name="x.pdf"', 'Content-Transfer-Encoding: BASE64', '', 'QUJD']);
 
