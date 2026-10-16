@@ -190,6 +190,12 @@ const attachmentsOf = async (deps: SyncCalendarDeps, event: CalendarEvent, file:
   return { links, outputs, failed: failures, skipped: leftOut };
 };
 
+// The files an event holds for its attachments, linked again as they are.
+const reusedAttachments = (before: EventRecord, file: string): Attached => {
+  const earlier = earlierAttachments(before);
+  return { ...NONE, links: keptLinks(earlier, attachmentFolder(file)), outputs: earlier };
+};
+
 type Planned = { readonly event: CalendarEvent; readonly file: string };
 
 const RELINK_NONE: ReadonlySet<string> = new Set();
@@ -232,7 +238,9 @@ const seriesNoteFor = (event: CalendarEvent, links: SeriesLinks): Pick<EventReco
 const writeOne = async (deps: SyncCalendarDeps, state: CalendarState, planned: Planned): Promise<Done> => {
   const { event, file } = planned;
   const before = state.events[event.id];
-  const attached = await attachmentsOf(deps, event, file, before);
+  // An event written again for its links alone has not changed and keeps its note where it was, so the
+  // files it holds for its attachments are still its own: not listed and converted again.
+  const attached = before !== undefined && before.file === file && !changedSince(state, event) ? reusedAttachments(before, file) : await attachmentsOf(deps, event, file, before);
   const links = seriesLinksOf(state, event.id, event.seriesMasterId);
   const document = renderEventDocument({ event, zone: deps.timezone, attachments: attached.links, syncedAt: deps.clock.nowIso(), ...seriesNotes(state, file, links) });
   const written = await deps.files.writeText(file, document);
