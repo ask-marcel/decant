@@ -34,6 +34,10 @@ export type ArchiveEntries = ReadonlyArray<ArchiveEntry> & { readonly totalEntri
 // which is what makes two pictures of a document tellable apart when neither carries a name.
 export type EmbeddedImage = { readonly path: string; readonly bytes: Uint8Array };
 
+// What a conversion gives beyond the text. `pictures` asks for each picture of a Word document in its
+// place in the text, as base64 in a `data:` link, where the library otherwise leaves a placeholder.
+export type MarkdownOptions = { readonly pictures?: boolean };
+
 export type DriveReader = {
   readonly listSites: () => Promise<Result<ReadonlyArray<SiteSummary>, DriveReaderError>>;
   readonly siteByUrl: (url: string) => Promise<Result<SiteSummary, DriveReaderError>>;
@@ -49,7 +53,7 @@ export type DriveReader = {
   readonly item: (ref: ItemRef) => Promise<Result<DriveItem, DriveReaderError>>;
   readonly delta: (ref: ItemRef) => Promise<Result<DriveDeltaPage, DriveReaderError>>;
   readonly deltaFrom: (cursor: string) => Promise<Result<DriveDeltaPage, DriveReaderError>>;
-  readonly markdown: (ref: ItemRef) => Promise<Result<string, DriveReaderError>>;
+  readonly markdown: (ref: ItemRef, options?: MarkdownOptions) => Promise<Result<string, DriveReaderError>>;
   readonly pdf: (ref: ItemRef) => Promise<Result<Uint8Array, DriveReaderError>>;
   readonly bytes: (ref: ItemRef) => Promise<Result<Uint8Array, DriveReaderError>>;
   // The pictures a document embeds, which its markdown drops as a bare placeholder. A document that

@@ -297,6 +297,19 @@ describe('reading SharePoint through the ask-marcel library', () => {
     expect(recorded[0]?.params).toEqual({ driveId: 'b!one', itemId: '01A', includeMetadata: 'true' });
   });
 
+  // Without `inlineImages`, the library writes a placeholder for each picture of a Word document.
+  it('a conversion asked for the pictures asks the library to give them in their place in the text', async () => {
+    const { reader, recorded } = readerFor({ 'download-drive-item-as-markdown': [ok({ text: '# Contrat' }), ok({ text: '# Contrat' })] });
+
+    await reader.markdown({ driveId: 'b!one', itemId: '01A' }, { pictures: true });
+    await reader.markdown({ driveId: 'b!one', itemId: '01A' }, { pictures: false });
+
+    expect(recorded.map((call) => call.params)).toEqual([
+      { driveId: 'b!one', itemId: '01A', includeMetadata: 'true', inlineImages: 'true' },
+      { driveId: 'b!one', itemId: '01A', includeMetadata: 'true' },
+    ]);
+  });
+
   it('a rendered PDF comes back as the bytes it was encoded as', async () => {
     const { reader } = readerFor({ 'download-drive-item-as-pdf': [ok({ contentType: 'application/pdf', base64: Buffer.from('%PDF-1.7').toString('base64') })] });
 

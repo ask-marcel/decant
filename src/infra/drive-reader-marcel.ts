@@ -5,7 +5,7 @@ import { unlistedSiteUrls } from '../domain/shared-site.ts';
 import { parseSiteMembers } from '../domain/site-members.ts';
 import { err, ok } from '../domain/result.ts';
 import { formatError } from '../domain/utilities/format-error.ts';
-import type { ArchiveEntries, DriveReader, DriveReaderError, DriveSummary, EmbeddedImage, ItemRef, SiteSummary } from '../use-cases/ports/drive-reader.ts';
+import type { ArchiveEntries, DriveReader, DriveReaderError, DriveSummary, EmbeddedImage, ItemRef, MarkdownOptions, SiteSummary } from '../use-cases/ports/drive-reader.ts';
 
 // The slice of the ask-marcel-office-cli surface this adapter drives. Typed against what the
 // package really exposes (a command registry whose results are `unknown`), so a test can hand in
@@ -80,6 +80,10 @@ const readString = (value: unknown, key: string): string | undefined => {
 const listOf = (value: unknown): ReadonlyArray<unknown> => (isRecord(value) && Array.isArray(value['value']) ? value['value'] : []);
 
 const missing = (what: string): Result<never, DriveReaderError> => err({ kind: 'permanent', message: `Graph returned no ${what}` });
+
+// Asked with `inlineImages`, the library gives each picture of a Word document in its place in the
+// text as base64. It is a no-op on a kind with no pictures of its own in the text.
+const picturesOf = (options: MarkdownOptions | undefined): Readonly<Record<string, string>> => (options?.pictures === true ? { inlineImages: 'true' } : {});
 
 // A document embedding no pictures answers `{ count: 0, media: [] }`, which is an answer and not a
 // failure, so an absent or unreadable entry is dropped rather than ending the conversion.
@@ -257,7 +261,7 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
       const page = parseDriveDelta(raw.value);
       return page.ok ? ok(page.value) : err({ kind: 'permanent', message: page.error.message });
     },
-    markdown: async (ref) => markdownOf('download-drive-item-as-markdown', { driveId: ref.driveId, itemId: ref.itemId, includeMetadata: 'true' }),
+    markdown: async (ref, options) => markdownOf('download-drive-item-as-markdown', { driveId: ref.driveId, itemId: ref.itemId, includeMetadata: 'true', ...picturesOf(options) }),
     pdf: async (ref) => bytesOf('download-drive-item-as-pdf', ref),
     bytes: async (ref) => bytesOf('download-drive-item-content', ref),
     images: async (ref) => {
