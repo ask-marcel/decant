@@ -80,10 +80,12 @@ describe('the encoding a transport wrapped a body in', () => {
 describe('text in the charset a message names', () => {
   const utf8 = (text: string): string => byteString(new TextEncoder().encode(text));
 
-  it('the bytes of a message are read one character each, and come back as the same bytes', () => {
+  it('the bytes of a message are read one character each, and come back as the same bytes, however long it runs', () => {
     const every = Uint8Array.from({ length: 256 }, (_, at) => at);
+    const long = Uint8Array.from({ length: 0x8000 * 2 + 3 }, (_, at) => at % 251);
 
     expect(decodeBytes(byteString(every), '8bit')).toStrictEqual(every);
+    expect(decodeBytes(byteString(long), '8bit')).toStrictEqual(long);
   });
 
   it('a text in a charset other than UTF-8 is read in that charset, sent 8-bit or quoted-printable', () => {
@@ -97,6 +99,18 @@ describe('text in the charset a message names', () => {
     expect(decodeText(utf8('Café été'), '8bit')).toBe('Café été');
   });
 
+  // A named charset is read leniently: a byte it has no place for costs that letter, not the text.
+  it('a text in a named charset with a byte out of place keeps the rest of its letters', () => {
+    expect(decodeText('\u0092\u00a9\u0081', '8bit', 'shift_jis')).toBe('朝\ufffd');
+  });
+
+  it('ASCII and UTF-8, by any of their names, say nothing the bytes do not, so the bytes decide', () => {
+    const latin = 'Caf\u00e9';
+
+    expect(['ascii', 'US-ASCII'].map((charset) => decodeText(utf8('Café'), '8bit', charset))).toStrictEqual(['Café', 'Café']);
+    expect(['utf-8', 'UTF8'].map((charset) => decodeText(latin, '8bit', charset))).toStrictEqual(['Café', 'Café']);
+  });
+
   it('a charset this runtime cannot decode, or none, is read as UTF-8 when the bytes are UTF-8, and as Windows-1252 when not', () => {
     expect(decodeText(utf8('Café'), '8bit', 'x-unknown')).toBe('Café');
     expect(decodeText('Caf\u00e9', '8bit', 'iso-8859-2')).toBe('Café');
@@ -107,7 +121,7 @@ describe('text in the charset a message names', () => {
 
   it('an encoded word is read in the charset it names, a language after the charset aside', () => {
     expect(decodeHeader('=?iso-8859-1?Q?Caf=E9?=')).toBe('Café');
-    expect(decodeHeader('=?ISO-8859-1*fr?Q?=E9t=E9?=')).toBe('été');
+    expect(decodeHeader('=?SHIFT_JIS*ja?B?kqmK5w==?=')).toBe('朝顔');
   });
 
   it('a header written in 8-bit text is read as the text it holds', () => {
