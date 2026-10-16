@@ -699,3 +699,54 @@ describe('naming the files an event carries', () => {
     expect(stateOf(after.files).events['a']?.outputs).toStrictEqual([eventFile, firstFile, thirdFile]);
   });
 });
+
+// An attachment that fails says nothing about the one the event held before: that file stays, with
+// its link, and the event is written again on the next run for the rest, three runs in all.
+describe('an attachment that fails on an event written again', () => {
+  const NOTE = `${ROOT}/2026-09-12/Offsite planning.md`;
+  const VENUES = `${ROOT}/2026-09-12/Offsite planning.attachments/Venues.xlsx.md`;
+  const known = serializeCalendarState(
+    withEvent(emptyCalendarState(), 'a', { file: NOTE, lastModified: '2026-09-01T07:00:00Z', subject: 'Offsite planning', outputs: [NOTE, VENUES] })
+  );
+  const edited = { ...OFFSITE, lastModified: '2026-09-12T07:30:00Z' };
+  const held = { [STATE_PATH]: known, [NOTE]: 'the event', [VENUES]: 'the venues as they were' };
+  const failing = async (texts: Record<string, string>): ReturnType<typeof run> =>
+    run({ reader: { events: { a: edited, b: STANDUP } }, files: { texts, failWritesMatching: 'Venues.xlsx' } });
+
+  it('keeps the earlier file of the attachment and its link, and is named as failed', async () => {
+    const done = await failing(held);
+
+    expect(done.files.moves.map((move) => move.from)).not.toContain(VENUES);
+    expect(done.files.written.get(VENUES)).toBe('the venues as they were');
+    expect(done.files.written.get(NOTE)).toContain('Offsite planning.attachments/Venues.xlsx.md');
+    expect(stateOf(done.files).events['a']?.outputs).toEqual([NOTE, VENUES]);
+    expect(done.notes.failed.map((note) => note.path)).toEqual(['Offsite planning/Venues.xlsx']);
+  });
+
+  it('is written again on the next run, and its attachment lands then', async () => {
+    const first = await failing(held);
+    const second = await run({ reader: { events: { a: edited, b: STANDUP } }, files: { texts: Object.fromEntries(first.files.written) } });
+
+    expect(second.summary).toMatchObject({ converted: 1, failed: 0 });
+    expect(second.files.written.get(VENUES)).toContain('| Venue | Cost |');
+    expect(JSON.parse(second.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
+  });
+
+  it('still failing on its third run, it is named once as given up, and the fourth run leaves it alone', async () => {
+    const first = await failing(held);
+    const second = await failing(Object.fromEntries(first.files.written));
+    const third = await failing(Object.fromEntries(second.files.written));
+    const fourth = await failing(Object.fromEntries(third.files.written));
+
+    expect(third.notes.gaveUp).toEqual([{ path: 'Offsite planning/Venues.xlsx', reason: `cannot write ${VENUES}` }]);
+    expect(fourth.summary).toMatchObject({ converted: 0, failed: 0 });
+  });
+
+  it('whose attachments cannot be listed keeps every earlier attachment file, and is written again on the next run', async () => {
+    const done = await run({ reader: { events: { a: edited, b: STANDUP }, failListing: ['a'] }, files: { texts: held } });
+
+    expect(done.files.moves.map((move) => move.from)).not.toContain(VENUES);
+    expect(stateOf(done.files).events['a']?.outputs).toEqual([NOTE, VENUES]);
+    expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry?.a).toBeDefined();
+  });
+});

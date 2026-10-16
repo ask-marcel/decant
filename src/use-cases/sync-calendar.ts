@@ -30,6 +30,8 @@ import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
 import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
+import type { ReportEntry } from '../domain/report.ts';
+import type { Attempts } from '../domain/retry-ledger.ts';
 import { expiredCursor } from './graph-status.ts';
 import { putAside } from './put-aside.ts';
 import type { WriteDown } from './put-aside.ts';
@@ -125,46 +127,73 @@ const attachmentName = (attachment: EventAttachment, taken: Set<string>, folder:
 
 const NONE: Attached = { links: [], outputs: [], failed: [], skipped: [] };
 
+// One attachment, written beside the event. One that fails for any reason but a picture the library
+// will not render keeps the file the event held for it before, when it held one at this path: the
+// failure says nothing about that file. A picture never had one.
+type OneAttached = { readonly kept: boolean; readonly failed?: ReportEntry; readonly skipped?: ReportEntry };
+
+const attachOne = async (deps: SyncCalendarDeps, event: CalendarEvent, attachment: EventAttachment, path: string, earlier: ReadonlyArray<string>): Promise<OneAttached> => {
+  const text = await deps.reader.attachmentMarkdown(event.id, attachment.id);
+  const written = text.ok
+    ? await deps.files.writeText(
+        path,
+        renderEventAttachment({ event, name: attachment.name, contentType: attachment.contentType, size: attachment.size, text: text.value, syncedAt: deps.clock.nowIso() })
+      )
+    : text;
+  if (written.ok) return { kept: true };
+  const note = { path: `${event.subject}/${attachment.name}`, reason: written.error.message };
+  return written.error.kind === 'unrenderable' ? { kept: false, skipped: note } : { kept: earlier.includes(path), failed: note };
+};
+
+// The attachment files the event held before, past its own note: all kept when the list will not
+// read this run, since a list that said nothing says nothing of them either.
+const earlierAttachments = (before: EventRecord | undefined): ReadonlyArray<string> => (before === undefined ? [] : before.outputs.filter((path) => path !== before.file));
+
 // Markdown only: the library converts an event's attachment and nothing fetches its bytes, so there
 // is no PDF and no original the way a mail attachment has. One the library will not render, which
 // is a picture, is left out and said to be, with the library's reason; one that fails for any other
 // reason is a failure to try again. The event lands either way, without it.
-const attachmentsOf = async (deps: SyncCalendarDeps, event: CalendarEvent, file: string): Promise<Attached> => {
+const attachmentsOf = async (deps: SyncCalendarDeps, event: CalendarEvent, file: string, before: EventRecord | undefined): Promise<Attached> => {
   if (!event.hasAttachments) return NONE;
+  const earlier = earlierAttachments(before);
   const listed = await deps.reader.attachments(event.id);
-  if (!listed.ok) return { ...NONE, failed: [{ path: `${event.subject}/attachments`, reason: listed.error.message }] };
+  if (!listed.ok) return { ...NONE, outputs: earlier, failed: [{ path: `${event.subject}/attachments`, reason: listed.error.message }] };
   const folder = attachmentFolder(file);
   const taken = new Set<string>();
   const links: EventAttachmentLink[] = [];
   const outputs: string[] = [];
-  const failures: RunNotes['failed'][number][] = [];
-  const leftOut: RunNotes['skipped'][number][] = [];
+  const failures: ReportEntry[] = [];
+  const leftOut: ReportEntry[] = [];
   for (const attachment of listed.value) {
     const name = attachmentName(attachment, taken, folder, deps.pathBudget);
-    const text = await deps.reader.attachmentMarkdown(event.id, attachment.id);
-    const written = text.ok
-      ? await deps.files.writeText(
-          `${folder}/${name}`,
-          renderEventAttachment({ event, name: attachment.name, contentType: attachment.contentType, size: attachment.size, text: text.value, syncedAt: deps.clock.nowIso() })
-        )
-      : text;
-    if (!written.ok) {
-      const note = { path: `${event.subject}/${attachment.name}`, reason: written.error.message };
-      if (written.error.kind === 'unrenderable') leftOut.push(note);
-      else failures.push(note);
-      continue;
+    const one = await attachOne(deps, event, attachment, `${folder}/${name}`, earlier);
+    if (one.kept) {
+      links.push({ name: attachment.name, file: `${folder.slice(folder.lastIndexOf('/') + 1)}/${name}` });
+      outputs.push(`${folder}/${name}`);
     }
-    links.push({ name: attachment.name, file: `${folder.slice(folder.lastIndexOf('/') + 1)}/${name}` });
-    outputs.push(`${folder}/${name}`);
+    if (one.failed !== undefined) failures.push(one.failed);
+    if (one.skipped !== undefined) leftOut.push(one.skipped);
   }
   return { links, outputs, failed: failures, skipped: leftOut };
 };
 
 type Planned = { readonly event: CalendarEvent; readonly file: string };
 
+// An event that landed with an attachment that failed is written again on the next run, three runs in
+// all, as one that failed whole is: named as failed until it is out of tries, then once as given up.
+type Owing = { readonly retry: (ledger: Attempts | undefined) => Attempts | undefined; readonly failed: ReadonlyArray<ReportEntry> };
+
+const owingFor = (state: CalendarState, event: CalendarEvent, failed: ReadonlyArray<ReportEntry>): Owing => {
+  const first = failed[0];
+  if (first === undefined) return { retry: (ledger) => clearAttempt(ledger, event.id), failed };
+  const attempt = nextAttempt(state.retry?.[event.id], event.lastModified, first.path, first.reason);
+  return { retry: (ledger) => recordAttempt(ledger, event.id, attempt), failed: isGivenUp(attempt, event.lastModified) ? [] : failed };
+};
+
 const writeOne = async (deps: SyncCalendarDeps, state: CalendarState, planned: Planned): Promise<Done> => {
   const { event, file } = planned;
-  const attached = await attachmentsOf(deps, event, file);
+  const before = state.events[event.id];
+  const attached = await attachmentsOf(deps, event, file, before);
   const written = await deps.files.writeText(file, renderEventDocument({ event, zone: deps.timezone, attachments: attached.links, syncedAt: deps.clock.nowIso() }));
   if (!written.ok) {
     deps.logger.warn('event.failed', { event: event.id, cause: written.error.kind });
@@ -178,12 +207,13 @@ const writeOne = async (deps: SyncCalendarDeps, state: CalendarState, planned: P
     };
   }
   const outputs = [file, ...attached.outputs];
-  await archiveSuperseded(deps, state.events[event.id], outputs);
+  await archiveSuperseded(deps, before, outputs);
   const record: EventRecord = { file, lastModified: event.lastModified, subject: event.subject, outputs };
+  const owing = owingFor(state, event, attached.failed);
   return {
-    apply: (carried) => ({ ...withEvent(carried, event.id, record), retry: clearAttempt(carried.retry, event.id) }),
+    apply: (carried) => ({ ...withEvent(carried, event.id, record), retry: owing.retry(carried.retry) }),
     counted: { converted: 1, failed: attached.failed.length, skipped: attached.skipped.length },
-    notes: { failed: attached.failed, skipped: attached.skipped },
+    notes: { failed: owing.failed, skipped: attached.skipped },
   };
 };
 
@@ -199,8 +229,13 @@ const fetchOne = async (deps: SyncCalendarDeps, id: string): Promise<Fetched> =>
 // Whether a fetched event is written this run: not when it starts before `since`, not when the
 // ledger already holds it at the same `lastModifiedDateTime`, which is what a delta re-read after
 // a stopped run answers for everything that already landed.
+// An event that landed with an attachment that failed owes a retry at the version it holds.
+const owesRetry = (state: CalendarState, event: CalendarEvent): boolean => state.retry?.[event.id]?.version === event.lastModified;
+
 const wanted = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: CalendarState, event: CalendarEvent): boolean =>
-  inReach(deps, input, event) && state.events[event.id]?.lastModified !== event.lastModified && !isGivenUp(state.retry?.[event.id], event.lastModified);
+  inReach(deps, input, event) &&
+  (state.events[event.id]?.lastModified !== event.lastModified || owesRetry(state, event)) &&
+  !isGivenUp(state.retry?.[event.id], event.lastModified);
 
 // A recurring series is kept whatever day it began: Outlook holds it as one event starting on its
 // first occurrence, and a meeting that began before the day may be running still.
