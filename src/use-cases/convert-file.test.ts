@@ -120,6 +120,13 @@ describe('converting one document out of a library', () => {
     expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd/Fwd.eml.md')).toContain('Le contrat signé, 合同.');
   });
 
+  it('a saved email in a library whose message is only white space lands saying so', async () => {
+    const eml = ['Content-Type: text/plain', '', '   '].join('\r\n');
+    const { files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd/Fwd.eml.md')).toContain(NO_TEXT_NOTE);
+  });
+
   // The same email attached to a mail loses the wrapper, so it does in a library too.
   it('a saved email in a library gives each link Outlook wrapped as where it goes', async () => {
     const wrapped = 'https://nam02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Foffer&data=05%7C02&reserved=0';

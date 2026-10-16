@@ -105,4 +105,8 @@ describe('writing one To Do task as a document', () => {
   it('a link Outlook wrapped in the notes reads as where it goes', () => {
     expect(rendered({ ...task, notes: `Agenda: ${SAFELINK}` })).toContain('Agenda: https://example.com/agenda');
   });
+
+  it('a task with steps and no notes has its steps right under its title', () => {
+    expect(rendered({ ...bare, steps: [{ text: 'Buy soil', done: false }] })).toContain('# Water the plants\n\n## Steps\n\n- [ ] Buy soil');
+  });
 });
