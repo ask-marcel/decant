@@ -41,6 +41,13 @@ describe('a link from one member of an archive to another', () => {
     expect(linkMembers('[Home](<../index.html>)', 'pages/week 2.html', files)).toBe('[Home](../index.html.md)');
   });
 
+  // `%.h` is no escape, and a browser reads such a link as it is written.
+  it('a link whose escapes do not decode leads to the member named as the link is written', () => {
+    const named = new Map([...files, ['100%.html', `${FOLDER}/100%.html.md`]]);
+
+    expect(linkMembers('[Full](100%.html)', 'index.html', named)).toBe('[Full](100%.html.md)');
+  });
+
   it('keeps any other link as it was: another site, an anchor, a missing member, a picture, a path out of the archive', () => {
     const text = [
       '[Site](https://contoso.example/index.html)',
