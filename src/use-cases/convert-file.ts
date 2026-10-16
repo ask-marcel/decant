@@ -5,6 +5,7 @@ import { renderCalendar } from '../domain/icalendar.ts';
 import { shortcutLink } from '../domain/internet-shortcut.ts';
 import type { MimePart } from '../domain/mime.ts';
 import { readMime } from '../domain/mime.ts';
+import { byteString } from '../domain/mime-text.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_SLIDES_NOTE, NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { fitSegment, memberFile, safeRelPath, safeSegment } from '../domain/kb-path.ts';
@@ -284,7 +285,7 @@ const convertMessage = async (context: Context): Promise<ConvertOutcome> => {
   const raw = await context.deps.reader.bytes({ driveId: context.input.driveId, itemId: context.input.item.id });
   if (!raw.ok) return failure(raw.error);
   const folder = `${context.dir}/${safeSegment(context.name.slice(0, context.name.lastIndexOf('.')))}`;
-  const read = readMime(new TextDecoder().decode(raw.value));
+  const read = readMime(byteString(raw.value));
   const message = `${folder}/${context.name}.md`;
   const wrote = await context.deps.files.writeText(message, kbDocument(context.stamp, read.text.trim().length === 0 ? NO_TEXT_NOTE : read.text));
   if (!wrote.ok) return failure(wrote.error);
