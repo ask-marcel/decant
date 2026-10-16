@@ -38,6 +38,7 @@ describe('naming a file by what it is', () => {
     expect(namedForType('Scan.png', 'image/jpeg')).toBe('Scan.png');
     expect(namedForType('Scan', 'application/octet-stream')).toBe('Scan');
     expect(namedForType('a594de8f-caa3-427e-b800-23755374d464', 'image/png')).toBe('a594de8f-caa3-427e-b800-23755374d464');
+    expect(namedForType('Scan', 'constructor')).toBe('Scan');
   });
 
   it('a picture whose first bytes say another kind takes the extension of what it is', () => {

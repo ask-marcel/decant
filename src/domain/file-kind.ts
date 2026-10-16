@@ -5,25 +5,26 @@ import { isOpaqueName } from './opaque-name.ts';
 // bytes of a picture. A file is routed by the extension of its name, so a name with none was skipped
 // as a kind nothing reads, and a picture named for another kind was read as that kind.
 
-// The extension each kind a mail carries goes by, among the kinds decant reads.
-const EXTENSION_BY_TYPE: Readonly<Partial<Record<string, string>>> = {
-  'application/pdf': 'pdf',
-  'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
-  'application/zip': 'zip',
-  'image/bmp': 'bmp',
-  'image/gif': 'gif',
-  'image/jpeg': 'jpg',
-  'image/png': 'png',
-  'image/tiff': 'tif',
-  'image/webp': 'webp',
-  'message/rfc822': 'eml',
-  'text/calendar': 'ics',
-  'text/csv': 'csv',
-  'text/html': 'html',
-  'text/plain': 'txt',
-};
+// The extension each kind a mail carries goes by, among the kinds decant reads. A map, since the sender
+// writes the content type, and a plain object would answer `constructor` with a function.
+const EXTENSION_BY_TYPE: ReadonlyMap<string, string> = new Map([
+  ['application/pdf', 'pdf'],
+  ['application/vnd.openxmlformats-officedocument.presentationml.presentation', 'pptx'],
+  ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx'],
+  ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx'],
+  ['application/zip', 'zip'],
+  ['image/bmp', 'bmp'],
+  ['image/gif', 'gif'],
+  ['image/jpeg', 'jpg'],
+  ['image/png', 'png'],
+  ['image/tiff', 'tif'],
+  ['image/webp', 'webp'],
+  ['message/rfc822', 'eml'],
+  ['text/calendar', 'ics'],
+  ['text/csv', 'csv'],
+  ['text/html', 'html'],
+  ['text/plain', 'txt'],
+]);
 
 // The kind alone, without the parameters after a semicolon, in lower case.
 const typeOf = (contentType: string): string => {
@@ -35,7 +36,7 @@ const typeOf = (contentType: string): string => {
 // as it is: it names the decoration of a sharing notification, which is left out unread.
 export const namedForType = (name: string, contentType: string): string => {
   if (extensionOf(name) !== undefined || isOpaqueName(name)) return name;
-  const extension = EXTENSION_BY_TYPE[typeOf(contentType)];
+  const extension = EXTENSION_BY_TYPE.get(typeOf(contentType));
   return extension === undefined ? name : `${name}.${extension}`;
 };
 
