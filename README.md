@@ -718,10 +718,11 @@ The first run walks the whole calendar and writes the events starting on or afte
 every recurring series whatever day it began (see How far back). The cursor moves only once every
 event the delta reported has landed.
 
-If decant cannot convert or write an attachment that is not a picture, it keeps the old file of that
-attachment. While the event keeps its day, the note keeps the link to that file. The report shows
-the attachment as failed, and the next runs write the event again, for a maximum of three runs. If
-decant cannot get the list of attachments, it keeps all the old attachment files of the event.
+If decant cannot convert or write an attachment that is not a picture, the report shows the
+attachment as failed. While the event keeps its day and its subject, decant keeps the last file of
+that attachment and the link to it. If the day or the subject changes, that file goes to
+`_archive/`. The next runs write the event again, for a maximum of three runs. If decant cannot get
+the list of attachments, it keeps all the attachment files of the event.
 
 ### What a people sync writes
 
@@ -767,13 +768,18 @@ who has left every Team is moved to `_archive/<day of the run>/People/` and name
 drawn again whenever any page was.
 
 The fingerprint also includes the names of the reports. It also records if the manager is in the
-directory. Thus a report with a new name writes the page of the manager again, with the new name and
-link. When the manager of a person goes out of the directory, decant writes the page of that person
-again. That page shows the name of the manager as text. The first run of this version writes each
-page again one time, but a page with the same text does not change on disk.
+directory. When a report gets a new name, decant writes the page of the manager again, with the new
+name and link. When the manager of a person goes out of the directory, decant writes the page of
+that person again. That page shows the name of the manager as text. The first run of this version
+writes each page again one time, but a page with the same text does not change on disk.
 
-If the Team rosters have no person and the state has people, decant stops the People source with an
-error. It moves no page to `_archive/`. A missing permission in Microsoft 365 can cause this result.
+If the profile of a person does not read in a run, decant keeps the page of that person and the
+links to it. When that profile reads again, decant draws the org chart again.
+
+If the Team rosters have no person, but the state has records of persons, decant stops the People
+source with an error. It moves no page to `_archive/`. A missing permission in Microsoft 365 can
+cause this result.
+
 Make sure that the account can read its Teams.
 
 ### What a OneNote sync writes
@@ -810,8 +816,9 @@ afresh and the old copy goes to `_archive/`, and a page gone from the notebook g
 named in the report. A section whose pages cannot be listed keeps its pages on disk as they are.
 
 When you rename a section or a section group, decant writes each page of it again in the folder of
-the new name. Then it moves the old copy of the page to `_archive/`. An update also finds a notebook
-in an id-suffixed folder by its id.
+the new name. Then it moves the copy of the page from before the change to `_archive/`. A page that
+decant stopped after three runs stays where it is. An update also finds a notebook in an id-suffixed
+folder by its id.
 
 A page of your own notebooks renders through the library, pictures embedded. A page of a site
 notebook is answered as HTML only, with no renderer in the library for it, so its text is read out
@@ -923,10 +930,14 @@ left the plan, and the board is drawn again whenever any page was. A plan with h
 costs hundreds of calls a run.
 
 An update reads the title of each plan by its id. When you rename a plan, decant writes its pages
-and its board in the folder of the new title. Then it moves the old copy of each page, and the state,
-the board and the report of the old folder, to `_archive/`. If only the letter case of the title
-changes, the plan stays in its folder. If the folder of the new title has a different plan, decant
-stops the plan with an error. Then give one of the two plans a different title.
+and its board in the folder of the new title. Then it moves the pages from the folder of the title
+before the change to `_archive/`. It also moves the state, the cursor, the board and the report of
+that folder. If only the letter case of the title changes, the plan stays in its folder.
+
+If the folder of the new title has a different plan, decant stops the plan with an error. If decant
+cannot read the state in that folder, it stops the plan with the cause of the error.
+
+If a different plan has the folder, give one of the two plans a different title.
 
 ### What a Teams sync writes
 
