@@ -20,6 +20,7 @@ import type { ThreadPart } from '../domain/thread.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import type { AttachmentOutcome, ConvertAttachment, ConvertAttachmentInput } from './convert-attachment.ts';
 import { ATTACHMENTS_FOLDER, attachmentsOf } from './thread-files.ts';
+import type { PicturesOfRun } from './thread-files.ts';
 import type { MessageFile } from './thread-files.ts';
 import { rewriteBodies, writeCards } from './thread-documents.ts';
 import type { ConvertFile, ConvertFileInput, ConvertOutcome } from './convert-file.ts';
@@ -171,9 +172,11 @@ const threadHeader = (
     ['linked_files', linked],
   ]);
 
-export const createRenderThread =
-  (deps: RenderThreadDeps): RenderThread =>
-  async (input) => {
+// The pictures a run converts into the shared store are known to every thread it writes, so threads
+// written side by side convert a new one once.
+export const createRenderThread = (deps: RenderThreadDeps): RenderThread => {
+  const pictures: PicturesOfRun = new Map();
+  return async (input) => {
     const held = await messagesOf(deps, input.conversationIds);
     if (!held.ok) return held;
     const alive = inReceivedOrder(held.value.filter((message) => !message.isDeleted));
@@ -185,8 +188,9 @@ export const createRenderThread =
     const last = alive[alive.length - 1] ?? first;
     const parts = await bodiesOf(deps, alive);
     if (!parts.ok) return parts;
-    return writeThread(deps, input, parts.value, first, last);
+    return writeThread({ ...deps, pictures }, input, parts.value, first, last);
   };
+};
 
 // Every conversation the thread was assembled from, read in turn and written as one document. Graph
 // opens a second conversation for one exchange when an external party replies from outside Exchange;
@@ -258,7 +262,7 @@ const messageRecords = (
 const heldIn = (here: string, paths: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(paths.filter((path) => path.startsWith(`${here}/`)))].toSorted(compareText);
 
 const writeThread = async (
-  deps: RenderThreadDeps,
+  deps: RenderThreadDeps & { readonly pictures: PicturesOfRun },
   input: RenderThreadInput,
   parts: ReadonlyArray<ThreadPart>,
   first: MailMessage,

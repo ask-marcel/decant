@@ -21,7 +21,13 @@ import type { MailAttachment, MailReader, MailReaderError } from './ports/mail-r
 export type FileDeps = {
   readonly reader: Pick<MailReader, 'attachments' | 'attachmentBytes' | 'attachmentMarkdown'>;
   readonly convertAttachment: ConvertAttachment;
+  readonly pictures?: PicturesOfRun;
 };
+
+// Each picture a run converted into the shared store, by its content address, as the record its
+// conversion left, or nothing when the conversion did not land. Threads written side by side start
+// from one store, and each would otherwise convert the same new logo.
+export type PicturesOfRun = Map<string, Promise<AttachmentRecord | undefined>>;
 
 // Where a thread keeps what its messages attached, and where the mailbox keeps what they showed.
 export const ATTACHMENTS_FOLDER = '_attachments';
@@ -197,7 +203,30 @@ const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placin
   }
   const asName = reserve(placing, freshName(place, placing, arrival));
   const fresh: Fresh = { messageId, attachment, stamp, asName, hash, inline, rendered: address.value.rendered };
-  return convertFresh(deps, place, inline ? placing.shared : placing.store, fresh);
+  if (inline) return convertPicture(deps, place, placing, fresh);
+  return convertFresh(deps, place, placing.store, fresh);
+};
+
+// A picture is converted once for the run: a thread that meets one another thread converts, or did,
+// takes the record that conversion left, words or none.
+const convertPicture = async (deps: FileDeps, place: FilePlace, placing: Placing, fresh: Fresh): Promise<Placed> => {
+  const pending = deps.pictures?.get(fresh.hash);
+  const done = pending === undefined ? undefined : await pending;
+  if (done !== undefined) {
+    placing.shared[fresh.hash] = done;
+    return { asName: done.name, paths: done.paths, primary: done.primary, picture: done.primary, text: done.text, media: done.media };
+  }
+  const converting = convertFresh(deps, place, placing.shared, fresh);
+  // A conversion that throws is a bug, which reaches the caller of this thread; the threads waiting on
+  // it convert the picture themselves.
+  deps.pictures?.set(
+    fresh.hash,
+    converting.then(
+      () => placing.shared[fresh.hash],
+      () => undefined
+    )
+  );
+  return converting;
 };
 
 // The name a content the thread does not hold yet is written under. Not the name it had before when
