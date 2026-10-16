@@ -137,8 +137,7 @@ const addAll = (into: string[], paths: ReadonlyArray<string>): void => {
 // before under the same name is offered to the read, which keeps it when the source still has the
 // version the thread pulled.
 const pulledOnce = async (deps: LinkDeps, following: Following, link: LinkedFile, key: string, asName: string): Promise<Pulled> => {
-  const first = following.pulled[key];
-  if (first !== undefined) return { record: first.record, note: first.note };
+  if (following.pulled[key] !== undefined) return {};
   const document = following.documents[key];
   const pulled = await pullLinked(deps, following.place, link, asName, document?.name === asName ? document : undefined);
   following.pulled[key] = pulled;
@@ -246,7 +245,7 @@ const followMessage = async (deps: LinkDeps, following: Following, part: ThreadP
 
 // A document the thread holds from a write before: the name it was written under, the version it was
 // pulled at, and its files.
-type HeldDocument = { readonly name: string; readonly version: string; readonly record: LinkedRecord };
+type HeldDocument = { readonly name: string; readonly version?: string; readonly record: LinkedRecord };
 
 // The name a file of the linked folder belongs to: the file of that name, what sits beside it under the
 // name (its card, its pictures, a deck's PDF), and what an archive or a saved mail of that name
@@ -257,18 +256,17 @@ const ownerOf = (folder: string, names: ReadonlyArray<string>, path: string): st
     .filter((name) => underName(path, `${folder}/${name}`))
     .reduce<string | undefined>((longest, name) => (longest === undefined || name.length > longest.length ? name : longest), undefined);
 
-// The documents a thread written again can keep as its last write left them: one it pulled, at a
-// version it recorded, whose card is among the files it holds. Any other is pulled again, as is every
-// document of a thread written before the versions were kept.
+// The documents a thread written again can keep as its last write left them: one whose card is among
+// the files it holds, with the version it was pulled at. One the source has at another version, or at
+// none the thread recorded, is pulled again, as is every document of a thread written before the
+// versions were kept.
 const heldDocuments = (folder: string, before: LinksHeld): Record<string, HeldDocument> => {
   const named = Object.entries(before.links ?? {});
   const names = named.map(([, name]) => name);
-  const files = (before.held ?? []).filter((path) => path.startsWith(`${folder}/`));
   return Object.fromEntries(
     named.flatMap(([key, name]) => {
-      const version = before.versions?.[key];
-      const paths = files.filter((path) => ownerOf(folder, names, path) === name);
-      return version !== undefined && version !== '' && paths.includes(`${folder}/${name}.md`) ? [[key, { name, version, record: { paths } }] as const] : [];
+      const paths = (before.held ?? []).filter((path) => ownerOf(folder, names, path) === name);
+      return paths.includes(`${folder}/${name}.md`) ? [[key, { name, version: before.versions?.[key], record: { paths } }] as const] : [];
     })
   );
 };
@@ -327,9 +325,9 @@ const carriedNote = (file: AttachedCopy): string => {
 };
 
 // The same route a file found by walking a library takes. A linked document is read for its own
-// metadata first, because the name in the link cannot say when the file changed, how big it is, or
-// what kind of thing it is: the day decides the folder, the size decides whether it is pulled at
-// all, and the kind decides whether a deck also renders a PDF beside its text.
+// metadata first, because the name in the link cannot say which version it is, how big it is, or what
+// kind of thing it is: the version decides whether a thread that holds it pulls it again, the size
+// whether it is pulled at all, and the kind whether a deck also renders a PDF beside its text.
 const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, asName: string, held: HeldDocument | undefined): Promise<Pulled> => {
   const { here, maxBytes } = place;
   const { driveId, itemId, name } = link;
