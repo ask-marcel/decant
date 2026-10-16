@@ -1102,10 +1102,29 @@ two letters read as text somebody wrote. A picture under 10 KB is not read at al
 one mailbox, everything OCR found real words in was 64 KB or more and everything under ten was a
 logo, so the threshold costs no content and saves a twenty-second pass per logo.
 
+decant stores a picture of a message body one time for the mailbox, also when OCR reads no words
+from it. This applies to a picture under 10 KB, and to a picture in a run with `--no-ocr` or with no
+OCR installed. A later run does not read such a picture again. If OCR fails on the picture, the next
+run reads it again. When threads of one run show the same new picture, decant converts it one
+time.
+
+When the name of a file has no extension, decant adds the extension of its content type, for example
+`Scan.jpg`. A picture can have the extension of a different kind, for example a GIF file with the
+name `logo.png`. Then decant uses the extension that the first bytes of the file show. A file keeps the name that its thread gave
+it before.
+
+A PDF that a message carries can have no text layer. Then decant gets the picture of each page and
+reads it with OCR, as for a PDF in a library. The pictures of the pages go in the `.media` folder beside the
+document. If decant cannot get the pages, OCR reads the PDF file.
+
 A saved email attached to a message is unpacked into a folder of its parts, and its card shows
 its pictures where the message showed them, read the same way, and lists every file it carried
 under **Carried by this message:**, linking the reading where one was made and the file where it
 was not.
+
+decant reads the text of a saved email in the character set that the email names, for example
+ISO-8859-1. If decant cannot read that character set, it uses UTF-8 when the text is valid UTF-8, and
+Windows-1252 when it is not. This also applies to a saved email in a library.
 
 Every link a message carries is written as the address the sender sent. Outlook rewraps each one
 through its own scanner with a per-recipient tracking blob after it, and measured across one
@@ -1120,7 +1139,8 @@ the line of data under it gives the addresses.
 
 `_sync-report.md` holds only what a reader should look into. A run in which every file arrived
 writes the counts and the line "Nothing was left behind." A file left out says which kind it was,
-a `.mp4` this tool does not read, or that its name had no extension so nothing could tell.
+a `.mp4` this tool does not read, or that its name had no extension and its content type named
+no kind this tool reads.
 
 A conversation that could not be written is remembered and rendered again on the next run, the same
 three tries a SharePoint document gets, and named by its subject under the same two headings: the one
