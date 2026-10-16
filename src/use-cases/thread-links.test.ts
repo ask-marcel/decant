@@ -471,4 +471,25 @@ describe('following the SharePoint files a conversation points at', () => {
 
     expect(files.written.get(REPORT_MD)).toContain('the same file');
   });
+
+  // A deck cited in four replies is one thing the thread depended on: read once in a write, whatever
+  // came of it. A card is written from the first mention, so a later one pulling what the first could
+  // not would leave the card saying the opposite of what lies beside it.
+  const twoMessages = [message({ id: 'm1', hasAttachments: true }), message({ id: 'm2', received: '2026-05-13T10:00:00Z' })];
+  const linkedTwice = { conversations: { [CONV]: twoMessages }, bodies: LINK_BODIES, links: { m1: linked.m1, m2: linked.m1 } };
+
+  it('a document two messages link to is read once in a write, also when it is the file a message carried', async () => {
+    const same = { ...items, bytes: { '01ABC': new TextEncoder().encode('bytes att1') } };
+    const { drive, files } = await run({ reader: { ...linkedTwice, attachments: carried }, drive: same });
+
+    expect(drive.calls.filter((call) => call.endsWith(':01ABC'))).toStrictEqual(['item:01ABC', 'bytes:01ABC']);
+    expect(files.written.get(REPORT_MD)).toContain('the same file');
+  });
+
+  it('a document two messages link to that cannot be pulled is tried once in a write, and named as failed once', async () => {
+    const { outcome, drive } = await run({ reader: linkedTwice, drive: { failWith: { kind: 'permanent', message: 'gone' } } });
+
+    expect(drive.calls.filter((call) => call.endsWith(':01ABC'))).toStrictEqual(['item:01ABC']);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed.filter((entry) => entry.path.endsWith(': Rapport.docx'))).toHaveLength(1);
+  });
 });
