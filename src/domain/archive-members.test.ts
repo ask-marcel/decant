@@ -98,5 +98,9 @@ describe('a link from one member of an archive to another', () => {
     expect(linkMembers('[Root](/logo.png)', 'index.html', files)).toBe('[Root](/logo.png)');
     // Dot segments after a host would take away the scheme and the host of a path.
     expect(linkMembers('[Site](https://contoso.example/../../index.html)', 'index.html', files)).toBe('[Site](https://contoso.example/../../index.html)');
+    // Only the start of a destination names a scheme: a member name can hold a colon.
+    expect(linkMembers('[Notes](pages/notes:2026.html)', 'index.html', new Map([...files, ['pages/notes:2026.html', `${FOLDER}/pages/notes:2026.html.md`]]))).toBe(
+      '[Notes](pages/notes:2026.html.md)'
+    );
   });
 });
