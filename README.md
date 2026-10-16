@@ -707,10 +707,19 @@ Agenda: ...
 Times are in the zone of the knowledge base, and the `timezone:` line names that zone (see Time
 zone). An all-day event shows days, not times. The body is the invitation's text with the markup gone.
 
-decant removes the join block that Teams, Zoom and Google Meet put in each invitation. This block
-holds the link to join, the `Meeting ID`, the passcode, the dial-in numbers and the help links. The
-link to join stays in `online_meeting:`. In a mail thread, one line `Online meeting: <link>` stays
-in place of the block. A passcode outside such a block stays, because it is content.
+In calendar notes and mail threads, decant removes the block that Teams, Zoom and Google Meet put in
+an invitation. This block holds the meeting link, the `Meeting ID`, the passcode, the dial-in numbers
+and the help links. Graph gives the meeting link of a Teams or Skype meeting, and the calendar note
+keeps that link in `online_meeting:`. For other meetings, and in a mail thread, one line
+`Online meeting: <link>` replaces the block.
+
+decant removes only the blocks that it knows. A Teams or Meet block starts and ends with the same
+line of `_` or of `-::~:~::`. It holds a meeting link or a line that starts with `Meeting ID:` or
+`Conference ID:`. A Zoom block starts at `Join Zoom Meeting`. It ends at the line
+`Find your local number`, or at the end of the SIP, H.323 and Skype parts after that line.
+
+If the line `Online meeting: <link>` must replace a block, and decant finds no meeting link in the
+block, the block stays. A passcode that is not in such a block stays.
 
 In the body, the text of each link stays on one line, and a link with no text shows its address.
 decant removes the Outlook wrapper from each link, as it does in mail. A picture in the invitation
