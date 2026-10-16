@@ -63,6 +63,22 @@ describe('assembling the directory out of the profiles and the rosters', () => {
 
     expect(alone).not.toBe(managing);
   });
+
+  // The page of a manager lists each report by name, linked to the report's page.
+  it('a report renamed changes the fingerprint of their manager', () => {
+    const before = assembleDirectory([JANE, ANN], TEAMS).find((entry) => entry.person.id === 'jane')?.fingerprint;
+    const after = assembleDirectory([JANE, { ...ANN, name: 'Ann Lee-Smith' }], TEAMS).find((entry) => entry.person.id === 'jane')?.fingerprint;
+
+    expect(after).not.toBe(before);
+  });
+
+  // A page links its manager only while the manager has a page: one who left is named as text.
+  it('a manager who left the directory changes the fingerprint of the people who reported to them', () => {
+    const before = assembleDirectory([DANA, JANE], TEAMS).find((entry) => entry.person.id === 'jane')?.fingerprint;
+    const after = assembleDirectory([JANE], TEAMS)[0]?.fingerprint;
+
+    expect(after).not.toBe(before);
+  });
 });
 
 const fileOf = (id: string): string | undefined => ({ dana: 'Dana Farrow.md', jane: 'Jane Doe.md', ann: 'Ann Lee.md' })[id];

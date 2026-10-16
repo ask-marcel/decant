@@ -72,6 +72,15 @@ export const parseMember = (raw: unknown): Member | undefined => {
 
 // What the person's document is made of, hashed, so a run can tell a person who changed from one
 // who did not without reading the file back. The teams and the reports are part of it because they
-// are part of the document, and both are lists whose order means nothing.
-export const personFingerprint = (person: Person, teams: ReadonlyArray<string>, reportIds: ReadonlyArray<string>): string =>
-  contentHash(new TextEncoder().encode(JSON.stringify([person, [...teams].sort(compareText), [...reportIds].sort(compareText)])));
+// are part of the document, and both are lists whose order means nothing. A report counts by name as
+// well, since the page lists the name and links to the report's page, whose file takes the name.
+// Whether the manager is in the directory counts too: the page links the manager only then.
+export const personFingerprint = (
+  person: Person,
+  teams: ReadonlyArray<string>,
+  reports: ReadonlyArray<{ readonly id: string; readonly name: string }>,
+  managerListed: boolean
+): string => {
+  const named = [...reports].sort((left, right) => compareText(left.id, right.id)).map((report) => [report.id, report.name]);
+  return contentHash(new TextEncoder().encode(JSON.stringify([person, [...teams].sort(compareText), named, managerListed])));
+};
