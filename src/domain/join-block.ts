@@ -28,14 +28,22 @@ const MEETING_ID = /^\W*(?:Meeting|Conference) ID:/i;
 
 type Span = { readonly from: number; readonly to: number };
 
+// How many lines past its opening a block can close in. A real block is a few dozen lines; the bound
+// keeps text with thousands of rules, or of openings that never close, from being read once a line.
+const REACH = 200;
+
+// The lines a block opening at `at` can close in.
+const reachOf = (lines: ReadonlyArray<string>, at: number): ReadonlyArray<string> => lines.slice(at + 1, at + 1 + REACH);
+
 const isJoinBlock = (lines: ReadonlyArray<string>): boolean => lines.some((line) => JOIN_AT.test(line) || MEETING_ID.test(line));
 
 // Teams puts a shorter rule inside its block, before the dial-in numbers, and a reply quoted under a
 // mail can open with one, so only a rule of the same text as the one that opened a block closes it.
 const ruledSpan = (lines: ReadonlyArray<string>, at: number): Span | undefined => {
   const rule = (lines[at] ?? '').trim();
-  const to = lines.findIndex((line, index) => index > at && line.trim() === rule);
-  return to > at && isJoinBlock(lines.slice(at + 1, to)) ? { from: at, to } : undefined;
+  const reach = reachOf(lines, at);
+  const close = reach.findIndex((line) => line.trim() === rule);
+  return close !== -1 && isJoinBlock(reach.slice(0, close)) ? { from: at, to: at + 1 + close } : undefined;
 };
 
 // Past the local numbers Zoom can add ways to join by SIP, by H.323 and by Skype for Business: each a
@@ -59,7 +67,7 @@ const isZoomTail = (line: string): boolean => ZOOM_TAIL.some((pattern) => patter
 // The last line of what follows the local numbers when the first of it is a way to join by SIP, H.323
 // or Skype, else the line of the local numbers: a passcode a sender wrote after them stays.
 const zoomTailEnd = (lines: ReadonlyArray<string>, end: number): number => {
-  const after = lines.slice(end + 1);
+  const after = reachOf(lines, end);
   const stop = after.findIndex((line) => !isZoomTail(line));
   const run = stop === -1 ? after : after.slice(0, stop);
   const first = run.find((line) => !BLANKISH.test(line));
@@ -68,8 +76,9 @@ const zoomTailEnd = (lines: ReadonlyArray<string>, end: number): number => {
 
 // A second invitation that opens first means this one never reached its local numbers.
 const zoomSpan = (lines: ReadonlyArray<string>, at: number): Span | undefined => {
-  const to = lines.findIndex((line, index) => index > at && (ZOOM_ENDS.test(line) || ZOOM_OPENS.test(line)));
-  return to > at && ZOOM_ENDS.test(lines[to] ?? '') ? { from: at, to: zoomTailEnd(lines, to) } : undefined;
+  const reach = reachOf(lines, at);
+  const stop = reach.findIndex((line) => ZOOM_ENDS.test(line) || ZOOM_OPENS.test(line));
+  return stop !== -1 && ZOOM_ENDS.test(reach[stop] ?? '') ? { from: at, to: zoomTailEnd(lines, at + 1 + stop) } : undefined;
 };
 
 // A block that opens at this line and closes, or none: a rule never closed, or rules around anything
