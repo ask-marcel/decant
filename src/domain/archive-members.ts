@@ -5,28 +5,11 @@ import { linkDestination } from './markdown-link.ts';
 // Each member of an archive and the file its text lands in.
 export type PlacedMember<T> = { readonly entry: T; readonly file: string };
 
-// How much of each member's path is the folder every member sits in, when that folder is named for
-// the archive: zipping a folder whole makes one, and unpacked beside the archive it only repeats the
-// archive's name. The archive is routed by its extension, so its name has one to cut.
-const sharedTopLength = (archiveName: string, paths: ReadonlyArray<string>): number => {
-  const top = `${archiveName.slice(0, archiveName.lastIndexOf('.'))}/`.toLowerCase();
-  return paths.every((path) => path.toLowerCase().startsWith(top)) ? top.length : 0;
-};
-
-// Where each member of an archive unpacked into `folder` lands: under its own folders, less the one
-// every member shares when it is named for the archive.
-export const placeMembers = <T extends { readonly path: string }>(
-  folder: string,
-  archiveName: string,
-  entries: ReadonlyArray<T>,
-  budget: number | undefined
-): ReadonlyArray<PlacedMember<T>> => {
-  const cut = sharedTopLength(
-    archiveName,
-    entries.map((entry) => entry.path)
-  );
-  return entries.map((entry) => ({ entry, file: memberFile(folder, entry.path.slice(cut), budget) }));
-};
+// Where each member of an archive unpacked into `folder` lands: under its own folders. A zip made of a
+// folder holds every member in that folder, and the folder stays, because a library often holds the
+// folder itself beside the zip: without it, each member would land on the file of the same name.
+export const placeMembers = <T extends { readonly path: string }>(folder: string, entries: ReadonlyArray<T>, budget: number | undefined): ReadonlyArray<PlacedMember<T>> =>
+  entries.map((entry) => ({ entry, file: memberFile(folder, entry.path, budget) }));
 
 // A link and not a picture, its destination bare or in angle brackets. `[^[\]]` and `[^()]` rather
 // than open classes, so a run of brackets with no close fails at each one instead of rescanning.
