@@ -40,9 +40,19 @@ const ruledSpan = (lines: ReadonlyArray<string>, at: number): Span | undefined =
 
 // Past the local numbers Zoom can add ways to join by SIP, by H.323 and by Skype for Business: each a
 // heading and its addresses, with the meeting ID and the passcode again, between rules of dashes.
-const JOIN_BY = /^\W*Join by /i;
-const BLANKISH = /^\W*$/;
-const ZOOM_TAIL: ReadonlyArray<RegExp> = [BLANKISH, JOIN_BY, /^\W*(?:Meeting ID|Passcode|Password)\b/i, /^\W*\d{1,3}(?:\.\d{1,3}){3}\b/, /zoom(?:crc|gov)?\.(?:us|com)\b/i];
+// Only lines of that form are taken, so a line a sender wrote after them stays.
+const JOIN_BY = /^\W*Join by (?:SIP|H\.323|Skype for Business)\W*$/i;
+// A blank line or a rule: no letter and no digit, in any script.
+const BLANKISH = /^[^\p{L}\p{N}]*$/u;
+const ZOOM_TAIL: ReadonlyArray<RegExp> = [
+  BLANKISH,
+  JOIN_BY,
+  /^\W*(?:Meeting ID|Passcode|Password)\W*:/i,
+  // An H.323 address, with the place it serves.
+  /^\W*\d{1,3}(?:\.\d{1,3}){3}(?: \([^()]*\))?\W*$/,
+  // A SIP address, or the link to join from Skype for Business.
+  /^\W*(?:\d+@(?:sip\.)?zoom(?:crc|gov)?\.com|https:\/\/[a-z0-9.-]*zoom(?:gov)?\.(?:us|com)\/skype\/)/i,
+];
 
 const isZoomTail = (line: string): boolean => ZOOM_TAIL.some((pattern) => pattern.test(line));
 

@@ -274,11 +274,19 @@ describe('the join block a meeting invitation carries', () => {
 
   // What a sender wrote after a Zoom block stays, whatever the block holds past its local numbers.
   const H323 = ['Join by H.323', '192.0.2.11 (US West)'];
+  const SKYPE = ['Join by Skype for Business', 'https://us02web.zoom.us/skype/1'];
   it.each([
     ['a way to join they name', [], 'Or join by phone: +1 555 0100'],
+    ['a way to join that opens with the words Zoom uses', [], 'Join by phone if the link fails: +1 555 0100'],
     ['a passcode named inside a sentence', H323, 'The door passcode is 4321.'],
+    ['a passcode named at the start of a sentence', SKYPE, 'Passcode for the door is on the board.'],
+    ['a password named at the start of a sentence', SKYPE, 'Password for the guest Wi-Fi is on the board.'],
+    ['a meeting ID named at the start of a sentence', SKYPE, 'Meeting ID for the follow-up is in the agenda.'],
     ['an address inside a sentence', H323, 'Server 192.0.2.50 is down.'],
+    ['an address that opens a sentence', H323, '192.0.2.50 is the printer in Room 3.'],
     ['a number that is no address', H323, '1.5 hours for questions.'],
+    ['a link to a recording', SKYPE, 'Recording: https://us02web.zoom.us/rec/share/abc'],
+    ['a line in another script, and an ID it names', SKYPE, 'Номер следующей встречи:\nMeeting ID: 555 0100'],
   ])('a Zoom block leaves %s after it', (_name, tail, said) => {
     const block = ['Join Zoom Meeting', 'https://us02web.zoom.us/j/1', 'Find your local number: https://us02web.zoom.us/u/abc', ...tail];
 
