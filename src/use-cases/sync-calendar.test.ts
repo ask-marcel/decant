@@ -812,17 +812,11 @@ describe('linking a series and its exceptions', () => {
   });
   const seeded = (state: CalendarState): FilesFakeSeed => ({ texts: { [STATE_PATH]: serializeCalendarState(state) } });
 
-  it('an exception and its series written in one run link to each other, whichever the delta named first', async () => {
-    const done = await run({
-      reader: {
-        changes: [
-          { id: 'x', removed: false },
-          { id: 'm', removed: false },
-        ],
-        events: { m: MASTER, x: MARCH },
-      },
-      concurrency: 1,
-    });
+  it.each([
+    ['the exception', ['x', 'm']],
+    ['the series', ['m', 'x']],
+  ])('an exception and its series written in one run link to each other when the delta names %s first', async (_first, order) => {
+    const done = await run({ reader: { changes: order.map((id) => ({ id, removed: false })), events: { m: MASTER, x: MARCH } }, concurrency: 1 });
 
     expect(done.files.written.get(MARCH_NOTE)).toContain('Part of the series [Monthly review](<../2026-01-05/Monthly review.md>).');
     expect(done.files.written.get(MASTER_NOTE)).toContain('## Exceptions\n\n- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)');
