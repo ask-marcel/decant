@@ -137,7 +137,8 @@ Nothing was left behind.
       '## Could not be moved to the archive\n\nThe list of these files, .sync-aside.json, could not be read (invalid-json). No run moves them, or adds to the list, until it is repaired or deleted. Below are the files of this run alone.\n\n- To Do/Tasks/2026-09-01/Book the venue.md: write-failed: EBUSY (since 2026-10-15)\n'
     );
     expect(rendered).not.toContain('Each run tries to move these again');
-    expect(bare).toContain('could not be read (read-failed). No run moves them, or adds to the list, until it is repaired or deleted. Below are the files of this run alone.\n');
+    expect(bare).toContain('could not be read (read-failed). No run moves them, or adds to the list, until it is repaired or deleted.\n');
+    expect(bare).not.toContain('Below are the files');
   });
 
   it('a run that stopped early says so, so a file listing two sources is not read as covering twenty', () => {
