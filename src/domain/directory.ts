@@ -20,9 +20,15 @@ const byName = <T extends { readonly name: string }>(left: T, right: T): number 
 // The rosters and the profiles, joined. A guest and a disabled account are left out here, once,
 // so nothing downstream has to ask again, and they count as nobody's report: a manager whose only
 // report has left has no reports.
-export const assembleDirectory = (people: ReadonlyArray<Person>, teamsOf: Readonly<Record<string, ReadonlyArray<string>>>): ReadonlyArray<Colleague> => {
+// `kept` names the people whose profile would not read this run but who keep their page: a manager
+// among them still counts as in the directory, so the pages of the reports keep their link.
+export const assembleDirectory = (
+  people: ReadonlyArray<Person>,
+  teamsOf: Readonly<Record<string, ReadonlyArray<string>>>,
+  kept: ReadonlySet<string> = new Set()
+): ReadonlyArray<Colleague> => {
   const colleagues = people.filter(isColleague);
-  const listed = new Set(colleagues.map((person) => person.id));
+  const listed = new Set([...colleagues.map((person) => person.id), ...kept]);
   return colleagues
     .map((person) => {
       const teams = [...(teamsOf[person.id] ?? [])].sort(compareText);
