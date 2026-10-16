@@ -673,3 +673,41 @@ describe('the names a thread already gave its files', () => {
     expect(now.slice(2).filter((path) => was.includes(path))).toStrictEqual([]);
   });
 });
+
+// A file is routed by the extension of its name. A name with none was skipped as a kind nothing reads,
+// though Graph names its kind, and a picture named for another kind was read as that kind.
+describe('a file whose name does not say what it is', () => {
+  const carrying = (attachment: { id: string; name: string; contentType: string; size: number; isInline: boolean; contentId?: string }, raw: string): MailReaderSeed => ({
+    conversations: { [CONV]: [message({ hasAttachments: true })] },
+    bodies: attachment.isInline ? { m1: `\\[inline image: ${attachment.name}\\]` } : {},
+    attachments: { m1: [attachment] },
+    attachmentRaw: { [attachment.id]: raw },
+  });
+
+  it('a file sent with no extension is read as the kind its content type names', async () => {
+    const { files } = await run({ reader: carrying({ id: 'att1', name: 'Scan', contentType: 'image/gif', size: 64 * 1024, isInline: false }, 'GIF89a') });
+
+    expect(files.binary.has(`${ATTACHMENTS_STORE}/Scan.gif`)).toBe(true);
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Scan.gif.md`)).toContain('original: Scan.gif');
+  });
+
+  it('a picture whose bytes say another kind is stored under the extension of what it is, attached or shown', async () => {
+    const attached = await run({ reader: carrying({ id: 'att1', name: 'logo.png', contentType: 'image/png', size: 64 * 1024, isInline: false }, 'GIF89a') });
+    const shown = await run({
+      reader: carrying({ id: 'sig', name: 'logo.png', contentType: 'image/png', size: 64 * 1024, isInline: true, contentId: 'logo.png@01DC1234' }, 'GIF89a'),
+    });
+
+    expect(attached.files.binary.has(`${ATTACHMENTS_STORE}/logo.gif`)).toBe(true);
+    expect([...shown.files.binary.keys()]).toStrictEqual([`${INLINE_STORE}/${disambiguateSegment('logo.gif', contentHash(new TextEncoder().encode('GIF89a')))}`]);
+  });
+
+  // A name a thread gave a file before stays, so a thread written again moves nothing for this.
+  it('a file the thread named before keeps that name, whatever its bytes say', async () => {
+    const { files } = await run({
+      reader: carrying({ id: 'att1', name: 'logo.png', contentType: 'image/png', size: 64 * 1024, isInline: false }, 'GIF89a'),
+      names: { 'm1|logo.png|0': 'logo.png' },
+    });
+
+    expect(files.binary.has(`${ATTACHMENTS_STORE}/logo.png`)).toBe(true);
+  });
+});

@@ -1,5 +1,6 @@
 import { contentHash } from '../domain/content-hash.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
+import { namedForBytes, namedForType } from '../domain/file-kind.ts';
 import { disambiguateSegment } from '../domain/kb-path.ts';
 import { namesHeldIn } from '../domain/mail-state.ts';
 import type { AttachmentRecord } from '../domain/mail-state.ts';
@@ -110,12 +111,14 @@ type Placed = {
 // address is the address of what it renders to: stable for the same embedded mail within a library
 // version, which is what lets two threads carrying it share one copy on disk. The rendering is kept
 // and handed on, so the conversion does not ask for it a second time.
-type Addressed = { readonly hash: string; readonly rendered?: string };
+// A file with bytes is also named by what it is: a name with no extension takes the one its content
+// type goes by, and a picture whose bytes say another kind takes the extension of that kind.
+type Addressed = { readonly hash: string; readonly rendered?: string; readonly name?: string };
 
 const addressOf = async (deps: FileDeps, messageId: string, attachment: MailAttachment): Promise<Result<Addressed, MailReaderError>> => {
   if (attachment.kind !== 'item') {
     const raw = await deps.reader.attachmentBytes(messageId, attachment.id);
-    return raw.ok ? ok({ hash: contentHash(raw.value) }) : raw;
+    return raw.ok ? ok({ hash: contentHash(raw.value), name: namedForBytes(namedForType(attachment.name, attachment.contentType), raw.value) }) : raw;
   }
   const rendered = await deps.reader.attachmentMarkdown(messageId, attachment.id);
   return rendered.ok ? ok({ hash: contentHash(new TextEncoder().encode(rendered.value)), rendered: rendered.value }) : rendered;
@@ -201,8 +204,10 @@ const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placin
     if (inline) reserve(placing, nameOf(place, placing, arrival));
     return { asName: seen.name, paths: seen.paths, primary: seen.primary, picture: inline ? seen.primary : undefined, text: seen.text, media: seen.media };
   }
-  const asName = reserve(placing, freshName(place, placing, arrival));
-  const fresh: Fresh = { messageId, attachment, stamp, asName, hash, inline, rendered: address.value.rendered };
+  // A content new to the thread is named by what it is. A name the thread gave it before stays.
+  const named = withName(arrival, address.value.name);
+  const asName = reserve(placing, freshName(place, placing, named));
+  const fresh: Fresh = { messageId, attachment: named.attachment, stamp, asName, hash, inline, rendered: address.value.rendered };
   if (inline) return convertPicture(deps, place, placing, fresh);
   return convertFresh(deps, place, placing.store, fresh);
 };
@@ -228,6 +233,8 @@ const convertPicture = async (deps: FileDeps, place: FilePlace, placing: Placing
   );
   return converting;
 };
+
+const withName = (arrival: Arrival, name: string | undefined): Arrival => (name === undefined ? arrival : { ...arrival, attachment: { ...arrival.attachment, name } });
 
 // The name a content the thread does not hold yet is written under. Not the name it had before when
 // the thread stores another content under that name: two messages can carry one RFC id, and a draft's
