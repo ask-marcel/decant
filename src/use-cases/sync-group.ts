@@ -120,15 +120,14 @@ const recordThread = (
 
 type Rendered = { readonly apply: (state: GroupState) => GroupState; readonly counted: Partial<RunSummary>; readonly notes: Partial<RunNotes> };
 
-// Where the group's own folder is, and the thread folders already on disk under it.
-type GroupPlace = { readonly root: string; readonly onDisk: FoldersOnDisk };
+// Where the group's own folder is, the thread folders already on disk under it, and the renderer that
+// writes into it: one for the run, since it holds the pictures the run converts, so threads written
+// side by side convert a new picture once.
+type GroupPlace = { readonly root: string; readonly onDisk: FoldersOnDisk; readonly render: RenderThread };
 
 const renderOne = async (deps: SyncGroupDeps, input: SyncGroupInput, state: GroupState, place: GroupPlace, thread: GroupThread): Promise<Rendered> => {
   const threadId = threadIdOf(thread.id);
-  const rendered = await deps.renderThreadFor(
-    place.root,
-    input.group.name
-  )({
+  const rendered = await place.render({
     threadId,
     label: thread.topic,
     conversationIds: [threadRef(input.group.id, thread.id)],
@@ -285,7 +284,7 @@ const render = async (
   let current = state;
   let summary = EMPTY;
   let notes = NO_NOTES;
-  const place = { root, onDisk: await threadFoldersOn(deps.files, root) };
+  const place = { root, onDisk: await threadFoldersOn(deps.files, root), render: deps.renderThreadFor(root, input.group.name) };
   const gone = await unlisted(deps, input, current, place, listing);
   current = gone.reduce((carried, done) => done.apply(carried), current);
   summary = counted(summary, gone);
