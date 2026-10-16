@@ -10,7 +10,7 @@ describe('reading what an HTML body says, without the markup', () => {
     expect(htmlToText('<p>See <a href="https://example.com/doc">the doc</a> now</p>')).toBe('See [the doc](https://example.com/doc) now');
     expect(htmlToText('<a class="x" data-id="1" href="https://example.com/doc" target="_blank">the doc</a>')).toBe('[the doc](https://example.com/doc)');
     expect(htmlToText('<p><img src="https://example.com/a.png" alt="the chart"></p>')).toBe('[the chart](https://example.com/a.png)');
-    expect(htmlToText('<p><img src="cid:logo"></p>')).toBe('[image](cid:logo)');
+    expect(htmlToText('<p><img src="cid:logo"></p>')).toBe('\\[inline image: logo\\]');
     expect(htmlToText('<p><img alt="no source"></p>')).toBe('');
   });
 
@@ -23,6 +23,12 @@ describe('reading what an HTML body says, without the markup', () => {
     expect(htmlToText(`<a href="${at}">two\n   lines and the 2<sup>nd</sup> floor</a>`)).toBe(`[two lines and the 2nd floor](${at})`);
     expect(htmlToText(`<a href="${at}"><img src="logo.png" alt="Contoso"></a>`)).toBe(`[Contoso](${at})`);
     expect(htmlToText(`<a href="${at}"><img src="logo.png"><span> </span></a>`)).toBe(`[${at}](${at})`);
+  });
+
+  // A picture the invitation carried itself is named by a `cid:` reference into a mail no reader has.
+  it('a picture the body carried itself reads as text naming it, by its alt text or the name before the @ of its reference', () => {
+    expect(htmlToText('<p><img src="cid:image001.png@01DC1234.5678ABCD" alt="Floor plan"></p>')).toBe('\\[inline image: Floor plan\\]');
+    expect(htmlToText('<p>Map: <img src="CID:image002.png@01DC1234.5678ABCD"></p>')).toBe('Map: \\[inline image: image002.png\\]');
   });
 
   it('a list reads as one, one item per line, whatever the items carry, and a table row as its cells with a bar between them', () => {
