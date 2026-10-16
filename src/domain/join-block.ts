@@ -4,9 +4,10 @@
 // link to join, a meeting ID and a passcode, dial-in numbers, help, meeting options) and says nothing
 // a reader of the meeting looks for. The link to join can stand in its place.
 
-// A rule of underscores, each escaped in the markdown a mail's body is.
+// A rule of underscores, each escaped in the markdown a mail's body is, and Meet's rule, whose first
+// dash that markdown escapes too, since a dash that opens a line would make a list.
 const TEAMS_RULE = /^\s*(?:\\?_){10,}\s*$/;
-const MEET_RULE = /^\s*-[:~]{10,}-\s*$/;
+const MEET_RULE = /^\s*\\?-[:~]{10,}-\s*$/;
 const ZOOM_OPENS = /^\W*Join Zoom Meeting\W*$/i;
 const ZOOM_ENDS = /^\W*Find your local number/i;
 // Where a block says to join: a Teams link in its long form and in the short one Teams writes since

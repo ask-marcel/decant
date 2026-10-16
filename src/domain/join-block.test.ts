@@ -61,6 +61,24 @@ describe('the join block a meeting invitation carries', () => {
     expect(withoutJoinBlocks(meet, (url) => `Online meeting: ${url}`)).toBe('Agenda below.\nOnline meeting: https://meet.google.com/abc-defg-hij');
   });
 
+  // A mail's markdown escapes the dash that opens a line, and so the first dash of Meet's rule.
+  it('a Google Meet block in a mail, its rules escaped, stands as one line naming where to join', () => {
+    const rule = `\\-::~:~::~${':~'.repeat(35)}::~:~::-`;
+    const mail = [
+      'Agenda below.',
+      '',
+      rule,
+      '',
+      'Join with Google Meet: [https://meet.google.com/abc-defg-hij](https://meet.google.com/abc-defg-hij)',
+      '',
+      'Please do not edit this section.',
+      '',
+      rule,
+    ].join('\n');
+
+    expect(withoutJoinBlocks(mail, (url) => `Online meeting: ${url}`)).toBe('Agenda below.\n\nOnline meeting: https://meet.google.com/abc-defg-hij');
+  });
+
   it('a Zoom block goes from where it opens to the line that sends you to the local numbers', () => {
     const zoom = [
       'Jane Doe is inviting you to a scheduled Zoom meeting.',
