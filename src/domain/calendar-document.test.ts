@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import { renderEventAttachment, renderEventDocument } from './calendar-document.ts';
 import type { CalendarEvent } from './calendar-event.ts';
+import { NO_TEXT_NOTE } from './kb-document.ts';
 
 const event: CalendarEvent = {
   id: 'AAMkAGI-event',
@@ -131,6 +132,14 @@ describe('writing what an event carried as a document of its own', () => {
     expect(written).toContain('- **When:** 2026-09-15 10:00 (Europe/Paris) to 11:00');
     expect(written).not.toContain('BEGIN:VCALENDAR');
     expect(written).not.toContain('<p>');
+  });
+
+  // A calendar file can hold a task, a free-busy block or only its time zones, and no meeting.
+  it('an invitation an event carried that holds no meeting says that no text could be read', () => {
+    const zonesAlone = ['BEGIN:VCALENDAR', 'BEGIN:VTIMEZONE', 'TZID:Europe/Paris', 'END:VTIMEZONE', 'END:VCALENDAR'].join('\r\n');
+    const written = renderEventAttachment({ event, name: 'zones.ics', contentType: 'text/calendar', size: 90, text: zonesAlone, syncedAt: '2026-09-11T14:00:00Z' });
+
+    expect(written).toContain(NO_TEXT_NOTE);
   });
 
   it('a link Outlook wrapped in what an attachment says reads as where it goes', () => {
