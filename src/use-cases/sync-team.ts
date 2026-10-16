@@ -2,7 +2,7 @@ import { renderPostDocument } from '../domain/channel-document.ts';
 import { channelIndexPage } from '../domain/channel-index.ts';
 import { INDEX_FILE } from '../domain/index-page.ts';
 import { postTitle } from '../domain/channel-post.ts';
-import { safeSegment } from '../domain/kb-path.ts';
+import { safeSegment, sameIgnoringCase } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import {
@@ -140,7 +140,7 @@ const writeOne = async (context: ChannelContext, state: TeamState, planned: Plan
   }
   const before = state.channels[channel.id]?.posts[post.id];
   const aside = await setAsideBefore(deps, before);
-  const held = before?.file === file ? await heldInPlace(deps, aside) : undefined;
+  const held = sameIgnoringCase(before?.file ?? '', file) ? await heldInPlace(deps, aside) : undefined;
   if (held !== undefined) return notPosted(context, state, post, title, aside, held);
   const written = await deps.files.writeText(
     file,

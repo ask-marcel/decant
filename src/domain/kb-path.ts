@@ -144,7 +144,7 @@ export const memberFile = (folder: string, entryPath: string, budget: number | u
 
 // Windows and macOS take `Report.md` and `report.md` for one file, so a name is held when a held
 // name matches it in either case: the second write would otherwise replace the first without a word.
-const sameIgnoringCase = (left: string, right: string): boolean => left.toLowerCase() === right.toLowerCase();
+export const sameIgnoringCase = (left: string, right: string): boolean => left.toLowerCase() === right.toLowerCase();
 
 export const holdsIgnoringCase = (taken: Iterable<string>, name: string): boolean => {
   for (const held of taken) if (sameIgnoringCase(held, name)) return true;

@@ -101,9 +101,10 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
   };
 
   // A path a file lands at holds a new file: the file the ledger meant there is gone, and the next run
-  // must not move the new one away. A path a write lands at is also kept for the whole run, so a file
-  // let go after another was written at its path is not written down. A moved file is not: it is
-  // still its own source's file, which can let it go later in the same run.
+  // must not move the new one away. A path a write lands at is also kept for the whole run, in lower
+  // case as Windows and macOS read it, so a file let go after another was written at its path is not
+  // written down. A moved file is not: it is still its own source's file, which can let it go later
+  // in the same run.
   const writtenAt = new Set<string>();
   const forget = async (path: string): Promise<void> => {
     await loaded();
@@ -111,7 +112,7 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
   };
   const written = async <T>(result: Result<T, FilesError>, path: string): Promise<Result<T, FilesError>> => {
     if (result.ok) {
-      writtenAt.add(path);
+      writtenAt.add(path.toLowerCase());
       await forget(path);
     }
     return result;
@@ -130,7 +131,7 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
   // A file handed on that is gone already owes nothing. One still there is written down with what it
   // holds, so a later run can tell it from a file that takes its path.
   const writeDown: WriteDown = async (missed) => {
-    const present = (await onDisk(files, missed)).filter((entry) => !writtenAt.has(entry.path));
+    const present = (await onDisk(files, missed)).filter((entry) => !writtenAt.has(entry.path.toLowerCase()));
     if (present.length === 0) return;
     const digests = await Promise.all(present.map(async (entry) => digestAt(files, entry.path)));
     const at = deps.clock.nowIso();
