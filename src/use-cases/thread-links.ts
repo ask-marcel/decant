@@ -116,9 +116,16 @@ const addAll = (into: string[], paths: ReadonlyArray<string>): void => {
   for (const path of paths) if (!into.includes(path)) into.push(path);
 };
 
-// A document this thread already pulled is referenced again rather than fetched again.
-const pulledOnce = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, asName: string, already: LinkedRecord | undefined): Promise<Pulled> =>
-  already === undefined ? pullLinked(deps, place, link, asName) : { record: already };
+// A document this write already read is referenced again rather than read again, whatever came of it:
+// its card is written from the first mention, and one that failed is tried again on the next run, as
+// the thread is. A later mention counts nothing a second time.
+const pulledOnce = async (deps: LinkDeps, following: Following, link: LinkedFile, key: string, asName: string): Promise<Pulled> => {
+  const first = following.pulled[key];
+  if (first !== undefined) return { record: first.record, note: first.note };
+  const pulled = await pullLinked(deps, following.place, link, asName);
+  following.pulled[key] = pulled;
+  return pulled;
+};
 
 const referenceOf = (link: LinkedFile, message: MailMessage, asName: string, pulled: Pulled): MessageLink => ({
   link,
@@ -142,6 +149,8 @@ type Following = {
   readonly recorded: Readonly<Record<string, string>>;
   readonly held: ReadonlyArray<string>;
   readonly linked: Record<string, LinkedRecord>;
+  // What came of reading each document in this write, by item.
+  readonly pulled: Record<string, Pulled>;
   readonly names: Record<string, string>;
   readonly paths: string[];
   readonly skipped: ReportEntry[];
@@ -166,7 +175,7 @@ const followLink = async (deps: LinkDeps, following: Following, message: MailMes
   const key = `${link.driveId}:${link.itemId}`;
   const asName = linkedName(deps, following, key, link);
   following.names[key] = asName;
-  const pulled = await pulledOnce(deps, following.place, link, asName, following.linked[key]);
+  const pulled = await pulledOnce(deps, following, link, key, asName);
   if (pulled.skipped !== undefined) following.skipped.push(pulled.skipped);
   if (pulled.failed !== undefined) following.failed.push(pulled.failed);
   const kept = pulled.failed !== undefined && following.recorded[key] !== undefined;
@@ -211,7 +220,7 @@ export const linkedFiles = async (deps: LinkDeps, place: LinksPlace, parts: Read
   // on disk, so it never takes the name of a document whose message went.
   const recorded = before.links ?? {};
   const held = [...Object.values(recorded), ...namesHeldIn(`${here}/${LINKED_FOLDER}`, before.held)];
-  const following: Following = { place, here, recorded, held, linked: {}, names: {}, paths: [], skipped: [], failed: [], referenced: [], unread: [] };
+  const following: Following = { place, here, recorded, held, linked: {}, pulled: {}, names: {}, paths: [], skipped: [], failed: [], referenced: [], unread: [] };
   for (const part of parts) await followMessage(deps, following, part);
   // A thread written before the names were kept cannot tell what a failure was: none of its linked
   // documents is taken for gone until a write that reads everything.
