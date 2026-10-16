@@ -84,7 +84,8 @@ export const withoutQuotedMarker = (body: string): string =>
     .replace(WIDENED_GAP, '\n\n')
     .trim();
 
-// The join block of an invitation leaves the link to join, on one line, in its place.
+// The join block of an invitation leaves its link to join on one line, or stays whole when it holds
+// no link that the block reader knows.
 const joinLine = (joinUrl: string): string => `Online meeting: ${joinUrl}`;
 
 const bodyOf = (part: ThreadPart): string => {

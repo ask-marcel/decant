@@ -95,9 +95,33 @@ describe('the join block a meeting invitation carries', () => {
     expect(withoutJoinBlocks('Passcode: aB3cD4 opens the safe.')).toBe('Passcode: aB3cD4 opens the safe.');
   });
 
-  it('a block with no address to join by goes with no line in its place', () => {
+  // A link this code does not know is still the way into the meeting, so a block asked to leave its
+  // link and holding none it knows stays whole; asked for nothing, it goes.
+  it('a block with no link to join it knows stays whole when its link is asked for, and goes when not', () => {
     const old = [RULE, 'Join Microsoft Teams Meeting', 'Conference ID: 123 456 789#', RULE, 'After.'].join('\n');
 
-    expect(withoutJoinBlocks(old, (url) => `Online meeting: ${url}`)).toBe('After.');
+    expect(withoutJoinBlocks(old, (url) => `Online meeting: ${url}`)).toBe(old);
+    expect(withoutJoinBlocks(old)).toBe('After.');
+  });
+
+  // Since 2026 Teams writes the short link itself as the link's text, where a mail's markdown escapes
+  // each underscore, so the link is read where it goes.
+  it('a Teams block of the short link form stands as that link, read where it goes, for work and for personal use', () => {
+    const short = 'https://teams.microsoft.com/meet/123456789012?p=ab_Cd';
+    const mail = [
+      ESCAPED_RULE,
+      '',
+      '**Microsoft Teams** [Need help?](https://aka.ms/x)',
+      '',
+      `[${short.replace('_', '\\_')}](${short})`,
+      '',
+      'Meeting ID: 123 456 789 012',
+      '',
+      ESCAPED_RULE,
+    ].join('\n');
+    const personal = [RULE, 'Microsoft Teams', 'Join: https://teams.live.com/meet/9312345678901?p=AbCd', 'Meeting ID: 931 234 567 890 1', RULE].join('\n');
+
+    expect(withoutJoinBlocks(mail, (url) => `Online meeting: ${url}`)).toBe(`Online meeting: ${short}`);
+    expect(withoutJoinBlocks(personal, (url) => `Online meeting: ${url}`)).toBe('Online meeting: https://teams.live.com/meet/9312345678901?p=AbCd');
   });
 });
