@@ -70,7 +70,7 @@ const imageLink = (whole: string, attributes: string): string => {
 // two halves. A link with no text left reads as its address.
 const WHITE_SPACE = /\s+/g;
 const SPACE_LIKE = /&(?:nbsp|#(x[0-9a-f]+|\d+));/gi;
-const BLANK = /^\s$/;
+const BLANK = /\s/;
 
 const spaceOrKept = (match: string, code: string | undefined): string => (code === undefined || BLANK.test(characterOf(pointOf(code))) ? ' ' : match);
 

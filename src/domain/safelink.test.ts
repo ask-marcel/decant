@@ -65,4 +65,8 @@ describe('reading where a link really goes', () => {
     expect(unwrapSafelinks(quoted)).toBe('{"link":"https://example.com/a"}');
     expect(unwrapSafelinks(single)).toBe("<a href='https://example.com/b'>b</a>");
   });
+
+  it('a wrapper written with http is unwrapped as one written with https', () => {
+    expect(unwrapSafelinks('http://nam02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fa&reserved=0')).toBe('https://example.com/a');
+  });
 });

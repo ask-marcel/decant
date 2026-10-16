@@ -10,6 +10,7 @@ describe('reading what an HTML body says, without the markup', () => {
     expect(htmlToText('<p>See <a href="https://example.com/doc">the doc</a> now</p>')).toBe('See [the doc](https://example.com/doc) now');
     expect(htmlToText('<a class="x" data-id="1" href="https://example.com/doc" target="_blank">the doc</a>')).toBe('[the doc](https://example.com/doc)');
     expect(htmlToText('<p><img src="https://example.com/a.png" alt="the chart"></p>')).toBe('[the chart](https://example.com/a.png)');
+    expect(htmlToText('<p><img src="https://example.com/cid:b.png"></p>')).toBe('[image](https://example.com/cid:b.png)');
     expect(htmlToText('<p><img alt="no source"></p>')).toBe('');
   });
 

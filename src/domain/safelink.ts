@@ -20,17 +20,16 @@ const DESTINATION = /[?&]url=([^&]*)/;
 // `decodeURIComponent` throws on a percent sign that opens no escape, and on escapes that make no
 // UTF-8, a byte cut off from the rest of its letter. A pure-domain fallback (rule 17): a wrapper whose
 // destination does not decode is left exactly as it stands, which is the answer that loses least.
-const decodedOrNone = (encoded: string): string | undefined => {
+const decodedOr = (encoded: string, wrapper: string): string => {
   try {
     return decodeURIComponent(encoded);
   } catch {
-    return undefined;
+    return wrapper;
   }
 };
 
 export const unwrapSafelinks = (text: string): string =>
   text.replace(WRAPPED, (wrapper) => {
     const encoded = DESTINATION.exec(wrapper)?.[1];
-    if (encoded === undefined || encoded.length === 0) return wrapper;
-    return decodedOrNone(encoded) ?? wrapper;
+    return encoded === undefined || encoded.length === 0 ? wrapper : decodedOr(encoded, wrapper);
   });
