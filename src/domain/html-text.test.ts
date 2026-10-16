@@ -14,6 +14,17 @@ describe('reading what an HTML body says, without the markup', () => {
     expect(htmlToText('<p><img alt="no source"></p>')).toBe('');
   });
 
+  // The link was written before the breaks became lines, so a link whose text held one ran over two
+  // lines, which no markdown reader joins back into a link.
+  it('a link reads on one line whatever its text holds, a picture in it by its alt text, and a link with no text by its address', () => {
+    const at = 'https://example.com/doc';
+    expect(htmlToText(`<p><a href="${at}">Quarterly<br>report <b>2027</b></a></p>`)).toBe(`[Quarterly report 2027](${at})`);
+    expect(htmlToText(`<a href="${at}"><p>One</p><p>Two</p></a>`)).toBe(`[One Two](${at})`);
+    expect(htmlToText(`<a href="${at}">two\n   lines and the 2<sup>nd</sup> floor</a>`)).toBe(`[two lines and the 2nd floor](${at})`);
+    expect(htmlToText(`<a href="${at}"><img src="logo.png" alt="Contoso"></a>`)).toBe(`[Contoso](${at})`);
+    expect(htmlToText(`<a href="${at}"><img src="logo.png"><span> </span></a>`)).toBe(`[${at}](${at})`);
+  });
+
   it('a list reads as one, one item per line, whatever the items carry, and a table row as its cells with a bar between them', () => {
     expect(htmlToText('<ul><li>one</li><li>two</li></ul>')).toBe('- one\n- two');
     expect(htmlToText('<ul><li class="x">one two</li><li>three\nfour</li></ul>')).toBe('- one two\n- three\nfour');
