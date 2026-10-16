@@ -262,6 +262,13 @@ describe('the parts of a saved email, however a client writes them', () => {
     expect(readMime(unix).text).toBe('**Subject:** Carried\n\nthe body');
   });
 
+  // The line end before a boundary belongs to the boundary, so a file sent as it is ends where it ends.
+  it('hands back a file sent 8-bit as the bytes it was, without the line end before the next boundary', () => {
+    const sent = multipart(['Content-Type: application/pdf; name="x.pdf"', 'Content-Transfer-Encoding: 8bit', '', 'ABC']);
+
+    expect(readMime(sent).parts).toStrictEqual([CARRIED]);
+  });
+
   it('reads an encoding named in capitals as the one it names', () => {
     const shouted = multipart(['Content-Type: application/pdf; name="x.pdf"', 'Content-Transfer-Encoding: BASE64', '', 'QUJD']);
 
