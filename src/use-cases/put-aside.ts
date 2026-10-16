@@ -57,7 +57,7 @@ export const setAside = async (deps: PutAsideDeps, outputs: ReadonlyArray<string
 // A set its source lets go, the record that named it gone or naming other files now: what would not
 // move is written down.
 export const letGo = async (deps: PutAsideDeps, aside: SetAside): Promise<void> => {
-  if (aside.failed.length > 0) await deps.writeDown?.(aside.failed);
+  await deps.writeDown?.(aside.failed);
 };
 
 // What an item held, put aside for good: the item is gone, or its files are other ones now.

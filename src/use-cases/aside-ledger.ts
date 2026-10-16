@@ -94,30 +94,37 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
     await saving;
   };
 
-  // A path a write or a move lands at holds a file of this run: the file the ledger meant there is
-  // gone, written over, and the next run must not move the new one away. Kept for the whole run, so a
-  // file let go after another landed at its path is not written down either.
-  const landedAt = new Set<string>();
-  const landed = async (path: string): Promise<void> => {
-    landedAt.add(path);
+  // A path a file lands at holds a new file: the file the ledger meant there is gone, and the next run
+  // must not move the new one away. A path a write lands at is also kept for the whole run, so a file
+  // let go after another was written at its path is not written down. A moved file is not: it is
+  // still its own source's file, which can let it go later in the same run.
+  const writtenAt = new Set<string>();
+  const forget = async (path: string): Promise<void> => {
     await loaded();
     if (held[path] !== undefined) await change((ledger) => unstuck(ledger, [path]));
   };
-  const after = async <T>(result: Result<T, FilesError>, path: string): Promise<Result<T, FilesError>> => {
-    if (result.ok) await landed(path);
+  const written = async <T>(result: Result<T, FilesError>, path: string): Promise<Result<T, FilesError>> => {
+    if (result.ok) {
+      writtenAt.add(path);
+      await forget(path);
+    }
+    return result;
+  };
+  const moved = async <T>(result: Result<T, FilesError>, path: string): Promise<Result<T, FilesError>> => {
+    if (result.ok) await forget(path);
     return result;
   };
   const through: Files = {
     ...files,
-    writeText: async (path, content) => after(await files.writeText(path, content), path),
-    writeBytes: async (path, bytes) => after(await files.writeBytes(path, bytes), path),
-    move: async (from, to) => after(await files.move(from, to), to),
+    writeText: async (path, content) => written(await files.writeText(path, content), path),
+    writeBytes: async (path, bytes) => written(await files.writeBytes(path, bytes), path),
+    move: async (from, to) => moved(await files.move(from, to), to),
   };
 
   // A file handed on that is gone already owes nothing. One still there is written down with what it
   // holds, so a later run can tell it from a file that takes its path.
   const writeDown: WriteDown = async (missed) => {
-    const present = (await onDisk(files, missed)).filter((entry) => !landedAt.has(entry.path));
+    const present = (await onDisk(files, missed)).filter((entry) => !writtenAt.has(entry.path));
     if (present.length === 0) return;
     const digests = await Promise.all(present.map(async (entry) => digestAt(files, entry.path)));
     const at = deps.clock.nowIso();
