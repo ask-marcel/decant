@@ -168,4 +168,20 @@ describe('a thread written again and the documents it links to', () => {
     expect(later.calls).toStrictEqual(['item:01ZIP']);
     expect(twice?.record.files).toStrictEqual(once?.record.files);
   });
+
+  // A file a message attached is the copy the thread keeps: a document the thread holds is compared
+  // with it first, as a document pulled for the first time is.
+  it('keeps a document the thread holds once, as the attachment, when a later message attached it', async () => {
+    const files = createFilesFake();
+    const once = await write(files, createDriveReaderFake(at()));
+    const reply = message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true });
+    const attached = {
+      ...seed,
+      conversations: { [CONV]: [message(), reply] },
+      attachments: { m2: [{ id: 'att1', name: 'Rapport.docx', contentType: 'application/vnd', size: 4096, isInline: false }] },
+    };
+    await write(files, createDriveReaderFake({ ...at(), bytes: { '01ABC': new TextEncoder().encode('bytes att1') } }), once?.record, { mail: attached });
+
+    expect(files.written.get(CARD)).toContain('the same file');
+  });
 });
