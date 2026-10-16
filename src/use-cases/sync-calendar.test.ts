@@ -759,7 +759,30 @@ describe('an attachment that fails on an event written again', () => {
     const fourth = await failing(Object.fromEntries(third.files.written));
 
     expect(third.notes.gaveUp).toEqual([{ path: 'Offsite planning/Venues.xlsx', reason: `cannot write ${VENUES}` }]);
+    expect(third.notes.failed).toStrictEqual([]);
     expect(fourth.summary).toMatchObject({ converted: 0, failed: 0 });
+  });
+
+  // The name the list would give is out of reach, so a kept file is linked by its own name, and only
+  // from the folder the note links into: a file kept in another folder is still kept, unlinked.
+  it('whose attachments cannot be listed links each earlier file of its own folder by name, and keeps a file of another folder unlinked', async () => {
+    const elsewhere = `${ROOT}/2026-09-01/Offsite planning.attachments/Seating.docx.md`;
+    const record = { file: NOTE, lastModified: '2026-09-01T07:00:00Z', subject: 'Offsite planning', outputs: [NOTE, VENUES, elsewhere] };
+    const texts = { ...held, [STATE_PATH]: serializeCalendarState(withEvent(emptyCalendarState(), 'a', record)), [elsewhere]: 'the seating plan' };
+    const done = await run({ reader: { events: { a: edited, b: STANDUP }, failListing: ['a'] }, files: { texts } });
+    const note = done.files.written.get(NOTE) ?? '';
+
+    expect(note).toContain('- [Venues.xlsx](<Offsite planning.attachments/Venues.xlsx.md>)');
+    expect(note).not.toContain('Seating');
+    expect(stateOf(done.files).events['a']?.outputs).toEqual([NOTE, VENUES, elsewhere]);
+  });
+
+  it('a new event whose attachments cannot be listed records its note alone, and owes them to the next run', async () => {
+    const done = await run({ reader: { events: { a: OFFSITE, b: STANDUP }, failListing: ['a'] } });
+    const stored = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').events.a;
+
+    expect(stored.outputs).toStrictEqual([`${ROOT}/2026-09-12/Offsite planning.md`]);
+    expect(stored.owed).toBe(true);
   });
 
   it('whose attachments cannot be listed keeps every earlier attachment file, and is written again on the next run', async () => {
