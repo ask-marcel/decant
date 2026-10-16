@@ -126,6 +126,24 @@ describe('syncing the lists of a SharePoint site', () => {
     expect(stateOf(done.files).lastRun).toBe('2026-09-12T14:00:00Z');
   });
 
+  // The name is the file and the heading of the table, so a rename alone is a change to it.
+  it('a list renamed alone, its rows and columns the same, is written under its new name and the old table put aside', async () => {
+    const state = withList(
+      withList(emptyListsState(SITE.id, SITE.name), 'projects', {
+        file: `${ROOT}/Old name.md`,
+        fingerprint: listFingerprint(['Title', 'ProjectStatus'], ROWS.projects),
+        name: 'Old name',
+      }),
+      'issues',
+      { file: `${ROOT}/Issues.md`, fingerprint: listFingerprint(['Title'], ROWS.issues), name: 'Issues' }
+    );
+    const done = await run({ files: { texts: { [STATE_PATH]: serializeListsState(state), [`${ROOT}/Old name.md`]: 'the old table' } } });
+
+    expect(done.summary).toMatchObject({ converted: 1 });
+    expect(done.files.written.get(`${ROOT}/Projects.md`)).toContain('# Projects');
+    expect(done.files.moves).toEqual([{ from: `${ROOT}/Old name.md`, to: 'kb/_archive/2026-09-12/SharePoint lists/Espace Contoso/Old name.md' }]);
+  });
+
   it('a list renamed is written under the new name with the old table put aside, and a list gone from the site is put aside and named in the report', async () => {
     const state = withList(withList(emptyListsState(SITE.id, SITE.name), 'projects', { file: `${ROOT}/Old name.md`, fingerprint: 'stale', name: 'Old name' }), 'gone', {
       file: `${ROOT}/Retired.md`,
