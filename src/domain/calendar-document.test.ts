@@ -111,6 +111,7 @@ describe('writing one calendar event as a document', () => {
 
     expect(written).toContain('# Offsite planning\n\nBring the figures.\n');
     expect(written).not.toContain('Passcode');
+    expect(written).not.toContain('Online meeting:');
     expect(written).toContain('online_meeting: https://teams.microsoft.com/l/meetup-join/abc');
   });
 
