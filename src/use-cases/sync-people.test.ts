@@ -181,6 +181,24 @@ describe('syncing the people directory', () => {
     expect(edited.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to [Dana Farrow](<Dana Farrow.md>)');
   });
 
+  // The org chart is drawn from the profiles that read, so a run that wrote a page while a manager's
+  // profile would not read drew it without them. No page changes when the profile reads again.
+  it('an org chart drawn while a manager could not be read is drawn again with them once their profile reads', async () => {
+    const teams = { dana: ['NORTHWIND EMPLOYEES', 'Leadership'], jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
+    const state = withPerson(
+      withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: fingerprintOf('dana', [DANA, JANE], teams) }),
+      'jane',
+      { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [DANA, JANE], teams) }
+    );
+    const promoted = { ...PROFILES, jane: { ...JANE, title: 'COO' } };
+    const edited = await run({ reader: { failProfiles: ['dana'], profiles: promoted }, files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
+    const healed = await run({ reader: { profiles: promoted }, files: { texts: Object.fromEntries(edited.files.written) } });
+
+    expect(edited.files.written.get(`${ROOT}/_org-chart.md`)).not.toContain('Dana Farrow');
+    expect(healed.files.writeLog.filter((path) => path.endsWith('Jane Doe.md'))).toStrictEqual([]);
+    expect(healed.files.written.get(`${ROOT}/_org-chart.md`)).toContain('- [Dana Farrow](<Dana Farrow.md>), CEO\n  - [Jane Doe](<Jane Doe.md>), COO');
+  });
+
   it('a run where nobody changed writes nothing but its own state file', async () => {
     const teams = { dana: ['NORTHWIND EMPLOYEES', 'Leadership'], jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
     const state = withPerson(
