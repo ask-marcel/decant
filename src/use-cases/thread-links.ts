@@ -2,7 +2,7 @@ import { relative as pathBetween } from 'node:path/posix';
 import { withoutFrontMatter } from '../domain/front-matter.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
 import { renderLinkCard } from '../domain/link-card.ts';
-import { namesHeldIn } from '../domain/mail-state.ts';
+import { namesHeldIn, underName } from '../domain/mail-state.ts';
 import type { LinkedRecord } from '../domain/mail-state.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import type { ReportEntry } from '../domain/report.ts';
@@ -244,12 +244,13 @@ const followMessage = async (deps: LinkDeps, following: Following, part: ThreadP
 // pulled at, and its files.
 type HeldDocument = { readonly name: string; readonly version: string; readonly record: LinkedRecord };
 
-// The name a file of the linked folder belongs to: its own, or the longest name it opens with a dot
-// after, as the text, the rendering and the pictures of a document do. Another document can have a
-// name that opens the same way, so the longest one wins.
+// The name a file of the linked folder belongs to: the file of that name, what sits beside it under the
+// name (its card, its pictures, a deck's PDF), and what an archive or a saved mail of that name
+// unpacked into a folder named for it. Another document can have a name that opens the same way, so
+// the longest one wins.
 const ownerOf = (folder: string, names: ReadonlyArray<string>, path: string): string | undefined =>
   names
-    .filter((name) => path === `${folder}/${name}` || path.startsWith(`${folder}/${name}.`))
+    .filter((name) => underName(path, `${folder}/${name}`))
     .reduce<string | undefined>((longest, name) => (longest === undefined || name.length > longest.length ? name : longest), undefined);
 
 // The documents a thread written again can keep as its last write left them: one it pulled, at a
