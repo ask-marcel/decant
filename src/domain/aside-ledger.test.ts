@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { causeOf, digestOf, parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unreadableNote, unstuck } from './aside-ledger.ts';
+import { causeOf, digestOf, parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unstuck } from './aside-ledger.ts';
 
 const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md';
 const TASK = 'kb/To Do/Tasks/2026-09-01/Book the venue.md';
@@ -48,15 +48,10 @@ describe('keeping the files that would not move under the archive', () => {
     const notLedgers = ['nope', [NOTE], null, [valid]];
     const badEntries = ['stuck', null, { cause: 42, since: valid.since }, { cause: valid.cause, since: 20261015 }, { ...valid, digest: 42 }];
 
-    expect(notLedgers.map((raw) => parseAsideLedger(raw))).toEqual(notLedgers.map(() => ({ ok: false, error: 'not a ledger' })));
-    expect(badEntries.map((entry) => parseAsideLedger({ [NOTE]: valid, [TASK]: entry }))).toEqual(badEntries.map(() => ({ ok: false, error: 'an entry is not one' })));
-  });
-
-  it('a ledger that does not read is named in the report in place of its files, with why', () => {
-    expect(unreadableNote('invalid-json')).toEqual({
-      path: '.sync-aside.json',
-      reason: 'could not be read (invalid-json): no run moves the files it lists, or adds to it, until it is repaired or deleted',
-    });
+    expect(notLedgers.map((raw) => parseAsideLedger(raw))).toEqual(notLedgers.map(() => ({ ok: false, error: { kind: 'malformed', message: 'not a ledger' } })));
+    expect(badEntries.map((entry) => parseAsideLedger({ [NOTE]: valid, [TASK]: entry }))).toEqual(
+      badEntries.map(() => ({ ok: false, error: { kind: 'malformed', message: 'an entry is not one' } }))
+    );
   });
 
   it('the report names each file as the knowledge base does, with why it would not move and since when', () => {

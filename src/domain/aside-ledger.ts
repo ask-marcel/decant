@@ -23,20 +23,16 @@ const isEntry = (raw: unknown): raw is Omit<StuckFile, 'path'> =>
 
 const withDigest = (digest: string | undefined): { readonly digest?: string } => (digest === undefined ? {} : { digest });
 
+export type AsideLedgerError = { readonly kind: 'malformed'; readonly message: string };
+
 // Whole or not at all: no source records these files any more, so a ledger read in part would let the
 // rest go for good. The caller keeps one that does not read as it is.
-export const parseAsideLedger = (raw: unknown): Result<AsideLedger, string> => {
-  if (!isRecord(raw)) return err('not a ledger');
+export const parseAsideLedger = (raw: unknown): Result<AsideLedger, AsideLedgerError> => {
+  if (!isRecord(raw)) return err({ kind: 'malformed', message: 'not a ledger' });
   const entries = Object.entries(raw);
   const stuck = entries.flatMap(([path, entry]) => (isEntry(entry) ? [{ path, cause: entry.cause, since: entry.since, ...withDigest(entry.digest) }] : []));
-  return stuck.length === entries.length ? ok(Object.fromEntries(stuck.map((entry) => [entry.path, entry]))) : err('an entry is not one');
+  return stuck.length === entries.length ? ok(Object.fromEntries(stuck.map((entry) => [entry.path, entry]))) : err({ kind: 'malformed', message: 'an entry is not one' });
 };
-
-// What the report names in place of the files when the ledger does not read.
-export const unreadableNote = (cause: string): ReportEntry => ({
-  path: ASIDE_LEDGER_NAME,
-  reason: `could not be read (${cause}): no run moves the files it lists, or adds to it, until it is repaired or deleted`,
-});
 
 // In the order of the paths, so the file changes only when the files in it do.
 export const serializeAsideLedger = (ledger: AsideLedger): string => {

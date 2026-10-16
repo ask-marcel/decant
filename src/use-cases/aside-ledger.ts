@@ -1,10 +1,10 @@
-import { ASIDE_LEDGER_NAME, causeOf, digestOf, parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unreadableNote, unstuck } from '../domain/aside-ledger.ts';
+import { ASIDE_LEDGER_NAME, causeOf, digestOf, parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unstuck } from '../domain/aside-ledger.ts';
 import type { AsideLedger, StuckFile } from '../domain/aside-ledger.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Result } from '../domain/result.ts';
-import { err, ok } from '../domain/result.ts';
+import { ok } from '../domain/result.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import { setAside } from './put-aside.ts';
@@ -15,7 +15,11 @@ export type AsideLedgerDeps = { readonly clock: Clock; readonly kbRoot: string; 
 
 export type RetryAside = () => Promise<void>;
 
-export type StuckFiles = () => Promise<ReadonlyArray<ReportEntry>>;
+// The files the ledger holds that are still on disk, and why the ledger would not read, when it would
+// not: then the files are only those this run let go.
+export type StuckReport = { readonly files: ReadonlyArray<ReportEntry>; readonly unreadable?: string };
+
+export type StuckFiles = () => Promise<StuckReport>;
 
 // What a run gets from the ledger: the files it writes through, which keep the ledger in step with
 // what lands on disk, where its sources write down the files they let go that would not move under the
@@ -24,12 +28,13 @@ export type AsideLedgerRun = { readonly files: Files; readonly writeDown: WriteD
 
 const ledgerPath = (kbRoot: string): string => `${kbRoot}/${ASIDE_LEDGER_NAME}`;
 
-// No ledger yet is an empty one. One that does not read answers with why.
-const readLedger = async (files: Files, kbRoot: string): Promise<Result<AsideLedger, string>> => {
+// No ledger yet is an empty one. One that does not read answers with why: the disk would not read it,
+// it is not JSON, or it is not a ledger.
+const readLedger = async (files: Files, kbRoot: string): Promise<Result<AsideLedger, { readonly kind: string }>> => {
   const text = await files.readText(ledgerPath(kbRoot));
-  if (!text.ok) return text.error.kind === 'not-found' ? ok({}) : err(text.error.kind);
+  if (!text.ok) return text.error.kind === 'not-found' ? ok({}) : text;
   const parsed = parseJson(text.value);
-  return parsed.ok ? parseAsideLedger(parsed.value) : err(parsed.error.kind);
+  return parsed.ok ? parseAsideLedger(parsed.value) : parsed;
 };
 
 // A ledger that will not save costs the record of the moves owed, not the run.
@@ -69,7 +74,8 @@ const onDisk = async <T extends { readonly path: string }>(files: Files, entries
 // the move is still owed. It is read once, on first need, and every change after is made to the copy
 // in hand and then saved, one save at a time: a window converts several items at once, and two of
 // them can let a file go together. A ledger that does not read is logged and kept as it is, never
-// written over, since what it lists is named nowhere else; the report of the run says so.
+// written over, since what it lists is named nowhere else. The run still keeps what it lets go in
+// hand, so the report of the run names those files, and says why the ledger would not read.
 export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLedgerRun => {
   let held: AsideLedger = {};
   let unreadable: string | undefined;
@@ -79,17 +85,17 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
     reading ??= readLedger(files, deps.kbRoot).then((read) => {
       if (read.ok) held = read.value;
       else {
-        unreadable = read.error;
-        deps.logger.warn('aside-ledger.unreadable', { cause: read.error });
+        unreadable = read.error.kind;
+        deps.logger.warn('aside-ledger.unreadable', { cause: read.error.kind });
       }
     });
     await reading;
   };
   const change = async (edit: (ledger: AsideLedger) => AsideLedger): Promise<void> => {
     await loaded();
-    if (unreadable !== undefined) return;
     const next = edit(held);
     held = next;
+    if (unreadable !== undefined) return;
     saving = saving.then(async () => writeLedger(files, deps, next));
     await saving;
   };
@@ -159,12 +165,12 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
     });
   };
 
-  // What the report of the run names: each file the ledger holds that is still on disk, or the ledger
-  // itself when it does not read.
+  // What the report of the run names: each file the ledger holds that is still on disk, and why the
+  // ledger would not read, when it would not.
   const stuck: StuckFiles = async () => {
     await loaded();
-    if (unreadable !== undefined) return [unreadableNote(unreadable)];
-    return stuckNotes(await onDisk<StuckFile>(files, Object.values(held)), deps.kbRoot, deps.timezone);
+    const named = stuckNotes(await onDisk<StuckFile>(files, Object.values(held)), deps.kbRoot, deps.timezone);
+    return unreadable === undefined ? { files: named } : { files: named, unreadable };
   };
 
   return { files: through, writeDown, retry, stuck };
