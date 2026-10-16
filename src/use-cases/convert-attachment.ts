@@ -16,7 +16,8 @@ import { renderZipManifest } from '../domain/zip-manifest.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { SkipReason } from '../domain/report.ts';
-import type { ArchiveEntries, ArchiveEntry } from './ports/drive-reader.ts';
+import { cutArchiveReason } from '../domain/report.ts';
+import type { ArchiveEntries } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import type { MailAttachment, MailReaderError, ThreadReader } from './ports/mail-reader.ts';
 import type { Logger } from './ports/logger.ts';
@@ -61,7 +62,15 @@ export type AttachmentOutcome =
   // `media` names the pictures taken out of a document, which are outputs like any other but are not
   // files the message carried: the document's own markdown links them, so a thread naming them again
   // would put twelve lines in its head for one Word file.
-  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly primary: string; readonly media: ReadonlyArray<string>; readonly text?: string }
+  // `leftOut` says what the library left in an archive it read in part.
+  | {
+      readonly kind: 'converted';
+      readonly outputs: ReadonlyArray<string>;
+      readonly primary: string;
+      readonly media: ReadonlyArray<string>;
+      readonly text?: string;
+      readonly leftOut?: string;
+    }
   | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
 
@@ -298,7 +307,7 @@ const asArchive = async (context: Context): Promise<AttachmentOutcome> => {
   return writeArchiveEntries(context, folder, archivePath, entries.value);
 };
 
-const writeArchiveEntries = async (context: Context, folder: string, archivePath: string, entries: ReadonlyArray<ArchiveEntry>): Promise<AttachmentOutcome> => {
+const writeArchiveEntries = async (context: Context, folder: string, archivePath: string, entries: ArchiveEntries): Promise<AttachmentOutcome> => {
   const outputs: string[] = [archivePath];
   const placed = placeMembers(folder, context.name, entries, context.deps.pathBudget);
   const files = new Map(placed.map((member) => [member.entry.path, member.file]));
@@ -316,9 +325,10 @@ const writeArchiveEntries = async (context: Context, folder: string, archivePath
   // member on one line with the text read out of it, rather than the same text scattered across
   // forty files that have to be opened one at a time.
   const manifestPath = `${context.input.folder}/${context.name}.md`;
-  const manifest = await context.deps.files.writeText(manifestPath, renderZipManifest(context.name, entries));
+  const manifest = await context.deps.files.writeText(manifestPath, renderZipManifest(context.name, entries, entries.totalEntries));
   if (!manifest.ok) return failure(manifest.error);
-  return { kind: 'converted', outputs: [...outputs, manifestPath], primary: manifestPath, media: [] };
+  const leftOut = entries.totalEntries === undefined ? {} : { leftOut: cutArchiveReason(entries.length, entries.totalEntries) };
+  return { kind: 'converted', outputs: [...outputs, manifestPath], primary: manifestPath, media: [], ...leftOut };
 };
 
 // An invitation is read rather than kept. The library has no iCalendar parser and passes the file
