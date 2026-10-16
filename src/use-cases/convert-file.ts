@@ -8,8 +8,9 @@ import { readMime } from '../domain/mime.ts';
 import { byteString } from '../domain/mime-text.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_SLIDES_NOTE, NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
-import { fitSegment, memberFile, safeRelPath, safeSegment } from '../domain/kb-path.ts';
+import { fitSegment, safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import type { SkipReason } from '../domain/report.ts';
+import { linkMembers, placeMembers } from '../domain/archive-members.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
@@ -315,12 +316,13 @@ const writeArchiveEntries = async (
   entries: ReadonlyArray<{ readonly path: string; readonly text?: string; readonly note?: string }>
 ): Promise<ConvertOutcome> => {
   const outputs: string[] = [archivePath];
-  for (const entry of entries) {
-    const file = memberFile(folder, entry.path, context.deps.pathBudget);
+  const placed = placeMembers(folder, context.name, entries, context.deps.pathBudget);
+  const files = new Map(placed.map((member) => [member.entry.path, member.file]));
+  for (const { entry, file } of placed) {
     const stamp = { ...context.stamp, zipEntry: entry.path };
     // A page someone saved out of Outlook and zipped keeps each link Outlook wrapped, and the wrapper
-    // comes off as it does in mail.
-    const written = await context.deps.files.writeText(file, kbDocument(stamp, unwrapSafelinks(entry.text ?? entry.note ?? NO_TEXT_NOTE)));
+    // comes off as it does in mail. A link to another member leads to the file written for it.
+    const written = await context.deps.files.writeText(file, kbDocument(stamp, linkMembers(unwrapSafelinks(entry.text ?? entry.note ?? NO_TEXT_NOTE), entry.path, files)));
     if (!written.ok) return failure(written.error);
     outputs.push(file);
   }

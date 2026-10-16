@@ -6,11 +6,12 @@ import { shortcutLink } from '../domain/internet-shortcut.ts';
 import type { MimePart } from '../domain/mime.ts';
 import { readMime } from '../domain/mime.ts';
 import { byteString } from '../domain/mime-text.ts';
+import { linkMembers, placeMembers } from '../domain/archive-members.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
 import type { CarriedPart } from '../domain/saved-mail.ts';
 import { savedMailBody } from '../domain/saved-mail.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
-import { memberFile, safeSegment } from '../domain/kb-path.ts';
+import { safeSegment } from '../domain/kb-path.ts';
 import { renderZipManifest } from '../domain/zip-manifest.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
@@ -299,14 +300,15 @@ const asArchive = async (context: Context): Promise<AttachmentOutcome> => {
 
 const writeArchiveEntries = async (context: Context, folder: string, archivePath: string, entries: ReadonlyArray<ArchiveEntry>): Promise<AttachmentOutcome> => {
   const outputs: string[] = [archivePath];
-  for (const entry of entries) {
-    const path = memberFile(folder, entry.path, context.deps.pathBudget);
+  const placed = placeMembers(folder, context.name, entries, context.deps.pathBudget);
+  const files = new Map(placed.map((member) => [member.entry.path, member.file]));
+  for (const { entry, file } of placed) {
     const stamp = { ...context.input.stamp, zipEntry: entry.path };
     // A page someone saved out of Outlook and zipped keeps each link Outlook wrapped, and the wrapper
-    // comes off as it does in the mail itself.
-    const written = await context.deps.files.writeText(path, kbDocument(stamp, unwrapSafelinks(entry.text ?? entry.note ?? NO_TEXT_NOTE)));
+    // comes off as it does in the mail itself. A link to another member leads to the file written for it.
+    const written = await context.deps.files.writeText(file, kbDocument(stamp, linkMembers(unwrapSafelinks(entry.text ?? entry.note ?? NO_TEXT_NOTE), entry.path, files)));
     if (!written.ok) return failure(written.error);
-    outputs.push(path);
+    outputs.push(file);
   }
   // The manifest, and what a reader is sent to. An archive's `primary` used to be the archive
   // itself, so a thread linked its reader at a binary; this is the document that says what is

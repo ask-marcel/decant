@@ -511,6 +511,19 @@ describe('converting one document out of a library', () => {
     expect(files.written.get('kb/Espace Contoso/Documents/Livraison/sous-dossier/deck.pptx.md')).toContain('## Slide 1');
   });
 
+  // A report saved as web pages and zipped as its folder: the folder only repeats the archive's name,
+  // and each page links to the others by their own names.
+  it('an archive of one folder named for it unpacks without that folder, and its pages link to each other', async () => {
+    const entries = [
+      { path: 'Livraison/index.html', text: 'See [Week 2](pages/week2.html).' },
+      { path: 'Livraison/pages/week2.html', text: 'Back to [the summary](../index.html).' },
+    ];
+    const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: entries } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/index.html.md')).toContain('See [Week 2](pages/week2.html.md).');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/pages/week2.html.md')).toContain('Back to [the summary](../index.html.md).');
+  });
+
   it('a file inside an archive records where it sat in the archive', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
