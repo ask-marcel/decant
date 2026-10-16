@@ -43,11 +43,17 @@ const decodeNumeric = (_match: string, code: string): string => characterOf(code
 const decodeEntities = (text: string): string => text.replace(NUMERIC, decodeNumeric).replace(NAMED, (match, name: string) => ENTITIES[name.toLowerCase()] ?? match);
 
 // A picture reads as a link to itself, named by its alt text when it has one: the bytes are not
-// here, and a bare `[image]` says less than where it was.
+// here, and a bare `[image]` says less than where it was. A picture the body carried itself is named
+// by a `cid:` reference into a mail no reader has, so it reads as text naming it, the way a mail
+// writes one: by its alt text, or by the name before the `@` of its reference.
+const CID = /^cid:([^@]*)/i;
+
 const imageLink = (whole: string, attributes: string): string => {
   const src = SRC.exec(attributes)?.[1];
   if (src === undefined) return whole;
   const alt = ALT.exec(attributes)?.[1] ?? '';
+  const carried = CID.exec(src)?.[1];
+  if (carried !== undefined) return `\\[inline image: ${alt.length > 0 ? alt : carried}\\]`;
   return `[${alt.length > 0 ? alt : 'image'}](${src})`;
 };
 
