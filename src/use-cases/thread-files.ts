@@ -124,7 +124,8 @@ const INLINE_FOLDER = '_inline';
 
 // A record written before pictures carried their reading has nothing to put in a body, so it is
 // treated as though the picture had never been stored: converting it again is cheap and self-
-// healing, where showing it wordlessly would be a silent loss no run ever repaired.
+// healing, where showing it wordlessly would be a silent loss no run ever repaired. So is a record of
+// a picture whose reading failed. A picture with no words carries an empty reading, and is stored.
 const withText = (record: AttachmentRecord | undefined): AttachmentRecord | undefined => (record?.text === undefined ? undefined : record);
 
 // The first name for a file that no file of this thread holds and no file before it in this write took.
@@ -218,6 +219,11 @@ type Fresh = {
   readonly rendered: string | undefined;
 };
 
+// The name a picture holds in the shared folder, when the store keeps it there. The same bytes kept
+// as a file of a thread hold a name that is free only in that thread's folder.
+const sharedNameOf = (place: FilePlace, record: AttachmentRecord | undefined): string | undefined =>
+  record?.primary.startsWith(`${place.mailboxRoot}/${INLINE_FOLDER}/`) === true ? record.name : undefined;
+
 // Converted once, then recorded in the store it belongs to: the mailbox's for a picture, the
 // thread's for anything else.
 const convertFresh = async (deps: FileDeps, place: FilePlace, into: Record<string, AttachmentRecord>, fresh: Fresh): Promise<Placed> => {
@@ -225,8 +231,10 @@ const convertFresh = async (deps: FileDeps, place: FilePlace, into: Record<strin
   const folder = inline ? `${place.mailboxRoot}/${INLINE_FOLDER}` : `${place.here}/${ATTACHMENTS_FOLDER}`;
   // A shared folder needs names that cannot collide across every thread that writes into it, which
   // is what the content address gives. Inside one thread only a same-name-different-content pair
-  // needs separating, and a number says that more plainly than ten hex.
-  const storedAs = inline ? disambiguateSegment(attachment.name, hash) : asName;
+  // needs separating, and a number says that more plainly than ten hex. A picture stored with no
+  // reading is read again under the name it was stored under, so the store keeps one copy of it
+  // whatever name it comes by.
+  const storedAs = inline ? (sharedNameOf(place, into[hash]) ?? disambiguateSegment(attachment.name, hash)) : asName;
   const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: place.maxBytes, asName: storedAs, rendered, textOnly: inline });
   if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, place.maxBytes, attachment.name) } };
   if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: attachment.name, reason: outcome.reason } };

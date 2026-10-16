@@ -17,6 +17,7 @@ import {
   run,
   storedName,
 } from '../test-helpers/thread-harness.ts';
+import type { RenderThreadOutcome } from './render-thread.ts';
 
 // The words the vault uses to say a block was read off a picture rather than typed by a person.
 // Pinned here because saying it in words is the point: a `>` block alone reads as quoted mail.
@@ -358,6 +359,52 @@ describe('writing one conversation as one file', () => {
 
     expect(files.binary.has(SIGNATURE)).toBe(true);
     expect(files.written.get(THREAD_FILE)).toContain('> Nina Alder');
+  });
+
+  // A picture read with no words, too small to be read, or met while OCR is off is as stored as one
+  // with words: taken for new, it was fetched and written again by each thread that showed it, under
+  // each name it came by, and a mailbox held one copy of a logo per name.
+  const renamed = [{ id: 'sig', name: 'image001.png', contentType: 'image/png', size: 64 * 1024, isInline: true, contentId: 'image001.png@01DC1234' }];
+  const showingRenamed = { ...showing, bodies: { m1: '\\[inline image: image001.png\\]' }, attachments: { m1: renamed } };
+  const storeOf = (outcome: RenderThreadOutcome | undefined): Record<string, AttachmentRecord> => (outcome?.kind === 'rendered' ? { ...outcome.thread.attachments } : {});
+
+  it('a picture nothing could be read out of is stored as read, so a later thread shows it without fetching it again', async () => {
+    const first = await run({ reader: showing });
+    const again = await run({ reader: showingRenamed, attachments: storeOf(first.outcome) });
+
+    expect(Object.values(storeOf(first.outcome)).map((record) => record.text)).toStrictEqual(['']);
+    expect(again.files.binary.size).toBe(0);
+    expect(again.files.written.get(THREAD_FILE)).toContain('![image001.png](../../_inline/logo-3d8c205c.png)');
+  });
+
+  it('a picture too small to be read, or met while OCR cannot run, is stored as read; one whose reading failed is read again later', async () => {
+    const small = [{ id: 'sig', name: 'image001.png', contentType: 'image/png', size: 2 * 1024, isInline: true, contentId: 'image001.png@01DC1234' }];
+    const tiny = await run({ reader: { ...showingRenamed, attachments: { m1: small } } });
+    const off = await run({ reader: showing, ocr: { failWith: { kind: 'unavailable', message: 'ocr disabled' } } });
+    const failed = await run({ reader: showing, ocr: { failWith: { kind: 'failed', message: 'the model stopped' } } });
+
+    expect(Object.values(storeOf(tiny.outcome)).map((record) => record.text)).toStrictEqual(['']);
+    expect(Object.values(storeOf(off.outcome)).map((record) => record.text)).toStrictEqual(['']);
+    expect(Object.values(storeOf(failed.outcome)).map((record) => record.text)).toStrictEqual([undefined]);
+  });
+
+  // Read again once, under the name it was stored under, so the store holds one copy however many
+  // names the picture comes by.
+  it('a picture stored before the words were kept is read again under the name it was stored under', async () => {
+    const { files } = await run({ reader: showingRenamed, attachments: storedPicture(), ocr: { texts: { [SIGNATURE]: 'Nina Alder' } } });
+
+    expect([...files.binary.keys()]).toStrictEqual([SIGNATURE]);
+    expect(files.written.get(THREAD_FILE)).toContain('![image001.png](../../_inline/logo-3d8c205c.png)');
+  });
+
+  // A name in a thread's own folder is free only there: the shared folder keeps the content address in
+  // each name, so two pictures of one name never meet.
+  it('a picture whose bytes another thread holds as a file is stored in the shared folder under a name of its own', async () => {
+    const other = 'kb/Mailbox/threads/2026-05-01-other/_attachments';
+    const held = { [contentHash(bytesOf('sig'))]: { name: 'logo.png', paths: [`${other}/logo.png`, `${other}/logo.png.md`], primary: `${other}/logo.png.md`, media: [] } };
+    const { files } = await run({ reader: showing, attachments: held });
+
+    expect([...files.binary.keys()]).toStrictEqual([SIGNATURE]);
   });
 
   // No placeholder in the text answered for it, so nothing shows it. It is still a picture, so it

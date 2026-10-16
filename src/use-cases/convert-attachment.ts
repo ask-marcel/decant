@@ -127,7 +127,11 @@ const asSlides = async (context: Context): Promise<AttachmentOutcome> => {
   return written.ok ? converted_(written.value, [pdfPath]) : failure(written.error);
 };
 
-const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promise<{ readonly text: string; readonly stamp: DocumentStamp }>): Promise<AttachmentOutcome> => {
+// What a conversion that keeps the file itself reads out of it: the text for its document, the stamp,
+// and for a picture what a thread shows under it when no document is written.
+type Rendering = { readonly text: string; readonly stamp: DocumentStamp; readonly shown?: string };
+
+const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promise<Rendering>): Promise<AttachmentOutcome> => {
   const raw = await context.deps.reader.attachmentBytes(context.input.messageId, context.input.attachment.id);
   if (!raw.ok) return failure(raw.error);
   const rawPath = `${context.input.folder}/${context.name}`;
@@ -140,7 +144,7 @@ const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promi
   // a picture in a thread it is worse than silence: it tells a reader to open a file beside a note
   // that no longer exists, once per picture, down a thread of signatures nobody could read.
   if (context.input.textOnly === true) {
-    const read = rendered.text === NO_TEXT_NOTE ? undefined : rendered.text;
+    const read = rendered.shown ?? (rendered.text === NO_TEXT_NOTE ? undefined : rendered.text);
     return { kind: 'converted', outputs: [rawPath], primary: rawPath, media: [], text: read };
   }
   const written = await writeMarkdown(context, rendered.stamp, rendered.text);
@@ -167,12 +171,25 @@ const asPdf = async (context: Context): Promise<AttachmentOutcome> =>
 // document a photo becomes and the reading shown under a picture, and they must agree.
 const wordsIn = (read: Awaited<ReturnType<Ocr['read']>> | undefined): string | undefined => (read?.ok === true && read.value.text.trim().length > 0 ? read.value.text : undefined);
 
+// What a picture shown in a body puts under it, which is also whether it counts as read: its words,
+// or none when it holds none, is too small to hold any, or OCR cannot run here. A reading that failed
+// gives nothing at all, so a later run reads the picture again. Counted as read, a picture is stored
+// once for the mailbox; taken for new, it was written again by each thread that showed it.
+const shownOf = (read: Awaited<ReturnType<Ocr['read']>> | undefined): string | undefined => {
+  if (read === undefined || read.ok) return wordsIn(read) ?? '';
+  return read.error.kind === 'unavailable' ? '' : undefined;
+};
+
 const asImage = async (context: Context): Promise<AttachmentOutcome> =>
   rawAndMarkdown(context, async (rawPath) => {
     // Not asked at all below the threshold: a logo is not worth a pass, and what comes back from
     // one reads as text somebody wrote rather than as the two letters OCR could make out.
     const read = worthReading(context.input.attachment.size) ? await context.deps.ocr.read(rawPath) : undefined;
-    return { text: wordsIn(read) ?? NO_TEXT_NOTE, stamp: { ...context.input.stamp, image: `./${context.name}`, ocr: read?.ok === true ? read.value.label : undefined } };
+    return {
+      text: wordsIn(read) ?? NO_TEXT_NOTE,
+      stamp: { ...context.input.stamp, image: `./${context.name}`, ocr: read?.ok === true ? read.value.label : undefined },
+      shown: shownOf(read),
+    };
   });
 
 // A workbook is read for its cell text and kept as it came, because the reading is all the markdown
