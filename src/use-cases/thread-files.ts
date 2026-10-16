@@ -70,6 +70,9 @@ export type MessageFile = {
   readonly note?: string;
   // A file the thread held that this write could not read: its card and its files stay as they were.
   readonly kept?: boolean;
+  // The content address of what arrived, when it arrived: what tells a linked document that is this
+  // same file.
+  readonly hash?: string;
 };
 
 type Media = ReadonlyArray<string>;
@@ -103,6 +106,7 @@ type Placed = {
   readonly kept?: boolean;
   // What the card says of a file that is neither left out nor failed, a share link.
   readonly note?: string;
+  readonly hash?: string;
 };
 
 // A share link a message carried, a reference to Graph: it holds no bytes, and its size is the size of
@@ -212,7 +216,7 @@ const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placin
   // names however it is stored, so what follows it is numbered the same whether or not it was.
   if (seen !== undefined) {
     if (inline) reserve(placing, nameOf(place, placing, typed));
-    return { asName: seen.name, paths: seen.paths, primary: seen.primary, picture: inline ? seen.primary : undefined, text: seen.text, media: seen.media };
+    return { asName: seen.name, paths: seen.paths, primary: seen.primary, picture: inline ? seen.primary : undefined, text: seen.text, media: seen.media, hash };
   }
   // A content new to the thread is named by what it is. A name the thread gave it before stays.
   const named = withName(typed, address.value.name);
@@ -229,7 +233,7 @@ const convertPicture = async (deps: FileDeps, place: FilePlace, placing: Placing
   const done = pending === undefined ? undefined : await pending;
   if (done !== undefined) {
     placing.shared[fresh.hash] = done;
-    return { asName: done.name, paths: done.paths, primary: done.primary, picture: done.primary, text: done.text, media: done.media };
+    return { asName: done.name, paths: done.paths, primary: done.primary, picture: done.primary, text: done.text, media: done.media, hash: fresh.hash };
   }
   const converting = convertFresh(deps, place, placing.shared, fresh);
   // A conversion that throws is a bug, which reaches the caller of this thread; the threads waiting on
@@ -291,7 +295,7 @@ const convertFresh = async (deps: FileDeps, place: FilePlace, into: Record<strin
   if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: sentAs, reason: skipReason(outcome.reason, place.maxBytes, attachment.name) } };
   if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: sentAs, reason: outcome.reason } };
   into[hash] = { name: storedAs, paths: outcome.outputs, primary: outcome.primary, media: outcome.media, text: outcome.text };
-  return { asName: storedAs, paths: outcome.outputs, primary: outcome.primary, picture: inline ? outcome.primary : undefined, text: outcome.text, media: outcome.media };
+  return { asName: storedAs, paths: outcome.outputs, primary: outcome.primary, picture: inline ? outcome.primary : undefined, text: outcome.text, media: outcome.media, hash };
 };
 
 // Each path once, in the order first met.
@@ -308,6 +312,7 @@ const messageFileOf = (attachment: MailAttachment, placed: Placed): MessageFile 
   text: placed.text,
   note: placed.skipped?.reason ?? placed.failed?.reason ?? placed.note,
   kept: placed.kept,
+  hash: placed.hash,
 });
 
 // The files this thread already holds, as the run that wrote it last recorded them. A thread written
