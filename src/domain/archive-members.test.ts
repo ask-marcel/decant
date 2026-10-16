@@ -89,5 +89,7 @@ describe('a link from one member of an archive to another', () => {
     expect(linkMembers('[Home](index.html)', 'unknown.html', files)).toBe('[Home](index.html)');
     // A root path names the root of a site, which need not be the root of the archive.
     expect(linkMembers('[Root](/logo.png)', 'index.html', files)).toBe('[Root](/logo.png)');
+    // Dot segments after a host would take away the scheme and the host of a path.
+    expect(linkMembers('[Site](https://contoso.example/../../index.html)', 'index.html', files)).toBe('[Site](https://contoso.example/../../index.html)');
   });
 });

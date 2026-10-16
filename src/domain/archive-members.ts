@@ -21,6 +21,9 @@ const OPENING = /(?<![!\\])\[((?:[^[\]\\!]|\\.|!(?!\[)|!\[[^[\]]*\]\([^()\s[\]]*
 const REST = /(<[^<>\n]*>|(?:[^()\s<>\\]|\\.)*)(\s+"[^"\n]*")?\)/y;
 // A backslash escape, which a destination can hold before a parenthesis.
 const ESCAPE = /\\(.)/g;
+// A destination that names its own scheme leaves the archive: a site, a mail address. Read as a path,
+// the dot segments after its host could take the scheme and the host away.
+const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 
 // `decodeURIComponent` throws on a `%` that starts no escape and on an escape that makes no UTF-8. A
 // pure-domain fallback (rule 17): such a destination is read as it is written, as a browser reads
@@ -34,10 +37,9 @@ const decoded = (path: string): string => {
 };
 
 // The path inside the archive a destination names, read from the folder of the member that links to
-// it. A site, a mail address, an anchor or a path out of the archive names no member, so the lookup
-// finds nothing for it. A root path is left as it is: it names the root of a site, which need not be
-// the root of the archive.
-const memberAt = (from: string, path: string): string => (path.startsWith('/') ? '' : normalize(`${dirname(from)}/${decoded(path)}`));
+// it. An anchor or a path out of the archive names no member, so the lookup finds nothing for it. A
+// root path is left as it is: it names the root of a site, which need not be the root of the archive.
+const memberAt = (from: string, path: string): string => (path.startsWith('/') || SCHEME.test(path) ? '' : normalize(`${dirname(from)}/${decoded(path)}`));
 
 // The path of a destination and its anchor. Its query goes: a file on disk takes none, and
 // `week2.html.md?tab=2` opens nothing.
