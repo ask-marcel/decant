@@ -11,12 +11,18 @@ import { dayIn, timeIn } from './zoned-day.ts';
 
 export type EventAttachmentLink = { readonly name: string; readonly file: string };
 
+// Another note of the calendar, by the words its link reads as and its path from this note's folder.
+export type EventLink = { readonly name: string; readonly file: string };
+
 export type RenderEventInput = {
   readonly event: CalendarEvent;
   // The zone the calendar is read in, which is the zone the meeting was accepted in.
   readonly zone: string;
   readonly attachments: ReadonlyArray<EventAttachmentLink>;
   readonly syncedAt: string;
+  // The note of the series an exception belongs to, and the notes of a series' exceptions.
+  readonly series?: EventLink;
+  readonly exceptions?: ReadonlyArray<EventLink>;
 };
 
 // Graph's answer words, said the way a person says them.
@@ -62,6 +68,14 @@ const fieldsOf = (input: RenderEventInput): ReadonlyArray<FrontMatterField> => [
 
 const attachmentLine = (attachment: EventAttachmentLink): string => `- [${attachment.name}](${linkDestination(attachment.file)})`;
 
+const linkLine = (link: EventLink): string => `- [${link.name}](${linkDestination(link.file)})`;
+
+const section = (heading: string, lines: ReadonlyArray<string>): ReadonlyArray<string> => (lines.length === 0 ? [] : ['', `## ${heading}`, '', ...lines]);
+
+// A series and its exceptions are one meeting: an exception says which series it is part of.
+const seriesLine = (series: EventLink | undefined): ReadonlyArray<string> =>
+  series === undefined ? [] : ['', `Part of the series [${series.name}](${linkDestination(series.file)}).`];
+
 // An event with no subject is headed by its id, the same name its file gets.
 const titleOf = (event: CalendarEvent): string => (event.subject.length > 0 ? event.subject : `event ${event.id}`);
 
@@ -73,8 +87,10 @@ const bodyOf = (input: RenderEventInput): string => {
   const said = withoutJoinBlocks(unwrapSafelinks(htmlToText(input.event.body)), (joinUrl) => (joinUrl === input.event.joinUrl ? '' : joinLine(joinUrl)));
   return [
     `# ${titleOf(input.event)}`,
+    ...seriesLine(input.series),
     ...(said.length === 0 ? [] : ['', said]),
-    ...(input.attachments.length === 0 ? [] : ['', '## Attachments', '', ...input.attachments.map(attachmentLine)]),
+    ...section('Exceptions', (input.exceptions ?? []).map(linkLine)),
+    ...section('Attachments', input.attachments.map(attachmentLine)),
   ].join('\n');
 };
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { renderEventAttachment, renderEventDocument } from './calendar-document.ts';
+import type { RenderEventInput } from './calendar-document.ts';
 import type { CalendarEvent } from './calendar-event.ts';
 import { NO_TEXT_NOTE } from './kb-document.ts';
 
@@ -145,6 +146,40 @@ describe('writing one calendar event as a document', () => {
     const body = '<p>See the <a href="%s">agenda</a></p>'.replace('%s', SAFELINK.replaceAll('&', '&amp;'));
 
     expect(rendered({ ...event, body })).toContain('See the [agenda](https://example.com/agenda)');
+  });
+});
+
+// A series and its exceptions are one meeting: each note says where the others are.
+describe('the notes of a series and of its exceptions', () => {
+  const written = (subject: CalendarEvent, links: Pick<RenderEventInput, 'series' | 'exceptions'>): string =>
+    renderEventDocument({
+      event: subject,
+      zone: 'Asia/Shanghai',
+      attachments: [{ name: 'Venues.xlsx', file: 'Offsite planning.attachments/Venues.xlsx.md' }],
+      syncedAt: '2026-09-11T14:00:00Z',
+      ...links,
+    });
+
+  it('an exception names the series it belongs to, under its title', () => {
+    const note = written({ ...event, kind: 'exception' }, { series: { name: 'Monthly review', file: '../2026-01-05/Monthly review.md' } });
+
+    expect(note).toContain('# Offsite planning\n\nPart of the series [Monthly review](<../2026-01-05/Monthly review.md>).\n');
+  });
+
+  it('a series lists its exceptions, each by a link, before what it carried', () => {
+    const exceptions = [
+      { name: '2026-03-02 Monthly review', file: '../2026-03-02/Monthly review.md' },
+      { name: '2026-06-01 Monthly review', file: '../2026-06-01/Monthly review.md' },
+    ];
+    const note = written({ ...event, kind: 'seriesMaster' }, { exceptions });
+
+    expect(note).toContain(
+      '## Exceptions\n\n- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)\n- [2026-06-01 Monthly review](<../2026-06-01/Monthly review.md>)\n\n## Attachments'
+    );
+  });
+
+  it('a series with no exception has no heading for them', () => {
+    expect(written({ ...event, kind: 'seriesMaster' }, { exceptions: [] })).not.toContain('## Exceptions');
   });
 });
 
