@@ -88,8 +88,6 @@ export type LinkedTally = {
 // every file of its folder. Empty for a thread never written.
 export type LinksHeld = { readonly links?: Readonly<Record<string, string>>; readonly held?: ReadonlyArray<string> };
 
-// A file already pulled for another thread is referenced, not fetched again: the same weekly report
-// linked from thirty mails is one document on disk.
 // Asked only of a message whose text carries one. `extract-sharepoint-links-in-mail` costs a Graph
 // call per message and fetches the message again to scan it, and a full run over this mailbox spent
 // a thousand of those to find thirty-six links. The body is already in hand, so it decides.

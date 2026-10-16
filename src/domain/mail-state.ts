@@ -52,13 +52,14 @@ export type ThreadRecord = {
 // beside the text read out of it), and a record naming one of them could not say what the rest are.
 export type LinkedRecord = { readonly paths: ReadonlyArray<string> };
 
-// One entry per unique attachment content, keyed by its content address (see `content-hash.ts`):
-// the name it was stored under and the files it produced in the shared `_attachments` store. A file
-// sent across many threads is converted once; every thread after the first references what is on
-// disk. `name` is kept so a later run placing a different file of the same name disambiguates it
-// rather than overwriting this one.
+// One entry per attachment content, keyed by its content address (see `content-hash.ts`): the name it
+// was stored under and the files it produced. A file a message carried is stored in its thread's own
+// `_attachments` folder, so a file sent in many threads is written in each, and the entry is the one
+// the last of them wrote; a picture shown in a body is stored once, in the mailbox's `_inline`. `name`
+// is kept so a later run placing a different file of the same name disambiguates it rather than
+// overwriting this one.
 // `primary` is the file to link a reader to out of everything the conversion wrote, so a second
-// thread carrying the same attachment points at the same one without converting it again.
+// message carrying the same attachment points at the same one without converting it again.
 // `media` is the subset of `paths` holding pictures taken out of the document itself. They are files
 // this run wrote, so the record names them, but they are not what the message carried.
 // `text` is set only for a picture shown inside a message body, which is stored once for the whole
