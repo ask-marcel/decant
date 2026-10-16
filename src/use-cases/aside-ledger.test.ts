@@ -237,13 +237,25 @@ describe('keeping the ledger in step with what lands on disk', () => {
 
   it('a write elsewhere, or one that fails, leaves the ledger as it is', async () => {
     const elsewhere = setUp({ texts: { [LEDGER]: listed, [NOTE]: 'the contract' } });
-    const refused = setUp({ texts: { [LEDGER]: listed, [NOTE]: 'the contract' }, failWriteWith: { kind: 'write-failed', path: NOTE, message: 'EBUSY' } });
+    const refused = setUp({ texts: { [LEDGER]: listed, [NOTE]: 'the contract' }, failWritesMatching: 'Contrat.docx.md' });
 
     await elsewhere.ledger.files.writeText(TASK, 'the task');
     await refused.ledger.files.writeText(NOTE, 'the new contract');
 
     expect(elsewhere.files.written.get(LEDGER)).toBe(listed);
     expect(refused.files.written.get(LEDGER)).toBe(listed);
+  });
+
+  // A file moved by its own source, a layout change of Teams for one, is still that source's file, and
+  // the source can let it go later in the same run.
+  it('a file moved to a path in this run is still written down when its source lets it go', async () => {
+    const MOVED = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
+    const { files, ledger } = setUp({ texts: { [NOTE]: 'the contract' } });
+
+    await ledger.files.move(NOTE, MOVED);
+    await ledger.writeDown([{ path: MOVED, error: LOCKED }]);
+
+    expect(Object.keys(ledgerOf(files.written.get(LEDGER)))).toEqual([MOVED]);
   });
 
   // In one window, a file can land at a path before another item lets go of its own file there.
