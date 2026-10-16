@@ -718,6 +718,11 @@ The first run walks the whole calendar and writes the events starting on or afte
 every recurring series whatever day it began (see How far back). The cursor moves only once every
 event the delta reported has landed.
 
+If an attachment that is not a picture fails, decant keeps the earlier file of that attachment and
+its link in the note. The report names the attachment as failed, and the next run writes the event
+again, three runs in all. If decant cannot get the list of attachments, it keeps all the earlier
+attachment files of the event.
+
 ### What a people sync writes
 
 One page per colleague, and one org chart:
@@ -761,6 +766,14 @@ or manager rewrites that one page, a newcomer is written, and someone whose acco
 who has left every Team is moved to `_archive/<day of the run>/People/` and named in the report. The org chart is
 drawn again whenever any page was.
 
+The fingerprint also takes the names of the reports, and whether the manager is in the directory.
+Thus a renamed report writes the page of the manager again, with the new name and link. When a
+manager leaves, decant writes the pages of the reports again, and these pages show the name of the
+manager as text. The first run of this version writes each page again one time, but a page with the
+same text does not change on disk. If the Team rosters name nobody and the state holds people,
+decant stops the People source with an error and moves no page to `_archive/`. A lost permission in
+Microsoft 365 can cause this result.
+
 ### What a OneNote sync writes
 
 One file per page, under the notebook's own structure rather than under a day, since a page is a
@@ -793,6 +806,10 @@ Pages have no delta, so every run lists every section and every page again and r
 only when its `lastModifiedDateTime` moved; a page renamed or moved between sections is written
 afresh and the old copy goes to `_archive/`, and a page gone from the notebook goes there too and is
 named in the report. A section whose pages cannot be listed keeps its pages on disk as they are.
+
+When you rename a section or a section group, decant writes each page of it again in the folder of
+the new name. Then it moves the old copy of the page to `_archive/`. An update also finds a notebook
+in an id-suffixed folder by its id.
 
 A page of your own notebooks renders through the library, pictures embedded. A page of a site
 notebook is answered as HTML only, with no renderer in the library for it, so its text is read out
@@ -842,6 +859,7 @@ Lists have no delta, so every run reads every list again and rewrites a table on
 `lastModifiedDateTime` moved, a row came or went, or the columns changed. A list renamed is written
 afresh and the old table goes to `_archive/`, a list gone from the site goes there too and is named
 in the report, and a list whose rows cannot be read keeps its table on disk as it was.
+decant also writes a list again when you change only its name.
 
 ### What a Planner sync writes
 
@@ -901,6 +919,9 @@ details, the description having an etag of its own that the card does not carry;
 rewritten when either etag moved or its page belongs under another lane now, put aside when it
 left the plan, and the board is drawn again whenever any page was. A plan with hundreds of tasks
 costs hundreds of calls a run.
+
+An update reads the title of each plan by its id. When you rename a plan, decant writes its pages
+and its board in the folder of the new title. Then it moves the old folder to `_archive/`.
 
 ### What a Teams sync writes
 
