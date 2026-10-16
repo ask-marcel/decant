@@ -423,22 +423,24 @@ const writeChanged = async (
   return ok(progressing);
 };
 
-// A ledger entry the run recorded is a new one: the run tried the event, and it failed.
-const failedThisRun = (before: CalendarState, state: CalendarState, id: string): boolean => {
+// A ledger entry holds a stale note back when the run recorded it, a new entry, since a second try in
+// this run would spend one of the event's three, and when it is out of tries at any version, read or
+// write: no run tries such an event again until its source changes and the delta names it.
+const heldBack = (before: CalendarState, state: CalendarState, id: string): boolean => {
   const attempt = state.retry?.[id];
-  return attempt !== undefined && attempt !== before.retry?.[id];
+  return attempt !== undefined && (attempt !== before.retry?.[id] || isGivenUp(attempt, attempt.version));
 };
 
 // An exception filed before the kept day is out of reach, as `inReach` says: a series is kept whatever
-// its day, and an exception is filed under the day it starts.
+// its day, and an exception is filed under the day it starts. This reads the day of the note, so an
+// exception moved to before the kept day is read again for its links until its series stops moving.
 const outOfReach = (input: SyncCalendarInput, record: EventRecord): boolean =>
   input.since !== undefined && record.series?.master !== undefined && dayOfNote(record.file) < input.since;
 
-// A stale note is read again unless the run already tried it and failed, since a second try in this
-// run would spend one of its three, or unless no run would write it: an exception before the kept day,
-// an event given up on at the version it holds. Those would be read on every run for nothing.
+// A stale note is read again unless its ledger entry holds it back, or the run would not write it, an
+// exception before the kept day, which would be read on every run for nothing.
 const relinkable = (input: SyncCalendarInput, before: CalendarState, state: CalendarState, id: string, record: EventRecord): boolean =>
-  !failedThisRun(before, state, id) && !isGivenUp(state.retry?.[id], record.lastModified) && !outOfReach(input, record);
+  !heldBack(before, state, id) && !outOfReach(input, record);
 
 // The notes the state moved on from, in this run or one before: a series that gained or lost an
 // exception, an exception whose series was written or refiled after it. Each is read again and written
