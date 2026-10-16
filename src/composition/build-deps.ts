@@ -27,6 +27,7 @@ import { createSyncPlan } from '../use-cases/sync-plan.ts';
 import { parsePlanState, planRootName } from '../domain/plan-state.ts';
 import type { Plan } from '../domain/planner.ts';
 import { parseNotebookState, notebookRootName } from '../domain/notebook-state.ts';
+import { disambiguateSegment, idHash } from '../domain/kb-path.ts';
 import type { Notebook } from '../domain/onenote.ts';
 import type { ChannelSummary, TeamReader, TeamSummary } from '../use-cases/ports/team-reader.ts';
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
@@ -134,18 +135,22 @@ const createSavedPlan =
     return state.ok && state.value.plan.id === source.id ? state.value.plan : undefined;
   };
 
+const notebookAt = async (files: Files, root: string, id: string): Promise<Notebook | undefined> => {
+  const text = await files.readText(`${root}/.sync-state.json`);
+  if (!text.ok) return undefined;
+  const parsed = parseJson(text.value);
+  const state = parsed.ok ? parseNotebookState(parsed.value) : parsed;
+  return state.ok && state.value.notebook.id === id ? state.value.notebook : undefined;
+};
+
 // The notebook as its own state file recorded it, site and all. Read from the plain folder the name
-// gives; a notebook that took an id-suffixed folder because another held the name is found by the
-// id in the state, since two states cannot claim one folder.
+// gives, then from the id-suffixed folder a notebook takes when another holds the name; the id in the
+// state says which is this one, since two states cannot claim one folder.
 const createSavedNotebook =
   (files: Files, kbRoot: string) =>
-  async (source: { readonly id: string; readonly name: string }): Promise<Notebook | undefined> => {
-    const text = await files.readText(`${kbRoot}/${notebookRootName(source.name)}/.sync-state.json`);
-    if (!text.ok) return undefined;
-    const parsed = parseJson(text.value);
-    const state = parsed.ok ? parseNotebookState(parsed.value) : parsed;
-    return state.ok && state.value.notebook.id === source.id ? state.value.notebook : undefined;
-  };
+  async (source: { readonly id: string; readonly name: string }): Promise<Notebook | undefined> =>
+    (await notebookAt(files, `${kbRoot}/${notebookRootName(source.name)}`, source.id)) ??
+    notebookAt(files, `${kbRoot}/${notebookRootName(disambiguateSegment(source.name, idHash(source.id)))}`, source.id);
 
 // Kept beside the knowledge base it describes, so clearing `kb/` clears it too: a list of sites is
 // only ever a convenience, never something to carry over a deliberate reset.
