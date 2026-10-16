@@ -198,18 +198,19 @@ describe('a thread written again and the documents it links to', () => {
 
   // A document named as another's name with a dot and more after it: each keeps its own files.
   it('tells apart two documents when the name of one opens with the name of the other', async () => {
-    const pdf = { url: 'https://tenant.sharepoint.com/p', driveId: 'b!one', itemId: '01PDF', name: 'Rapport.docx.pdf' };
+    // Its item id sorts first, so the record lists it before the document whose name opens it.
+    const pdf = { url: 'https://tenant.sharepoint.com/p', driveId: 'b!one', itemId: '01AAA', name: 'Rapport.docx.pdf' };
     const mail = { ...seed, links: { m1: [{ url: 'https://tenant.sharepoint.com/x', driveId: 'b!one', itemId: '01ABC', name: 'Rapport.docx' }, pdf] } };
     const both = (): DriveReaderFake =>
-      createDriveReaderFake({ items: { '01ABC': REPORT, '01PDF': { ...REPORT, id: '01PDF', name: 'Rapport.docx.pdf', path: 'Rapport.docx.pdf', cTag: 'p1' } } });
+      createDriveReaderFake({ items: { '01ABC': REPORT, '01AAA': { ...REPORT, id: '01AAA', name: 'Rapport.docx.pdf', path: 'Rapport.docx.pdf', cTag: 'p1' } } });
     const files = createFilesFake();
     const once = await write(files, both(), undefined, { mail });
     const later = both();
     const twice = await write(files, later, once?.record, { mail });
 
-    expect(later.calls).toStrictEqual(['item:01ABC', 'item:01PDF']);
+    expect(later.calls).toStrictEqual(['item:01ABC', 'item:01AAA']);
     expect(twice?.linked).toStrictEqual(once?.linked);
-    expect(once?.linked['b!one:01PDF']?.paths).toContain(`${LINKED}/Rapport.docx.pdf`);
+    expect(once?.linked['b!one:01AAA']?.paths).toContain(`${LINKED}/Rapport.docx.pdf`);
   });
 
   // Moved deeper on a disk, the knowledge base cuts names it gave before: the document is pulled again

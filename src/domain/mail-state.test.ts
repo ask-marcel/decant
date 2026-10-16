@@ -278,6 +278,17 @@ describe('remembering where a mailbox sync got to', () => {
     expect(parsed.ok && parsed.value.threads['broken']?.files).toBeUndefined();
   });
 
+  it('the version each linked document was pulled at reads back, and a thread written before them has none', () => {
+    const parsed = parseMailboxState({
+      version: 2,
+      source: { kind: 'mailbox' },
+      threads: { kept: { ...thread, linkedVersions: { 'b!one:01ABC': 'c1', 'b!one:01XYZ': 7 } }, before: thread },
+    });
+
+    expect(parsed.ok && parsed.value.threads['kept']?.linkedVersions).toStrictEqual({ 'b!one:01ABC': 'c1' });
+    expect(parsed.ok && parsed.value.threads['before']?.linkedVersions).toBeUndefined();
+  });
+
   it('an attachment keeps the primary file it named, and one that named no file at all reads back with none', () => {
     const parsed = parseMailboxState({
       version: 2,
