@@ -146,6 +146,28 @@ describe('syncing a OneNote notebook', () => {
     expect(done.files.written.get(`${ROOT}/_sync-report.md`)).toContain('Deleted');
   });
 
+  // A section renamed changes no page, so its pages are written again in a folder of the new name, and
+  // the old copies go to the archive, as for a page that moved.
+  it('a section renamed moves its pages to a folder of the new name, puts the old copies aside, and a dry run counts them', async () => {
+    const OLD = `${ROOT}/Old meetings`;
+    const state = withPage(
+      withPage(emptyNotebookState(NOTEBOOK), 'a', { file: `${OLD}/Kick-off.md`, lastModified: '2026-09-01T10:00:00Z', title: 'Kick-off', section: 'sec-m' }),
+      'b',
+      { file: `${OLD}/Retro.md`, lastModified: '2026-09-02T10:00:00Z', title: 'Retro', section: 'sec-m' }
+    );
+    const seeds = {
+      reader: { pages: { 'sec-m': PAGES['sec-m'], 'sec-b': [] } },
+      files: { texts: { [STATE_PATH]: serializeNotebookState(state), [`${OLD}/Kick-off.md`]: 'kick-off', [`${OLD}/Retro.md`]: 'retro' } },
+    };
+    const done = await run(seeds);
+    const dry = await run({ ...seeds, dryRun: true });
+
+    expect(done.summary).toMatchObject({ converted: 2 });
+    expect(stateOf(done.files).pages['a']?.file).toBe(`${ROOT}/Meetings/Kick-off.md`);
+    expect(done.files.moves.map((move) => move.from)).toEqual([`${OLD}/Kick-off.md`, `${OLD}/Retro.md`]);
+    expect(dry.summary.queued).toBe(2);
+  });
+
   it('a page retitled in the same run as a namesake puts only its own old copy aside, and the namesake is rewritten in the file its record names', async () => {
     // Where the namesake was put while the retitled page held the plain name.
     const namesakeFile = `${ROOT}/Meetings/${freeSegment('Kick-off.md', 'b', (name) => name === 'Kick-off.md')}`;
