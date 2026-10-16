@@ -344,6 +344,11 @@ a formula, a second sheet, a number format and a chart survive nowhere but the f
 markdown names it under `original:`. Every other document kind is markdown alone, since for text the
 markdown is the content.
 
+decant unpacks a zip file into a folder adjacent to it. A zip file can hold all its files in one
+folder with the name of the zip file. Then decant does not make that folder again. A link from one
+file in the zip file to a different file in it goes to the markdown of that file. Thus the pages of a
+zipped report link to each other. This is also correct for a zip file that is attached to a message.
+
 A saved email is unpacked the way an archive is. The library has no parser for raw MIME and hands
 the file back whole, which means every attachment sits in the middle of the text as base64, so the
 message is read here instead: the header block, the text in whatever encoding a 7-bit transport
