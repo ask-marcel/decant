@@ -718,10 +718,10 @@ The first run walks the whole calendar and writes the events starting on or afte
 every recurring series whatever day it began (see How far back). The cursor moves only once every
 event the delta reported has landed.
 
-If an attachment that is not a picture fails, decant keeps the earlier file of that attachment and
-its link in the note. The report names the attachment as failed, and the next run writes the event
-again, three runs in all. If decant cannot get the list of attachments, it keeps all the earlier
-attachment files of the event.
+If decant cannot convert or write an attachment that is not a picture, it keeps the old file of that
+attachment. While the event keeps its day, the note keeps the link to that file. The report shows
+the attachment as failed, and the next runs write the event again, for a maximum of three runs. If
+decant cannot get the list of attachments, it keeps all the old attachment files of the event.
 
 ### What a people sync writes
 
@@ -766,13 +766,15 @@ or manager rewrites that one page, a newcomer is written, and someone whose acco
 who has left every Team is moved to `_archive/<day of the run>/People/` and named in the report. The org chart is
 drawn again whenever any page was.
 
-The fingerprint also takes the names of the reports, and whether the manager is in the directory.
-Thus a renamed report writes the page of the manager again, with the new name and link. When a
-manager leaves, decant writes the pages of the reports again, and these pages show the name of the
-manager as text. The first run of this version writes each page again one time, but a page with the
-same text does not change on disk. If the Team rosters name nobody and the state holds people,
-decant stops the People source with an error and moves no page to `_archive/`. A lost permission in
-Microsoft 365 can cause this result.
+The fingerprint also includes the names of the reports. It also records if the manager is in the
+directory. Thus a report with a new name writes the page of the manager again, with the new name and
+link. When the manager of a person goes out of the directory, decant writes the page of that person
+again. That page shows the name of the manager as text. The first run of this version writes each
+page again one time, but a page with the same text does not change on disk.
+
+If the Team rosters have no person and the state has people, decant stops the People source with an
+error. It moves no page to `_archive/`. A missing permission in Microsoft 365 can cause this result.
+Make sure that the account can read its Teams.
 
 ### What a OneNote sync writes
 
@@ -921,7 +923,10 @@ left the plan, and the board is drawn again whenever any page was. A plan with h
 costs hundreds of calls a run.
 
 An update reads the title of each plan by its id. When you rename a plan, decant writes its pages
-and its board in the folder of the new title. Then it moves the old folder to `_archive/`.
+and its board in the folder of the new title. Then it moves the old copy of each page, and the state,
+the board and the report of the old folder, to `_archive/`. If only the letter case of the title
+changes, the plan stays in its folder. If the folder of the new title has a different plan, decant
+stops the plan with an error. Then give one of the two plans a different title.
 
 ### What a Teams sync writes
 
