@@ -65,8 +65,9 @@ export type LinkedRecord = { readonly paths: ReadonlyArray<string> };
 // `text` is set only for a picture shown inside a message body, which is stored once for the whole
 // mailbox and read into every thread that shows it. It is remembered here because no document holds
 // it any more: the words live in the threads, and a second thread meeting the same picture would
-// otherwise have nothing to put under it. Empty, the picture holds no words or was not read on purpose;
-// absent, it was stored before readings were kept or its reading failed, and it is read again.
+// otherwise have nothing to put under it. Empty, the picture holds no words, is too small to hold any,
+// or the run turned OCR off; absent, it was stored before readings were kept, or OCR could not run or
+// failed on it, and it is read again.
 export type AttachmentRecord = {
   readonly name: string;
   readonly paths: ReadonlyArray<string>;

@@ -191,12 +191,12 @@ const asPdf = async (context: Context): Promise<AttachmentOutcome> =>
 const wordsIn = (read: Awaited<ReturnType<Ocr['read']>> | undefined): string | undefined => (read?.ok === true && read.value.text.trim().length > 0 ? read.value.text : undefined);
 
 // What a picture shown in a body puts under it, which is also whether it counts as read: its words,
-// or none when it holds none, is too small to hold any, or OCR cannot run here. A reading that failed
-// gives nothing at all, so a later run reads the picture again. Counted as read, a picture is stored
-// once for the mailbox; taken for new, it was written again by each thread that showed it.
-const shownOf = (read: Awaited<ReturnType<Ocr['read']>> | undefined): string | undefined => {
+// or none when it holds none, is too small to hold any, or the run turned OCR off. OCR that could not
+// run, or that failed, gives nothing at all, so a later run reads the picture again. Counted as read,
+// a picture is stored once for the mailbox; taken for new, it was written again by each thread.
+const shownOf = (read: Awaited<ReturnType<Ocr['read']>> | undefined, off: boolean): string | undefined => {
   if (read === undefined || read.ok) return wordsIn(read) ?? '';
-  return read.error.kind === 'unavailable' ? '' : undefined;
+  return off ? '' : undefined;
 };
 
 const asImage = async (context: Context): Promise<AttachmentOutcome> =>
@@ -207,7 +207,7 @@ const asImage = async (context: Context): Promise<AttachmentOutcome> =>
     return ok({
       text: wordsIn(read) ?? NO_TEXT_NOTE,
       stamp: { ...context.input.stamp, image: `./${context.name}`, ocr: read?.ok === true ? read.value.label : undefined },
-      shown: shownOf(read),
+      shown: shownOf(read, context.deps.ocr.off === true),
     });
   });
 

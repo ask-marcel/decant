@@ -377,14 +377,14 @@ describe('writing one conversation as one file', () => {
     expect(again.files.written.get(THREAD_FILE)).toContain('![image001.png](../../_inline/logo-3d8c205c.png)');
   });
 
-  it('a picture too small to be read, or met while OCR cannot run, is stored as read; one whose reading failed is read again later', async () => {
+  it('a picture too small to be read is stored as read; one OCR could not read, or failed on, is read again later', async () => {
     const small = [{ id: 'sig', name: 'image001.png', contentType: 'image/png', size: 2 * 1024, isInline: true, contentId: 'image001.png@01DC1234' }];
     const tiny = await run({ reader: { ...showingRenamed, attachments: { m1: small } } });
-    const off = await run({ reader: showing, ocr: { failWith: { kind: 'unavailable', message: 'ocr disabled' } } });
+    const absent = await run({ reader: showing, ocr: { failWith: { kind: 'unavailable', message: 'rapidocr will not start' } } });
     const failed = await run({ reader: showing, ocr: { failWith: { kind: 'failed', message: 'the model stopped' } } });
 
     expect(Object.values(storeOf(tiny.outcome)).map((record) => record.text)).toStrictEqual(['']);
-    expect(Object.values(storeOf(off.outcome)).map((record) => record.text)).toStrictEqual(['']);
+    expect(Object.values(storeOf(absent.outcome)).map((record) => record.text)).toStrictEqual([undefined]);
     expect(Object.values(storeOf(failed.outcome)).map((record) => record.text)).toStrictEqual([undefined]);
   });
 

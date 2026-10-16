@@ -10,4 +10,7 @@ export type Ocr = {
   // Reads the text visible in an image file already on disk. An image holding no text is not a
   // failure: it returns empty text, and the markdown companion says so.
   readonly read: (path: string) => Promise<Result<OcrReading, OcrError>>;
+  // Set when the run turned OCR off: every read answers `unavailable` on purpose, so a picture it met
+  // counts as read with no words, where one OCR could not read is read again by a later run.
+  readonly off?: true;
 };

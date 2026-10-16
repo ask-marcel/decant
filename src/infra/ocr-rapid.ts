@@ -114,8 +114,9 @@ export const createRapidOcr = (options: RapidOptions): Ocr => ({
 });
 
 // Chosen when the run turned OCR off (`--no-ocr`): every read reports "unavailable", so an image or
-// a scanned PDF falls back to its note and no `ocr:` line ever claims text was read.
-export const createNoOcr = (): Ocr => ({ read: async () => err({ kind: 'unavailable', message: 'ocr disabled' }) });
+// a scanned PDF falls back to its note and no `ocr:` line ever claims text was read. It says it is
+// off, so a picture shown in a mail counts as read rather than as one to read again.
+export const createNoOcr = (): Ocr => ({ off: true, read: async () => err({ kind: 'unavailable', message: 'ocr disabled' }) });
 
 const SHARD = 2;
 
