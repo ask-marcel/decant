@@ -26,8 +26,9 @@ export type FileDeps = {
 };
 
 // Each picture a run converted into the shared store, by its content address, as the record its
-// conversion left, or nothing when the conversion did not land. Threads written side by side start
-// from one store, and each would otherwise convert the same new logo.
+// conversion left, or nothing when the conversion did not land: the store also holds the files of
+// other threads by the same address, which are no picture to show. Threads written side by side
+// start from one store, and each would otherwise convert the same new logo.
 export type PicturesOfRun = Map<string, Promise<AttachmentRecord | undefined>>;
 
 // Where a thread keeps what its messages attached, and where the mailbox keeps what they showed.
@@ -227,7 +228,7 @@ const convertPicture = async (deps: FileDeps, place: FilePlace, placing: Placing
   deps.pictures?.set(
     fresh.hash,
     converting.then(
-      () => placing.shared[fresh.hash],
+      (placed) => (placed.primary === undefined ? undefined : placing.shared[fresh.hash]),
       () => undefined
     )
   );
