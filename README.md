@@ -349,6 +349,10 @@ folder with the name of the zip file. Then decant does not make that folder agai
 file in the zip file to a different file in it goes to the markdown of that file. Thus the pages of a
 zipped report link to each other. This is also correct for a zip file that is attached to a message.
 
+The converter reads the first 100 files of a zip file. When a zip file holds more files,
+`_sync-report.md` names it and gives the number of files that stay in it. The manifest of a zip file
+that is attached to a message also gives this number.
+
 A saved email is unpacked the way an archive is. The library has no parser for raw MIME and hands
 the file back whole, which means every attachment sits in the middle of the text as base64, so the
 message is read here instead: the header block, the text in whatever encoding a 7-bit transport
