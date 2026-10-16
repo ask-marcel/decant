@@ -91,6 +91,17 @@ describe('one file naming what a whole run left behind', () => {
     expect(written).toContain('- Espace Contoso (group inbox): last ran 2026-08-01T09:00:00Z');
   });
 
+  // A site's lists run under a key of their own, `lists:<site id>`, beside the libraries of the same
+  // site: the tail tells the two apart by that key.
+  it('the lists of a site that ran are not named as not rechecked, and the libraries of the site that ran do not hide its lists', async () => {
+    const lists: SourceRun = { ...contoso, id: 'lists:site!contoso', source: 'Espace Contoso (lists)' };
+    const listsRan = await write([lists], { known: [synced({ kind: 'lists', id: 'site!contoso', name: 'Espace Contoso' })] });
+    const librariesRan = await write([contoso], { known: [synced({ kind: 'lists', id: 'site!contoso', name: 'Espace Contoso', lastRun: '2026-08-01T09:00:00Z' })] });
+
+    expect(listsRan.written).not.toContain('last ran');
+    expect(librariesRan.written).toContain('- Espace Contoso (lists): last ran 2026-08-01T09:00:00Z');
+  });
+
   it('a run that stopped partway still reports the sources that did finish, and says it stopped', async () => {
     const { written } = await write([contoso], { stopped: 'enumerate: token expired' });
 
