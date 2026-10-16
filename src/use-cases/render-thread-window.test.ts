@@ -7,6 +7,7 @@ import { createFilesFake } from '../test-helpers/files-fake.ts';
 import type { FilesFake } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import { createMailReaderFake } from '../test-helpers/mail-reader-fake.ts';
+import type { MailReaderSeed } from '../test-helpers/mail-reader-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
 import { createProgressFake } from '../test-helpers/progress-fake.ts';
 import { INLINE_STORE, message } from '../test-helpers/thread-harness.ts';
@@ -22,11 +23,12 @@ describe('threads written side by side', () => {
   const picture = (name: string): ReadonlyArray<{ id: string; name: string; contentType: string; size: number; isInline: boolean; contentId: string }> => [
     { id: 'sig', name, contentType: 'image/png', size: 64 * 1024, isInline: true, contentId: `${name}@01DC1234` },
   ];
-  const reader = createMailReaderFake({
+  // Each test reads its own fake, which counts the calls made of it.
+  const seed: MailReaderSeed = {
     conversations: { 'conv-a': [message({ id: 'm1', conversationId: 'conv-a' })], 'conv-b': [message({ id: 'm2', conversationId: 'conv-b', subject: 'Offsite' })] },
     bodies: { m1: '\\[inline image: image001.png\\]', m2: '\\[inline image: image002.png\\]' },
     attachments: { m1: picture('image001.png'), m2: picture('image002.png') },
-  });
+  };
   const input = (conversation: string, root: string, attachments: RenderThreadInput['attachments'] = {}): RenderThreadInput => ({
     threadId: threadIdOf(root),
     label: conversation,
@@ -39,6 +41,7 @@ describe('threads written side by side', () => {
   });
 
   const renderWith = (files: FilesFake, convert?: (real: ConvertAttachment) => ConvertAttachment): RenderThread => {
+    const reader = createMailReaderFake(seed);
     const logger = createLoggerFake();
     const drive = createDriveReaderFake();
     const progress = createProgressFake();
