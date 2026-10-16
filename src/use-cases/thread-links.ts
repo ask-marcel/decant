@@ -222,7 +222,11 @@ const followLink = async (deps: LinkDeps, following: Following, message: MailMes
 // A document is named by its item, so a message whose links went unread cannot say which were its
 // own: every document the thread linked keeps its name until a write that lists them all.
 const keepRecorded = (following: Following): void => {
-  for (const [key, name] of Object.entries(following.recorded)) if (following.names[key] === undefined) following.names[key] = name;
+  for (const [key, name] of Object.entries(following.recorded)) {
+    if (following.names[key] !== undefined) continue;
+    following.names[key] = name;
+    keepVersion(following, key, following.before[key]);
+  }
 };
 
 const followMessage = async (deps: LinkDeps, following: Following, part: ThreadPart): Promise<void> => {

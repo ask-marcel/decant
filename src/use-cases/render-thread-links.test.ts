@@ -184,4 +184,15 @@ describe('a thread written again and the documents it links to', () => {
 
     expect(files.written.get(CARD)).toContain('the same file');
   });
+
+  // The documents of a message whose links could not be listed keep their names and their files until
+  // a write that lists them, and so their versions.
+  it('keeps the version of each document when a message`s links could not be listed', async () => {
+    const files = createFilesFake();
+    const once = await write(files, createDriveReaderFake(at()));
+    const unlisted = { ...seed, failCalls: { sharepointLinks: { kind: 'transient' as const, message: 'timeout' } } };
+    const twice = await write(files, createDriveReaderFake(at()), once?.record, { mail: unlisted });
+
+    expect(twice?.record.linkedVersions).toStrictEqual({ [KEY]: 'c1' });
+  });
 });
