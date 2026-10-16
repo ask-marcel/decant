@@ -9,8 +9,6 @@ const TEAMS_RULE = /^\s*(?:\\?_){10,}\s*$/;
 const MEET_RULE = /^\s*-[:~]{10,}-\s*$/;
 const ZOOM_OPENS = /^\W*Join Zoom Meeting\W*$/i;
 const ZOOM_ENDS = /^\W*Find your local number/i;
-// What only a join block holds, so that words a sender put between two rules are not taken for one.
-const JOINS = /teams\.microsoft\.com\/l\/meetup-join|Microsoft Teams|meet\.google\.com|Meeting ID|Conference ID/i;
 // Where a block says to join: a Teams link in its long form and in the short one Teams writes since
 // 2026, the short one of Teams for personal use, a Meet link and a Zoom link.
 const JOIN_AT = /https:\/\/(?:teams\.microsoft\.com\/(?:l\/meetup-join|meet)|teams\.live\.com\/meet|meet\.google\.com|[a-z0-9.-]*zoom\.us\/j)\/[^\s)<>\]]*/i;
@@ -22,25 +20,34 @@ const MARKDOWN_LINK = /\[[^[\]]*\]\(([^()]*)\)/g;
 // Taking lines out leaves the blank lines around them side by side.
 const WIDENED = /\n{3,}/g;
 
+// What tells a join block from words a sender put between two rules: a link to join, or a line that
+// opens with the meeting's ID.
+const MEETING_ID = /^\W*(?:Meeting|Conference) ID:/i;
+
 type Span = { readonly from: number; readonly to: number };
 
-// The first line after `from` that closes what opened there, or -1.
-const closing = (lines: ReadonlyArray<string>, from: number, closes: RegExp): number => lines.findIndex((line, index) => index > from && closes.test(line));
+const isJoinBlock = (lines: ReadonlyArray<string>): boolean => lines.some((line) => JOIN_AT.test(line) || MEETING_ID.test(line));
 
-const ruledSpan = (lines: ReadonlyArray<string>, at: number, rule: RegExp): Span | undefined => {
-  const to = closing(lines, at, rule);
-  return to > at && JOINS.test(lines.slice(at, to).join('\n')) ? { from: at, to } : undefined;
+// Teams puts a shorter rule inside its block, before the dial-in numbers, and a reply quoted under a
+// mail can open with one, so only a rule of the same text as the one that opened a block closes it.
+const ruledSpan = (lines: ReadonlyArray<string>, at: number): Span | undefined => {
+  const rule = (lines[at] ?? '').trim();
+  const to = lines.findIndex((line, index) => index > at && line.trim() === rule);
+  return to > at && isJoinBlock(lines.slice(at + 1, to)) ? { from: at, to } : undefined;
+};
+
+// A second invitation that opens first means this one never reached its local numbers.
+const zoomSpan = (lines: ReadonlyArray<string>, at: number): Span | undefined => {
+  const to = lines.findIndex((line, index) => index > at && (ZOOM_ENDS.test(line) || ZOOM_OPENS.test(line)));
+  return to > at && ZOOM_ENDS.test(lines[to] ?? '') ? { from: at, to } : undefined;
 };
 
 // A block that opens at this line and closes, or none: a rule never closed, or rules around anything
 // else, is content.
 const spanAt = (lines: ReadonlyArray<string>, at: number): Span | undefined => {
   const line = lines[at] ?? '';
-  const rule = [TEAMS_RULE, MEET_RULE].find((candidate) => candidate.test(line));
-  if (rule !== undefined) return ruledSpan(lines, at, rule);
-  if (!ZOOM_OPENS.test(line)) return undefined;
-  const to = closing(lines, at, ZOOM_ENDS);
-  return to > at ? { from: at, to } : undefined;
+  if (TEAMS_RULE.test(line) || MEET_RULE.test(line)) return ruledSpan(lines, at);
+  return ZOOM_OPENS.test(line) ? zoomSpan(lines, at) : undefined;
 };
 
 // The line a join block leaves where nothing else holds its link to join.
