@@ -576,13 +576,18 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
   // waiting on: the ledger entry goes with them.
   const recorded = { path: item.path, cTag: item.cTag, outputs, modified: item.lastModified, modifiedBy: item.modifiedBy };
   const update = (manifest: DriveState): DriveState => forgetFailure(recordItem(manifest, item.id, recorded), item.id);
-  if (outcome.kind === 'converted') return outcome.lost === undefined ? { update, counted: { converted: 1 } } : partly(driveState, item, recorded, outcome.lost);
+  if (outcome.kind === 'converted') return outcome.lost === undefined ? landed(update, item, outcome.leftOut) : partly(driveState, item, recorded, outcome.lost);
   return {
     update,
     counted: { skipped: 1 },
     notes: { skipped: [{ path: item.path, reason: leftOutReason(deps.kbRoot, skipReason(outcome.reason, input.maxBytes, item.name), moved) }] },
   };
 };
+
+// A document that landed whole, or an archive the library read in part: counted as left out as well,
+// with what it left in the archive, and not tried again, since no run would read more of it.
+const landed = (update: (manifest: DriveState) => DriveState, item: DriveItem, leftOut: string | undefined): WorkOutcome =>
+  leftOut === undefined ? { update, counted: { converted: 1 } } : { update, counted: { converted: 1, skipped: 1 }, notes: { skipped: [{ path: item.path, reason: leftOut }] } };
 
 // A document that landed without a part of it, its pictures or its slides: recorded at what it wrote,
 // counted as failed as well, and tried again on the next run for the rest, three times in all, as one

@@ -1940,3 +1940,17 @@ describe('an edited document whose earlier version will not move aside', () => {
     expect(await handing({ [STATE_PATH]: owed, [NOTE]: 'the contract', [MEDIA]: 'a picture' }, seed)).toEqual([MEDIA]);
   });
 });
+
+// The library reads the first 100 members of a larger archive. What it left in the archive is said
+// once, in the run that converted it, and no run tries it again for the rest: no run would read more.
+describe('an archive the library read in part', () => {
+  it('lands with the members read, is named for what stays in the archive, and is not tried again', async () => {
+    const zip = item({ name: 'Livraison.zip', path: 'Projets/Livraison.zip' });
+    const entries = Object.assign([{ path: 'notes.docx', text: '# Notes' }], { totalEntries: 150 });
+    const done = await run({ reader: { pages: [{ items: [zip], skipped: 0, deltaLink: 'cursor-1' }], archiveEntries: entries } });
+
+    expect(done.summary).toMatchObject({ converted: 1, skipped: 1, failed: 0 });
+    expect(done.notes?.skipped).toEqual([{ path: 'Projets/Livraison.zip', reason: '149 of its 150 files stay in the archive: the converter read the first 1' }]);
+    expect(stateAfter(done.files).drives['b!one']?.retry).toEqual({});
+  });
+});

@@ -40,6 +40,10 @@ export const unsupportedReason = (name: string): string => {
 
 export const PROTECTED_REASON = 'locked with a password, so nothing could be read from it';
 
+// The library reads the first members of a larger archive and leaves the rest in it; no run reads
+// more, so the archive is said once, with what it left, rather than tried again.
+export const cutArchiveReason = (read: number, total: number): string => `${total - read} of its ${total} files stay in the archive: the converter read the first ${read}`;
+
 export const LOCK_FILE_REASON = 'a file Office leaves beside a document while it is open, holding no content of its own';
 
 export const tooLargeReason = (maxBytes: number): string => `larger than the ${Math.round(maxBytes / 1024 / 1024)} MB cap`;

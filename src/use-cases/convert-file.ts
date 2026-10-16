@@ -10,12 +10,13 @@ import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_SLIDES_NOTE, NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { fitSegment, safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import type { SkipReason } from '../domain/report.ts';
+import { cutArchiveReason } from '../domain/report.ts';
 import { linkMembers, placeMembers } from '../domain/archive-members.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { Clock } from './ports/clock.ts';
-import type { DriveReader, DriveReaderError, ItemRef } from './ports/drive-reader.ts';
+import type { ArchiveEntries, DriveReader, DriveReaderError, ItemRef } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import { placeImages } from './place-images.ts';
 import type { Logger } from './ports/logger.ts';
@@ -55,7 +56,9 @@ export type ConvertFileInput = {
 // document landed without it. A library sync tries such a document again for the rest; a mail thread
 // keeps what landed.
 export type ConvertOutcome =
-  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly lost?: string }
+  // `lost` names a part the conversion went without, to try again for; `leftOut` what it left in an
+  // archive the library read in part, which no run reads more of.
+  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly lost?: string; readonly leftOut?: string }
   | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
 
@@ -309,12 +312,10 @@ const convertArchive = async (context: Context): Promise<ConvertOutcome> => {
   return writeArchiveEntries(context, folder, archivePath, entries.value);
 };
 
-const writeArchiveEntries = async (
-  context: Context,
-  folder: string,
-  archivePath: string,
-  entries: ReadonlyArray<{ readonly path: string; readonly text?: string; readonly note?: string }>
-): Promise<ConvertOutcome> => {
+const leftOutOf = (entries: ArchiveEntries): { readonly leftOut?: string } =>
+  entries.totalEntries === undefined ? {} : { leftOut: cutArchiveReason(entries.length, entries.totalEntries) };
+
+const writeArchiveEntries = async (context: Context, folder: string, archivePath: string, entries: ArchiveEntries): Promise<ConvertOutcome> => {
   const outputs: string[] = [archivePath];
   const placed = placeMembers(folder, context.name, entries, context.deps.pathBudget);
   const files = new Map(placed.map((member) => [member.entry.path, member.file]));
@@ -326,7 +327,7 @@ const writeArchiveEntries = async (
     if (!written.ok) return failure(written.error);
     outputs.push(file);
   }
-  return { kind: 'converted', outputs };
+  return { kind: 'converted', outputs, ...leftOutOf(entries) };
 };
 
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<ConvertOutcome>>> = {
