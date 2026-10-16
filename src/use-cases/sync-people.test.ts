@@ -181,6 +181,18 @@ describe('syncing the people directory', () => {
     expect(edited.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to [Dana Farrow](<Dana Farrow.md>)');
   });
 
+  // A manager with no page yet whose profile will not read has no page to link to, so the pages of the
+  // reports stay as they are until the profile reads and the page is written.
+  it('a manager new to the rosters whose profile cannot be read leaves the pages of the reports as they are until it reads', async () => {
+    const teams = { jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
+    const state = withPerson(emptyPeopleState(), 'jane', { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [JANE], teams) });
+    const unread = await run({ reader: { failProfiles: ['dana'] }, files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
+    const read = await run({ files: { texts: Object.fromEntries(unread.files.written) } });
+
+    expect(unread.files.writeLog.filter((path) => path.endsWith('Jane Doe.md'))).toStrictEqual([]);
+    expect(read.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to [Dana Farrow](<Dana Farrow.md>)');
+  });
+
   // The org chart is drawn from the profiles that read, so a run that wrote a page while a manager's
   // profile would not read drew it without them. No page changes when the profile reads again.
   it('an org chart drawn while a manager could not be read is drawn again with them once their profile reads', async () => {
