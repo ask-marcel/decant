@@ -439,7 +439,11 @@ describe('syncing the people directory', () => {
     const noMember = await run({ reader: { members: { 'team-all': [], 'team-lead': [] } }, files: { texts } });
 
     expect(noTeam.ok).toBe(false);
-    expect(noTeam.error).toEqual({ step: 'listMembers', cause: 'empty', message: 'the Team rosters name nobody, and 2 people are on record: nothing was put aside' });
+    expect(noTeam.error).toEqual({
+      step: 'listMembers',
+      cause: 'empty',
+      message: 'the Team rosters name nobody, and 2 people are on record: nothing was put aside. Check that the account can still read its Teams',
+    });
     expect(noTeam.files.moves).toStrictEqual([]);
     expect(noMember.error?.cause).toBe('empty');
     expect(noMember.files.moves).toStrictEqual([]);
@@ -449,7 +453,7 @@ describe('syncing the people directory', () => {
     const state = withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: 'x' });
     const done = await run({ teams: [], files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
 
-    expect(done.error?.message).toBe('the Team rosters name nobody, and 1 person is on record: nothing was put aside');
+    expect(done.error?.message).toBe('the Team rosters name nobody, and 1 person is on record: nothing was put aside. Check that the account can still read its Teams');
   });
 
   it('a state file that cannot be saved stops the run, whether or not there was anything to write', async () => {

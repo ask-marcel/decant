@@ -102,7 +102,11 @@ const rosters = async (deps: SyncPeopleDeps): Promise<Result<Rosters, StepError>
 const emptyRosters = (state: PeopleState, listed: Rosters): Result<never, StepError> | undefined => {
   const held = Object.keys(state.people).length;
   if (Object.keys(listed).length > 0 || held === 0) return undefined;
-  return failed('listMembers', 'empty', `the Team rosters name nobody, and ${held} ${held === 1 ? 'person is' : 'people are'} on record: nothing was put aside`);
+  return failed(
+    'listMembers',
+    'empty',
+    `the Team rosters name nobody, and ${held} ${held === 1 ? 'person is' : 'people are'} on record: nothing was put aside. Check that the account can still read its Teams`
+  );
 };
 
 type Profiles = { readonly people: ReadonlyArray<Person>; readonly unread: ReadonlyArray<Unread> };
