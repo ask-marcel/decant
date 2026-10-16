@@ -42,12 +42,16 @@ export const serializeAsideLedger = (ledger: AsideLedger): string => {
 
 // Why a move failed: the kind of failure, and the system code when the message starts with one
 // (EBUSY, EPERM). The rest of the message names both paths, the day of the run among them, so kept
-// whole it would change on each day a file stays stuck, and the ledger and the report with it.
+// whole it would change on each day a file stays stuck, and the ledger and the report with it. The
+// note on Windows that a path is too long stays: it is why such a move fails, and the length of an
+// archive path does not change from day to day.
 const CODE = /^E[A-Z0-9]+(?=:|$)/;
+const LENGTH_NOTE = / \(the path has \d+ characters[^)]*\)$/;
 
 export const causeOf = (failure: { readonly kind: string; readonly message: string }): string => {
   const code = CODE.exec(failure.message)?.[0];
-  return code === undefined ? failure.kind : `${failure.kind}: ${code}`;
+  const coded = code === undefined ? failure.kind : `${failure.kind}: ${code}`;
+  return coded + (LENGTH_NOTE.exec(failure.message)?.[0] ?? '');
 };
 
 // What a file held, as a run read it, to tell it from a file that took its path later.
@@ -73,3 +77,10 @@ export const stuckNotes = (stuck: ReadonlyArray<StuckFile>, kbRoot: string, zone
     path: entry.path.startsWith(`${kbRoot}/`) ? entry.path.slice(kbRoot.length + 1) : entry.path,
     reason: `${entry.cause} (since ${dayIn(entry.since, zone)})${entry.digest === undefined ? UNCHECKED : ''}`,
   }));
+
+// A listed file that holds other content now is not the one that would not move. It leaves the list,
+// and the report of that run names it once, so a file changed while it was stuck stays in view.
+const REPLACED = '. Another file is at this path now, so it left the list';
+
+export const replacedNotes = (replaced: ReadonlyArray<StuckFile>, kbRoot: string, zone: string): ReadonlyArray<ReportEntry> =>
+  stuckNotes(replaced, kbRoot, zone).map((note) => ({ ...note, reason: `${note.reason}${REPLACED}` }));

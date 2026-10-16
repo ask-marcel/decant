@@ -113,6 +113,14 @@ describe('moving them aside again at the start of a run', () => {
     expect(files.moves).toStrictEqual([]);
     expect(ledgerOf(files.written.get(LEDGER))).toEqual({});
     expect(logger.calls).toContainEqual({ level: 'info', event: 'aside.retried', meta: { moved: 0, stuck: 0, replaced: 1 } });
+    expect(await ledger.stuck()).toEqual({
+      files: [
+        {
+          path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md',
+          reason: 'write-failed: EBUSY (since 2026-10-14). Another file is at this path now, so it left the list',
+        },
+      ],
+    });
   });
 
   // Read as text, a file the fake holds as bytes will not read, as a file another program locks may not.
@@ -128,6 +136,7 @@ describe('moving them aside again at the start of a run', () => {
     expect(unreadNow.files.moves).toStrictEqual([]);
     expect(Object.keys(ledgerOf(unread.files.written.get(LEDGER)))).toEqual([NOTE]);
     expect(Object.keys(ledgerOf(unreadNow.files.written.get(LEDGER)))).toEqual([NOTE]);
+    expect(unread.logger.calls).toContainEqual({ level: 'info', event: 'aside.retried', meta: { moved: 0, stuck: 1, replaced: 0 } });
   });
 
   it('with nothing in the ledger, the run starts without a move or a write', async () => {

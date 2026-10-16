@@ -27,6 +27,9 @@ describe('keeping the files that would not move under the archive', () => {
     expect(causeOf({ kind: 'write-failed', message: 'EPERM' })).toBe('write-failed: EPERM');
     expect(causeOf({ kind: 'write-failed', message: 'a file is already at kb/_archive/2026-10-15/a.md' })).toBe('write-failed');
     expect(causeOf({ kind: 'write-failed', message: 'EBUSYNESS is no code' })).toBe('write-failed');
+    expect(causeOf({ kind: 'write-failed', message: "ENOENT: no such file or directory, rename 'a' -> 'b' (the path has 265 characters, and Windows accepts at most 259)" })).toBe(
+      'write-failed: ENOENT (the path has 265 characters, and Windows accepts at most 259)'
+    );
   });
 
   // The day it first would not move says how long it has waited; the cause is the latest one.

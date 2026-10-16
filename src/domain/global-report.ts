@@ -55,14 +55,14 @@ const staleTail = (stale: ReadonlyArray<StaleSource>): ReadonlyArray<string> =>
 
 // When the ledger would not read, no run moves what it lists or adds to it, so the note says that in
 // place of the retry it cannot promise.
-const unreadNote = (cause: string): string =>
-  `The list of these files, .sync-aside.json, could not be read (${cause}). No run moves them, or adds to the list, until it is repaired or deleted. Below are the files of this run alone.`;
+const unreadNote = (cause: string, named: boolean): string =>
+  `The list of these files, .sync-aside.json, could not be read (${cause}). No run moves them, or adds to the list, until it is repaired or deleted.${named ? ' Below are the files of this run alone.' : ''}`;
 
 // The sources have let these files go, so this is the one place that still names them.
 const stuckSection = (stuck: ReadonlyArray<ReportEntry>, unread: string | undefined): ReadonlyArray<string> => {
   if (stuck.length === 0 && unread === undefined) return [];
   const lines = stuck.map((entry) => `- ${entry.path}: ${entry.reason}`);
-  return [STUCK_HEADING, '', unread === undefined ? STUCK_NOTE : unreadNote(unread), '', ...(lines.length === 0 ? [] : [...lines, ''])];
+  return [STUCK_HEADING, '', unread === undefined ? STUCK_NOTE : unreadNote(unread, lines.length > 0), '', ...(lines.length === 0 ? [] : [...lines, ''])];
 };
 
 // Rewritten whole on every run rather than appended to, so it is always the current view. The history

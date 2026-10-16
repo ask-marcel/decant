@@ -1,4 +1,4 @@
-import { ASIDE_LEDGER_NAME, causeOf, digestOf, parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unstuck } from '../domain/aside-ledger.ts';
+import { ASIDE_LEDGER_NAME, causeOf, digestOf, parseAsideLedger, replacedNotes, serializeAsideLedger, stuckAt, stuckNotes, unstuck } from '../domain/aside-ledger.ts';
 import type { AsideLedger, StuckFile } from '../domain/aside-ledger.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -43,7 +43,9 @@ const writeLedger = async (files: Files, deps: AsideLedgerDeps, ledger: AsideLed
   if (!written.ok) deps.logger.warn('aside-ledger.unsaved', { cause: written.error.kind });
 };
 
-// Read as text, which serves every file: a digest only has to tell the same bytes from other ones.
+// Read as text, which serves every file. That tells the file written down from another at its path,
+// though not to the byte: a text read drops a byte order mark and turns bytes that are not UTF-8 into
+// one sign, so two binary files that differ only there read alike, which is rare enough to accept.
 const digestAt = async (files: Files, path: string): Promise<string | undefined> => {
   const text = await files.readText(path);
   return text.ok ? digestOf(text.value) : undefined;
@@ -81,6 +83,8 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
   let unreadable: string | undefined;
   let reading: Promise<void> | undefined;
   let saving: Promise<void> = Promise.resolve();
+  // The entries the retry of this run found holding another file, named once in its report.
+  let replaced: ReadonlyArray<StuckFile> = [];
   const loaded = async (): Promise<void> => {
     reading ??= readLedger(files, deps.kbRoot).then((read) => {
       if (read.ok) held = read.value;
@@ -153,7 +157,8 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
       { files, clock: deps.clock, kbRoot: deps.kbRoot },
       same.map((entry) => entry.path)
     );
-    const settled = standings.filter((one) => one.standing === 'gone' || one.standing === 'other').map((one) => one.entry.path);
+    replaced = standings.filter((one) => one.standing === 'other').map((one) => one.entry);
+    const settled = [...standings.filter((one) => one.standing === 'gone').map((one) => one.entry.path), ...replaced.map((entry) => entry.path)];
     const moved = aside.moved.map((move) => move.from);
     const at = deps.clock.nowIso();
     await change((ledger) =>
@@ -162,15 +167,17 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
     deps.logger.info('aside.retried', {
       moved: moved.length,
       stuck: listed.length - settled.length - moved.length,
-      replaced: standings.filter((one) => one.standing === 'other').length,
+      replaced: replaced.length,
     });
   };
 
-  // What the report of the run names: each file the ledger holds that is still on disk, and why the
-  // ledger would not read, when it would not.
+  // What the report of the run names: each file the ledger holds that is still on disk, each one the
+  // retry of this run took off the list for another file at its path, and why the ledger would not
+  // read, when it would not.
   const stuck: StuckFiles = async () => {
     await loaded();
-    const named = stuckNotes(await onDisk<StuckFile>(files, Object.values(held)), deps.kbRoot, deps.timezone);
+    const listed = stuckNotes(await onDisk<StuckFile>(files, Object.values(held)), deps.kbRoot, deps.timezone);
+    const named = [...listed, ...replacedNotes(replaced, deps.kbRoot, deps.timezone)];
     return unreadable === undefined ? { files: named } : { files: named, unreadable };
   };
 
