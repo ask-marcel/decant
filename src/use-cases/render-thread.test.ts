@@ -616,15 +616,34 @@ describe('a zip in a thread that the library read in part', () => {
       drive: { items: { '01ZIP': item }, archiveEntries },
     });
 
-  it('is named for what stays in the archive, attached or linked', async () => {
+  // The report lists it under what was left in place with nothing written, so the line names the files
+  // that stay in the archive, and not the archive, whose first files were written.
+  it('is named for the files that stay in the archive, attached or linked', async () => {
     const { outcome, files } = await rendered(Object.assign([{ path: 'terms.docx', text: '# Terms' }], { totalEntries: 150 }));
-    const reason = '149 of its 150 files stay in the archive: the converter read the first 1';
+    const reason = 'the converter reads the first 1 files of an archive';
 
     expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([
-      { path: `${THREAD_RELATIVE}: Contracts.zip`, reason },
-      { path: `${THREAD_RELATIVE}: Bundle.zip`, reason },
+      { path: `${THREAD_RELATIVE}: Contracts.zip, files 2 to 150`, reason },
+      { path: `${THREAD_RELATIVE}: Bundle.zip, files 2 to 150`, reason },
     ]);
-    expect(files.written.get(`${ATTACHMENTS_STORE}/Contracts.zip.md`)).toContain(`${reason}.`);
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Contracts.zip.md`)).toContain('149 of its 150 files stay in the archive: the converter read the first 1.');
+  });
+
+  // A file named by a machine id that nothing reads is left out of the thread. A zip so named that the
+  // library read in part was read, and keeps its card and its line, which says nothing of the cut.
+  it('named by a machine id, keeps its card and its line in the thread', async () => {
+    const opaque = { ...zip, name: '0b7c1d2e-1111-2222-3333-444455556666.zip' };
+    const { outcome, files } = await run({
+      reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: { m1: [opaque] } },
+      drive: { archiveEntries: Object.assign([{ path: 'terms.docx', text: '# Terms' }], { totalEntries: 150 }) },
+    });
+
+    expect(files.written.has(`${ATTACHMENTS_STORE}/${opaque.name}.md`)).toBe(true);
+    expect(files.written.get(THREAD_FILE)).toContain(opaque.name);
+    expect(files.written.get(THREAD_FILE)).not.toContain('the converter');
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([
+      { path: `${THREAD_RELATIVE}: ${opaque.name}, files 2 to 150`, reason: 'the converter reads the first 1 files of an archive' },
+    ]);
   });
 
   it('is not named when the library read it whole, attached or linked', async () => {

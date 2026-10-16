@@ -1950,7 +1950,7 @@ describe('an archive the library read in part', () => {
     const done = await run({ reader: { pages: [{ items: [zip], skipped: 0, deltaLink: 'cursor-1' }], archiveEntries: entries } });
 
     expect(done.summary).toMatchObject({ converted: 1, skipped: 1, failed: 0 });
-    expect(done.notes?.skipped).toEqual([{ path: 'Projets/Livraison.zip', reason: '149 of its 150 files stay in the archive: the converter read the first 1' }]);
+    expect(done.notes?.skipped).toEqual([{ path: 'Projets/Livraison.zip, files 2 to 150', reason: 'the converter reads the first 1 files of an archive' }]);
     expect(stateAfter(done.files).drives['b!one']?.retry).toEqual({});
   });
 });

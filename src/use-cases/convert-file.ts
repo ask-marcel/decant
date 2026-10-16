@@ -9,8 +9,7 @@ import { byteString } from '../domain/mime-text.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_SLIDES_NOTE, NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { fitSegment, safeRelPath, safeSegment } from '../domain/kb-path.ts';
-import type { SkipReason } from '../domain/report.ts';
-import { cutArchiveReason } from '../domain/report.ts';
+import type { ArchiveCut, SkipReason } from '../domain/report.ts';
 import { linkMembers, placeMembers } from '../domain/archive-members.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
 import type { Result } from '../domain/result.ts';
@@ -54,11 +53,10 @@ export type ConvertFileInput = {
 
 // `lost` names what a conversion had to go without, a part of the document that would not read: the
 // document landed without it. A library sync tries such a document again for the rest; a mail thread
-// keeps what landed.
+// keeps what landed. `leftOut` says how much of an archive the library read when it read it in part,
+// which no run reads more of.
 export type ConvertOutcome =
-  // `lost` names a part the conversion went without, to try again for; `leftOut` what it left in an
-  // archive the library read in part, which no run reads more of.
-  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly lost?: string; readonly leftOut?: string }
+  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly lost?: string; readonly leftOut?: ArchiveCut }
   | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
 
@@ -312,8 +310,8 @@ const convertArchive = async (context: Context): Promise<ConvertOutcome> => {
   return writeArchiveEntries(context, folder, archivePath, entries.value);
 };
 
-const leftOutOf = (entries: ArchiveEntries): { readonly leftOut?: string } =>
-  entries.totalEntries === undefined ? {} : { leftOut: cutArchiveReason(entries.length, entries.totalEntries) };
+const leftOutOf = (entries: ArchiveEntries): { readonly leftOut?: ArchiveCut } =>
+  entries.totalEntries === undefined ? {} : { leftOut: { read: entries.length, total: entries.totalEntries } };
 
 const writeArchiveEntries = async (context: Context, folder: string, archivePath: string, entries: ArchiveEntries): Promise<ConvertOutcome> => {
   const outputs: string[] = [archivePath];
