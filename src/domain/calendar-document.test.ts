@@ -102,6 +102,18 @@ describe('writing one calendar event as a document', () => {
     expect(rendered({ ...event, body: '<p>Room &#x110000;4</p>' })).toContain('Room \uFFFD4');
   });
 
+  // The link to join is in `online_meeting:`, and the block Teams writes into every invitation says it
+  // again among a meeting ID, a passcode, dial-in numbers and help.
+  it('the join block of an invitation goes from the body', () => {
+    const rule = `<div>${'_'.repeat(80)}</div>`;
+    const block = `${rule}<div><span>Microsoft Teams</span> <a href="https://aka.ms/x">Need help?</a></div><div><a href="https://teams.microsoft.com/l/meetup-join/abc">Join the meeting now</a></div><div>Passcode: aB3cD4</div>${rule}`;
+    const written = rendered({ ...event, body: `<p>Bring the figures.</p>${block}` });
+
+    expect(written).toContain('# Offsite planning\n\nBring the figures.\n');
+    expect(written).not.toContain('Passcode');
+    expect(written).toContain('online_meeting: https://teams.microsoft.com/l/meetup-join/abc');
+  });
+
   // Outlook wraps each link of an invitation in a scanner of its own, as it does in mail.
   it('a link Outlook wrapped in an event body reads as where it goes', () => {
     const body = '<p>See the <a href="%s">agenda</a></p>'.replace('%s', SAFELINK.replaceAll('&', '&amp;'));

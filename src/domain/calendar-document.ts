@@ -3,6 +3,7 @@ import { renderFrontMatter, withFrontMatter, withoutFrontMatter } from './front-
 import type { FrontMatterField } from './front-matter.ts';
 import { htmlToText } from './html-text.ts';
 import { isCalendar, renderCalendar } from './icalendar.ts';
+import { withoutJoinBlocks } from './join-block.ts';
 import { NO_TEXT_NOTE } from './kb-document.ts';
 import { linkDestination } from './markdown-link.ts';
 import { unwrapSafelinks } from './safelink.ts';
@@ -65,9 +66,9 @@ const attachmentLine = (attachment: EventAttachmentLink): string => `- [${attach
 const titleOf = (event: CalendarEvent): string => (event.subject.length > 0 ? event.subject : `event ${event.id}`);
 
 // Outlook wraps each link of an invitation in a scanner of its own, as it does in mail, and the
-// wrapper comes off the same way.
+// wrapper comes off the same way. The join block goes whole: `online_meeting:` holds the link to join.
 const bodyOf = (input: RenderEventInput): string => {
-  const said = unwrapSafelinks(htmlToText(input.event.body));
+  const said = withoutJoinBlocks(unwrapSafelinks(htmlToText(input.event.body)));
   return [
     `# ${titleOf(input.event)}`,
     ...(said.length === 0 ? [] : ['', said]),
