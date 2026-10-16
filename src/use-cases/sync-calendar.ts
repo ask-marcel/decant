@@ -411,11 +411,18 @@ const writeChanged = async (
   return ok(progressing);
 };
 
+// A ledger entry the run recorded is a new one: the run tried the event, and it failed.
+const failedThisRun = (before: CalendarState, state: CalendarState, id: string): boolean => {
+  const attempt = state.retry?.[id];
+  return attempt !== undefined && attempt !== before.retry?.[id];
+};
+
 // The notes the state moved on from in this run: a series that gained or lost an exception, and an
 // exception whose series was written after it. Each is read again and written with its links in the
-// same run, so no note links to what the state no longer holds.
-const relinked = async (deps: SyncCalendarDeps, input: SyncCalendarInput, carried: Progressing): Promise<Result<Progressing, StepError>> => {
-  const stale = staleSeriesLinks(carried.state);
+// same run, so no note links to what the state no longer holds. One the run already tried and failed
+// waits for the next run: a second try in this one would spend one of its three tries.
+const relinked = async (deps: SyncCalendarDeps, input: SyncCalendarInput, before: CalendarState, carried: Progressing): Promise<Result<Progressing, StepError>> => {
+  const stale = staleSeriesLinks(carried.state).filter((id) => !failedThisRun(before, carried.state, id));
   if (stale.length === 0) return ok(carried);
   deps.progress.start(stale.length, CALENDAR_NAME);
   return writeChanged(deps, input, carried, stale, new Set(stale));
@@ -475,7 +482,7 @@ export const createSyncCalendar =
     const gone = await Promise.all(delta.value.changes.filter((change) => change.removed).map((change) => archiveGone(deps, state, change.id)));
     deps.progress.start(ids.length, CALENDAR_NAME);
     const written = await writeChanged(deps, input, fold({ summary: EMPTY, notes: NO_NOTES, state }, gone), ids, RELINK_NONE);
-    const linked = written.ok ? await relinked(deps, input, written.value) : written;
+    const linked = written.ok ? await relinked(deps, input, state, written.value) : written;
     deps.progress.done();
     if (!linked.ok) return linked;
     return finish(deps, input, state, linked.value, delta.value.deltaLink);
