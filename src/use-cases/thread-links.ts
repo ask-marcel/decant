@@ -340,12 +340,13 @@ const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, a
   // for having no extension, so a thread saying plainly that a folder was shared reported a file it
   // could not read. The card still stands, being the record that the thread depended on it.
   if (found.value.kind === 'folder') return { note: 'It is a folder at the source, so there was nothing to pull.', lastModified, modifiedBy };
-  // The metadata read is what a thread written again for a flag or a reply pays for a document it holds:
-  // the same version at the source is not pulled or converted a second time.
-  const version = versionOf(found.value);
-  if (held !== undefined && held.version === version) return { record: held.record, lastModified, modifiedBy, version, held: true };
   const twin = await carriedAs(deps, place, link, found.value);
   if (twin !== undefined) return { note: carriedNote(twin), lastModified, modifiedBy };
+  // The metadata read is what a thread written again for a flag or a reply pays for a document it holds:
+  // the same version at the source is not pulled or converted a second time. A file a message attached
+  // came first: the attachment is the copy a thread keeps.
+  const version = versionOf(found.value);
+  if (held !== undefined && held.version === version) return { record: held.record, lastModified, modifiedBy, version, held: true };
   const outcome = await deps.convertFile({
     item: found.value,
     driveId,
