@@ -110,6 +110,29 @@ describe('writing one calendar event as a document', () => {
 });
 
 describe('writing what an event carried as a document of its own', () => {
+  // The library passes an `.ics` through as text: a timezone block, vendor properties and the body
+  // again in HTML, around a handful of fields worth keeping.
+  it('an invitation an event carried is read for its fields, not kept as raw iCalendar', () => {
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'METHOD:REQUEST',
+      'BEGIN:VEVENT',
+      'SUMMARY:Budget review',
+      'DTSTART;TZID=Europe/Paris:20260915T100000',
+      'DTEND;TZID=Europe/Paris:20260915T110000',
+      'LOCATION:Room 2',
+      'X-ALT-DESC;FMTTYPE=text/html:<p>Hello</p>',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].join('\r\n');
+    const written = renderEventAttachment({ event, name: 'invite.ics', contentType: 'text/calendar', size: 300, text: ics, syncedAt: '2026-09-11T14:00:00Z' });
+
+    expect(written).toContain('## Budget review');
+    expect(written).toContain('- **When:** 2026-09-15 10:00 (Europe/Paris) to 11:00');
+    expect(written).not.toContain('BEGIN:VCALENDAR');
+    expect(written).not.toContain('<p>');
+  });
+
   it('a link Outlook wrapped in what an attachment says reads as where it goes', () => {
     const written = renderEventAttachment({ event, name: 'Notes.docx', contentType: '', size: 10, text: `See ${SAFELINK} first.`, syncedAt: '2026-09-11T14:00:00Z' });
 
