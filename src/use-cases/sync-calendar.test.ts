@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { basename } from 'node:path';
 import type { CalendarEvent } from '../domain/calendar-event.ts';
 import { emptyCalendarState, serializeCalendarState, withCursor, withEvent } from '../domain/calendar-state.ts';
+import type { CalendarState, EventRecord } from '../domain/calendar-state.ts';
 import { freeSegment } from '../domain/kb-path.ts';
 import { createCalendarReaderFake } from '../test-helpers/calendar-reader-fake.ts';
 import type { CalendarReaderFake, CalendarReaderSeed } from '../test-helpers/calendar-reader-fake.ts';
@@ -792,5 +793,76 @@ describe('an attachment that fails on an event written again', () => {
     expect(stateOf(done.files).events['a']?.outputs).toEqual([NOTE, VENUES]);
     expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry?.a).toBeDefined();
     expect(done.files.written.get(NOTE)).toContain('Offsite planning.attachments/Venues.xlsx.md');
+  });
+});
+
+// A series and its exceptions are one meeting: each note says where the others are, and a note the
+// state has moved on from is written again in the same run.
+describe('linking a series and its exceptions', () => {
+  const MASTER = event('m', 'Monthly review', '2026-01-05T09:00:00Z', { kind: 'seriesMaster', recurrence: 'every month on the first Monday' });
+  const MARCH = event('x', 'Monthly review', '2026-03-02T10:00:00Z', { kind: 'exception', seriesMasterId: 'm' });
+  const MASTER_NOTE = `${ROOT}/2026-01-05/Monthly review.md`;
+  const MARCH_NOTE = `${ROOT}/2026-03-02/Monthly review.md`;
+  const recorded = (file: string, from: CalendarEvent, series?: EventRecord['series']): EventRecord => ({
+    file,
+    lastModified: from.lastModified,
+    subject: from.subject,
+    outputs: [file],
+    ...(series === undefined ? {} : { series }),
+  });
+  const seeded = (state: CalendarState): FilesFakeSeed => ({ texts: { [STATE_PATH]: serializeCalendarState(state) } });
+
+  it('an exception and its series written in one run link to each other, whichever the delta named first', async () => {
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'x', removed: false },
+          { id: 'm', removed: false },
+        ],
+        events: { m: MASTER, x: MARCH },
+      },
+      concurrency: 1,
+    });
+
+    expect(done.files.written.get(MARCH_NOTE)).toContain('Part of the series [Monthly review](<../2026-01-05/Monthly review.md>).');
+    expect(done.files.written.get(MASTER_NOTE)).toContain('## Exceptions\n\n- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)');
+  });
+
+  it('a series written before is written again when a new exception lands, to list it', async () => {
+    const state = withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [] }));
+    const done = await run({ reader: { changes: [{ id: 'x', removed: false }], events: { m: MASTER, x: MARCH } }, files: seeded(state) });
+
+    expect(done.reader.calls.filter((call) => call.startsWith('event:'))).toStrictEqual(['event:x', 'event:m']);
+    expect(done.files.written.get(MASTER_NOTE)).toContain('- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)');
+  });
+
+  it('a series is written again without an exception deleted at the source', async () => {
+    const state = withEvent(
+      withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [MARCH_NOTE] })),
+      'x',
+      recorded(MARCH_NOTE, MARCH, { master: 'm', linked: MASTER_NOTE })
+    );
+    const done = await run({ reader: { changes: [{ id: 'x', removed: true }], events: { m: MASTER } }, files: seeded(state) });
+
+    expect(done.files.written.get(MASTER_NOTE)).not.toContain('## Exceptions');
+    expect(stateOf(done.files).events['m']).toMatchObject({ series: { exceptions: [] } });
+  });
+
+  // A series written before notes linked their series is linked when the calendar is read whole.
+  it('links a series and its exception written before this, when the calendar is read whole', async () => {
+    const state = withEvent(withEvent(emptyCalendarState(), 'm', recorded(MASTER_NOTE, MASTER)), 'x', recorded(MARCH_NOTE, MARCH));
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'm', removed: false },
+          { id: 'x', removed: false },
+        ],
+        events: { m: MASTER, x: MARCH },
+      },
+      files: seeded(state),
+    });
+
+    expect(done.files.written.get(MARCH_NOTE)).toContain('Part of the series');
+    expect(done.files.written.get(MASTER_NOTE)).toContain('## Exceptions');
   });
 });
