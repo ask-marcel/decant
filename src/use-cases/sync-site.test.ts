@@ -1953,4 +1953,12 @@ describe('an archive the library read in part', () => {
     expect(done.notes?.skipped).toEqual([{ path: 'Projets/Livraison.zip, files 2 to 150', reason: 'the converter reads the first 1 files of an archive' }]);
     expect(stateAfter(done.files).drives['b!one']?.retry).toEqual({});
   });
+
+  it('names one file kept back as one file, not as a range', async () => {
+    const zip = item({ name: 'Livraison.zip', path: 'Projets/Livraison.zip' });
+    const entries = Object.assign([{ path: 'notes.docx', text: '# Notes' }], { totalEntries: 2 });
+    const done = await run({ reader: { pages: [{ items: [zip], skipped: 0, deltaLink: 'cursor-1' }], archiveEntries: entries } });
+
+    expect(done.notes?.skipped).toEqual([{ path: 'Projets/Livraison.zip, file 2', reason: 'the converter reads the first 1 files of an archive' }]);
+  });
 });
