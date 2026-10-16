@@ -417,15 +417,29 @@ const failedThisRun = (before: CalendarState, state: CalendarState, id: string):
   return attempt !== undefined && attempt !== before.retry?.[id];
 };
 
-// The notes the state moved on from in this run: a series that gained or lost an exception, and an
-// exception whose series was written after it. Each is read again and written with its links in the
-// same run, so no note links to what the state no longer holds. One the run already tried and failed
-// waits for the next run: a second try in this one would spend one of its three tries.
+// An exception filed before the kept day is out of reach, as `inReach` says: a series is kept whatever
+// its day, and an exception is filed under the day it starts.
+const outOfReach = (input: SyncCalendarInput, record: EventRecord): boolean =>
+  input.since !== undefined && record.series?.master !== undefined && dayOfNote(record.file) < input.since;
+
+// A stale note is read again unless the run already tried it and failed, since a second try in this
+// run would spend one of its three, or unless no run would write it: an exception before the kept day,
+// an event given up on at the version it holds. Those would be read on every run for nothing.
+const relinkable = (input: SyncCalendarInput, before: CalendarState, state: CalendarState, id: string, record: EventRecord): boolean =>
+  !failedThisRun(before, state, id) && !isGivenUp(state.retry?.[id], record.lastModified) && !outOfReach(input, record);
+
+// The notes the state moved on from, in this run or one before: a series that gained or lost an
+// exception, an exception whose series was written or refiled after it. Each is read again and written
+// with its links in the same run. A relink that moves a note leaves the notes that link to it stale
+// until the next run, and a note left out here keeps its stale link.
 const relinked = async (deps: SyncCalendarDeps, input: SyncCalendarInput, before: CalendarState, carried: Progressing): Promise<Result<Progressing, StepError>> => {
-  const stale = staleSeriesLinks(carried.state).filter((id) => !failedThisRun(before, carried.state, id));
-  if (stale.length === 0) return ok(carried);
-  deps.progress.start(stale.length, CALENDAR_NAME);
-  return writeChanged(deps, input, carried, stale, new Set(stale));
+  const stale = new Set(staleSeriesLinks(carried.state));
+  const relink = Object.entries(carried.state.events)
+    .filter(([id, record]) => stale.has(id) && relinkable(input, before, carried.state, id, record))
+    .map(([id]) => id);
+  if (relink.length === 0) return ok(carried);
+  deps.progress.start(relink.length, CALENDAR_NAME);
+  return writeChanged(deps, input, carried, relink, new Set(relink));
 };
 
 // The cursor moves only once everything the delta reported has landed: an event that could not be

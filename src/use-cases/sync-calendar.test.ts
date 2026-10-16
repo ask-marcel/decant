@@ -895,4 +895,31 @@ describe('linking a series and its exceptions', () => {
 
     expect(done.files.written.get(MASTER_NOTE)).toContain('- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)');
   });
+
+  // A run writes neither an exception before the kept day nor an event given up on at the version it
+  // holds, so reading one again for its links would read it on every run and write nothing.
+  it('an exception before the kept day, or given up on, is not read again when its series moves', async () => {
+    const state = withEvent(
+      withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [MARCH_NOTE] })),
+      'x',
+      recorded(MARCH_NOTE, MARCH, { master: 'm', linked: MASTER_NOTE })
+    );
+    const renamed = { ...MASTER, subject: 'Monthly sync', lastModified: '2026-04-02T00:00:00Z' };
+    const reader = { changes: [{ id: 'm', removed: false }], events: { m: renamed, x: MARCH } };
+    const tries = { attempts: 3, version: MARCH.lastModified, name: 'Monthly review', reason: 'disk full' };
+    const early = await run({ reader, files: seeded(state), since: '2026-04-01' });
+    const givenUp = await run({ reader, files: seeded({ ...state, retry: { x: tries } }) });
+
+    expect(early.files.written.has(`${ROOT}/2026-01-05/Monthly sync.md`)).toBe(true);
+    expect(early.reader.calls).not.toContain('event:x');
+    expect(givenUp.files.written.has(`${ROOT}/2026-01-05/Monthly sync.md`)).toBe(true);
+    expect(givenUp.reader.calls).not.toContain('event:x');
+  });
+
+  it('a series that began before the kept day is still written again to list a new exception', async () => {
+    const state = withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [] }));
+    const done = await run({ reader: { changes: [{ id: 'x', removed: false }], events: { m: MASTER, x: MARCH } }, files: seeded(state), since: '2026-02-01' });
+
+    expect(done.files.written.get(MASTER_NOTE)).toContain('- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)');
+  });
 });
