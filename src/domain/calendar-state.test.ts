@@ -1,6 +1,18 @@
 import { describe, expect, it } from 'bun:test';
 import type { CalendarEvent } from './calendar-event.ts';
-import { CALENDAR_ID, CALENDAR_NAME, emptyCalendarState, eventFileFor, parseCalendarState, serializeCalendarState, withCursor, withEvent, withoutEvent } from './calendar-state.ts';
+import {
+  CALENDAR_ID,
+  CALENDAR_NAME,
+  emptyCalendarState,
+  eventFileFor,
+  parseCalendarState,
+  serializeCalendarState,
+  seriesLinksOf,
+  staleSeriesLinks,
+  withCursor,
+  withEvent,
+  withoutEvent,
+} from './calendar-state.ts';
 
 const event = (id: string, subject: string, start: string): CalendarEvent => ({
   id,
@@ -106,5 +118,61 @@ describe('deciding where an event goes', () => {
 
   it('an event with no usable start still lands somewhere, under the undated day', () => {
     expect(eventFileFor('kb/Calendar', event('a', 'Someday', ''), 'UTC', new Set())).toBe('kb/Calendar/0000-00-00/Someday.md');
+  });
+});
+
+// A series and its exceptions link to each other. Each record keeps what its note links to as it was
+// written, so a run can tell which notes the state has moved on from.
+describe('the notes of a series and its exceptions', () => {
+  const MASTER = 'kb/Calendar/2026-01-05/Monthly review.md';
+  const MARCH = 'kb/Calendar/2026-03-02/Monthly review.md';
+  const JUNE = 'kb/Calendar/2026-06-01/Monthly review.md';
+  const record = (file: string): { file: string; lastModified: string; subject: string; outputs: string[] } => ({
+    file,
+    lastModified: 'v',
+    subject: 'Monthly review',
+    outputs: [file],
+  });
+  const linked = withEvent(
+    withEvent(withEvent(emptyCalendarState(), 'm', { ...record(MASTER), series: { exceptions: [MARCH, JUNE] } }), 'june', {
+      ...record(JUNE),
+      series: { master: 'm', linked: MASTER },
+    }),
+    'march',
+    { ...record(MARCH), series: { master: 'm', linked: MASTER } }
+  );
+
+  it('a series and its exceptions read back with what each note links to, and a field of the wrong kind reads as absent', () => {
+    const loose = parseCalendarState({
+      version: 1,
+      source: { kind: 'calendar' },
+      events: { a: { file: 'f', series: { master: 4, linked: 'x', exceptions: 'y' } }, b: { file: 'g', series: 'z' } },
+    });
+
+    expect(parseCalendarState(JSON.parse(serializeCalendarState(linked)))).toEqual({ ok: true, value: linked });
+    expect(loose.ok ? loose.value.events['a'] : undefined).toStrictEqual({ file: 'f', lastModified: '', subject: '', outputs: [], series: { linked: 'x' } });
+    expect(loose.ok ? loose.value.events['b'] : undefined).toStrictEqual({ file: 'g', lastModified: '', subject: '', outputs: [] });
+  });
+
+  it('a series links to its exceptions, earliest first, an exception to its series, and an event of no series to nothing', () => {
+    expect(seriesLinksOf(linked, 'm', undefined)).toStrictEqual({ exceptions: [MARCH, JUNE] });
+    expect(seriesLinksOf(linked, 'march', 'm')).toStrictEqual({ exceptions: [], linked: MASTER });
+    expect(seriesLinksOf(linked, 'lone', 'gone')).toStrictEqual({ exceptions: [] });
+  });
+
+  it('a series is stale when it gained or lost an exception, and an exception when its master was written after it', () => {
+    const gained = withEvent(linked, 'sept', { ...record('kb/Calendar/2026-09-07/Monthly review.md'), series: { master: 'm', linked: MASTER } });
+
+    expect(staleSeriesLinks(linked)).toStrictEqual([]);
+    expect(staleSeriesLinks(gained)).toStrictEqual(['m']);
+    expect(staleSeriesLinks(withoutEvent(linked, 'june'))).toStrictEqual(['m']);
+  });
+
+  // Written before its master, an exception links to nothing until the master is written.
+  it('an exception written before its master is stale once the master is written, and an event of no series never is', () => {
+    const alone = withEvent(withEvent(emptyCalendarState(), 'march', { ...record(MARCH), series: { master: 'm' } }), 'lunch', record('kb/Calendar/2026-02-01/Lunch.md'));
+
+    expect(staleSeriesLinks(alone)).toStrictEqual([]);
+    expect(staleSeriesLinks(withEvent(alone, 'm', { ...record(MASTER), series: { exceptions: [MARCH] } }))).toStrictEqual(['march']);
   });
 });

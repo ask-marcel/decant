@@ -3,6 +3,7 @@ import { freePath, safeSegment } from './kb-path.ts';
 import { stringList } from './mail-state.ts';
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
+import { compareText } from './utilities/compare-text.ts';
 import { dayIn } from './zoned-day.ts';
 import { parseAttempts } from './retry-ledger.ts';
 import type { Attempts } from './retry-ledger.ts';
@@ -25,7 +26,14 @@ export type EventRecord = {
   readonly subject: string;
   readonly outputs: ReadonlyArray<string>;
   readonly owed?: true;
+  // What the note says of its series, as it was written. Absent from an event of no series, and from
+  // one written before notes linked their series.
+  readonly series?: SeriesNote;
 };
+
+// The master an exception belongs to and the note of the master it linked to, or the notes of the
+// exceptions a series master listed.
+export type SeriesNote = { readonly master?: string; readonly linked?: string; readonly exceptions?: ReadonlyArray<string> };
 
 export type CalendarState = {
   readonly version: typeof CALENDAR_STATE_VERSION;
@@ -59,12 +67,26 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
   return typeof value === 'string' ? value : undefined;
 };
 
+const seriesNoteOf = (raw: unknown): Pick<EventRecord, 'series'> => {
+  if (!isRecord(raw)) return {};
+  const master = readString(raw, 'master');
+  const linked = readString(raw, 'linked');
+  return {
+    series: {
+      ...(master === undefined ? {} : { master }),
+      ...(linked === undefined ? {} : { linked }),
+      ...(Array.isArray(raw['exceptions']) ? { exceptions: stringList(raw['exceptions']) } : {}),
+    },
+  };
+};
+
 const recordOf = (entry: Record<string, unknown>): EventRecord => ({
   file: readString(entry, 'file') ?? '',
   lastModified: readString(entry, 'lastModified') ?? '',
   subject: readString(entry, 'subject') ?? '',
   outputs: stringList(entry['outputs']),
   ...(entry['owed'] === true ? { owed: true } : {}),
+  ...seriesNoteOf(entry['series']),
 });
 
 const eventsOf = (raw: unknown): Readonly<Record<string, EventRecord>> => {
@@ -110,3 +132,29 @@ export const eventFileFor = (root: string, event: CalendarEvent, zone: string, t
   const name = `${safeSegment(nameOf(event))}${MARKDOWN}`;
   return freePath(`${root}/${dayIn(event.start, zone)}`, name, event.id, taken, own, budget);
 };
+
+// What an event's note links to, as the state holds its series now: a series master the notes of its
+// exceptions, earliest day first, and an exception the note of its master, when the state holds it.
+export type SeriesLinks = { readonly exceptions: ReadonlyArray<string>; readonly linked?: string };
+
+export const seriesLinksOf = (state: CalendarState, id: string, master: string | undefined): SeriesLinks => {
+  const exceptions = Object.entries(state.events)
+    .filter(([held, record]) => held !== id && record.series?.master === id)
+    .map(([, record]) => record.file)
+    .toSorted(compareText);
+  const linked = master === undefined ? undefined : state.events[master]?.file;
+  return linked === undefined ? { exceptions } : { exceptions, linked };
+};
+
+const sameFiles = (left: ReadonlyArray<string>, right: ReadonlyArray<string>): boolean => left.length === right.length && left.every((file, at) => file === right[at]);
+
+const saysNow = (state: CalendarState, id: string, series: SeriesNote): boolean => {
+  const now = seriesLinksOf(state, id, series.master);
+  return series.master === undefined ? sameFiles(now.exceptions, series.exceptions ?? []) : now.linked === series.linked;
+};
+
+// The events whose note no longer links to what the state holds: a series that gained or lost an
+// exception, an exception whose master was written or refiled after it. An event of no series, or
+// one written before notes linked their series, is none of them.
+export const staleSeriesLinks = (state: CalendarState): ReadonlyArray<string> =>
+  Object.entries(state.events).flatMap(([id, record]) => (record.series === undefined || saysNow(state, id, record.series) ? [] : [id]));
