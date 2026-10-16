@@ -16,6 +16,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { REPORT_FILE_NAME, writeReport } from './sync-site.ts';
 import { CURSOR_FILE_NAME } from './cursor-files.ts';
+import { sameIgnoringCase } from '../domain/kb-path.ts';
 import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 import { putAside } from './put-aside.ts';
@@ -55,10 +56,31 @@ type Roots = { readonly root: string };
 
 const rootsOf = (deps: SyncPlanDeps, plan: Plan): Roots => ({ root: `${deps.kbRoot}/${planRootName(plan.title)}` });
 
-// The folder of a plan's earlier title, when the title it has now gives another one.
-const formerRootsOf = (deps: SyncPlanDeps, input: SyncPlanInput): Roots | undefined => {
-  const former = input.formerTitle === undefined ? undefined : rootsOf(deps, { ...input.plan, title: input.formerTitle });
-  return former?.root === rootsOf(deps, input.plan).root ? undefined : former;
+// Whether a folder is free for this plan: no state in it, or this plan's own.
+const freeFor = async (deps: SyncPlanDeps, roots: Roots, planId: string): Promise<boolean> => {
+  const text = await deps.files.readText(`${roots.root}/${PLAN_STATE_FILE}`);
+  if (!text.ok) return text.error.kind === 'not-found';
+  const parsed = parseJson(text.value);
+  const state = parsed.ok ? parsePlanState(parsed.value) : parsed;
+  return state.ok && state.value.plan.id === planId;
+};
+
+// Where a run reads a plan's state and writes its files, and the plan as its state records it. A plan
+// renamed since moves to the folder of its new title, from the folder of its former one. A title
+// changed in letter case alone keeps its folder and its recorded title: Windows and macOS read both
+// names as one folder. A new title whose folder another plan's state holds stops the plan, since
+// moving in would write over that plan.
+type Placed = { readonly roots: Roots; readonly recorded: Plan; readonly former?: Roots };
+
+const placedOf = async (deps: SyncPlanDeps, input: SyncPlanInput): Promise<Result<Placed, StepError>> => {
+  const roots = rootsOf(deps, input.plan);
+  if (input.formerTitle === undefined) return ok({ roots, recorded: input.plan });
+  const recorded = { ...input.plan, title: input.formerTitle };
+  const former = rootsOf(deps, recorded);
+  if (sameIgnoringCase(former.root, roots.root)) return ok({ roots: former, recorded });
+  if (!(await freeFor(deps, roots, input.plan.id)))
+    return failed('placePlan', 'folder-taken', `the folder of the title ${input.plan.title} holds another plan; rename one of them`);
+  return ok({ roots, recorded: input.plan, former });
 };
 
 // What the folder of an earlier title holds beside the pages, which no task record names: put aside
@@ -286,13 +308,16 @@ const triedDetails = (state: PlanState, entries: ReadonlyArray<Writing>): Progre
   return { summary: { ...EMPTY, failed: tried.tried }, notes: { ...NO_NOTES, failed: tried.failed }, state: { ...state, retry: tried.retry } };
 };
 
+const boardOwed = (changed: number, state: PlanState, former: Roots | undefined): boolean => changed > 0 || state.lastRun.length === 0 || former !== undefined;
+
 export const createSyncPlan =
   (deps: SyncPlanDeps): SyncPlan =>
   async (input) => {
-    const roots = rootsOf(deps, input.plan);
+    const where = await placedOf(deps, input);
+    if (!where.ok) return where;
     // A plan renamed reads its state where its files are, and places every task under the new title.
-    const former = formerRootsOf(deps, input);
-    const state: PlanState = { ...(await loadState(deps, former ?? roots, input.plan)), version: PLAN_STATE_VERSION };
+    const { roots, former } = where.value;
+    const state: PlanState = { ...(await loadState(deps, former ?? roots, where.value.recorded)), version: PLAN_STATE_VERSION };
     const plan = await listed(deps, input.plan);
     if (!plan.ok) return plan;
     const labels = await labelNamesOf(deps, input.plan);
@@ -311,8 +336,9 @@ export const createSyncPlan =
     const folded = fold(written.value, await Promise.all(gone.map((entry) => archiveGone(deps, roots, entry))));
     // A task the plan no longer holds leaves the ledger too: given up on, it would be named in every report.
     const done = { ...folded, state: { ...folded.state, retry: heldAttempts(folded.state.retry, new Set(plan.value.tasks.map((task) => task.id))) } };
-    // A task whose details failed this run still has its card, and the board is drawn again with it.
-    if (work.length + gone.length + opening.summary.failed > 0 || state.lastRun.length === 0) await writeBoard(deps, input, roots, entries, plan.value.buckets, names);
+    // A task whose details failed this run still has its card, and the board is drawn again with it; a
+    // plan that moved draws it in its new folder.
+    if (boardOwed(work.length + gone.length + opening.summary.failed, state, former)) await writeBoard(deps, input, roots, entries, plan.value.buckets, names);
     const finished = await finish(deps, input, roots, state, done);
     if (finished.ok && former !== undefined) await leaveFolder(deps, former);
     return finished;
