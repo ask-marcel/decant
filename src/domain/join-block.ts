@@ -43,6 +43,9 @@ const spanAt = (lines: ReadonlyArray<string>, at: number): Span | undefined => {
   return to > at ? { from: at, to } : undefined;
 };
 
+// The line a join block leaves where nothing else holds its link to join.
+export const joinLine = (joinUrl: string): string => `Online meeting: ${joinUrl}`;
+
 const joinUrlOf = (block: string): string | undefined => JOIN_AT.exec(block.replace(MARKDOWN_LINK, '$1'))?.[0];
 
 // What a block leaves: nothing, or the line `standIn` makes of its link to join. Asked for that line

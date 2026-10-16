@@ -1,6 +1,6 @@
 import type { Correspondent, MailMessage } from './mail-message.ts';
 import { bareSubject } from './thread-subject.ts';
-import { withoutJoinBlocks } from './join-block.ts';
+import { joinLine, withoutJoinBlocks } from './join-block.ts';
 import { unwrapSafelinks } from './safelink.ts';
 import { timeIn } from './zoned-day.ts';
 import { flagWord, inReceivedOrder } from './mail-message.ts';
@@ -84,13 +84,10 @@ export const withoutQuotedMarker = (body: string): string =>
     .replace(WIDENED_GAP, '\n\n')
     .trim();
 
-// The join block of an invitation leaves its link to join on one line, or stays whole when it holds
-// no link that the block reader knows.
-const joinLine = (joinUrl: string): string => `Online meeting: ${joinUrl}`;
-
 const bodyOf = (part: ThreadPart): string => {
   // Safelinks come off here rather than in the body rewriting, so every section of every thread
-  // gets it whatever route the body took to arrive.
+  // gets it whatever route the body took to arrive. The join block of an invitation leaves its link
+  // to join on one line, or stays whole when it holds no link that the block reader knows.
   const trimmed = withoutJoinBlocks(unwrapSafelinks(withoutQuotedMarker(withoutMailHeaders(part.body))), joinLine).trim();
   return trimmed.length === 0 ? '_This message had no readable body._' : trimmed;
 };
