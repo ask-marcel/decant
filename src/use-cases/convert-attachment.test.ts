@@ -248,6 +248,18 @@ describe('keeping what was attached to a mail', () => {
     expect(files.written.get(`${FOLDER}/Livraison/sous-dossier/deck.pptx.md`)).toContain('## Slide 1');
   });
 
+  // The same archive attached to a mail unpacks as it does in a library.
+  it('an archive attachment of one folder named for it unpacks without that folder, and its pages link to each other', async () => {
+    const entries = [
+      { path: 'Livraison/index.html', text: 'See [Week 2](pages/week2.html).' },
+      { path: 'Livraison/pages/week2.html', text: 'Back to [the summary](../index.html).' },
+    ];
+    const { files } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: entries } });
+
+    expect(files.written.get(`${FOLDER}/Livraison/index.html.md`)).toContain('See [Week 2](pages/week2.html.md).');
+    expect(files.written.get(`${FOLDER}/Livraison/pages/week2.html.md`)).toContain('Back to [the summary](../index.html.md).');
+  });
+
   it('a document unpacked from an archive records where it sat inside it', async () => {
     const { files } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
