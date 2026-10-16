@@ -645,6 +645,9 @@ finished. A knowledge base is for remembering what was decided, and most of that
 done; a sync that kept only the open tasks would delete a task from `kb/` at the moment it stopped
 being a plan and became a fact.
 
+When you flag a mail, To Do keeps the text of the mail as the notes of the task. decant removes the
+Outlook wrapper from each link in the notes, as it does in mail (see What a mailbox sync writes).
+
 An ordinary task says nothing about its importance, so the word only appears where it means
 something. A task with no notes, no steps and nothing linked carries none of those headings rather
 than empty ones.
@@ -705,6 +708,12 @@ Times are in the zone of the knowledge base, and the `timezone:` line names that
 zone). An all-day event shows days, not times. The body is the invitation's text with the markup gone, so
 the Teams boilerplate reads as a few lines rather than a page of HTML.
 
+In the body, the text of each link stays on one line, and a link with no text shows its address.
+decant removes the Outlook wrapper from each link, as it does in mail. A picture that the invitation
+carried itself shows as `\[inline image: <name>\]`, not as a link that goes to no file. A character
+reference that HTML cannot show, for example `&#x110000;`, shows as the replacement character
+(U+FFFD). Before, such a reference stopped the calendar run.
+
 The calendar delta reports what changed and no more, so each event it names is fetched in full. A
 reply, a reschedule or a new attendee moves the event's `lastModifiedDateTime`, the delta reports
 it, and it is written again, refiled under its new day if the start moved, the old copy going to
@@ -714,6 +723,8 @@ stays, marked `cancelled: true`, since a cancelled meeting is still a fact.
 What an invitation carries lands as markdown only, beside the event: the library converts an event
 attachment to text and nothing fetches its bytes, so there is no PDF and no original the way a mail
 attachment has. A picture pasted into an invitation is left out and named in the report as such.
+decant also reads an invitation (`.ics`) that an event carried, as it does for a mail. The file
+shows the subject, the time, the place, the organizer and the attendees.
 The first run walks the whole calendar and writes the events starting on or after the kept day, and
 every recurring series whatever day it began (see How far back). The cursor moves only once every
 event the delta reported has landed.
@@ -1147,6 +1158,13 @@ through its own scanner with a per-recipient tracking blob after it, and measure
 mailbox that wrapper was a third of everything written and left no link readable. Unwrapping
 means a click from the vault reaches the destination without Outlook's check at click time; this
 is an archive of what was sent, and what was sent is the destination.
+
+decant also removes this wrapper from these texts:
+
+- the body of a calendar event
+- the text of a file that an event carried
+- the notes of a To Do task
+- each document in a zip file.
 
 The head of each thread names where the file itself lives under `path:`, so a thread pasted into
 a context window can still be resolved and traced back, and lists every participant with the
