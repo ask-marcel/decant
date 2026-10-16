@@ -14,6 +14,8 @@ import { createOcrFake } from '../test-helpers/ocr-fake.ts';
 import { createConvertAttachment } from './convert-attachment.ts';
 import type { AttachmentOutcome } from './convert-attachment.ts';
 import type { MailAttachment } from './ports/mail-reader.ts';
+import type { Ocr } from './ports/ocr.ts';
+import { err } from '../domain/result.ts';
 
 const FOLDER = 'kb/Mailbox/threads/2026/2026-05-12 Contrat a3f9c1_attachments';
 
@@ -697,5 +699,34 @@ describe('keeping what was attached to a mail', () => {
     );
 
     expect(outcome).toMatchObject({ kind: 'failed' });
+  });
+});
+
+// What a picture shown in a body carries for its thread, which also says whether it counts as read: a
+// run that turned OCR off read it on purpose, and OCR that could not run or failed says nothing of it.
+describe('what a picture shown in a body carries for its thread', () => {
+  const shown = async (ocr: Ocr): Promise<string | undefined> => {
+    const drive = createDriveReaderFake();
+    const convert = createConvertAttachment({
+      reader: createMailReaderFake(),
+      files: createFilesFake(),
+      ocr,
+      logger: createLoggerFake(),
+      unpackArchive: drive.localArchive,
+      convertLocal: drive.localMarkdown,
+    });
+    const picture = attachment({ name: 'logo.png', contentType: 'image/png', size: 64 * 1024, isInline: true });
+    const outcome = await convert({ messageId: 'm1', attachment: picture, folder: FOLDER, stamp, maxBytes: 50 * 1024 * 1024, textOnly: true });
+    return outcome.kind === 'converted' ? outcome.text : 'not converted';
+  };
+  const unavailable = { kind: 'unavailable' as const, message: 'ocr disabled' };
+
+  it('a run that turned OCR off counts the picture as read with no words', async () => {
+    expect(await shown({ off: true, read: async () => err(unavailable) })).toBe('');
+  });
+
+  it('OCR that could not run, or that failed, leaves the picture to be read again', async () => {
+    expect(await shown({ read: async () => err(unavailable) })).toBeUndefined();
+    expect(await shown({ read: async () => err({ kind: 'failed', message: 'the model stopped' }) })).toBeUndefined();
   });
 });

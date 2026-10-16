@@ -194,6 +194,11 @@ describe('a run with reading turned off', () => {
 
     expect(read).toEqual({ ok: false, error: { kind: 'unavailable', message: 'ocr disabled' } });
   });
+
+  // A picture a mail shows is then read on purpose with no words, not left to be read again.
+  it('says it is off, where OCR that is on says nothing of the kind', () => {
+    expect(createNoOcr().off).toBe(true);
+  });
 });
 
 // A cache kept in memory rather than on disk: what is being tested is when the adapter reads and
