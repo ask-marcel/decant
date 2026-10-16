@@ -112,14 +112,14 @@ type Placed = {
 // address is the address of what it renders to: stable for the same embedded mail within a library
 // version, which is what lets two threads carrying it share one copy on disk. The rendering is kept
 // and handed on, so the conversion does not ask for it a second time.
-// A file with bytes is also named by what it is: a name with no extension takes the one its content
-// type goes by, and a picture whose bytes say another kind takes the extension of that kind.
+// A file with bytes is also named by what it is: a picture whose bytes say another kind than its name
+// takes the extension of that kind.
 type Addressed = { readonly hash: string; readonly rendered?: string; readonly name?: string };
 
 const addressOf = async (deps: FileDeps, messageId: string, attachment: MailAttachment): Promise<Result<Addressed, MailReaderError>> => {
   if (attachment.kind !== 'item') {
     const raw = await deps.reader.attachmentBytes(messageId, attachment.id);
-    return raw.ok ? ok({ hash: contentHash(raw.value), name: namedForBytes(namedForType(attachment.name, attachment.contentType), raw.value) }) : raw;
+    return raw.ok ? ok({ hash: contentHash(raw.value), name: namedForBytes(attachment.name, raw.value) }) : raw;
   }
   const rendered = await deps.reader.attachmentMarkdown(messageId, attachment.id);
   return rendered.ok ? ok({ hash: contentHash(new TextEncoder().encode(rendered.value)), rendered: rendered.value }) : rendered;
@@ -178,15 +178,17 @@ const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placin
   // its arrival and the reason are written down, and the body needs a name to link at.
   const { messageId, attachment } = arrival;
   const inline = isInlinePicture(attachment);
+  // Named by its content type before a byte is fetched, so a file too large to fetch is named so too.
+  const typed = withName(arrival, typedName(attachment));
   if (attachment.size > place.maxBytes) {
-    const asName = reserve(placing, nameOf(place, placing, arrival));
+    const asName = reserve(placing, nameOf(place, placing, typed));
     return { asName, paths: [], skipped: { path: attachment.name, reason: tooLargeReason(place.maxBytes) } };
   }
-  const address = await addressOf(deps, messageId, attachment);
+  const address = await addressOf(deps, messageId, typed.attachment);
   if (!address.ok) {
     const failed = { path: attachment.name, reason: `${address.error.kind}: ${address.error.message}` };
     if (arrival.recorded !== undefined) return keptAs(placing, arrival.recorded, failed);
-    return { asName: reserve(placing, nameOf(place, placing, arrival)), paths: [], failed };
+    return { asName: reserve(placing, nameOf(place, placing, typed)), paths: [], failed };
   }
   const hash = address.value.hash;
   // Within this thread only. A signature riding on ten messages of one conversation is converted
@@ -202,13 +204,13 @@ const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placin
   // file joining it is numbered as though both had come in one write. A picture keeps its place in the
   // names however it is stored, so what follows it is numbered the same whether or not it was.
   if (seen !== undefined) {
-    if (inline) reserve(placing, nameOf(place, placing, arrival));
+    if (inline) reserve(placing, nameOf(place, placing, typed));
     return { asName: seen.name, paths: seen.paths, primary: seen.primary, picture: inline ? seen.primary : undefined, text: seen.text, media: seen.media };
   }
   // A content new to the thread is named by what it is. A name the thread gave it before stays.
-  const named = withName(arrival, address.value.name);
+  const named = withName(typed, address.value.name);
   const asName = reserve(placing, freshName(place, placing, named));
-  const fresh: Fresh = { messageId, attachment: named.attachment, stamp, asName, hash, inline, rendered: address.value.rendered };
+  const fresh: Fresh = { messageId, attachment: named.attachment, sentAs: attachment.name, stamp, asName, hash, inline, rendered: address.value.rendered };
   if (inline) return convertPicture(deps, place, placing, fresh);
   return convertFresh(deps, place, placing.store, fresh);
 };
@@ -237,6 +239,10 @@ const convertPicture = async (deps: FileDeps, place: FilePlace, placing: Placing
 
 const withName = (arrival: Arrival, name: string | undefined): Arrival => (name === undefined ? arrival : { ...arrival, attachment: { ...arrival.attachment, name } });
 
+// A file with no extension in its name takes the one its content type goes by. An embedded mail and a
+// share link are not files, and keep the names they came by.
+const typedName = (attachment: MailAttachment): string | undefined => (attachment.kind === 'file' ? namedForType(attachment.name, attachment.contentType) : undefined);
+
 // The name a content the thread does not hold yet is written under. Not the name it had before when
 // the thread stores another content under that name: two messages can carry one RFC id, and a draft's
 // file can be replaced under its own name, and each content keeps a file of its own.
@@ -249,6 +255,8 @@ const freshName = (place: FilePlace, placing: Placing, arrival: Arrival): string
 type Fresh = {
   readonly messageId: string;
   readonly attachment: MailAttachment;
+  // The name the sender gave it, which the report names it by, as the card and the message index do.
+  readonly sentAs: string;
   readonly stamp: DocumentStamp;
   readonly asName: string;
   readonly hash: string;
@@ -264,7 +272,7 @@ const sharedNameOf = (place: FilePlace, record: AttachmentRecord | undefined): s
 // Converted once, then recorded in the store it belongs to: the mailbox's for a picture, the
 // thread's for anything else.
 const convertFresh = async (deps: FileDeps, place: FilePlace, into: Record<string, AttachmentRecord>, fresh: Fresh): Promise<Placed> => {
-  const { messageId, attachment, stamp, asName, hash, inline, rendered } = fresh;
+  const { messageId, attachment, sentAs, stamp, asName, hash, inline, rendered } = fresh;
   const folder = inline ? `${place.mailboxRoot}/${INLINE_FOLDER}` : `${place.here}/${ATTACHMENTS_FOLDER}`;
   // A shared folder needs names that cannot collide across every thread that writes into it, which
   // is what the content address gives. Inside one thread only a same-name-different-content pair
@@ -273,8 +281,8 @@ const convertFresh = async (deps: FileDeps, place: FilePlace, into: Record<strin
   // whatever name it comes by.
   const storedAs = inline ? (sharedNameOf(place, into[hash]) ?? disambiguateSegment(attachment.name, hash)) : asName;
   const outcome = await deps.convertAttachment({ messageId, attachment, folder, stamp, maxBytes: place.maxBytes, asName: storedAs, rendered, textOnly: inline });
-  if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: attachment.name, reason: skipReason(outcome.reason, place.maxBytes, attachment.name) } };
-  if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: attachment.name, reason: outcome.reason } };
+  if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: sentAs, reason: skipReason(outcome.reason, place.maxBytes, attachment.name) } };
+  if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: sentAs, reason: outcome.reason } };
   into[hash] = { name: storedAs, paths: outcome.outputs, primary: outcome.primary, media: outcome.media, text: outcome.text };
   return { asName: storedAs, paths: outcome.outputs, primary: outcome.primary, picture: inline ? outcome.primary : undefined, text: outcome.text, media: outcome.media };
 };

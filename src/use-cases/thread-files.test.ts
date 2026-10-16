@@ -701,6 +701,23 @@ describe('a file whose name does not say what it is', () => {
     expect([...shown.files.binary.keys()]).toStrictEqual([`${INLINE_STORE}/${disambiguateSegment('logo.gif', contentHash(new TextEncoder().encode('GIF89a')))}`]);
   });
 
+  // The content type is known before a byte is fetched, so a file too large to fetch is named by it too.
+  it('a file with no extension too large to fetch gets its card under the name its content type gives', async () => {
+    const { files } = await run({ reader: carrying({ id: 'att1', name: 'Scan', contentType: 'image/gif', size: 60 * 1024 * 1024, isInline: false }, 'GIF89a') });
+
+    expect(files.written.has(`${ATTACHMENTS_STORE}/Scan.gif.md`)).toBe(true);
+  });
+
+  // The report names a file the way the sender did, as its card and the message index do.
+  it('a renamed file that fails is named in the report by the name the sender gave it', async () => {
+    const { outcome } = await run({
+      reader: carrying({ id: 'att1', name: 'logo.png', contentType: 'image/png', size: 64 * 1024, isInline: false }, 'GIF89a'),
+      files: { failByteWritesMatching: 'logo.gif' },
+    });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed.map((entry) => entry.path.split(': ').at(-1))).toStrictEqual(['logo.png']);
+  });
+
   // A name a thread gave a file before stays, so a thread written again moves nothing for this.
   it('a file the thread named before keeps that name, whatever its bytes say', async () => {
     const { files } = await run({
