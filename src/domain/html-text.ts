@@ -21,8 +21,9 @@ const SRC = /\bsrc="([^"]*)"/i;
 const ALT = /\balt="([^"]*)"/i;
 
 const ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
-const NUMERIC = /&#(x[0-9a-f]+|\d+);/gi;
-const NAMED = /&([a-z]+);/gi;
+// A reference by number or by name, read in one pass: what one decodes to is text, never another
+// reference to read again, so `&#38;amp;` reads `&amp;`, as HTML reads it.
+const REFERENCE = /&(?:#(x[0-9a-f]+|\d+)|([a-z]+));/gi;
 
 // What HTML reads a number as: none for zero, a surrogate half or a number past Unicode, which read as
 // the replacement character, and for 128 to 159 the character of that byte in windows-1252, which is
@@ -38,9 +39,14 @@ const characterOf = (point: number): string => {
   return point >= 0x80 && point <= 0x9f ? WINDOWS_1252.decode(Uint8Array.of(point)) : String.fromCodePoint(point);
 };
 
-const decodeNumeric = (_match: string, code: string): string => characterOf(code.toLowerCase().startsWith('x') ? Number.parseInt(code.slice(1), 16) : Number.parseInt(code, 10));
+const pointOf = (code: string): number => (code.toLowerCase().startsWith('x') ? Number.parseInt(code.slice(1), 16) : Number.parseInt(code, 10));
 
-const decodeEntities = (text: string): string => text.replace(NUMERIC, decodeNumeric).replace(NAMED, (match, name: string) => ENTITIES[name.toLowerCase()] ?? match);
+const referenceOf = (match: string, code: string | undefined, name: string | undefined): string => {
+  if (code !== undefined) return characterOf(pointOf(code));
+  return ENTITIES[(name ?? '').toLowerCase()] ?? match;
+};
+
+const decodeEntities = (text: string): string => text.replace(REFERENCE, referenceOf);
 
 // A picture reads as a link to itself, named by its alt text when it has one: the bytes are not
 // here, and a bare `[image]` says less than where it was. A picture the body carried itself is named
@@ -53,15 +59,20 @@ const imageLink = (whole: string, attributes: string): string => {
   if (src === undefined) return whole;
   const alt = ALT.exec(attributes)?.[1] ?? '';
   const carried = CID.exec(src)?.[1];
-  if (carried !== undefined) return `\\[inline image: ${alt.length > 0 ? alt : carried}\\]`;
+  if (carried !== undefined) return `\\[inline image: ${[alt, carried].find((name) => name.length > 0) ?? 'image'}\\]`;
   return `[${alt.length > 0 ? alt : 'image'}](${src})`;
 };
 
 // A link's text on one line: a break or a block in it reads as a space, the rest of its markup goes,
-// a picture in it reads as its alt text, and white space folds. The link is written before the breaks
-// become lines, and a link whose text ran over two lines is one no markdown reader joins back. A link
-// with no text left reads as its address.
+// a picture in it reads as its alt text, and white space folds, a space or a line break written as a
+// reference too. The link is written before the breaks become lines, and a link whose text ran over
+// two lines reached a reader that takes the note a line at a time, as an agent or a search does, in
+// two halves. A link with no text left reads as its address.
 const WHITE_SPACE = /\s+/g;
+const SPACE_LIKE = /&(?:nbsp|#(x[0-9a-f]+|\d+));/gi;
+const BLANK = /^\s$/;
+
+const spaceOrKept = (match: string, code: string | undefined): string => (code === undefined || BLANK.test(characterOf(pointOf(code))) ? ' ' : match);
 
 const linkOf = (_whole: string, href: string, inner: string): string => {
   const text = inner
@@ -69,6 +80,7 @@ const linkOf = (_whole: string, href: string, inner: string): string => {
     .replace(BREAK, ' ')
     .replace(BLOCK_END, ' ')
     .replace(ANY_TAG, '')
+    .replace(SPACE_LIKE, spaceOrKept)
     .replace(WHITE_SPACE, ' ')
     .trim();
   return `[${text.length > 0 ? text : href}](${href})`;

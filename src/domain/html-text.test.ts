@@ -10,12 +10,11 @@ describe('reading what an HTML body says, without the markup', () => {
     expect(htmlToText('<p>See <a href="https://example.com/doc">the doc</a> now</p>')).toBe('See [the doc](https://example.com/doc) now');
     expect(htmlToText('<a class="x" data-id="1" href="https://example.com/doc" target="_blank">the doc</a>')).toBe('[the doc](https://example.com/doc)');
     expect(htmlToText('<p><img src="https://example.com/a.png" alt="the chart"></p>')).toBe('[the chart](https://example.com/a.png)');
-    expect(htmlToText('<p><img src="cid:logo"></p>')).toBe('\\[inline image: logo\\]');
     expect(htmlToText('<p><img alt="no source"></p>')).toBe('');
   });
 
   // The link was written before the breaks became lines, so a link whose text held one ran over two
-  // lines, which no markdown reader joins back into a link.
+  // lines: a reader that takes the note a line at a time, as an agent or a search does, got two halves.
   it('a link reads on one line whatever its text holds, a picture in it by its alt text, and a link with no text by its address', () => {
     const at = 'https://example.com/doc';
     expect(htmlToText(`<p><a href="${at}">Quarterly<br>report <b>2027</b></a></p>`)).toBe(`[Quarterly report 2027](${at})`);
@@ -23,12 +22,17 @@ describe('reading what an HTML body says, without the markup', () => {
     expect(htmlToText(`<a href="${at}">two\n   lines and the 2<sup>nd</sup> floor</a>`)).toBe(`[two lines and the 2nd floor](${at})`);
     expect(htmlToText(`<a href="${at}"><img src="logo.png" alt="Contoso"></a>`)).toBe(`[Contoso](${at})`);
     expect(htmlToText(`<a href="${at}"><img src="logo.png"><span> </span></a>`)).toBe(`[${at}](${at})`);
+    expect(htmlToText(`<a href="${at}"><span>&nbsp;</span></a>`)).toBe(`[${at}](${at})`);
+    expect(htmlToText(`<a href="${at}">one&#10;two&#xA0;&#160;three</a>`)).toBe(`[one two three](${at})`);
+    expect(htmlToText(`<a href="${at}">A&#66;C</a>`)).toBe(`[ABC](${at})`);
   });
 
   // A picture the invitation carried itself is named by a `cid:` reference into a mail no reader has.
   it('a picture the body carried itself reads as text naming it, by its alt text or the name before the @ of its reference', () => {
     expect(htmlToText('<p><img src="cid:image001.png@01DC1234.5678ABCD" alt="Floor plan"></p>')).toBe('\\[inline image: Floor plan\\]');
     expect(htmlToText('<p>Map: <img src="CID:image002.png@01DC1234.5678ABCD"></p>')).toBe('Map: \\[inline image: image002.png\\]');
+    expect(htmlToText('<p><img src="cid:logo"></p>')).toBe('\\[inline image: logo\\]');
+    expect(htmlToText('<p><img src="cid:@01DC1234"></p>')).toBe('\\[inline image: image\\]');
   });
 
   it('a list reads as one, one item per line, whatever the items carry, and a table row as its cells with a bar between them', () => {
@@ -45,6 +49,11 @@ describe('reading what an HTML body says, without the markup', () => {
 
   it('bold, italics and the rest of the markup go, and the words stay', () => {
     expect(htmlToText('<p><b>Bold</b> and <em>soft</em> and <span style="x">plain</span></p>')).toBe('Bold and soft and plain');
+  });
+
+  // A reference is read once: what one decodes to is text, not another reference to read again.
+  it('a reference is read once, so what it stands for is never read as a reference itself', () => {
+    expect(htmlToText('<p>&#38;amp; and &amp;lt;</p>')).toBe('&amp; and &lt;');
   });
 
   it('what HTML had to escape reads back as itself, a non-breaking space as an ordinary one', () => {
