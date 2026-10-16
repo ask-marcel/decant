@@ -391,6 +391,48 @@ describe('a plan renamed since its files were written', () => {
     expect(files.written.get('kb/_archive/2026-09-13/Planner/Offsite 2026/_board.md')).toBe(first.files.written.get(BOARD_PATH));
   });
 
+  const renaming = async (
+    texts: Record<string, string>,
+    title: string,
+    seed: Partial<PlanReaderSeed> = {}
+  ): Promise<{ files: FilesFake; done: Awaited<ReturnType<ReturnType<typeof createSyncPlan>>> }> => {
+    const files = createFilesFake({ texts });
+    const renamed = { ...PLAN, title };
+    const reader = createPlanReaderFake({ plans: [renamed], buckets: BUCKETS, tasks: TASKS, details: DETAILS, names: NAMES, ...seed });
+    const syncPlan = createSyncPlan({ reader, files, clock: createClockFake('2026-09-13T14:00:00Z'), logger: createLoggerFake(), progress: createProgressFake(), kbRoot: 'kb' });
+    return { files, done: await syncPlan({ plan: renamed, formerTitle: PLAN.title, dryRun: false, concurrency: 4 }) };
+  };
+
+  // Windows and macOS read both names as one folder: moved, the run would put its own new state aside.
+  it('a title changed in letter case alone keeps its folder and moves nothing', async () => {
+    const first = await run();
+    const { files, done } = await renaming(Object.fromEntries(first.files.written), 'OFFSITE 2026');
+
+    expect(done.ok).toBe(true);
+    expect(files.moves).toStrictEqual([]);
+    expect(JSON.parse(files.written.get(STATE_PATH) ?? '{}').source.name).toBe('Offsite 2026');
+    expect([...files.written.keys()].some((path) => path.startsWith('kb/Planner/OFFSITE 2026/'))).toBe(false);
+  });
+
+  // Moved in, the plan would write over the pages, the state and the board of the other one.
+  it('a new title whose folder holds another plan stops the plan, and writes nothing', async () => {
+    const first = await run();
+    const other = serializePlanState(emptyPlanState({ id: 'plan-2', title: 'Offsite 2027', groupId: 'group-1' }));
+    const { files, done } = await renaming({ ...Object.fromEntries(first.files.written), 'kb/Planner/Offsite 2027/.sync-state.json': other }, 'Offsite 2027');
+
+    expect(done.ok).toBe(false);
+    expect(done.ok ? undefined : done.error).toMatchObject({ step: 'placePlan', cause: 'folder-taken' });
+    expect(files.writeLog).toStrictEqual([]);
+    expect(files.moves).toStrictEqual([]);
+  });
+
+  it('a renamed plan with no page to write still draws its board in the new folder', async () => {
+    const first = await run({ reader: { tasks: { 'plan-1': [] } } });
+    const { files } = await renaming(Object.fromEntries(first.files.written), 'Offsite 2027', { tasks: { 'plan-1': [] } });
+
+    expect(files.written.has('kb/Planner/Offsite 2027/_board.md')).toBe(true);
+  });
+
   it('a title that gives the same folder, or a dry run, moves nothing', async () => {
     const first = await run();
     const files = createFilesFake({ texts: Object.fromEntries(first.files.written) });
