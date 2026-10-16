@@ -737,3 +737,26 @@ describe('a file whose name does not say what it is', () => {
     expect(files.binary.has(`${ATTACHMENTS_STORE}/logo.png`)).toBe(true);
   });
 });
+
+// A share link attached to a message is a reference, for which Graph holds no bytes. Asked for them,
+// it failed every time, and the thread was named as failed three runs running beside the real file.
+describe('a share link attached to a message', () => {
+  const link = { id: 'ref1', name: 'Budget 2027.xlsx', contentType: '', size: 512, isInline: false, kind: 'reference' as const };
+  const sharing = { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: { m1: [link] } };
+
+  it('is not asked for bytes, fails nothing, and gets a card saying it is a link to a shared file', async () => {
+    const { outcome, files, reader } = await run({ reader: sharing });
+
+    expect(reader.calls.filter((call) => call.startsWith('attachmentBytes'))).toStrictEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toStrictEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toStrictEqual([]);
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Budget 2027.xlsx.md`)).toContain('It is a link to a shared file');
+  });
+
+  // Its size is the size of the link Graph keeps, not of the file, so no size cap applies to it.
+  it('gets its card whatever size Graph gives it', async () => {
+    const { files } = await run({ reader: { ...sharing, attachments: { m1: [{ ...link, size: 900 * 1024 * 1024 }] } } });
+
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Budget 2027.xlsx.md`)).toContain('It is a link to a shared file');
+  });
+});
