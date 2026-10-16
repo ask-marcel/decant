@@ -216,18 +216,20 @@ const folderOf = (file: string): string => file.slice(0, file.lastIndexOf('/'));
 
 const dayOfNote = (file: string): string => folderOf(file).slice(folderOf(file).lastIndexOf('/') + 1);
 
-// What a link calls a note: the subject of its event, or for an event with no subject the name of its
-// file, which is how the note's title and its file name such an event.
-const noteName = (state: CalendarState, note: string): string =>
-  Object.values(state.events).find((record) => record.file === note && record.subject.length > 0)?.subject ?? note.slice(note.lastIndexOf('/') + 1, -MARKDOWN.length);
+// What a link calls each note: the subject of its event, or for an event with no subject `event <id>`,
+// as the note's own title says. Its file name can be cut to the path budget.
+const noteNames = (state: CalendarState): ReadonlyMap<string, string> =>
+  new Map(Object.entries(state.events).map(([id, record]) => [record.file, record.subject.length > 0 ? record.subject : `event ${id}`]));
 
 // The other notes of its series an event's note links to, from its own folder: an exception the note
 // of its series, by the series' subject, and a series those of its exceptions, by day and subject.
 const seriesNotes = (state: CalendarState, file: string, links: SeriesLinks): Pick<RenderEventInput, 'series' | 'exceptions'> => {
+  const names = noteNames(state);
+  const nameOf = (note: string): string => names.get(note) ?? '';
   const from = folderOf(file);
   return {
-    ...(links.linked === undefined ? {} : { series: { name: noteName(state, links.linked), file: pathBetween(from, links.linked) } }),
-    exceptions: links.exceptions.map((note) => ({ name: `${dayOfNote(note)} ${noteName(state, note)}`, file: pathBetween(from, note) })),
+    ...(links.linked === undefined ? {} : { series: { name: nameOf(links.linked), file: pathBetween(from, links.linked) } }),
+    exceptions: links.exceptions.map((note) => ({ name: `${dayOfNote(note)} ${nameOf(note)}`, file: pathBetween(from, note) })),
   };
 };
 
@@ -243,7 +245,9 @@ const writeOne = async (deps: SyncCalendarDeps, state: CalendarState, planned: P
   const { event, file } = planned;
   const before = state.events[event.id];
   // An event written again for its links alone has not changed and keeps its note where it was, so the
-  // files it holds for its attachments are still its own: not listed and converted again.
+  // files it holds for its attachments are still its own: not listed and converted again. Their links
+  // are named by their files, which can differ from an attachment's name (`Q3: plan.docx` is linked as
+  // `Q3_ plan.docx`) until the event's next whole write.
   const attached = before !== undefined && before.file === file && !changedSince(state, event) ? reusedAttachments(before, file) : await attachmentsOf(deps, event, file, before);
   const links = seriesLinksOf(state, event.id, event.seriesMasterId);
   const document = renderEventDocument({ event, zone: deps.timezone, attachments: attached.links, syncedAt: deps.clock.nowIso(), ...seriesNotes(state, file, links) });

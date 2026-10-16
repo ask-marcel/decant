@@ -681,9 +681,9 @@ The note of an exception shows its series below its title, with a link: `Part of
 [Monthly review](<../2026-01-05/Monthly review.md>).` The note of a series shows its exceptions below
 `## Exceptions`, each with a link. When a series gets a new exception, or an exception of it goes,
 decant writes the series note again in the same run. A link shows an event with no subject as
-`event <id>`, the name of its note. decant does not write again the note of an exception that starts
-before the date from How far back. Such a note can keep a link to a note of the series that moved to
-`_archive/`.
+`event <id>`, as the title of its note does. decant does not write again the note of an exception
+that starts before the date from How far back. Such a note can keep a link to a note of the series
+that moved to `_archive/`.
 
 A series that decant wrote before this version gets these links when decant reads all of the
 calendar. To read all of the calendar one time:
