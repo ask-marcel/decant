@@ -1,14 +1,16 @@
 // The block a meeting invitation carries to say how to join it: Teams writes it between two rules of
 // underscores, Google Meet between two rules of `-::~:~::`, and Zoom from "Join Zoom Meeting" to the
-// line that sends a reader to the local numbers, with the ways to join by SIP or H.323 after it. It is
-// the same dozen lines in every invitation (a link to join, a meeting ID and a passcode, dial-in
-// numbers, help, meeting options) and says nothing a reader of the meeting looks for. The link to
-// join can stand in its place.
+// line that sends a reader to the local numbers, with the ways to join by SIP, H.323 or Skype after
+// it. It is the same dozen lines in every invitation (a link to join, a meeting ID and a passcode,
+// dial-in numbers, help, meeting options) and says nothing a reader of the meeting looks for. The
+// link to join can stand in its place.
 
 // A rule of underscores, each escaped in the markdown a mail's body is, and Meet's rule, whose first
-// dash that markdown escapes too, since a dash that opens a line would make a list.
-const TEAMS_RULE = /^\s*(?:\\?_){10,}\s*$/;
-const MEET_RULE = /^\s*\\?-[:~]{10,}-\s*$/;
+// dash that markdown escapes too, since a dash that opens a line would make a list. Teams writes 80
+// underscores and Meet about 95 characters, so a rule is 40 or more: one a person types under a
+// signature is shorter.
+const TEAMS_RULE = /^\s*(?:\\?_){40,}\s*$/;
+const MEET_RULE = /^\s*\\?-[:~]{40,}-\s*$/;
 const ZOOM_OPENS = /^\W*Join Zoom Meeting\W*$/i;
 const ZOOM_ENDS = /^\W*Find your local number/i;
 // Where a block says to join: a Teams link in its long form and in the short one Teams writes since
