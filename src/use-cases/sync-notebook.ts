@@ -6,7 +6,7 @@ import {
   notebookRootName,
   notebookWorklist,
   parseNotebookState,
-  planPageFiles,
+  pagesToWrite,
   serializeNotebookState,
   withPage,
   withoutPage,
@@ -213,14 +213,15 @@ export const createSyncNotebook =
     if (!sections.ok) return failed('listSections', sections.error.kind, sections.error.message);
     const listing = await listPages(deps, input.notebook, sections.value);
     const work = notebookWorklist({ ...state, version: NOTEBOOK_STATE_VERSION }, listing.pages, listing.unreadSections, input.since);
-    deps.logger.info('notebook.listed', { notebook: input.notebook.id, sections: sections.value.length, pages: listing.pages.length, changed: work.write.length });
-    if (input.dryRun) return ok({ id: input.notebook.id, source: input.notebook.name, summary: { ...EMPTY, queued: work.write.length }, notes: NO_NOTES });
-    deps.progress.start(work.write.length, input.notebook.name);
+    const planned = pagesToWrite(roots.root, state, listing.pages, work.write, deps.pathBudget);
+    deps.logger.info('notebook.listed', { notebook: input.notebook.id, sections: sections.value.length, pages: listing.pages.length, changed: planned.length });
+    if (input.dryRun) return ok({ id: input.notebook.id, source: input.notebook.name, summary: { ...EMPTY, queued: planned.length }, notes: NO_NOTES });
+    deps.progress.start(planned.length, input.notebook.name);
     // A section whose pages cannot be listed is asked for on every run: named as a failure for three
     // runs, then given up on.
     const tried = triedReads(state.retry, listing.listed, listing.unread);
     const opening: Progressing = { summary: { ...EMPTY, failed: tried.tried }, notes: { ...NO_NOTES, failed: tried.failed }, state: { ...state, retry: tried.retry } };
-    const written = await writePages(deps, input, roots, opening, planPageFiles(roots.root, work.write, state, deps.pathBudget));
+    const written = await writePages(deps, input, roots, opening, planned);
     deps.progress.done();
     if (!written.ok) return written;
     const folded = fold(written.value, await Promise.all(work.archive.map((entry) => archiveGone(deps, roots, entry))));
