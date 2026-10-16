@@ -213,7 +213,10 @@ describe('the join block a meeting invitation carries', () => {
   it('a block with no link to join it knows stays whole when its link is asked for, and goes when not', () => {
     const old = [RULE, 'Join Microsoft Teams Meeting', 'Conference ID: 123 456 789#', RULE, 'After.'].join('\n');
 
+    const spaced = [RULE, 'Conference ID: 123 456 789#', RULE, '', '', 'After.'].join('\n');
+
     expect(withoutJoinBlocks(old, (url) => `Online meeting: ${url}`)).toBe(old);
+    expect(withoutJoinBlocks(spaced, (url) => `Online meeting: ${url}`)).toBe(spaced);
     expect(withoutJoinBlocks(old)).toBe('After.');
   });
 
@@ -236,5 +239,78 @@ describe('the join block a meeting invitation carries', () => {
 
     expect(withoutJoinBlocks(mail, (url) => `Online meeting: ${url}`)).toBe(`Online meeting: ${short}`);
     expect(withoutJoinBlocks(personal, (url) => `Online meeting: ${url}`)).toBe('Online meeting: https://teams.live.com/meet/9312345678901?p=AbCd');
+  });
+
+  // Lines that only look like the edge of a block: words before or after a rule, an opening, an end or
+  // an ID inside a sentence, a link outside the rules.
+  it.each([
+    ['words before a rule', ['Sign here: __________', `Join: ${JOIN}`, 'Sign here: __________']],
+    ['words after a rule', ['__________ (signed)', `Join: ${JOIN}`, '__________ (signed)']],
+    ['a word run into the start of a rule', ['x__________', `Join: ${JOIN}`, 'x__________']],
+    ['a word run into the end of a rule', ['__________x', `Join: ${JOIN}`, '__________x']],
+    ['words before a Meet rule', ['Cut here -:~:~:~:~:~:~-', `Join: ${JOIN}`, 'Cut here -:~:~:~:~:~:~-']],
+    ['words after a Meet rule', ['-:~:~:~:~:~:~- cut here', `Join: ${JOIN}`, '-:~:~:~:~:~:~- cut here']],
+    ['a word run into the start of a Meet rule', ['x-:~:~:~:~:~:~-', `Join: ${JOIN}`, 'x-:~:~:~:~:~:~-']],
+    ['a word run into the end of a Meet rule', ['-:~:~:~:~:~:~-x', `Join: ${JOIN}`, '-:~:~:~:~:~:~-x']],
+    ['a Zoom opening inside a sentence', ['Click to Join Zoom Meeting', 'https://us02web.zoom.us/j/1', 'Find your local number: https://us02web.zoom.us/u/abc']],
+    ['a Zoom opening with words after it', ['Join Zoom Meeting at ten with the team', 'https://us02web.zoom.us/j/1', 'Find your local number: https://us02web.zoom.us/u/abc']],
+    ['the local numbers named inside a sentence', ['Join Zoom Meeting', 'https://us02web.zoom.us/j/1', 'If you cannot find your local number, ask me.']],
+    ['a meeting ID named inside a sentence', [RULE, 'Please note the new meeting ID: 555 0100', RULE]],
+    ['rules around a signature, with a link to join outside them', [`Join: ${JOIN}`, 'Thanks,', RULE, 'Jane Doe | Contoso', RULE]],
+    ['three blank lines and no block', ['Agenda below.', '', '', 'Bring the figures.']],
+  ])('keeps %s', (_name, lines) => {
+    const text = lines.join('\n');
+
+    expect(withoutJoinBlocks(text)).toBe(text);
+  });
+
+  // What a sender wrote after a Zoom block stays, whatever the block holds past its local numbers.
+  const H323 = ['Join by H.323', '192.0.2.11 (US West)'];
+  it.each([
+    ['a way to join they name', [], 'Or join by phone: +1 555 0100'],
+    ['a passcode named inside a sentence', H323, 'The door passcode is 4321.'],
+    ['an address inside a sentence', H323, 'Server 192.0.2.50 is down.'],
+    ['a number that is no address', H323, '1.5 hours for questions.'],
+  ])('a Zoom block leaves %s after it', (_name, tail, said) => {
+    const block = ['Join Zoom Meeting', 'https://us02web.zoom.us/j/1', 'Find your local number: https://us02web.zoom.us/u/abc', ...tail];
+
+    expect(withoutJoinBlocks([...block, said].join('\n'))).toBe(said);
+  });
+
+  // A mail's markdown puts Zoom's headings in bold and can make its line of local numbers a link.
+  it('a Zoom block in a mail goes whole with its headings in bold, to the end of the text', () => {
+    const zoom = 'https://us02web.zoom.us/j/12345678901?pwd=abc';
+    const mail = [
+      'Agenda below.',
+      '',
+      '**Join Zoom Meeting**',
+      '',
+      `[${zoom}](${zoom})`,
+      '',
+      '[Find your local number](https://us02web.zoom.us/u/abc)',
+      '',
+      '**Join by H.323**',
+      '',
+      '• 192.0.2.11 (US West)',
+      '',
+      '**Meeting ID:** 123 4567 8901',
+    ].join('\n');
+
+    expect(withoutJoinBlocks(mail, (url) => `Online meeting: ${url}`)).toBe(`Agenda below.\n\nOnline meeting: ${zoom}`);
+  });
+
+  // A rule can end in the spaces a line break leaves, more on one rule than on the other.
+  it('a block between rules with spaces after them goes, and one whose only sign is an ID in bold', () => {
+    const spaced = [`${ESCAPED_RULE}  `, '', `[Join the meeting now](${JOIN})`, '', `${ESCAPED_RULE} `, '', 'After.'].join('\n');
+    const bold = [RULE, 'Microsoft Teams', '**Conference ID:** 123 456 789#', RULE, 'After.'].join('\n');
+
+    expect(withoutJoinBlocks(spaced, (url) => `Online meeting: ${url}`)).toBe(`Online meeting: ${JOIN}\n\nAfter.`);
+    expect(withoutJoinBlocks(bold)).toBe('After.');
+  });
+
+  it('a block kept for want of a link stays as it was beside one that goes', () => {
+    const text = [RULE, `[Join the meeting now](${JOIN})`, RULE, 'Between.', RULE, 'Conference ID: 123 456 789#', RULE].join('\n');
+
+    expect(withoutJoinBlocks(text, (url) => `Online meeting: ${url}`)).toBe([`Online meeting: ${JOIN}`, 'Between.', RULE, 'Conference ID: 123 456 789#', RULE].join('\n'));
   });
 });
