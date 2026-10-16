@@ -37,6 +37,10 @@ export type ThreadRecord = {
   // The name each linked document was written under in the thread's folder, by the item it is at the
   // source. Absent from a thread written before these were kept.
   readonly links?: Readonly<Record<string, string>>;
+  // The version each linked document whose files the thread holds was pulled at, by the item: a write
+  // that finds the same version at the source keeps those files. Absent from a thread written before
+  // these were kept, whose documents are all pulled again once.
+  readonly linkedVersions?: Readonly<Record<string, string>>;
   // What the index pages list a thread by: its subject, when it began, and who wrote last. Absent from
   // a thread written before they were kept, until a new message writes it again.
   readonly subject?: string;
@@ -187,6 +191,7 @@ export const threadOf = (raw: Record<string, unknown>): ThreadRecord => ({
   files: Array.isArray(raw['files']) ? pathList(raw['files']) : undefined,
   names: isRecord(raw['names']) ? textsOf(raw['names']) : undefined,
   links: isRecord(raw['links']) ? textsOf(raw['links']) : undefined,
+  linkedVersions: isRecord(raw['linkedVersions']) ? textsOf(raw['linkedVersions']) : undefined,
   subject: readString(raw, 'subject'),
   firstMessage: readString(raw, 'firstMessage'),
   lastFrom: readString(raw, 'lastFrom'),

@@ -14,6 +14,7 @@ import { freeName } from '../domain/thread-card.ts';
 import type { ThreadPart } from '../domain/thread.ts';
 import type { ConvertFile } from './convert-file.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
+import { versionOf } from '../domain/drive-item.ts';
 import type { DriveReader } from './ports/drive-reader.ts';
 import { ATTACHMENTS_FOLDER } from './thread-files.ts';
 import type { Files } from './ports/files.ts';
@@ -54,6 +55,10 @@ type Pulled = {
   readonly modifiedBy?: string;
   readonly skipped?: ReportEntry;
   readonly failed?: ReportEntry;
+  // The version of the document whose files this write holds, pulled now or kept from the write before.
+  readonly version?: string;
+  // Kept as the write before left it: the source has the version the thread pulled then.
+  readonly held?: true;
 };
 
 // What one message pointed at, kept per message so a card can say when the thread referenced it.
@@ -72,6 +77,9 @@ type MessageLink = {
   readonly note?: string;
   // A document the thread pulled before that this write could not pull: its card stays as it was.
   readonly kept?: boolean;
+  // A document the thread holds from a write before, at the version the source has now: not pulled
+  // again, and its card stays as it was.
+  readonly held?: boolean;
 };
 
 export type LinkedTally = {
@@ -87,11 +95,18 @@ export type LinkedTally = {
   // not pull, or every document when a message's links could not be listed. What sits under them is
   // kept.
   readonly unread: ReadonlyArray<string>;
+  // The version of each document whose files the thread holds after this write, by the item.
+  readonly versions: Readonly<Record<string, string>>;
 };
 
-// What the thread held when it was last written: the name each linked document was written under, and
-// every file of its folder. Empty for a thread never written.
-export type LinksHeld = { readonly links?: Readonly<Record<string, string>>; readonly held?: ReadonlyArray<string> };
+// What the thread held when it was last written: the name each linked document was written under,
+// every file of its folder, and the version of each document it pulled. Empty for a thread never
+// written.
+export type LinksHeld = {
+  readonly links?: Readonly<Record<string, string>>;
+  readonly held?: ReadonlyArray<string>;
+  readonly versions?: Readonly<Record<string, string>>;
+};
 
 // A file a message of this write carried, by the name it came by: a linked document with its bytes is
 // that file, and is not pulled a second time.
@@ -118,11 +133,14 @@ const addAll = (into: string[], paths: ReadonlyArray<string>): void => {
 
 // A document this write already read is referenced again rather than read again, whatever came of it:
 // its card is written from the first mention, and one that failed is tried again on the next run, as
-// the thread is. A later mention counts nothing a second time.
+// the thread is. A later mention counts nothing a second time. One the thread holds from a write
+// before under the same name is offered to the read, which keeps it when the source still has the
+// version the thread pulled.
 const pulledOnce = async (deps: LinkDeps, following: Following, link: LinkedFile, key: string, asName: string): Promise<Pulled> => {
   const first = following.pulled[key];
   if (first !== undefined) return { record: first.record, note: first.note };
-  const pulled = await pullLinked(deps, following.place, link, asName);
+  const document = following.documents[key];
+  const pulled = await pullLinked(deps, following.place, link, asName, document?.name === asName ? document : undefined);
   following.pulled[key] = pulled;
   return pulled;
 };
@@ -151,6 +169,11 @@ type Following = {
   readonly linked: Record<string, LinkedRecord>;
   // What came of reading each document in this write, by item.
   readonly pulled: Record<string, Pulled>;
+  // The documents the thread holds from a write before, by item, with the name their files go by.
+  readonly documents: Readonly<Record<string, HeldDocument>>;
+  // The version each document was pulled at in the write before, and in this one.
+  readonly before: Readonly<Record<string, string>>;
+  readonly versions: Record<string, string>;
   readonly names: Record<string, string>;
   readonly paths: string[];
   readonly skipped: ReportEntry[];
@@ -169,6 +192,13 @@ const linkedName = (deps: LinkDeps, following: Following, key: string, link: Lin
   return freeName(folder, link.name, [...following.held, ...Object.values(following.names)], deps.pathBudget);
 };
 
+// The version of the files the thread holds for a document. A document the thread could not pull now
+// keeps the card it had, and so the version that card came from. A source that gave no version gives
+// nothing to keep a document by.
+const keepVersion = (following: Following, key: string, version: string | undefined): void => {
+  if (version !== undefined && version !== '') following.versions[key] = version;
+};
+
 // One document a message pointed at. A document the thread pulled before that cannot be pulled now
 // keeps the card it had, which holds its text, and what it had beside the card is named as unread.
 const followLink = async (deps: LinkDeps, following: Following, message: MailMessage, link: LinkedFile): Promise<void> => {
@@ -180,9 +210,10 @@ const followLink = async (deps: LinkDeps, following: Following, message: MailMes
   if (pulled.failed !== undefined) following.failed.push(pulled.failed);
   const kept = pulled.failed !== undefined && following.recorded[key] !== undefined;
   if (kept) addAll(following.unread, [`${following.here}/${LINKED_FOLDER}/${asName}`]);
+  keepVersion(following, key, kept ? following.before[key] : pulled.version);
   // Recorded whether or not it came: a card for a document nobody could pull is the only place the
   // thread's dependence on it is written down.
-  following.referenced.push({ ...referenceOf(link, message, asName, pulled), kept });
+  following.referenced.push({ ...referenceOf(link, message, asName, pulled), kept, held: pulled.held === true });
   if (pulled.record === undefined) return;
   following.linked[key] = pulled.record;
   addAll(following.paths, pulled.record.paths);
@@ -209,6 +240,34 @@ const followMessage = async (deps: LinkDeps, following: Following, part: ThreadP
   for (const link of found.value) await followLink(deps, following, part.message, link);
 };
 
+// A document the thread holds from a write before: the name it was written under, the version it was
+// pulled at, and its files.
+type HeldDocument = { readonly name: string; readonly version: string; readonly record: LinkedRecord };
+
+// The name a file of the linked folder belongs to: its own, or the longest name it opens with a dot
+// after, as the text, the rendering and the pictures of a document do. Another document can have a
+// name that opens the same way, so the longest one wins.
+const ownerOf = (folder: string, names: ReadonlyArray<string>, path: string): string | undefined =>
+  names
+    .filter((name) => path === `${folder}/${name}` || path.startsWith(`${folder}/${name}.`))
+    .reduce<string | undefined>((longest, name) => (longest === undefined || name.length > longest.length ? name : longest), undefined);
+
+// The documents a thread written again can keep as its last write left them: one it pulled, at a
+// version it recorded, whose card is among the files it holds. Any other is pulled again, as is every
+// document of a thread written before the versions were kept.
+const heldDocuments = (folder: string, before: LinksHeld): Record<string, HeldDocument> => {
+  const named = Object.entries(before.links ?? {});
+  const names = named.map(([, name]) => name);
+  const files = (before.held ?? []).filter((path) => path.startsWith(`${folder}/`));
+  return Object.fromEntries(
+    named.flatMap(([key, name]) => {
+      const version = before.versions?.[key];
+      const paths = files.filter((path) => ownerOf(folder, names, path) === name);
+      return version !== undefined && version !== '' && paths.includes(`${folder}/${name}.md`) ? [[key, { name, version, record: { paths } }] as const] : [];
+    })
+  );
+};
+
 export const linkedFiles = async (deps: LinkDeps, place: LinksPlace, parts: ReadonlyArray<ThreadPart>, before: LinksHeld): Promise<LinkedTally> => {
   const { here } = place;
   // Within this thread only, the way its attachments are. The same weekly report linked from thirty
@@ -220,13 +279,30 @@ export const linkedFiles = async (deps: LinkDeps, place: LinksPlace, parts: Read
   // on disk, so it never takes the name of a document whose message went.
   const recorded = before.links ?? {};
   const held = [...Object.values(recorded), ...namesHeldIn(`${here}/${LINKED_FOLDER}`, before.held)];
-  const following: Following = { place, here, recorded, held, linked: {}, pulled: {}, names: {}, paths: [], skipped: [], failed: [], referenced: [], unread: [] };
+  const documents = heldDocuments(`${here}/${LINKED_FOLDER}`, before);
+  const following: Following = {
+    place,
+    here,
+    recorded,
+    held,
+    linked: {},
+    pulled: {},
+    documents,
+    before: before.versions ?? {},
+    versions: {},
+    names: {},
+    paths: [],
+    skipped: [],
+    failed: [],
+    referenced: [],
+    unread: [],
+  };
   for (const part of parts) await followMessage(deps, following, part);
   // A thread written before the names were kept cannot tell what a failure was: none of its linked
   // documents is taken for gone until a write that reads everything.
   if (before.links === undefined && following.failed.length > 0) addAll(following.unread, [`${here}/${LINKED_FOLDER}`]);
-  const { paths, linked, referenced, skipped, failed, names, unread } = following;
-  return { paths, linked, referenced, skipped, failed, names, unread };
+  const { paths, linked, referenced, skipped, failed, names, unread, versions } = following;
+  return { paths, linked, referenced, skipped, failed, names, unread, versions };
 };
 
 // A document a message of the thread also carried, when its bytes are that file's: the name says when
@@ -249,7 +325,7 @@ const carriedNote = (file: AttachedCopy): string => {
 // metadata first, because the name in the link cannot say when the file changed, how big it is, or
 // what kind of thing it is: the day decides the folder, the size decides whether it is pulled at
 // all, and the kind decides whether a deck also renders a PDF beside its text.
-const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, asName: string): Promise<Pulled> => {
+const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, asName: string, held: HeldDocument | undefined): Promise<Pulled> => {
   const { here, maxBytes } = place;
   const { driveId, itemId, name } = link;
   const found = await deps.drive.item({ driveId, itemId });
@@ -263,6 +339,10 @@ const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, a
   // for having no extension, so a thread saying plainly that a folder was shared reported a file it
   // could not read. The card still stands, being the record that the thread depended on it.
   if (found.value.kind === 'folder') return { note: 'It is a folder at the source, so there was nothing to pull.', lastModified, modifiedBy };
+  // The metadata read is what a thread written again for a flag or a reply pays for a document it holds:
+  // the same version at the source is not pulled or converted a second time.
+  const version = versionOf(found.value);
+  if (held !== undefined && held.version === version) return { record: held.record, lastModified, modifiedBy, version, held: true };
   const twin = await carriedAs(deps, place, link, found.value);
   if (twin !== undefined) return { note: carriedNote(twin), lastModified, modifiedBy };
   const outcome = await deps.convertFile({
@@ -274,7 +354,7 @@ const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, a
     into: `${here}/${LINKED_FOLDER}`,
     asName,
   });
-  if (outcome.kind === 'converted') return { record: { paths: outcome.outputs }, lastModified, modifiedBy };
+  if (outcome.kind === 'converted') return { record: { paths: outcome.outputs }, lastModified, modifiedBy, version };
   deps.logger.warn(outcome.kind === 'skipped' ? 'linked.skipped' : 'linked.failed', { itemId, name, cause: outcome.reason });
   if (outcome.kind === 'failed') return { failed: { path: name, reason: outcome.reason } };
   // The reason names the file at the SOURCE, not the link. A message can point at a document under
@@ -299,8 +379,9 @@ export const writeLinkCards = async (deps: LinkDeps, threadId: string, here: str
     if (seen.has(key)) continue;
     seen.add(key);
     const name = `${entry.asName}.md`;
-    // A document the write could not pull keeps the card it had, which holds the text read out of it.
-    if (entry.kept === true) {
+    // A document the write could not pull keeps the card it had, which holds the text read out of it,
+    // and so does one the thread holds from a write before.
+    if (entry.kept === true || entry.held === true) {
       written.push(`${folder}/${name}`);
       continue;
     }

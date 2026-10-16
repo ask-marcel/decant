@@ -96,6 +96,10 @@ export type Versioned = { readonly cTag: string; readonly lastModified?: string 
 export const sameVersion = (left: Versioned, right: Versioned): boolean =>
   left.cTag !== '' && right.cTag !== '' ? left.cTag === right.cTag : left.lastModified === right.lastModified;
 
+// The same, said in one word a record can keep: the cTag, or the day and time of the last change when
+// the source left the cTag out. Empty when it gave neither, which tells no version from another.
+export const versionOf = (item: Pick<DriveItem, 'cTag' | 'lastModified'>): string => (item.cTag !== '' ? item.cTag : item.lastModified);
+
 // A document a run looked for by id and the source no longer has: as good as one a sweep reports
 // deleted, which is all the sync needs to put its files aside.
 export const goneItem = (id: string): DriveItem => ({ id, name: '', kind: 'deleted', size: 0, path: '', lastModified: '', cTag: '', webUrl: '' });
