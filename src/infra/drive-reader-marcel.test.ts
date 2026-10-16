@@ -358,6 +358,18 @@ describe('reading SharePoint through the ask-marcel library', () => {
     expect(recorded[0]?.local).toBe(true);
   });
 
+  // The library converts the first 100 members of an archive and says how many it held.
+  it('an archive the library read in part says how many files it holds', async () => {
+    const { reader } = readerFor({
+      'convert-local-file-to-markdown': [ok({ count: 1, totalEntries: 150, truncated: true, files: [{ path: 'notes.docx', text: '# Notes' }] })],
+    });
+
+    const entries = await reader.localArchive('kb/Site/Documents/Livraison/Livraison.zip');
+
+    expect(entries.ok && entries.value.totalEntries).toBe(150);
+    expect(entries.ok && [...entries.value]).toEqual([{ path: 'notes.docx', text: '# Notes', note: undefined }]);
+  });
+
   it('a single drive item is read for the name, size and date that decide where it is filed', async () => {
     const { reader, recorded } = readerFor({
       'get-drive-item': [
