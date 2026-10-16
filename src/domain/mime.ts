@@ -26,7 +26,8 @@ const headerOf = (headers: Headers, name: string): string | undefined => {
 const BOUNDARY = /boundary\s*=\s*("[^"]*"|[^;\s]+)/i;
 const FILENAME = /filename\s*=\s*("[^"]*"|[^;\s]+)/i;
 const NAME = /\bname\s*=\s*("[^"]*"|[^;\s]+)/i;
-const CHARSET = /charset\s*=\s*("[^"]*"|[^;\s]+)/i;
+// A charset is a token, quoted or bare, so it needs no decoding of its own.
+const CHARSET = /charset\s*=\s*"?([^";\s]+)/i;
 
 const parameterOf = (header: string, pattern: RegExp): string | undefined => {
   const [value] = pattern.exec(header)?.slice(1, 2) ?? [];
@@ -77,7 +78,7 @@ const gather = (section: Section, at: number): Gathered => {
   const boundary = parameterOf(contentTypeOf(section.headers), BOUNDARY);
   if (boundary !== undefined) return gatherParts(splitParts(section.body, boundary));
   if (kindOf(section.headers).startsWith('text/'))
-    return { text: [decodeText(section.body, encodingOf(section.headers), parameterOf(contentTypeOf(section.headers), CHARSET))], parts: [] };
+    return { text: [decodeText(section.body, encodingOf(section.headers), CHARSET.exec(contentTypeOf(section.headers))?.[1])], parts: [] };
   const bytes = decodeBytes(section.body, encodingOf(section.headers));
   return { text: [], parts: bytes === undefined || bytes.length === 0 ? [] : [{ name: nameOf(section.headers, at), contentType: kindOf(section.headers), bytes }] };
 };

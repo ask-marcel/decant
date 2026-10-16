@@ -216,3 +216,55 @@ describe('a saved email in a charset of its own', () => {
     expect(readMime(raw).parts).toStrictEqual([{ name: 'Pièce.pdf', contentType: 'application/pdf', bytes: new TextEncoder().encode('%PDF') }]);
   });
 });
+
+// The shapes a mail client writes a message in, each read the same.
+describe('the parts of a saved email, however a client writes them', () => {
+  const SJIS = '\u0092\u00a9\u008a\u00e7';
+  const textOf = (contentType: string, body = SJIS): string => readMime(lines('Subject: S', `Content-Type: ${contentType}`, '', body)).text;
+
+  it('a charset is read quoted or bare, with spaces around its sign, before a parameter or after a space', () => {
+    const types = ['text/plain; charset=shift_jis', 'text/plain; charset = "Shift_JIS"', 'text/plain;charset=shift_jis; format=flowed', 'text/plain ; charset=shift_jis'];
+
+    expect(types.map((type) => textOf(type))).toStrictEqual(types.map(() => '**Subject:** S\n\n朝顔'));
+  });
+
+  it('a part divided on a boundary that is quoted with a space in it, or bare and long, is divided right', () => {
+    const quoted = lines('Subject: Q', 'Content-Type: multipart/mixed; boundary="a b"', '', '--a b', ...TEXT, '--a b', ...FILE, '--a b--');
+    const bare = lines('Subject: Q', 'Content-Type: multipart/mixed; boundary=Part_12', '', '--Part_12', ...TEXT, '--Part_12', ...FILE, '--Part_12--');
+
+    expect(readMime(quoted).parts).toStrictEqual([CARRIED]);
+    expect(readMime(bare).parts).toStrictEqual([CARRIED]);
+    expect(readMime(bare).text).toBe('**Subject:** Q\n\nthe body');
+  });
+
+  it('a file named in quotes with a space keeps its whole name, on the disposition or on the type', () => {
+    const named = (...headers: ReadonlyArray<string>): ReadonlyArray<string> =>
+      readMime(multipart([...headers, 'Content-Transfer-Encoding: base64', '', 'QUJD'])).parts.map((part) => part.name);
+
+    expect(named('Content-Type: application/pdf', 'Content-Disposition: attachment; filename="Contrat final.pdf"')).toStrictEqual(['Contrat final.pdf']);
+    expect(named('Content-Type: application/pdf; name = "Contrat final.pdf"')).toStrictEqual(['Contrat final.pdf']);
+  });
+
+  it('leaves out the text before the first boundary and after the last, and takes the text of a part after a file', () => {
+    const wrapped = lines('Subject: W', 'Content-Type: multipart/mixed; boundary="B"', '', 'This is a message in MIME format.', '--B', ...FILE, '--B', ...TEXT, '--B--', 'the end');
+
+    expect(readMime(wrapped).text).toBe('**Subject:** W\n\nthe body');
+  });
+
+  it('takes a line of the text that looks like a header for the text it is', () => {
+    expect(readMime(lines('Subject: H', 'Content-Type: text/plain', '', 'Cc: nobody@example.com')).text).toBe('**Subject:** H\n\nCc: nobody@example.com');
+  });
+
+  it('reads a message divided into parts with the line ends a Unix client writes', () => {
+    const unix = multipart(TEXT, FILE).replace(/\r\n/g, '\n');
+
+    expect(readMime(unix).parts).toStrictEqual([CARRIED]);
+    expect(readMime(unix).text).toBe('**Subject:** Carried\n\nthe body');
+  });
+
+  it('reads an encoding named in capitals as the one it names', () => {
+    const shouted = multipart(['Content-Type: application/pdf; name="x.pdf"', 'Content-Transfer-Encoding: BASE64', '', 'QUJD']);
+
+    expect(readMime(shouted).parts).toStrictEqual([CARRIED]);
+  });
+});
