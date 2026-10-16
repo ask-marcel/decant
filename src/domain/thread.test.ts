@@ -412,3 +412,29 @@ describe('listing who took part in a conversation', () => {
     expect(named).toHaveLength(1);
   });
 });
+
+// An invitation mail carries the block Teams writes into every invitation: a link to join, a meeting
+// ID, a passcode, dial-in numbers and help, between two rules.
+describe('the join block an invitation mail carries', () => {
+  it('stands as one line naming where to join, and the words around it stay', () => {
+    const join = 'https://teams.microsoft.com/l/meetup-join/19%3ameeting_abc%40thread.v2/0';
+    const rule = '\\_'.repeat(40);
+    const body = [
+      'Let us review the budget.',
+      '',
+      rule,
+      '',
+      '**Microsoft Teams** [Need help?](https://aka.ms/x)',
+      '',
+      `[Join the meeting now](${join})`,
+      '',
+      'Passcode: aB3cD4',
+      '',
+      rule,
+    ].join('\n');
+    const note = renderThread({ subject: 'Budget review', parts: [{ message: message(), body }] }, 'Europe/Paris');
+
+    expect(note).toContain(`Let us review the budget.\n\nOnline meeting: ${join}`);
+    expect(note).not.toContain('Passcode');
+  });
+});
