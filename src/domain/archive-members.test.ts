@@ -41,6 +41,17 @@ describe('a link from one member of an archive to another', () => {
     expect(linkMembers('[\\[Home\\]](../index.html)', 'pages/week 2.html', named)).toBe('[\\[Home\\]](../index.html.md)');
   });
 
+  // The converter escapes each bracket of a log line, `\\[INFO\\]`. A link that started at one read on
+  // to the end of the page from each of them, and a page of some thousands took seconds.
+  it('a link starts at no escaped bracket, so a page of escaped brackets reads in linear time', () => {
+    const page = `${'\\[INFO\\] job done\n'.repeat(5000)}[Home](../index.html)`;
+    const started = performance.now();
+
+    expect(linkMembers(page, 'pages/week 2.html', files)).toEndWith('[Home](../index.html.md)');
+    expect(performance.now() - started).toBeLessThan(500);
+    expect(linkMembers('![\\[Logo\\]](logo.png)', 'index.html', files)).toBe('![\\[Logo\\]](logo.png)');
+  });
+
   // A title can hold text that reads as a link, and it stays part of the title.
   it('a link in the title of a link is left as it is, with the link around it', () => {
     expect(linkMembers('[Home](../index.html "see [Week 2](week%202.html)")', 'pages/week 2.html', files)).toBe('[Home](../index.html.md "see [Week 2](week%202.html)")');

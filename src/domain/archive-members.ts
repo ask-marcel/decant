@@ -12,9 +12,10 @@ export const placeMembers = <T extends { readonly path: string }>(folder: string
   entries.map((entry) => ({ entry, file: memberFile(folder, entry.path, budget) }));
 
 // The label of a link and the start of its destination, in each form the converter writes: text that
-// escapes a bracket with a backslash, and the picture of a linked picture. Not a picture itself, which
-// `![` opens. Each alternative starts on a character of its own, so a failed match does not rescan.
-const OPENING = /(?<!!)\[((?:[^[\]\\!]|\\.|!(?!\[)|!\[[^[\]]*\]\([^()\s]*\))*)\]\(/g;
+// escapes a bracket with a backslash, and the picture of a linked picture. A link starts neither in a
+// picture, which `![` opens, nor at an escaped bracket, `\[`: the converter escapes each bracket of a
+// log line, and a link that could start at each one read on to the end of the page from each.
+const OPENING = /(?<![!\\])\[((?:[^[\]\\!]|\\.|!(?!\[)|!\[[^[\]]*\]\([^()\s[\]]*\))*)\]\(/g;
 // The rest of a link from its destination on: bare, escaping each parenthesis with a backslash, or in
 // angle brackets, then a title in quotes and the closing parenthesis. Read where an opening ends.
 const REST = /(<[^<>\n]*>|(?:[^()\s<>\\]|\\.)*)(\s+"[^"\n]*")?\)/y;
