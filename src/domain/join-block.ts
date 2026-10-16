@@ -75,17 +75,17 @@ export const joinLine = (joinUrl: string): string => `Online meeting: ${joinUrl}
 
 const joinUrlOf = (block: string): string | undefined => JOIN_AT.exec(block.replace(MARKDOWN_LINK, '$1'))?.[0];
 
-// What a block leaves: nothing, or the line `standIn` makes of its link to join. Asked for that line
-// with no link it knows, the block stays as it was (undefined): a link this code does not know is still
-// the way into the meeting.
+// What a block leaves: nothing, or the line `standIn` makes of its link to join, unless it makes an
+// empty one, for a link held elsewhere. Asked for that line with no link it knows, the block stays as
+// it was (undefined): a link this code does not know is still the way into the meeting.
 const leftOf = (block: ReadonlyArray<string>, standIn: ((joinUrl: string) => string) | undefined): ReadonlyArray<string> | undefined => {
   if (standIn === undefined) return [];
   const joinUrl = joinUrlOf(block.join('\n'));
-  return joinUrl === undefined ? undefined : [standIn(joinUrl)];
+  return joinUrl === undefined ? undefined : [standIn(joinUrl)].filter((line) => line.length > 0);
 };
 
 // The text with each join block taken out, and in its place the line `standIn` makes of its link to
-// join, when it is given one. Text with no block taken out comes back as it was.
+// join, when it is given one and makes one. Text with no block taken out comes back as it was.
 export const withoutJoinBlocks = (text: string, standIn?: (joinUrl: string) => string): string => {
   const lines = text.split('\n');
   const kept: string[] = [];

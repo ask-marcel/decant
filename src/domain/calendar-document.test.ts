@@ -127,6 +127,19 @@ describe('writing one calendar event as a document', () => {
     expect(written).not.toContain('online_meeting:');
   });
 
+  // An event Graph gives a Teams link for can carry a second meeting's block too, a Zoom one an add-in
+  // wrote: that link is the only one to the second meeting, so it stays where its block was.
+  it('the link of a meeting other than the one Graph gives stays on one line where its block was', () => {
+    const zoom = 'https://us02web.zoom.us/j/12345678901?pwd=abc';
+    const zoomBlock = `<p>Join Zoom Meeting<br><a href="${zoom}">${zoom}</a></p><p>Find your local number: <a href="https://us02web.zoom.us/u/abc">https://us02web.zoom.us/u/abc</a></p>`;
+    const rule = `<div>${'_'.repeat(80)}</div>`;
+    const teamsBlock = `${rule}<div><a href="https://teams.microsoft.com/l/meetup-join/abc">Join the meeting now</a></div><div>Meeting ID: 123</div>${rule}`;
+    const written = rendered({ ...event, body: `<p>Agenda below.</p>${zoomBlock}${teamsBlock}` });
+
+    expect(written).toContain(`# Offsite planning\n\nAgenda below.\nOnline meeting: ${zoom}\n`);
+    expect(written).not.toContain('Online meeting: https://teams.microsoft.com');
+  });
+
   // Outlook wraps each link of an invitation in a scanner of its own, as it does in mail.
   it('a link Outlook wrapped in an event body reads as where it goes', () => {
     const body = '<p>See the <a href="%s">agenda</a></p>'.replace('%s', SAFELINK.replaceAll('&', '&amp;'));
