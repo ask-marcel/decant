@@ -208,6 +208,14 @@ describe('the join block a meeting invitation carries', () => {
     expect(withoutJoinBlocks(note)).toBe('Agenda below.\nPasscode for the door: 4321');
   });
 
+  // A calendar note holds the link Graph gives in its front matter, so a block with that link leaves
+  // no line at all.
+  it('a block whose link is held elsewhere goes with no line in its place', () => {
+    const standIn = (url: string): string => (url === JOIN ? '' : `Online meeting: ${url}`);
+
+    expect(withoutJoinBlocks([...TEAMS, 'Bring the figures.'].join('\n'), standIn)).toBe('Bring the figures.');
+  });
+
   // A link this code does not know is still the way into the meeting, so a block asked to leave its
   // link and holding none it knows stays whole; asked for nothing, it goes.
   it('a block with no link to join it knows stays whole when its link is asked for, and goes when not', () => {

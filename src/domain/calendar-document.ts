@@ -67,10 +67,10 @@ const titleOf = (event: CalendarEvent): string => (event.subject.length > 0 ? ev
 
 // Outlook wraps each link of an invitation in a scanner of its own, as it does in mail, and the
 // wrapper comes off the same way. The join block goes. Graph gives the link to join of a Teams or a
-// Skype meeting, and `online_meeting:` holds it. For any other (Zoom, Meet, a Teams block pasted into
-// an appointment) Graph gives none, so the link stays on one line where its block was.
+// Skype meeting, and `online_meeting:` holds it. A block with any other link (a Zoom or Meet meeting,
+// a Teams block pasted into an appointment, a second meeting's block) leaves that link on one line.
 const bodyOf = (input: RenderEventInput): string => {
-  const said = withoutJoinBlocks(unwrapSafelinks(htmlToText(input.event.body)), input.event.joinUrl.length > 0 ? undefined : joinLine);
+  const said = withoutJoinBlocks(unwrapSafelinks(htmlToText(input.event.body)), (joinUrl) => (joinUrl === input.event.joinUrl ? '' : joinLine(joinUrl)));
   return [
     `# ${titleOf(input.event)}`,
     ...(said.length === 0 ? [] : ['', said]),
