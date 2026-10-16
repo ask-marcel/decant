@@ -216,14 +216,18 @@ const folderOf = (file: string): string => file.slice(0, file.lastIndexOf('/'));
 
 const dayOfNote = (file: string): string => folderOf(file).slice(folderOf(file).lastIndexOf('/') + 1);
 
+// What a link calls a note: the subject of its event, or for an event with no subject the name of its
+// file, which is how the note's title and its file name such an event.
+const noteName = (state: CalendarState, note: string): string =>
+  Object.values(state.events).find((record) => record.file === note && record.subject.length > 0)?.subject ?? note.slice(note.lastIndexOf('/') + 1, -MARKDOWN.length);
+
 // The other notes of its series an event's note links to, from its own folder: an exception the note
 // of its series, by the series' subject, and a series those of its exceptions, by day and subject.
 const seriesNotes = (state: CalendarState, file: string, links: SeriesLinks): Pick<RenderEventInput, 'series' | 'exceptions'> => {
-  const subjectOf = (note: string): string => Object.values(state.events).find((record) => record.file === note)?.subject ?? '';
   const from = folderOf(file);
   return {
-    ...(links.linked === undefined ? {} : { series: { name: subjectOf(links.linked), file: pathBetween(from, links.linked) } }),
-    exceptions: links.exceptions.map((note) => ({ name: `${dayOfNote(note)} ${subjectOf(note)}`, file: pathBetween(from, note) })),
+    ...(links.linked === undefined ? {} : { series: { name: noteName(state, links.linked), file: pathBetween(from, links.linked) } }),
+    exceptions: links.exceptions.map((note) => ({ name: `${dayOfNote(note)} ${noteName(state, note)}`, file: pathBetween(from, note) })),
   };
 };
 

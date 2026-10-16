@@ -945,4 +945,21 @@ describe('linking a series and its exceptions', () => {
 
     expect(done.files.written.get(MASTER_NOTE)).toContain('- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)');
   });
+
+  // An event with no subject is headed and filed by its id, and a link to its note reads the same.
+  it('a series and an exception with no subject are linked by the names of their notes', async () => {
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'm', removed: false },
+          { id: 'x', removed: false },
+        ],
+        events: { m: { ...MASTER, subject: '' }, x: { ...MARCH, subject: '' } },
+      },
+      concurrency: 1,
+    });
+
+    expect(done.files.written.get(`${ROOT}/2026-03-02/event x.md`)).toContain('Part of the series [event m](<../2026-01-05/event m.md>).');
+    expect(done.files.written.get(`${ROOT}/2026-01-05/event m.md`)).toContain('- [2026-03-02 event x](<../2026-03-02/event x.md>)');
+  });
 });
