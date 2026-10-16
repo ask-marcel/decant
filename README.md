@@ -709,10 +709,10 @@ zone). An all-day event shows days, not times. The body is the invitation's text
 the Teams boilerplate reads as a few lines rather than a page of HTML.
 
 In the body, the text of each link stays on one line, and a link with no text shows its address.
-decant removes the Outlook wrapper from each link, as it does in mail. A picture that the invitation
-carried itself shows as `\[inline image: <name>\]`, not as a link that goes to no file. A character
-reference that HTML cannot show, for example `&#x110000;`, shows as the replacement character
-(U+FFFD). Before, such a reference stopped the calendar run.
+decant removes the Outlook wrapper from each link, as it does in mail. A picture in the invitation
+with a `cid:` reference shows as `\[inline image: <name>\]`, not as a link that goes to no file. A
+character reference that HTML cannot show, for example `&#x110000;`, shows as the replacement
+character (U+FFFD).
 
 The calendar delta reports what changed and no more, so each event it names is fetched in full. A
 reply, a reschedule or a new attendee moves the event's `lastModifiedDateTime`, the delta reports
@@ -724,7 +724,7 @@ What an invitation carries lands as markdown only, beside the event: the library
 attachment to text and nothing fetches its bytes, so there is no PDF and no original the way a mail
 attachment has. A picture pasted into an invitation is left out and named in the report as such.
 decant also reads an invitation (`.ics`) that an event carried, as it does for a mail. The file
-shows the subject, the time, the place, the organizer and the attendees.
+shows the subject, the time, the location, the organizer and the attendees.
 The first run walks the whole calendar and writes the events starting on or after the kept day, and
 every recurring series whatever day it began (see How far back). The cursor moves only once every
 event the delta reported has landed.
@@ -1164,7 +1164,10 @@ decant also removes this wrapper from these texts:
 - the body of a calendar event
 - the text of a file that an event carried
 - the notes of a To Do task
+- the text of a saved email (`.eml`) in a library
 - each document in a zip file.
+
+The files that a saved email carried keep the wrapper.
 
 The head of each thread names where the file itself lives under `path:`, so a thread pasted into
 a context window can still be resolved and traced back, and lists every participant with the
