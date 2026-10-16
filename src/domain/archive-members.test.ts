@@ -62,5 +62,7 @@ describe('a link from one member of an archive to another', () => {
 
     expect(linkMembers(text, 'pages/week 2.html', files)).toBe(text);
     expect(linkMembers('[Home](index.html)', 'unknown.html', files)).toBe('[Home](index.html)');
+    // A root path names the root of a site, which need not be the root of the archive.
+    expect(linkMembers('[Root](/logo.png)', 'index.html', files)).toBe('[Root](/logo.png)');
   });
 });
