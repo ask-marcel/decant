@@ -49,12 +49,13 @@ const sectionOf = (raw: string): Section => {
 // The parts between one boundary and the next. Split on the delimiter as the text it is: a boundary
 // is chosen by the sending client and routinely carries `=`, `_`, `+` and `.`, which a pattern built
 // around it would read as syntax of its own. The preamble before the first one and the epilogue
-// after the last are what no client shows, so both ends go.
+// after the last are what no client shows, so both ends go. The line end before a boundary belongs
+// to the boundary, so a file sent as it is ends where it ends.
 const splitParts = (body: string, boundary: string): ReadonlyArray<string> =>
   body
     .split(`--${boundary}`)
     .slice(1, -1)
-    .map((part) => part.replace(/^\r?\n/, ''))
+    .map((part) => part.replace(/^\r?\n/, '').replace(/\r?\n$/, ''))
     .filter((part) => part.trim().length > 0);
 
 const contentTypeOf = (headers: Headers): string => rawHeaderOf(headers, 'content-type') ?? 'text/plain';
