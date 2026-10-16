@@ -109,7 +109,7 @@ describe('writing one calendar event as a document', () => {
     const block = `${rule}<div><span>Microsoft Teams</span> <a href="https://aka.ms/x">Need help?</a></div><div><a href="https://teams.microsoft.com/l/meetup-join/abc">Join the meeting now</a></div><div>Passcode: aB3cD4</div>${rule}`;
     const written = rendered({ ...event, body: `<p>Bring the figures.</p>${block}` });
 
-    expect(written).toContain('# Offsite planning\n\nBring the figures.\n');
+    expect(written).toEndWith('# Offsite planning\n\nBring the figures.\n');
     expect(written).not.toContain('Passcode');
     expect(written).not.toContain('Online meeting:');
     expect(written).toContain('online_meeting: https://teams.microsoft.com/l/meetup-join/abc');

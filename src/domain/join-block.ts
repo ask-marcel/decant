@@ -61,7 +61,7 @@ const ZOOM_TAIL: ReadonlyArray<RegExp> = [
   // An H.323 address, with the place it serves.
   /^\W*\d{1,3}(?:\.\d{1,3}){3}(?: \([^()]*\))?\W*$/,
   // A SIP address, or the link to join from Skype for Business.
-  /^\W*(?:\d+@(?:sip\.)?zoom(?:crc|gov)?\.com|https:\/\/[a-z0-9.-]*zoom(?:gov)?\.(?:us|com)\/skype\/)/i,
+  /^\W*(?:\d+@(?:sip\.)?zoom(?:crc|gov)\.com|https:\/\/[a-z0-9.-]*zoom(?:gov)?\.(?:us|com)\/skype\/)/i,
 ];
 
 const isZoomTail = (line: string): boolean => ZOOM_TAIL.some((pattern) => pattern.test(line));

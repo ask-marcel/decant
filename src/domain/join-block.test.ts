@@ -170,7 +170,7 @@ describe('the join block a meeting invitation carries', () => {
       '12345678901@zoomcrc.com',
       'Join by H.323',
       '192.0.2.11 (US West)',
-      '198.51.100.11 (US East)',
+      '198.51.100.11',
       'Meeting ID: 123 4567 8901',
       'Join by Skype for Business',
       '[https://us02web.zoom.us/skype/12345678901](https://us02web.zoom.us/skype/12345678901)',
@@ -291,6 +291,7 @@ describe('the join block a meeting invitation carries', () => {
     ['the local numbers named inside a sentence', ['Join Zoom Meeting', 'https://us02web.zoom.us/j/1', 'If you cannot find your local number, ask me.']],
     ['a meeting ID named inside a sentence', [RULE, 'Please note the new meeting ID: 555 0100', RULE]],
     ['rules around a signature, with a link to join outside them', [`Join: ${JOIN}`, 'Thanks,', RULE, 'Jane Doe | Contoso', RULE]],
+    ['rules around a signature, with a link to join after them', ['Thanks,', RULE, 'Jane Doe | Contoso', RULE, `Join: ${JOIN}`]],
     ['three blank lines and no block', ['Agenda below.', '', '', 'Bring the figures.']],
   ])('keeps %s', (_name, lines) => {
     const text = lines.join('\n');
@@ -312,6 +313,12 @@ describe('the join block a meeting invitation carries', () => {
     ['an address that opens a sentence', H323, '192.0.2.50 is the printer in Room 3.'],
     ['a number that is no address', H323, '1.5 hours for questions.'],
     ['a link to a recording', SKYPE, 'Recording: https://us02web.zoom.us/rec/share/abc'],
+    ['a Zoom heading inside a sentence', [], 'You can also join by Skype for Business'],
+    ['a Zoom heading with words after it', [], 'Join by SIP if the link fails.'],
+    ['a passcode inside a sentence, with its colon', SKYPE, 'The new passcode: 4321'],
+    ['an address that ends a sentence', H323, 'The printer is at 192.0.2.50'],
+    ['a SIP address inside a sentence', SKYPE, 'From a room system, dial 12345678901@zoomcrc.com'],
+    ['a passcode right after the local numbers', [], 'Passcode: 4321'],
     ['a line in another script, and an ID it names', SKYPE, 'Номер следующей встречи:\nMeeting ID: 555 0100'],
   ])('a Zoom block leaves %s after it', (_name, tail, said) => {
     const block = ['Join Zoom Meeting', 'https://us02web.zoom.us/j/1', 'Find your local number: https://us02web.zoom.us/u/abc', ...tail];
@@ -333,7 +340,8 @@ describe('the join block a meeting invitation carries', () => {
       '',
       '**Join by H.323**',
       '',
-      '• 192.0.2.11 (US West)',
+      '• 192.0.2.11 (US West)  ',
+      '**Passcode**: 123456',
       '',
       '**Meeting ID:** 123 4567 8901',
     ].join('\n');
