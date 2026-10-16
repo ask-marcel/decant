@@ -5,7 +5,7 @@ import { unlistedSiteUrls } from '../domain/shared-site.ts';
 import { parseSiteMembers } from '../domain/site-members.ts';
 import { err, ok } from '../domain/result.ts';
 import { formatError } from '../domain/utilities/format-error.ts';
-import type { ArchiveEntry, DriveReader, DriveReaderError, DriveSummary, EmbeddedImage, ItemRef, SiteSummary } from '../use-cases/ports/drive-reader.ts';
+import type { ArchiveEntries, DriveReader, DriveReaderError, DriveSummary, EmbeddedImage, ItemRef, SiteSummary } from '../use-cases/ports/drive-reader.ts';
 
 // The slice of the ask-marcel-office-cli surface this adapter drives. Typed against what the
 // package really exposes (a command registry whose results are `unknown`), so a test can hand in
@@ -315,12 +315,17 @@ const toDrive = (value: unknown): ReadonlyArray<DriveSummary> => {
   return id === undefined || name === undefined ? [] : [{ id, name }];
 };
 
-const toArchiveEntries = (value: unknown): ReadonlyArray<ArchiveEntry> => {
+// The library answers a cut archive with `truncated: true` and the count it held, `totalEntries`.
+const totalOf = (value: Record<string, unknown>): Pick<ArchiveEntries, 'totalEntries'> =>
+  value['truncated'] === true && typeof value['totalEntries'] === 'number' ? { totalEntries: value['totalEntries'] } : {};
+
+const toArchiveEntries = (value: unknown): ArchiveEntries => {
   if (!isRecord(value) || !Array.isArray(value['files'])) return [];
-  return value['files'].flatMap((entry) => {
+  const entries = value['files'].flatMap((entry) => {
     const path = readString(entry, 'path');
     return path === undefined ? [] : [{ path, text: readString(entry, 'text'), note: readString(entry, 'note') }];
   });
+  return Object.assign(entries, totalOf(value));
 };
 
 // A site is addressed by hostname plus server-relative path, which is what a copied site URL holds.

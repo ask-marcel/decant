@@ -16,7 +16,7 @@ import { renderZipManifest } from '../domain/zip-manifest.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { SkipReason } from '../domain/report.ts';
-import type { ArchiveEntry } from './ports/drive-reader.ts';
+import type { ArchiveEntries, ArchiveEntry } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import type { MailAttachment, MailReaderError, ThreadReader } from './ports/mail-reader.ts';
 import type { Logger } from './ports/logger.ts';
@@ -29,7 +29,7 @@ export type ConvertAttachmentDeps = {
   readonly ocr: Ocr;
   readonly logger: Logger;
   // Unpacking reads a file already on disk, which is all this needs of the wider drive reader.
-  readonly unpackArchive: (path: string) => Promise<Result<ReadonlyArray<ArchiveEntry>, { readonly kind: string; readonly message: string }>>;
+  readonly unpackArchive: (path: string) => Promise<Result<ArchiveEntries, { readonly kind: string; readonly message: string }>>;
   // Reads a file already on disk, which is what a part taken out of a saved email is by then.
   readonly convertLocal: (path: string) => Promise<Result<string, { readonly kind: string; readonly message: string }>>;
   // How long a path may be as decant writes it. Absent, names are not cut for length.

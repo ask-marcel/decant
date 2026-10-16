@@ -25,6 +25,11 @@ export type ItemRef = { readonly driveId: string; readonly itemId: string };
 // not be converted, so nothing inside a zip disappears silently.
 export type ArchiveEntry = { readonly path: string; readonly text?: string; readonly note?: string };
 
+// The members the library read out of an archive. It reads the first 100 of an archive that holds
+// more, and `totalEntries` then says how many the archive holds, so a reader can tell a cut archive
+// from a whole one.
+export type ArchiveEntries = ReadonlyArray<ArchiveEntry> & { readonly totalEntries?: number };
+
 // One picture embedded in a document. `path` is the part it was stored under (`word/media/image1.png`),
 // which is what makes two pictures of a document tellable apart when neither carries a name.
 export type EmbeddedImage = { readonly path: string; readonly bytes: Uint8Array };
@@ -51,5 +56,5 @@ export type DriveReader = {
   // embeds none answers with an empty list: nothing went wrong, there was simply nothing to take.
   readonly images: (ref: ItemRef) => Promise<Result<ReadonlyArray<EmbeddedImage>, DriveReaderError>>;
   readonly localMarkdown: (path: string) => Promise<Result<string, DriveReaderError>>;
-  readonly localArchive: (path: string) => Promise<Result<ReadonlyArray<ArchiveEntry>, DriveReaderError>>;
+  readonly localArchive: (path: string) => Promise<Result<ArchiveEntries, DriveReaderError>>;
 };
