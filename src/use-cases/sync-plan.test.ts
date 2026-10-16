@@ -374,7 +374,7 @@ describe('syncing a Planner plan', () => {
 // under. Every task is placed again in the folder of the new title, the old copies go to the archive
 // as for any move, and so do the files of the old folder itself.
 describe('a plan renamed since its files were written', () => {
-  it('writes its tasks and its board under the new title, and puts the whole old folder aside', async () => {
+  it('writes its tasks and its board under the new title, and puts each old page and the old folder`s own files aside', async () => {
     const first = await run();
     const files = createFilesFake({ texts: Object.fromEntries(first.files.written) });
     const renamed = { ...PLAN, title: 'Offsite 2027' };
@@ -389,6 +389,10 @@ describe('a plan renamed since its files were written', () => {
     expect(JSON.parse(files.written.get(`${NEW}/.sync-state.json`) ?? '{}').source.name).toBe('Offsite 2027');
     expect([...files.written.keys()].filter((path) => path.startsWith(`${ROOT}/`))).toStrictEqual([]);
     expect(files.written.get('kb/_archive/2026-09-13/Planner/Offsite 2026/_board.md')).toBe(first.files.written.get(BOARD_PATH));
+    // The folder's own files that are there, and no other: this one never held a cursor file or a report.
+    const own = files.moves.map((move) => move.from).filter((from) => !/\/(To do|Done)\//.test(from));
+    expect(new Set(own)).toStrictEqual(new Set([STATE_PATH, BOARD_PATH]));
+    expect(own).toHaveLength(2);
   });
 
   const renaming = async (
@@ -396,12 +400,13 @@ describe('a plan renamed since its files were written', () => {
     title: string,
     seed: Partial<PlanReaderSeed> = {},
     disk: Omit<FilesFakeSeed, 'texts'> = {}
-  ): Promise<{ files: FilesFake; done: Awaited<ReturnType<ReturnType<typeof createSyncPlan>>> }> => {
+  ): Promise<{ files: FilesFake; logger: LoggerFake; done: Awaited<ReturnType<ReturnType<typeof createSyncPlan>>> }> => {
     const files = createFilesFake({ texts, ...disk });
+    const logger = createLoggerFake();
     const renamed = { ...PLAN, title };
     const reader = createPlanReaderFake({ plans: [renamed], buckets: BUCKETS, tasks: TASKS, details: DETAILS, names: NAMES, ...seed });
-    const syncPlan = createSyncPlan({ reader, files, clock: createClockFake('2026-09-13T14:00:00Z'), logger: createLoggerFake(), progress: createProgressFake(), kbRoot: 'kb' });
-    return { files, done: await syncPlan({ plan: renamed, formerTitle: PLAN.title, dryRun: false, concurrency: 4 }) };
+    const syncPlan = createSyncPlan({ reader, files, clock: createClockFake('2026-09-13T14:00:00Z'), logger, progress: createProgressFake(), kbRoot: 'kb' });
+    return { files, logger, done: await syncPlan({ plan: renamed, formerTitle: PLAN.title, dryRun: false, concurrency: 4 }) };
   };
 
   // Windows and macOS read both names as one folder: moved, the run would put its own new state aside.
@@ -423,6 +428,7 @@ describe('a plan renamed since its files were written', () => {
 
     expect(done.ok).toBe(false);
     expect(done.ok ? undefined : done.error).toMatchObject({ step: 'placePlan', cause: 'folder-taken' });
+    expect(done.ok ? '' : done.error.message).toBe('the folder of the title Offsite 2027 holds another plan; rename one of them');
     expect(files.writeLog).toStrictEqual([]);
     expect(files.moves).toStrictEqual([]);
   });
@@ -452,6 +458,16 @@ describe('a plan renamed since its files were written', () => {
     expect(failing.done.ok ? '' : failing.done.error.message).toContain('disk error');
     expect([...broken.files.writeLog, ...failing.files.writeLog]).toStrictEqual([]);
     expect([...broken.files.moves, ...failing.files.moves]).toStrictEqual([]);
+  });
+
+  it('a file of the old folder that will not move aside is logged, and the plan still lands under the new title', async () => {
+    const first = await run();
+    const held = { kind: 'write-failed', path: 'kb', message: 'held open' } as const;
+    const { files, logger, done } = await renaming(Object.fromEntries(first.files.written), 'Offsite 2027', {}, { failMoveWith: held });
+
+    expect(done.ok).toBe(true);
+    expect(files.written.get('kb/Planner/Offsite 2027/_board.md')).toContain('Book the venue');
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'archive.failed', meta: { path: STATE_PATH, cause: 'write-failed' } });
   });
 
   it('a renamed plan with no page to write still draws its board in the new folder', async () => {
