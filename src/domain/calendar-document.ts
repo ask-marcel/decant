@@ -2,6 +2,7 @@ import type { Attendee, CalendarEvent } from './calendar-event.ts';
 import { renderFrontMatter, withFrontMatter, withoutFrontMatter } from './front-matter.ts';
 import type { FrontMatterField } from './front-matter.ts';
 import { htmlToText } from './html-text.ts';
+import { isCalendar, renderCalendar } from './icalendar.ts';
 import { linkDestination } from './markdown-link.ts';
 import { unwrapSafelinks } from './safelink.ts';
 import { dayIn, timeIn } from './zoned-day.ts';
@@ -95,5 +96,10 @@ const attachmentFields = (input: RenderEventAttachmentInput): ReadonlyArray<Fron
   ['synced_at', input.syncedAt],
 ];
 
+// An invitation an event carried is read, as one a mail carried is: the library passes an `.ics`
+// through as text, a timezone block, vendor properties and the body again in HTML, around a handful
+// of fields worth keeping.
+const saidBy = (text: string): string => (isCalendar(text) ? renderCalendar(text) : text);
+
 export const renderEventAttachment = (input: RenderEventAttachmentInput): string =>
-  withFrontMatter(renderFrontMatter(attachmentFields(input)), unwrapSafelinks(withoutFrontMatter(input.text)));
+  withFrontMatter(renderFrontMatter(attachmentFields(input)), unwrapSafelinks(saidBy(withoutFrontMatter(input.text))));
