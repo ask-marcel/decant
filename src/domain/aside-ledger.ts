@@ -39,6 +39,16 @@ export const serializeAsideLedger = (ledger: AsideLedger): string => {
   return `${JSON.stringify(Object.fromEntries(sorted.map((entry) => [entry.path, { cause: entry.cause, since: entry.since }])), undefined, 2)}\n`;
 };
 
+// Why a move failed: the kind of failure, and the system code when the message starts with one
+// (EBUSY, EPERM). The rest of the message names both paths, the day of the run among them, so kept
+// whole it would change on each day a file stays stuck, and the ledger and the report with it.
+const CODE = /^E[A-Z0-9]+(?=:|$)/;
+
+export const causeOf = (failure: { readonly kind: string; readonly message: string }): string => {
+  const code = CODE.exec(failure.message)?.[0];
+  return code === undefined ? failure.kind : `${failure.kind}: ${code}`;
+};
+
 // A file that would not move again keeps the day it first would not, and takes the latest cause.
 export const stuckAt = (ledger: AsideLedger, path: string, cause: string, at: string): AsideLedger => ({ ...ledger, [path]: { path, cause, since: ledger[path]?.since ?? at } });
 

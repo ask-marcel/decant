@@ -159,7 +159,7 @@ describe('syncing a Microsoft To Do list', () => {
     const kept = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}');
 
     expect(done.summary).toMatchObject({ converted: 0, failed: 1 });
-    expect(done.notes.failed).toEqual([{ path: 'Book the venue', reason: 'its earlier version would not move to _archive/: write-failed: held open' }]);
+    expect(done.notes.failed).toEqual([{ path: 'Book the venue', reason: 'its earlier version would not move to _archive/: write-failed' }]);
     expect(done.files.written.get(FILE)).toBe('the task as it was');
     expect(kept.tasks['AAMkAGI-task'].lastModified).toBe('2026-09-01T09:00:00Z');
     expect(kept.retry['AAMkAGI-task']).toBeDefined();

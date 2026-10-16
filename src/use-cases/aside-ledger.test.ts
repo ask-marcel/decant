@@ -30,7 +30,7 @@ describe('writing down the files a source lets go that would not move under the 
       { path: TASK, error: LOCKED },
     ]);
 
-    expect(ledgerOf(files.written.get(LEDGER))).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY: resource busy or locked', since: '2026-10-15T09:00:00Z' } });
+    expect(ledgerOf(files.written.get(LEDGER))).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-15T09:00:00Z' } });
   });
 
   it('nothing still on disk writes nothing', async () => {
@@ -85,7 +85,7 @@ describe('moving them aside again at the start of a run', () => {
 
     await ledger.retry();
 
-    expect(ledgerOf(files.written.get(LEDGER))).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY: resource busy or locked', since: '2026-10-14T09:00:00Z' } });
+    expect(ledgerOf(files.written.get(LEDGER))).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z' } });
     expect(logger.calls).toContainEqual({ level: 'info', event: 'aside.retried', meta: { moved: 0, stuck: 1 } });
   });
 
@@ -128,9 +128,7 @@ describe('naming the files still stuck in the report of the run', () => {
 
     await ledger.writeDown([{ path: NOTE, error: LOCKED }]);
 
-    expect(await ledger.stuck()).toEqual([
-      { path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY: resource busy or locked (since 2026-10-15)' },
-    ]);
+    expect(await ledger.stuck()).toEqual([{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-15)' }]);
   });
 });
 

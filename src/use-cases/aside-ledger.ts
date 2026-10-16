@@ -1,4 +1,4 @@
-import { ASIDE_LEDGER_NAME, parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unreadableNote, unstuck } from '../domain/aside-ledger.ts';
+import { ASIDE_LEDGER_NAME, causeOf, parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unreadableNote, unstuck } from '../domain/aside-ledger.ts';
 import type { AsideLedger, StuckFile } from '../domain/aside-ledger.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -8,7 +8,7 @@ import { err, ok } from '../domain/result.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import { setAside } from './put-aside.ts';
-import type { NotPutAside, WriteDown } from './put-aside.ts';
+import type { WriteDown } from './put-aside.ts';
 
 // `timezone` is the zone the knowledge base counts its days in, which the report gives the days in.
 export type AsideLedgerDeps = { readonly clock: Clock; readonly kbRoot: string; readonly logger: Logger; readonly timezone: string };
@@ -37,8 +37,6 @@ const writeLedger = async (files: Files, deps: AsideLedgerDeps, ledger: AsideLed
   const written = await files.writeText(ledgerPath(deps.kbRoot), serializeAsideLedger(ledger));
   if (!written.ok) deps.logger.warn('aside-ledger.unsaved', { cause: written.error.kind });
 };
-
-const causeOf = (missed: NotPutAside): string => `${missed.error.kind}: ${missed.error.message}`;
 
 const onDisk = async <T extends { readonly path: string }>(files: Files, entries: ReadonlyArray<T>): Promise<ReadonlyArray<T>> => {
   const present: T[] = [];
@@ -103,7 +101,7 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
     const present = (await onDisk(files, missed)).filter((entry) => !landedAt.has(entry.path));
     if (present.length === 0) return;
     const at = deps.clock.nowIso();
-    await change((ledger) => present.reduce((carried, entry) => stuckAt(carried, entry.path, causeOf(entry), at), ledger));
+    await change((ledger) => present.reduce((carried, entry) => stuckAt(carried, entry.path, causeOf(entry.error), at), ledger));
   };
 
   // At the start of a run, before any source writes: each file still on disk goes under the archive
@@ -120,7 +118,7 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
     );
     const settled = listed.map((entry) => entry.path).filter((path) => !aside.failed.some((missed) => missed.path === path));
     const at = deps.clock.nowIso();
-    await change((ledger) => aside.failed.reduce((carried, missed) => stuckAt(carried, missed.path, causeOf(missed), at), unstuck(ledger, settled)));
+    await change((ledger) => aside.failed.reduce((carried, missed) => stuckAt(carried, missed.path, causeOf(missed.error), at), unstuck(ledger, settled)));
     deps.logger.info('aside.retried', { moved: aside.moved.length, stuck: aside.failed.length });
   };
 

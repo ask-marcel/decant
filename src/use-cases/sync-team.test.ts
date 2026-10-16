@@ -140,7 +140,7 @@ describe('syncing the channels of a Microsoft Team', () => {
     const kept = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}');
 
     expect(done.summary).toMatchObject({ converted: 0, failed: 1 });
-    expect(done.notes.failed).toEqual([{ path: 'General/Post a', reason: 'its earlier version would not move to _archive/: write-failed: held open' }]);
+    expect(done.notes.failed).toEqual([{ path: 'General/Post a', reason: 'its earlier version would not move to _archive/: write-failed' }]);
     expect(done.files.written.get(FILE)).toBe('before the reply');
     expect(kept.channels[GENERAL.id].posts.a.lastModified).toBe('2026-09-01T09:00:00Z');
   });

@@ -1,3 +1,4 @@
+import { causeOf } from '../domain/aside-ledger.ts';
 import type { Clock } from './ports/clock.ts';
 import type { Files, FilesError } from './ports/files.ts';
 
@@ -82,7 +83,7 @@ export const putBack = async (deps: Pick<PutAsideDeps, 'files'>, aside: SetAside
 export const heldInPlace = async (deps: Pick<PutAsideDeps, 'files'>, aside: SetAside): Promise<string | undefined> => {
   for (const missed of aside.failed) {
     const still = await deps.files.exists(missed.path);
-    if (still.ok && still.value) return `its earlier version would not move to _archive/: ${missed.error.kind}: ${missed.error.message}`;
+    if (still.ok && still.value) return `its earlier version would not move to _archive/: ${causeOf(missed.error)}`;
   }
   return undefined;
 };
