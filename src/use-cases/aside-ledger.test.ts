@@ -4,6 +4,7 @@ import { createFilesFake } from '../test-helpers/files-fake.ts';
 import type { FilesFake, FilesFakeSeed } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import type { LoggerFake } from '../test-helpers/logger-fake.ts';
+import { digestOf } from '../domain/aside-ledger.ts';
 import { createAsideLedger } from './aside-ledger.ts';
 import type { AsideLedgerRun } from './aside-ledger.ts';
 
@@ -13,7 +14,7 @@ const ASIDE = 'kb/_archive/2026-10-15/SharePoint sites/Espace Contoso/Documents/
 const TASK = 'kb/To Do/Tasks/2026-09-01/Book the venue.md';
 const LOCKED = { kind: 'write-failed' as const, path: NOTE, message: 'EBUSY: resource busy or locked' };
 
-const ledgerOf = (text: string | undefined): Record<string, { cause: string; since: string }> => JSON.parse(text ?? '{}');
+const ledgerOf = (text: string | undefined): Record<string, { cause: string; since: string; digest?: string }> => JSON.parse(text ?? '{}');
 
 const setUp = (seed: FilesFakeSeed = {}, timezone = 'UTC'): { files: FilesFake; logger: LoggerFake; ledger: AsideLedgerRun } => {
   const files = createFilesFake(seed);
@@ -29,6 +30,15 @@ describe('writing down the files a source lets go that would not move under the 
       { path: NOTE, error: LOCKED },
       { path: TASK, error: LOCKED },
     ]);
+
+    expect(ledgerOf(files.written.get(LEDGER))).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-15T09:00:00Z', digest: digestOf('the contract') } });
+  });
+
+  it('a file that will not read is written down with no digest', async () => {
+    const { files, ledger } = setUp();
+    await files.writeBytes(NOTE, new Uint8Array([1, 2, 3]));
+
+    await ledger.writeDown([{ path: NOTE, error: LOCKED }]);
 
     expect(ledgerOf(files.written.get(LEDGER))).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-15T09:00:00Z' } });
   });
@@ -68,7 +78,11 @@ describe('writing down the files a source lets go that would not move under the 
 });
 
 describe('moving them aside again at the start of a run', () => {
-  const held = (since = '2026-10-14T09:00:00Z'): string => JSON.stringify({ [NOTE]: { cause: 'write-failed: EBUSY', since }, [TASK]: { cause: 'write-failed: EBUSY', since } });
+  const held = (since = '2026-10-14T09:00:00Z'): string =>
+    JSON.stringify({
+      [NOTE]: { cause: 'write-failed: EBUSY', since, digest: digestOf('the contract') },
+      [TASK]: { cause: 'write-failed: EBUSY', since, digest: digestOf('the task') },
+    });
 
   it('each file still on disk goes under the archive, and the ledger keeps neither it nor a file that is gone', async () => {
     const { files, logger, ledger } = setUp({ texts: { [LEDGER]: held(), [NOTE]: 'the contract' } });
@@ -77,7 +91,7 @@ describe('moving them aside again at the start of a run', () => {
 
     expect(files.moves).toEqual([{ from: NOTE, to: ASIDE }]);
     expect(ledgerOf(files.written.get(LEDGER))).toEqual({});
-    expect(logger.calls).toContainEqual({ level: 'info', event: 'aside.retried', meta: { moved: 1, stuck: 0 } });
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'aside.retried', meta: { moved: 1, stuck: 0, replaced: 0 } });
   });
 
   it('a file that still will not move stays in the ledger, with the day it first would not and the latest cause', async () => {
@@ -85,8 +99,35 @@ describe('moving them aside again at the start of a run', () => {
 
     await ledger.retry();
 
-    expect(ledgerOf(files.written.get(LEDGER))).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z' } });
-    expect(logger.calls).toContainEqual({ level: 'info', event: 'aside.retried', meta: { moved: 0, stuck: 1 } });
+    expect(ledgerOf(files.written.get(LEDGER))).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z', digest: digestOf('the contract') } });
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'aside.retried', meta: { moved: 0, stuck: 1, replaced: 0 } });
+  });
+
+  // A removal a run could not save, or a path that differs only in letter case, must never send a live
+  // file away: the file at a listed path is moved only while it holds what was written down.
+  it('a listed path that holds another file now is left as it is, and leaves the ledger', async () => {
+    const { files, logger, ledger } = setUp({ texts: { [LEDGER]: held(), [NOTE]: 'the new contract' } });
+
+    await ledger.retry();
+
+    expect(files.moves).toStrictEqual([]);
+    expect(ledgerOf(files.written.get(LEDGER))).toEqual({});
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'aside.retried', meta: { moved: 0, stuck: 0, replaced: 1 } });
+  });
+
+  // Read as text, a file the fake holds as bytes will not read, as a file another program locks may not.
+  it('a file that would not read when it stuck, or that will not read now, stays listed and does not move', async () => {
+    const unread = setUp({ texts: { [LEDGER]: JSON.stringify({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z' } }), [NOTE]: 'the contract' } });
+    const unreadNow = setUp({ texts: { [LEDGER]: JSON.stringify({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z', digest: digestOf('the contract') } }) } });
+    await unreadNow.files.writeBytes(NOTE, new Uint8Array([1, 2, 3]));
+
+    await unread.ledger.retry();
+    await unreadNow.ledger.retry();
+
+    expect(unread.files.moves).toStrictEqual([]);
+    expect(unreadNow.files.moves).toStrictEqual([]);
+    expect(Object.keys(ledgerOf(unread.files.written.get(LEDGER)))).toEqual([NOTE]);
+    expect(Object.keys(ledgerOf(unreadNow.files.written.get(LEDGER)))).toEqual([NOTE]);
   });
 
   it('with nothing in the ledger, the run starts without a move or a write', async () => {
@@ -104,8 +145,8 @@ describe('naming the files still stuck in the report of the run', () => {
     const { ledger } = setUp({
       texts: {
         [LEDGER]: JSON.stringify({
-          [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z' },
-          [TASK]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z' },
+          [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z', digest: 'd1' },
+          [TASK]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z', digest: 'd2' },
         }),
         [NOTE]: 'the contract',
       },
@@ -116,7 +157,7 @@ describe('naming the files still stuck in the report of the run', () => {
 
   it('the day a file first would not move is told in the zone of the knowledge base', async () => {
     const { ledger } = setUp(
-      { texts: { [LEDGER]: JSON.stringify({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T23:00:00Z' } }), [NOTE]: 'the contract' } },
+      { texts: { [LEDGER]: JSON.stringify({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T23:00:00Z', digest: 'd1' } }), [NOTE]: 'the contract' } },
       'Asia/Shanghai'
     );
 
