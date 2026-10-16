@@ -14,7 +14,8 @@ import type { PlanReader } from './ports/plan-reader.ts';
 import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
-import { writeReport } from './sync-site.ts';
+import { REPORT_FILE_NAME, writeReport } from './sync-site.ts';
+import { CURSOR_FILE_NAME } from './cursor-files.ts';
 import { clearAttempt, gaveUpNotes, givenUpNotes, heldAttempts, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 import { putAside } from './put-aside.ts';
@@ -39,7 +40,8 @@ export type SyncPlanDeps = {
   readonly writeDown?: WriteDown;
 };
 
-export type SyncPlanInput = { readonly plan: Plan; readonly dryRun: boolean; readonly concurrency: number };
+// `formerTitle` is the title the plan's files were written under, when update finds it renamed since.
+export type SyncPlanInput = { readonly plan: Plan; readonly dryRun: boolean; readonly concurrency: number; readonly formerTitle?: string };
 
 export type SyncPlan = (input: SyncPlanInput) => Promise<Result<SourceRun, StepError>>;
 
@@ -52,6 +54,26 @@ const failed = (step: string, cause: string, message: string): Result<never, Ste
 type Roots = { readonly root: string };
 
 const rootsOf = (deps: SyncPlanDeps, plan: Plan): Roots => ({ root: `${deps.kbRoot}/${planRootName(plan.title)}` });
+
+// The folder of a plan's earlier title, when the title it has now gives another one.
+const formerRootsOf = (deps: SyncPlanDeps, input: SyncPlanInput): Roots | undefined => {
+  const former = input.formerTitle === undefined ? undefined : rootsOf(deps, { ...input.plan, title: input.formerTitle });
+  return former?.root === rootsOf(deps, input.plan).root ? undefined : former;
+};
+
+// What the folder of an earlier title holds beside the pages, which no task record names: put aside
+// once the run under the new title has saved its own.
+const FOLDER_FILES = [PLAN_STATE_FILE, CURSOR_FILE_NAME, BOARD_FILE, REPORT_FILE_NAME];
+
+const leaveFolder = async (deps: SyncPlanDeps, former: Roots): Promise<void> => {
+  const held: string[] = [];
+  for (const name of FOLDER_FILES) {
+    const path = `${former.root}/${name}`;
+    const there = await deps.files.exists(path);
+    if (there.ok && there.value) held.push(path);
+  }
+  for (const missed of await putAside(deps, held)) deps.logger.warn('archive.failed', { path: missed.path, cause: missed.error.kind });
+};
 
 // No state file is the first run; one that will not parse, as JSON or as a state, is started over
 // with a warning. The plan travels in from the run, so a renamed plan is recorded under its name.
@@ -268,7 +290,9 @@ export const createSyncPlan =
   (deps: SyncPlanDeps): SyncPlan =>
   async (input) => {
     const roots = rootsOf(deps, input.plan);
-    const state: PlanState = { ...(await loadState(deps, roots, input.plan)), version: PLAN_STATE_VERSION };
+    // A plan renamed reads its state where its files are, and places every task under the new title.
+    const former = formerRootsOf(deps, input);
+    const state: PlanState = { ...(await loadState(deps, former ?? roots, input.plan)), version: PLAN_STATE_VERSION };
     const plan = await listed(deps, input.plan);
     if (!plan.ok) return plan;
     const labels = await labelNamesOf(deps, input.plan);
@@ -289,5 +313,7 @@ export const createSyncPlan =
     const done = { ...folded, state: { ...folded.state, retry: heldAttempts(folded.state.retry, new Set(plan.value.tasks.map((task) => task.id))) } };
     // A task whose details failed this run still has its card, and the board is drawn again with it.
     if (work.length + gone.length + opening.summary.failed > 0 || state.lastRun.length === 0) await writeBoard(deps, input, roots, entries, plan.value.buckets, names);
-    return finish(deps, input, roots, state, done);
+    const finished = await finish(deps, input, roots, state, done);
+    if (finished.ok && former !== undefined) await leaveFolder(deps, former);
+    return finished;
   };

@@ -233,9 +233,14 @@ const refreshNotebook = async (deps: RunSyncDeps, input: RunSyncInput, source: S
   return notebook === undefined ? failed('savedNotebook', 'not-found', `no record of the notebook ${source.name}`) : syncTheNotebook(deps, input, notebook);
 };
 
+// The plan as Planner holds it now, read by id, so a title changed since the last run moves its files
+// to the folder of the new title. A plan that will not read is synced as it was saved.
 const refreshPlan = async (deps: RunSyncDeps, input: RunSyncInput, source: SyncedSource): Promise<Result<SourceRun, StepError>> => {
-  const plan = await deps.savedPlan(source);
-  return plan === undefined ? failed('savedPlan', 'not-found', `no record of the plan ${source.name}`) : syncThePlan(deps, input, plan);
+  const saved = await deps.savedPlan(source);
+  if (saved === undefined) return failed('savedPlan', 'not-found', `no record of the plan ${source.name}`);
+  const current = await deps.plans.plan(saved.id);
+  if (!current.ok) deps.logger.warn('plan.unread', { plan: saved.id, cause: current.error.kind });
+  return syncThePlan(deps, input, current.ok ? current.value : saved, saved.title);
 };
 
 // The sources that stand alone, refreshed once each when the knowledge base holds them at all, in
@@ -367,9 +372,9 @@ const syncTheLists = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRe
   return summary;
 };
 
-const syncThePlan = async (deps: RunSyncDeps, input: RunSyncInput, plan: Plan): Promise<Result<SourceRun, StepError>> => {
+const syncThePlan = async (deps: RunSyncDeps, input: RunSyncInput, plan: Plan, formerTitle?: string): Promise<Result<SourceRun, StepError>> => {
   deps.logger.info('plan.started', { plan: plan.id });
-  const summary = await deps.syncPlan({ plan, concurrency: input.concurrency, dryRun: input.dryRun });
+  const summary = await deps.syncPlan({ plan, concurrency: input.concurrency, dryRun: input.dryRun, formerTitle });
   if (summary.ok) deps.prompt.show(deps.view.summary(plan.title, summary.value.summary, input.dryRun));
   return summary;
 };
