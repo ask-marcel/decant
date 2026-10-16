@@ -24,10 +24,21 @@ const ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>',
 const NUMERIC = /&#(x[0-9a-f]+|\d+);/gi;
 const NAMED = /&([a-z]+);/gi;
 
-const decodeNumeric = (match: string, code: string): string => {
-  const point = code.toLowerCase().startsWith('x') ? Number.parseInt(code.slice(1), 16) : Number.parseInt(code, 10);
-  return Number.isFinite(point) ? String.fromCodePoint(point) : match;
+// What HTML reads a number as: none for zero, a surrogate half or a number past Unicode, which read as
+// the replacement character, and for 128 to 159 the character of that byte in windows-1252, which is
+// what a page that wrote one meant. `String.fromCodePoint` throws past Unicode, and that stopped the
+// run that read the body.
+const REPLACEMENT = '\uFFFD';
+const WINDOWS_1252 = new TextDecoder('windows-1252');
+
+const isSurrogate = (point: number): boolean => point >= 0xd800 && point <= 0xdfff;
+
+const characterOf = (point: number): string => {
+  if (point === 0 || point > 0x10ffff || isSurrogate(point)) return REPLACEMENT;
+  return point >= 0x80 && point <= 0x9f ? WINDOWS_1252.decode(Uint8Array.of(point)) : String.fromCodePoint(point);
 };
+
+const decodeNumeric = (_match: string, code: string): string => characterOf(code.toLowerCase().startsWith('x') ? Number.parseInt(code.slice(1), 16) : Number.parseInt(code, 10));
 
 const decodeEntities = (text: string): string => text.replace(NUMERIC, decodeNumeric).replace(NAMED, (match, name: string) => ENTITIES[name.toLowerCase()] ?? match);
 

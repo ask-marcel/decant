@@ -36,6 +36,14 @@ describe('reading what an HTML body says, without the markup', () => {
     );
   });
 
+  // A number past Unicode stopped the whole calendar run with a RangeError, and the rest gave a
+  // character no reader wants. HTML says what each of them reads as.
+  it('a character reference HTML has no character for reads as the replacement character, and 128 to 159 as the windows-1252 character', () => {
+    expect(htmlToText('<p>a&#x110000;b&#99999999999;c&#0;d&#xD800;e&#xDFFF;f</p>')).toBe('a\uFFFDb\uFFFDc\uFFFDd\uFFFDe\uFFFDf');
+    expect(htmlToText('<p>&#128;5, &#x93;quoted&#x94;, &#150; and &#x9F;</p>')).toBe('\u20AC5, \u201Cquoted\u201D, \u2013 and \u0178');
+    expect(htmlToText('<p>&#x81;&#x10FFFF;&#xFFFD;</p>')).toBe('\u0081\u{10FFFF}\uFFFD');
+  });
+
   it('a line break written with a space before its slash still breaks, and trailing spaces on a line go', () => {
     expect(htmlToText('<p>one<br />two</p>')).toBe('one\ntwo');
     expect(htmlToText('<p>text   </p><p>  more</p>')).toBe('text\nmore');
