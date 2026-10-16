@@ -254,6 +254,13 @@ describe('keeping what was attached to a mail', () => {
     expect(files.written.get(`${FOLDER}/Livraison/notes.docx.md`)).toContain('zip_entry: notes.docx');
   });
 
+  it('a link Outlook wrapped in a document of an archive reads as where it goes', async () => {
+    const wrapped = 'https://nam02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fagenda&data=05%7C02%7Cx&reserved=0';
+    const { files } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: [{ path: 'notes.html', text: `See ${wrapped}` }] } });
+
+    expect(files.written.get(`${FOLDER}/Livraison/notes.html.md`)).toContain('See https://example.com/agenda');
+  });
+
   it('a document inside an archive that could not be converted keeps the reason in its place', async () => {
     const { files } = await run({ name: 'Livraison.zip' }, { drive: { archiveEntries: [{ path: 'video.mp4', note: 'unsupported entry' }] } });
 

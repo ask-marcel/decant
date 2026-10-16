@@ -1,5 +1,6 @@
 import { renderFrontMatter, withFrontMatter } from './front-matter.ts';
 import type { FrontMatterField } from './front-matter.ts';
+import { unwrapSafelinks } from './safelink.ts';
 import type { TodoLink, TodoStep, TodoTask } from './todo-task.ts';
 
 // A task has no address of its own: Graph hands out no web link for one, and To Do's app opens by
@@ -38,10 +39,14 @@ const linkLine = (link: TodoLink): string => `- [${link.name.length > 0 ? link.n
 
 const section = (heading: string, lines: ReadonlyArray<string>): ReadonlyArray<string> => (lines.length === 0 ? [] : ['', `## ${heading}`, '', ...lines]);
 
+// A task flagged from a mail carries the mail's text as its notes, with each link Outlook wrapped.
 const bodyOf = (task: TodoTask): string =>
-  [`# ${task.title}`, ...(task.notes.length === 0 ? [] : ['', task.notes]), ...section('Steps', task.steps.map(stepLine)), ...section('Links', task.links.map(linkLine))].join(
-    '\n'
-  );
+  [
+    `# ${task.title}`,
+    ...(task.notes.length === 0 ? [] : ['', unwrapSafelinks(task.notes)]),
+    ...section('Steps', task.steps.map(stepLine)),
+    ...section('Links', task.links.map(linkLine)),
+  ].join('\n');
 
 export type RenderTaskInput = { readonly task: TodoTask; readonly list: string; readonly syncedAt: string };
 

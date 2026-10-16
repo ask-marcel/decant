@@ -35,6 +35,8 @@ const bare: TodoTask = {
   links: [],
 };
 
+const SAFELINK = 'https://nam02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fagenda&data=05%7C02%7Cx&reserved=0';
+
 const rendered = (subject: TodoTask): string => renderTaskDocument({ task: subject, list: 'Tasks', syncedAt: '2026-09-09T14:00:00Z' });
 
 describe('writing one To Do task as a document', () => {
@@ -97,5 +99,10 @@ describe('writing one To Do task as a document', () => {
 
   it('a link with no name of its own is named by the application that wrote it, rather than reading as an empty label', () => {
     expect(rendered({ ...bare, links: [{ name: '', url: 'https://example.com/deck', application: 'Microsoft Word' }] })).toContain('- [Microsoft Word](https://example.com/deck)');
+  });
+
+  // A task flagged from a mail carries the mail's text as its notes, with each link Outlook wrapped.
+  it('a link Outlook wrapped in the notes reads as where it goes', () => {
+    expect(rendered({ ...task, notes: `Agenda: ${SAFELINK}` })).toContain('Agenda: https://example.com/agenda');
   });
 });

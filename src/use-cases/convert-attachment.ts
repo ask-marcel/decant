@@ -302,7 +302,9 @@ const writeArchiveEntries = async (context: Context, folder: string, archivePath
   for (const entry of entries) {
     const path = memberFile(folder, entry.path, context.deps.pathBudget);
     const stamp = { ...context.input.stamp, zipEntry: entry.path };
-    const written = await context.deps.files.writeText(path, kbDocument(stamp, entry.text ?? entry.note ?? NO_TEXT_NOTE));
+    // A page someone saved out of Outlook and zipped keeps each link Outlook wrapped, and the wrapper
+    // comes off as it does in the mail itself.
+    const written = await context.deps.files.writeText(path, kbDocument(stamp, unwrapSafelinks(entry.text ?? entry.note ?? NO_TEXT_NOTE)));
     if (!written.ok) return failure(written.error);
     outputs.push(path);
   }
