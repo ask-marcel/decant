@@ -1142,17 +1142,19 @@ that file, the files of a deleted file and the earlier version of an edited file
 
 If no source records a file and decant cannot move it to `_archive/`, decant writes its path and the
 cause in `kb/.sync-aside.json`. For example, a program on Windows can hold the file of an item open
-after you delete the item at the source. decant also keeps a digest of the content of the file. At
-the start of each run, decant tries again to move each file in that list that has the same content.
-When another file is at that path, decant removes the path from the list and keeps the file. A dry
-run does not move these files.
+after you delete the item at the source. decant also records a checksum of the text in the file. At
+the start of each run, decant tries again to move each file in that list, but only if its checksum
+did not change. If the checksum changed, decant removes the path from the list and does not move the
+file, because a different file is at that path. A dry run does not move these files.
 
 The section `## Could not be moved to the archive` of `kb/_sync-report.md` names each file that
 stays in the list. It gives the cause and the day of the first failure, in the time zone of the kb.
-If decant cannot read a file when it writes the file in the list, the report says so, and no run
-moves that file. Then move it to `_archive/` yourself. If decant cannot read `kb/.sync-aside.json`,
-it does not change the file, and the section names only the files of that run. Then repair the file,
-or delete it to start a new list.
+If decant cannot read a file when it writes the file in the list, the report tells you, and no run
+moves that file. You must then move the file to `_archive/`.
+
+If decant cannot read `kb/.sync-aside.json`, it does not change the file. The section then names only
+the files of that run, and decant does not add them to the list. Repair or delete
+`kb/.sync-aside.json`.
 
 When an edit must go to the path of its earlier version, and that version does not move, decant
 does not write the edit. A write at that path replaces the earlier version. The source keeps the
