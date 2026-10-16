@@ -22,11 +22,12 @@ export const folderFor = (record: ThreadRecord | undefined, onDisk: FoldersOnDis
 };
 
 // What a write takes from the thread's record besides its folder: the note's path, the names its files
-// and linked documents were written under, and every file its folder holds. Nothing for a thread never
-// written.
-export const writtenBefore = (record: ThreadRecord | undefined): Pick<RenderThreadInput, 'file' | 'names' | 'links' | 'held'> => ({
+// and linked documents were written under, the version each document was pulled at, and every file its
+// folder holds. Nothing for a thread never written.
+export const writtenBefore = (record: ThreadRecord | undefined): Pick<RenderThreadInput, 'file' | 'names' | 'links' | 'linkedVersions' | 'held'> => ({
   file: record?.file,
   names: record?.names,
   links: record?.links,
+  linkedVersions: record?.linkedVersions,
   held: record?.files,
 });
