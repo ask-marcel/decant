@@ -7,6 +7,7 @@ import { createFilesFake } from '../test-helpers/files-fake.ts';
 import type { FilesFake } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import { createMailReaderFake } from '../test-helpers/mail-reader-fake.ts';
+import type { MailReaderSeed } from '../test-helpers/mail-reader-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
 import { createProgressFake } from '../test-helpers/progress-fake.ts';
 import { CONV, LINK_BODIES, ROOT, THREAD_FOLDER, THREAD_ID, message } from '../test-helpers/thread-harness.ts';
@@ -33,17 +34,21 @@ describe('a thread written again and the documents it links to', () => {
     webUrl: 'https://tenant.sharepoint.com/sites/team/Shared%20Documents/Rapport.docx',
   };
   const KEY = 'b!one:01ABC';
-  const CARD = `kb/Mailbox/threads/${THREAD_FOLDER}/_linked/Rapport.docx.md`;
-  const seed = {
+  const LINKED = `kb/Mailbox/threads/${THREAD_FOLDER}/_linked`;
+  const CARD = `${LINKED}/Rapport.docx.md`;
+  const seed: MailReaderSeed = {
     conversations: { [CONV]: [message()] },
     bodies: LINK_BODIES,
     links: { m1: [{ url: 'https://tenant.sharepoint.com/x', driveId: 'b!one', itemId: '01ABC', name: 'Rapport.docx' }] },
   };
   const at = (over: Partial<typeof REPORT> = {}): DriveReaderSeed => ({ items: { '01ABC': { ...REPORT, ...over } } });
 
-  // One write of the thread, from the record the write before left, the way a sync hands it over.
-  const write = async (files: FilesFake, drive: DriveReaderFake, record?: ThreadRecord): Promise<RenderedThread | undefined> => {
-    const reader = createMailReaderFake(seed);
+  // One write of the thread, from the record the write before left, the way a sync hands it over: the
+  // mailbox as it is then, and how long a path may be.
+  type Over = { readonly mail?: MailReaderSeed; readonly pathBudget?: number };
+
+  const write = async (files: FilesFake, drive: DriveReaderFake, record?: ThreadRecord, over: Over = {}): Promise<RenderedThread | undefined> => {
+    const reader = createMailReaderFake(over.mail ?? seed);
     const logger = createLoggerFake();
     const progress = createProgressFake();
     const render = createRenderThread({
@@ -56,8 +61,9 @@ describe('a thread written again and the documents it links to', () => {
       sourceName: 'Mailbox',
       mailboxRoot: 'kb/Mailbox',
       timezone: 'Europe/Paris',
+      pathBudget: over.pathBudget,
       convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(), logger, unpackArchive: drive.localArchive, convertLocal: drive.localMarkdown }),
-      convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger, progress }),
+      convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger, progress, pathBudget: over.pathBudget }),
     });
     const result = await render({
       threadId: THREAD_ID,
@@ -143,5 +149,23 @@ describe('a thread written again and the documents it links to', () => {
     const { drive } = await writtenAgain(at(), at(), (written) => ({ ...written, files: [] }));
 
     expect(drive.calls).toContain('markdown:01ABC');
+  });
+
+  // An archive or a saved mail unpacks into a folder named for it without its extension, beside its card.
+  it('keeps what a linked archive unpacked when the source has the version the thread pulled', async () => {
+    const mail = { ...seed, links: { m1: [{ url: 'https://tenant.sharepoint.com/z', driveId: 'b!one', itemId: '01ZIP', name: 'Contracts.zip' }] } };
+    const zipped = (): DriveReaderFake =>
+      createDriveReaderFake({
+        items: { '01ZIP': { ...REPORT, id: '01ZIP', name: 'Contracts.zip', path: 'Contracts.zip' } },
+        archiveEntries: [{ path: 'terms.docx', text: '# Terms' }],
+      });
+    const files = createFilesFake();
+    const once = await write(files, zipped(), undefined, { mail });
+    const later = zipped();
+    const twice = await write(files, later, once?.record, { mail });
+
+    expect(once?.record.files).toContain(`${LINKED}/Contracts/terms.docx.md`);
+    expect(later.calls).toStrictEqual(['item:01ZIP']);
+    expect(twice?.record.files).toStrictEqual(once?.record.files);
   });
 });
