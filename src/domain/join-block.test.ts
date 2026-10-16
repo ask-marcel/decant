@@ -155,6 +155,59 @@ describe('the join block a meeting invitation carries', () => {
     expect(withoutJoinBlocks([...first, ...second, 'See you.'].join('\n'))).toBe([...first, 'See you.'].join('\n'));
   });
 
+  // Past the local numbers Zoom can add ways to join by SIP, by H.323 and by Skype for Business, each a
+  // heading and its addresses, the meeting ID again, between rules of dashes in the newer layout.
+  it('a Zoom block runs on over the ways to join by SIP, H.323 or Skype that follow its local numbers', () => {
+    const calendar = [
+      'Agenda below.',
+      'Join Zoom Meeting',
+      '[https://us02web.zoom.us/j/12345678901](https://us02web.zoom.us/j/12345678901)',
+      'Dial by your location',
+      '+1 555 0100 US',
+      'Meeting ID: 123 4567 8901',
+      'Find your local number: [https://us02web.zoom.us/u/abc](https://us02web.zoom.us/u/abc)',
+      'Join by SIP',
+      '12345678901@zoomcrc.com',
+      'Join by H.323',
+      '192.0.2.11 (US West)',
+      '198.51.100.11 (US East)',
+      'Meeting ID: 123 4567 8901',
+      'Join by Skype for Business',
+      '[https://us02web.zoom.us/skype/12345678901](https://us02web.zoom.us/skype/12345678901)',
+      'See you there.',
+    ].join('\n');
+    const zoom = 'https://us02web.zoom.us/j/12345678901?pwd=abc';
+    const mail = [
+      'Join Zoom Meeting',
+      '',
+      `[${zoom}](${zoom})`,
+      '',
+      'Find your local number: [https://us02web.zoom.us/u/abc](https://us02web.zoom.us/u/abc)',
+      '',
+      '\\---',
+      '',
+      'Join by H.323',
+      '',
+      '• 192.0.2.11 (US West)',
+      '',
+      'Meeting ID: 123 4567 8901  ',
+      'Passcode: 123456',
+      '',
+      'See you there.',
+    ].join('\n');
+
+    expect(withoutJoinBlocks(calendar)).toBe('Agenda below.\nSee you there.');
+    expect(withoutJoinBlocks(mail, (url) => `Online meeting: ${url}`)).toBe(`Online meeting: ${zoom}\n\nSee you there.`);
+  });
+
+  it('a Zoom block keeps a passcode a sender wrote after the local numbers, with no way to join before it', () => {
+    const note = ['Agenda below.', 'Join Zoom Meeting', 'https://us02web.zoom.us/j/1', 'Find your local number: https://us02web.zoom.us/u/abc', 'Passcode for the door: 4321'].join(
+      '\n'
+    );
+
+    expect(withoutJoinBlocks(note)).toBe('Agenda below.\nPasscode for the door: 4321');
+  });
+
   // A link this code does not know is still the way into the meeting, so a block asked to leave its
   // link and holding none it knows stays whole; asked for nothing, it goes.
   it('a block with no link to join it knows stays whole when its link is asked for, and goes when not', () => {
