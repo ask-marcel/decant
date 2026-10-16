@@ -996,6 +996,25 @@ describe('linking a series and its exceptions', () => {
     expect(done.files.written.get(MASTER_NOTE)).toContain('- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)');
   });
 
+  // A path budget can cut a long id out of a note's file name, and a link still says `event <id>`, as
+  // the note's title does.
+  it('a series with no subject is linked by its whole id when its file name is cut', async () => {
+    const id = `AAMk${'A'.repeat(148)}`;
+    const done = await run({
+      reader: {
+        changes: [
+          { id, removed: false },
+          { id: 'x', removed: false },
+        ],
+        events: { [id]: { ...MASTER, id, subject: '' }, x: { ...MARCH, subject: '', seriesMasterId: id } },
+      },
+      concurrency: 1,
+      pathBudget: 230,
+    });
+
+    expect(done.files.written.get(`${ROOT}/2026-03-02/event x.md`)).toContain(`Part of the series [event ${id}](`);
+  });
+
   // An event with no subject is headed and filed by its id, and a link to its note reads the same.
   it('a series and an exception with no subject are linked by the names of their notes', async () => {
     const done = await run({
