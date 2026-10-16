@@ -28,7 +28,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
-import { UNREAD, clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import type { Attempts } from '../domain/retry-ledger.ts';
@@ -218,7 +218,7 @@ const writeOne = async (deps: SyncCalendarDeps, state: CalendarState, planned: P
   }
   const outputs = [file, ...attached.outputs];
   await archiveSuperseded(deps, before, outputs);
-  const record: EventRecord = { file, lastModified: event.lastModified, subject: event.subject, outputs };
+  const record: EventRecord = { file, lastModified: event.lastModified, subject: event.subject, outputs, ...(attached.failed.length > 0 ? { owed: true } : {}) };
   const owing = owingFor(state, event, attached.failed);
   return {
     apply: (carried) => ({ ...withEvent(carried, event.id, record), retry: owing.retry(carried.retry) }),
@@ -238,18 +238,12 @@ const fetchOne = async (deps: SyncCalendarDeps, id: string): Promise<Fetched> =>
 
 // Whether a fetched event is written this run: not when it starts before `since`, not when the
 // ledger already holds it at the same `lastModifiedDateTime`, which is what a delta re-read after
-// a stopped run answers for everything that already landed.
-// An event that landed with an attachment that failed owes a retry at the version it holds. A run that
-// could not fetch it since put an entry of its own in that place, so a recorded event with one is
-// written again once it reads.
-const owesRetry = (state: CalendarState, event: CalendarEvent): boolean => {
-  const version = state.retry?.[event.id]?.version;
-  return version === event.lastModified || (version === UNREAD && state.events[event.id] !== undefined);
-};
-
+// a stopped run answers for everything that already landed, unless its record says an attachment
+// failed at that version. The debt lives on the record: an entry in the retry ledger can be one that
+// a run that could not fetch the event put there, which says nothing of an attachment.
 const wanted = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: CalendarState, event: CalendarEvent): boolean =>
   inReach(deps, input, event) &&
-  (state.events[event.id]?.lastModified !== event.lastModified || owesRetry(state, event)) &&
+  (state.events[event.id]?.lastModified !== event.lastModified || state.events[event.id]?.owed === true) &&
   !isGivenUp(state.retry?.[event.id], event.lastModified);
 
 // A recurring series is kept whatever day it began: Outlook holds it as one event starting on its
