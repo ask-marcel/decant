@@ -264,16 +264,28 @@ describe('the join block a meeting invitation carries', () => {
   });
 
   // Lines that only look like the edge of a block: words before or after a rule, an opening, an end or
-  // an ID inside a sentence, a link outside the rules.
+  // an ID inside a sentence, a link outside the rules, rules shorter than invitations use.
+  const LINE = '_'.repeat(40);
+  const MEET = `-${':~'.repeat(20)}-`;
   it.each([
-    ['words before a rule', ['Sign here: __________', `Join: ${JOIN}`, 'Sign here: __________']],
-    ['words after a rule', ['__________ (signed)', `Join: ${JOIN}`, '__________ (signed)']],
-    ['a word run into the start of a rule', ['x__________', `Join: ${JOIN}`, 'x__________']],
-    ['a word run into the end of a rule', ['__________x', `Join: ${JOIN}`, '__________x']],
-    ['words before a Meet rule', ['Cut here -:~:~:~:~:~:~-', `Join: ${JOIN}`, 'Cut here -:~:~:~:~:~:~-']],
-    ['words after a Meet rule', ['-:~:~:~:~:~:~- cut here', `Join: ${JOIN}`, '-:~:~:~:~:~:~- cut here']],
-    ['a word run into the start of a Meet rule', ['x-:~:~:~:~:~:~-', `Join: ${JOIN}`, 'x-:~:~:~:~:~:~-']],
-    ['a word run into the end of a Meet rule', ['-:~:~:~:~:~:~-x', `Join: ${JOIN}`, '-:~:~:~:~:~:~-x']],
+    ['words before a rule', [`Sign here: ${LINE}`, `Join: ${JOIN}`, `Sign here: ${LINE}`]],
+    ['words after a rule', [`${LINE} (signed)`, `Join: ${JOIN}`, `${LINE} (signed)`]],
+    ['a word run into the start of a rule', [`x${LINE}`, `Join: ${JOIN}`, `x${LINE}`]],
+    ['a word run into the end of a rule', [`${LINE}x`, `Join: ${JOIN}`, `${LINE}x`]],
+    ['words before a Meet rule', [`Cut here ${MEET}`, `Join: ${JOIN}`, `Cut here ${MEET}`]],
+    ['words after a Meet rule', [`${MEET} cut here`, `Join: ${JOIN}`, `${MEET} cut here`]],
+    ['a word run into the start of a Meet rule', [`x${MEET}`, `Join: ${JOIN}`, `x${MEET}`]],
+    ['a word run into the end of a Meet rule', [`${MEET}x`, `Join: ${JOIN}`, `${MEET}x`]],
+    [
+      'a signature between rules shorter than the ones invitations use, with a meeting link',
+      [
+        'Thanks for the figures.',
+        '\\_'.repeat(30),
+        'Jane Doe | Finance lead, Contoso',
+        'My Zoom room: [https://contoso.zoom.us/j/5550100123](https://contoso.zoom.us/j/5550100123)',
+        '\\_'.repeat(30),
+      ],
+    ],
     ['a Zoom opening inside a sentence', ['Click to Join Zoom Meeting', 'https://us02web.zoom.us/j/1', 'Find your local number: https://us02web.zoom.us/u/abc']],
     ['a Zoom opening with words after it', ['Join Zoom Meeting at ten with the team', 'https://us02web.zoom.us/j/1', 'Find your local number: https://us02web.zoom.us/u/abc']],
     ['the local numbers named inside a sentence', ['Join Zoom Meeting', 'https://us02web.zoom.us/j/1', 'If you cannot find your local number, ask me.']],
