@@ -198,6 +198,7 @@ describe('a run with reading turned off', () => {
   // A picture a mail shows is then read on purpose with no words, not left to be read again.
   it('says it is off, where OCR that is on says nothing of the kind', () => {
     expect(createNoOcr().off).toBe(true);
+    expect(readerFor({}).off).toBeUndefined();
   });
 });
 

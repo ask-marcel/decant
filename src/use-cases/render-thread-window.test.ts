@@ -75,7 +75,7 @@ describe('threads written side by side', () => {
   // The store also holds the files of other threads by the same address. A conversion that did not
   // land leaves the threads waiting on it to convert the picture themselves, and never hands them the
   // file of another thread to show.
-  it('a conversion that does not land leaves the other thread to convert the picture, never to show another thread`s file', async () => {
+  it('a conversion that does not land leaves the other thread to convert the picture, never to show the file of another thread', async () => {
     const files = createFilesFake({ failByteWritesMatching: '_inline' });
     const other = 'kb/Mailbox/threads/2026-05-01-other/_attachments';
     const held = { [contentHash(new TextEncoder().encode('bytes sig'))]: { name: 'logo.png', paths: [`${other}/logo.png`], primary: `${other}/logo.png.md`, media: [] } };
