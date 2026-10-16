@@ -73,6 +73,10 @@ type Context = {
 const failure = (error: MailReaderError | FilesError): AttachmentOutcome =>
   error.kind === 'protected' ? { kind: 'skipped', reason: 'protected' } : { kind: 'failed', reason: `${error.kind}: ${error.message}` };
 
+const imagesFailed = (context: Context, error: MailReaderError): void => {
+  context.deps.logger.warn('images.failed', { attachmentId: context.input.attachment.id, filename: context.input.attachment.name, cause: error.kind });
+};
+
 // A Word or Excel file keeps no copy you can look at, so a diagram inside one survives nowhere but
 // the extraction. A picture read that fails costs the pictures and not the text: the document is the
 // point, and the `[image]` placeholders left in its body already say something stood there.
@@ -80,7 +84,7 @@ const withImages = async (context: Context, body: string): Promise<Result<{ read
   if (!embedsImages(context.name)) return ok({ body, paths: [] });
   const found = await context.deps.reader.attachmentImages(context.input.messageId, context.input.attachment.id);
   if (!found.ok) {
-    context.deps.logger.warn('images.failed', { attachmentId: context.input.attachment.id, filename: context.input.attachment.name, cause: found.error.kind });
+    imagesFailed(context, found.error);
     return ok({ body, paths: [] });
   }
   if (found.value.length === 0) return ok({ body, paths: [] });
@@ -128,16 +132,19 @@ const asSlides = async (context: Context): Promise<AttachmentOutcome> => {
 };
 
 // What a conversion that keeps the file itself reads out of it: the text for its document, the stamp,
-// and for a picture what a thread shows under it when no document is written.
-type Rendering = { readonly text: string; readonly stamp: DocumentStamp; readonly shown?: string };
+// for a picture what a thread shows under it when no document is written, and the pictures written
+// beside the document on the way, the pages of a scan.
+type Rendering = { readonly text: string; readonly stamp: DocumentStamp; readonly shown?: string; readonly media?: ReadonlyArray<string> };
 
-const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promise<Rendering>): Promise<AttachmentOutcome> => {
+const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promise<Result<Rendering, FilesError>>): Promise<AttachmentOutcome> => {
   const raw = await context.deps.reader.attachmentBytes(context.input.messageId, context.input.attachment.id);
   if (!raw.ok) return failure(raw.error);
   const rawPath = `${context.input.folder}/${context.name}`;
   const wroteRaw = await context.deps.files.writeBytes(rawPath, raw.value);
   if (!wroteRaw.ok) return failure(wroteRaw.error);
-  const rendered = await body(rawPath);
+  const reading = await body(rawPath);
+  if (!reading.ok) return failure(reading.error);
+  const rendered = reading.value;
   // The file itself is the only output, and it is its own primary: there is no document for a
   // caller to be pointed at, only the picture and the text handed back with it.
   // The note stands in for text in a document, where a file holding nothing needs to say so. Under
@@ -148,22 +155,33 @@ const rawAndMarkdown = async (context: Context, body: (rawPath: string) => Promi
     return { kind: 'converted', outputs: [rawPath], primary: rawPath, media: [], text: read };
   }
   const written = await writeMarkdown(context, rendered.stamp, rendered.text);
-  return written.ok ? converted_(written.value, [rawPath]) : failure(written.error);
+  return written.ok ? converted_({ ...written.value, media: [...written.value.media, ...(rendered.media ?? [])] }, [rawPath]) : failure(written.error);
 };
 
-// A PDF with a text layer yields it straight. One without (a scan) is read by OCR from the copy on
-// disk, and only when OCR finds nothing does the note stand in for the text.
-const pdfText = async (context: Context, rawPath: string, extracted: string): Promise<{ readonly body: string; readonly ocr?: string }> => {
-  if (extracted.trim().length > 0) return { body: extracted };
+type PdfText = { readonly body: string; readonly ocr?: string; readonly media?: ReadonlyArray<string> };
+
+// A PDF with a text layer yields it straight. One without (a scan) holds pictures of its pages, and
+// OCR reads pictures rather than PDFs: handed the file, it only ever gave the note. So the pages are
+// taken out and read one by one, below the note, the way a library reads a scan. A PDF whose pages
+// do not come back is given to OCR whole, as before, and only when that finds nothing does the note
+// stand alone.
+const pdfText = async (context: Context, rawPath: string, extracted: string): Promise<Result<PdfText, FilesError>> => {
+  if (extracted.trim().length > 0) return ok({ body: extracted });
+  const pages = await context.deps.reader.attachmentImages(context.input.messageId, context.input.attachment.id);
+  if (!pages.ok) imagesFailed(context, pages.error);
+  if (pages.ok && pages.value.length > 0) {
+    const placed = await placeImages(context.deps, context.input.folder, context.name, pages.value);
+    return placed.ok ? ok({ body: `${SCANNED_PDF_NOTE}${placed.value.section}`, media: placed.value.paths }) : placed;
+  }
   const read = await context.deps.ocr.read(rawPath);
-  return read.ok && read.value.text.trim().length > 0 ? { body: read.value.text, ocr: read.value.label } : { body: SCANNED_PDF_NOTE };
+  return ok(read.ok && read.value.text.trim().length > 0 ? { body: read.value.text, ocr: read.value.label } : { body: SCANNED_PDF_NOTE });
 };
 
 const asPdf = async (context: Context): Promise<AttachmentOutcome> =>
   rawAndMarkdown(context, async (rawPath) => {
     const text = await context.deps.reader.attachmentMarkdown(context.input.messageId, context.input.attachment.id);
     const read = await pdfText(context, rawPath, text.ok ? text.value : '');
-    return { text: read.body, stamp: { ...context.input.stamp, pdf: `./${context.name}`, ocr: read.ocr } };
+    return read.ok ? ok({ text: read.value.body, stamp: { ...context.input.stamp, pdf: `./${context.name}`, ocr: read.value.ocr }, media: read.value.media }) : read;
   });
 
 // What OCR actually said, or nothing. Whitespace is nothing: a page of spaces is OCR finding no
@@ -185,11 +203,11 @@ const asImage = async (context: Context): Promise<AttachmentOutcome> =>
     // Not asked at all below the threshold: a logo is not worth a pass, and what comes back from
     // one reads as text somebody wrote rather than as the two letters OCR could make out.
     const read = worthReading(context.input.attachment.size) ? await context.deps.ocr.read(rawPath) : undefined;
-    return {
+    return ok({
       text: wordsIn(read) ?? NO_TEXT_NOTE,
       stamp: { ...context.input.stamp, image: `./${context.name}`, ocr: read?.ok === true ? read.value.label : undefined },
       shown: shownOf(read),
-    };
+    });
   });
 
 // A workbook is read for its cell text and kept as it came, because the reading is all the markdown
@@ -198,14 +216,16 @@ const asImage = async (context: Context): Promise<AttachmentOutcome> =>
 const asSpreadsheet = async (context: Context): Promise<AttachmentOutcome> => {
   const text = await context.deps.reader.attachmentMarkdown(context.input.messageId, context.input.attachment.id);
   if (!text.ok) return failure(text.error);
-  return rawAndMarkdown(context, async () => ({
-    text: text.value.trim().length === 0 ? NO_TEXT_NOTE : text.value,
-    stamp: { ...context.input.stamp, original: `./${context.name}` },
-  }));
+  return rawAndMarkdown(context, async () =>
+    ok({
+      text: text.value.trim().length === 0 ? NO_TEXT_NOTE : text.value,
+      stamp: { ...context.input.stamp, original: `./${context.name}` },
+    })
+  );
 };
 
 const asVector = async (context: Context): Promise<AttachmentOutcome> =>
-  rawAndMarkdown(context, async () => ({ text: VECTOR_NOTE, stamp: { ...context.input.stamp, image: `./${context.name}` } }));
+  rawAndMarkdown(context, async () => ok({ text: VECTOR_NOTE, stamp: { ...context.input.stamp, image: `./${context.name}` } }));
 
 // Each file a saved email carried, written as it was and read where the library can read it. A kind
 // it refuses keeps the file and loses only the text, the same bargain a picture in a document gets.

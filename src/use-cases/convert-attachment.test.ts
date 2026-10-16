@@ -142,6 +142,49 @@ describe('keeping what was attached to a mail', () => {
     expect(written).toContain('ocr: rapidocr (latin)');
   });
 
+  // OCR reads pictures, not PDFs, so a scan is read the way a library reads one: each page taken out
+  // as a picture and read, below the note that says the file had no text layer.
+  it('a scanned PDF attachment has its pages taken out and read one by one, below the note', async () => {
+    const pages = {
+      att1: [
+        { path: 'pdf_page1_Im0.png', bytes: new Uint8Array([1]) },
+        { path: 'pdf_page2_Im0.png', bytes: new Uint8Array([2]) },
+      ],
+    };
+    const media = [`${FOLDER}/Scan.pdf.media/image-01.png`, `${FOLDER}/Scan.pdf.media/image-02.png`];
+    const { outcome, files } = await run(
+      { name: 'Scan.pdf' },
+      { reader: { attachmentTexts: { att1: '' }, attachmentImages: pages }, ocr: { texts: { [media[0] ?? '']: 'Invoice total 1200 EUR' } } }
+    );
+    const written = files.written.get(`${FOLDER}/Scan.pdf.md`) ?? '';
+
+    expect(written).toContain('carries no text layer');
+    expect(written).toContain('![image-01.png](./Scan.pdf.media/image-01.png)\n\nInvoice total 1200 EUR');
+    expect(outcome.kind === 'converted' && outcome.media).toStrictEqual(media);
+    expect(outcome.kind === 'converted' && outcome.outputs).toStrictEqual([`${FOLDER}/Scan.pdf`, `${FOLDER}/Scan.pdf.md`, ...media]);
+  });
+
+  it('a scanned PDF attachment whose page will not write fails, naming the write', async () => {
+    const pages = { att1: [{ path: 'pdf_page1_Im0.png', bytes: new Uint8Array([1]) }] };
+    const { outcome } = await run({ name: 'Scan.pdf' }, { reader: { attachmentTexts: { att1: '' }, attachmentImages: pages }, files: { failByteWritesMatching: '.media/' } });
+
+    expect(outcome).toMatchObject({ kind: 'failed' });
+    expect(outcome.kind === 'failed' ? outcome.reason : '').toStartWith('write-failed: ');
+  });
+
+  it('a scanned PDF attachment whose pages cannot be taken out says why in the log, and is given to OCR whole', async () => {
+    const { files, logger } = await run(
+      { name: 'Scan.pdf' },
+      {
+        reader: { attachmentTexts: { att1: '' }, failCalls: { attachmentImages: { kind: 'transient', message: 'timed out' } } },
+        ocr: { texts: { [`${FOLDER}/Scan.pdf`]: 'Read whole' } },
+      }
+    );
+
+    expect(files.written.get(`${FOLDER}/Scan.pdf.md`) ?? '').toContain('Read whole');
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'images.failed', meta: { attachmentId: 'att1', filename: 'Scan.pdf', cause: 'transient' } });
+  });
+
   it('a PDF attachment that has a text layer keeps that text rather than a note', async () => {
     const { files } = await run({ name: 'Contrat.pdf' }, { reader: { attachmentTexts: { att1: 'The signed contract.' } } });
     const written = files.written.get(`${FOLDER}/Contrat.pdf.md`) ?? '';
