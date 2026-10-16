@@ -334,7 +334,6 @@ const leftOutOf = (name: string, leftOut: ArchiveCut | undefined): Pick<Pulled, 
 // metadata first, because the name in the link cannot say which version it is, how big it is, or what
 // kind of thing it is: the version decides whether a thread that holds it pulls it again, the size
 // whether it is pulled at all, and the kind whether a deck also renders a PDF beside its text.
-
 const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, asName: string, held: HeldDocument | undefined): Promise<Pulled> => {
   const { here, maxBytes } = place;
   const { driveId, itemId, name } = link;
