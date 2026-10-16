@@ -705,8 +705,12 @@ Agenda: ...
 ```
 
 Times are in the zone of the knowledge base, and the `timezone:` line names that zone (see Time
-zone). An all-day event shows days, not times. The body is the invitation's text with the markup gone, so
-the Teams boilerplate reads as a few lines rather than a page of HTML.
+zone). An all-day event shows days, not times. The body is the invitation's text with the markup gone.
+
+decant removes the join block that Teams, Zoom and Google Meet put in each invitation. This block
+holds the link to join, the `Meeting ID`, the passcode, the dial-in numbers and the help links. The
+link to join stays in `online_meeting:`. In a mail thread, one line `Online meeting: <link>` stays
+in place of the block. A passcode outside such a block stays, because it is content.
 
 In the body, the text of each link stays on one line, and a link with no text shows its address.
 decant removes the Outlook wrapper from each link, as it does in mail. A picture in the invitation
