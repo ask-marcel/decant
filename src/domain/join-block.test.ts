@@ -208,6 +208,20 @@ describe('the join block a meeting invitation carries', () => {
     expect(withoutJoinBlocks(note)).toBe('Agenda below.\nPasscode for the door: 4321');
   });
 
+  // A block is a few dozen lines, so it closes only within 200 lines of where it opened: the bound also
+  // keeps text with thousands of rules, or of openings that never close, from being read once a line.
+  it('a block closes only within 200 lines of where it opened', () => {
+    const notes = (count: number): ReadonlyArray<string> => Array.from({ length: count }, () => 'Notes.');
+    const teams = (between: number): string => [RULE, `[Join the meeting now](${JOIN})`, ...notes(between), RULE].join('\n');
+    const zoom = (between: number): string =>
+      ['Join Zoom Meeting', 'https://us02web.zoom.us/j/1', ...notes(between), 'Find your local number: https://us02web.zoom.us/u/abc'].join('\n');
+
+    expect(withoutJoinBlocks(teams(198))).toBe('');
+    expect(withoutJoinBlocks(teams(199))).toBe(teams(199));
+    expect(withoutJoinBlocks(zoom(198))).toBe('');
+    expect(withoutJoinBlocks(zoom(199))).toBe(zoom(199));
+  });
+
   // A calendar note holds the link Graph gives in its front matter, so a block with that link leaves
   // no line at all.
   it('a block whose link is held elsewhere goes with no line in its place', () => {
