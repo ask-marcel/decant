@@ -612,3 +612,28 @@ describe('reaching back only as far as the day', () => {
     expect(asked.map((input) => input.root)).toStrictEqual([]);
   });
 });
+
+// The renderer of a group holds the pictures its run converts, so threads written side by side convert
+// a new picture once. Built for each thread, it held nothing for the next one.
+describe('the renderer of a group inbox', () => {
+  it('is built once for a run of the group, however many threads it writes', async () => {
+    const built: string[] = [];
+    const syncGroup = createSyncGroup({
+      reader: createGroupReaderFake({ threads: { '0d3b-group': [thread(), thread({ id: 'AAQkAD-second', topic: 'Offsite' })] } }),
+      files: createFilesFake(),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      clock: createClockFake(),
+      kbRoot: 'kb',
+      renderThreadFor: (root) => {
+        built.push(root);
+        return async () => ok(rendered());
+      },
+    });
+
+    const done = await syncGroup({ group: GROUP, maxBytes: 50 * 1024 * 1024, dryRun: false, concurrency: 2, since: undefined });
+
+    expect(done.ok && done.value.summary.converted).toBe(2);
+    expect(built).toStrictEqual(['kb/Group inboxes/Northwind Leadership Team']);
+  });
+});
