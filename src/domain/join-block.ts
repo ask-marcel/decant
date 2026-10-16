@@ -11,7 +11,14 @@ const ZOOM_OPENS = /^\W*Join Zoom Meeting\W*$/i;
 const ZOOM_ENDS = /^\W*Find your local number/i;
 // What only a join block holds, so that words a sender put between two rules are not taken for one.
 const JOINS = /teams\.microsoft\.com\/l\/meetup-join|Microsoft Teams|meet\.google\.com|Meeting ID|Conference ID/i;
-const JOIN_AT = /https:\/\/(?:teams\.microsoft\.com\/l\/meetup-join|meet\.google\.com|[a-z0-9.-]*zoom\.us\/j)\/[^\s)<>\]]*/i;
+// Where a block says to join: a Teams link in its long form and in the short one Teams writes since
+// 2026, the short one of Teams for personal use, a Meet link and a Zoom link.
+const JOIN_AT = /https:\/\/(?:teams\.microsoft\.com\/(?:l\/meetup-join|meet)|teams\.live\.com\/meet|meet\.google\.com|[a-z0-9.-]*zoom\.us\/j)\/[^\s)<>\]]*/i;
+// A markdown link is read as where it goes, not as its text: a mail's markdown escapes each underscore
+// of a link's text, and the short Teams link is its own text.
+// `[^[\]]` rather than `[^\]]`, so a run of `[` with no `]` fails at each one instead of rescanning to the
+// end from every one, and the same for `(`.
+const MARKDOWN_LINK = /\[[^[\]]*\]\(([^()]*)\)/g;
 // Taking lines out leaves the blank lines around them side by side.
 const WIDENED = /\n{3,}/g;
 
@@ -36,8 +43,19 @@ const spanAt = (lines: ReadonlyArray<string>, at: number): Span | undefined => {
   return to > at ? { from: at, to } : undefined;
 };
 
-// The text with each join block taken out, and in its place the line `standIn` makes of the link to
-// join, when it is given one and the block holds one. Text with no block comes back as it was.
+const joinUrlOf = (block: string): string | undefined => JOIN_AT.exec(block.replace(MARKDOWN_LINK, '$1'))?.[0];
+
+// What a block leaves: nothing, or the line `standIn` makes of its link to join. Asked for that line
+// with no link it knows, the block stays as it was (undefined): a link this code does not know is still
+// the way into the meeting.
+const leftOf = (block: ReadonlyArray<string>, standIn: ((joinUrl: string) => string) | undefined): ReadonlyArray<string> | undefined => {
+  if (standIn === undefined) return [];
+  const joinUrl = joinUrlOf(block.join('\n'));
+  return joinUrl === undefined ? undefined : [standIn(joinUrl)];
+};
+
+// The text with each join block taken out, and in its place the line `standIn` makes of its link to
+// join, when it is given one. Text with no block taken out comes back as it was.
 export const withoutJoinBlocks = (text: string, standIn?: (joinUrl: string) => string): string => {
   const lines = text.split('\n');
   const kept: string[] = [];
@@ -50,9 +68,10 @@ export const withoutJoinBlocks = (text: string, standIn?: (joinUrl: string) => s
       at += 1;
       continue;
     }
-    found = true;
-    const joinUrl = JOIN_AT.exec(lines.slice(span.from, span.to + 1).join('\n'))?.[0];
-    if (joinUrl !== undefined && standIn !== undefined) kept.push(standIn(joinUrl));
+    const block = lines.slice(span.from, span.to + 1);
+    const left = leftOf(block, standIn);
+    found ||= left !== undefined;
+    kept.push(...(left ?? block));
     at = span.to + 1;
   }
   return found ? kept.join('\n').replace(WIDENED, '\n\n') : text;
