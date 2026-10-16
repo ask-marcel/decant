@@ -18,9 +18,11 @@ export type GlobalRun = {
   readonly stale: ReadonlyArray<StaleSource>;
   // Absent when the run finished; what it stopped at when it did not.
   readonly stopped?: string;
-  // The files that would not move under the archive, which no source names any more, or the ledger
-  // of them when it does not read.
+  // The files that would not move under the archive, which no source names any more.
   readonly stuck?: ReadonlyArray<ReportEntry>;
+  // Why the ledger of those files would not read, when it would not: then `stuck` holds only what this
+  // run let go.
+  readonly stuckUnread?: string;
 };
 
 export const GLOBAL_REPORT_HEADING = '# What did not reach the knowledge base';
@@ -51,15 +53,23 @@ const section = (source: SourceSection): ReadonlyArray<string> => {
 const staleTail = (stale: ReadonlyArray<StaleSource>): ReadonlyArray<string> =>
   stale.length === 0 ? [] : [STALE_HEADING, '', ...stale.map((source) => `- ${source.name}: last ran ${source.lastRun}`), ''];
 
+// When the ledger would not read, no run moves what it lists or adds to it, so the note says that in
+// place of the retry it cannot promise.
+const unreadNote = (cause: string): string =>
+  `The list of these files, .sync-aside.json, could not be read (${cause}). No run moves them, or adds to the list, until it is repaired or deleted. Below are the files of this run alone.`;
+
 // The sources have let these files go, so this is the one place that still names them.
-const stuckSection = (stuck: ReadonlyArray<ReportEntry>): ReadonlyArray<string> =>
-  stuck.length === 0 ? [] : [STUCK_HEADING, '', STUCK_NOTE, '', ...stuck.map((entry) => `- ${entry.path}: ${entry.reason}`), ''];
+const stuckSection = (stuck: ReadonlyArray<ReportEntry>, unread: string | undefined): ReadonlyArray<string> => {
+  if (stuck.length === 0 && unread === undefined) return [];
+  const lines = stuck.map((entry) => `- ${entry.path}: ${entry.reason}`);
+  return [STUCK_HEADING, '', unread === undefined ? STUCK_NOTE : unreadNote(unread), '', ...(lines.length === 0 ? [] : [...lines, ''])];
+};
 
 // Rewritten whole on every run rather than appended to, so it is always the current view. The history
 // of any one source is in that source's own `_sync-report.md`, which is still appended to.
 export const renderGlobalReport = (run: GlobalRun): string => {
   const opening = run.stopped === undefined ? [] : [stoppedLine(run.stopped), ''];
-  return [GLOBAL_REPORT_HEADING, '', `Written ${run.at}.`, '', ...opening, ...run.ran.flatMap(section), ...stuckSection(run.stuck ?? []), ...staleTail(run.stale)]
+  return [GLOBAL_REPORT_HEADING, '', `Written ${run.at}.`, '', ...opening, ...run.ran.flatMap(section), ...stuckSection(run.stuck ?? [], run.stuckUnread), ...staleTail(run.stale)]
     .join('\n')
     .trimEnd()
     .concat('\n');

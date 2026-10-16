@@ -55,8 +55,8 @@ export const createWriteGlobalReport =
     if (input.dryRun || input.ran.length === 0) return undefined;
     const path = GLOBAL_REPORT_PATH(deps.kbRoot);
     const stale = await staleSources(deps, input.ran);
-    const stuck = deps.stuckFiles === undefined ? [] : await deps.stuckFiles();
-    const report = renderGlobalReport({ at: deps.clock.nowIso(), ran: input.ran.map(section), stale, stopped: input.stopped, stuck });
+    const stuck = deps.stuckFiles === undefined ? { files: [] } : await deps.stuckFiles();
+    const report = renderGlobalReport({ at: deps.clock.nowIso(), ran: input.ran.map(section), stale, stopped: input.stopped, stuck: stuck.files, stuckUnread: stuck.unreadable });
     // Left as it is when it would say the same, so its time is that of the last run that changed it.
     const held = await deps.files.readText(path);
     if (held.ok && sameReport(held.value, report)) return path;

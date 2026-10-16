@@ -126,6 +126,20 @@ Nothing was left behind.
     expect(renderGlobalReport({ at: '2026-10-15T09:00:00Z', ran: [CLEAN], stale: [], stuck: [] })).not.toContain('## Could not be moved');
   });
 
+  // While the ledger will not read, no run moves what it lists, so the note says that in place of the
+  // retry, above the files this run let go.
+  it('a ledger that would not read is named with why, in place of the retry, above the files of this run alone', () => {
+    const stuck = [{ path: 'To Do/Tasks/2026-09-01/Book the venue.md', reason: 'write-failed: EBUSY (since 2026-10-15)' }];
+    const rendered = renderGlobalReport({ at: '2026-10-15T09:00:00Z', ran: [CLEAN], stale: [], stuck, stuckUnread: 'invalid-json' });
+    const bare = renderGlobalReport({ at: '2026-10-15T09:00:00Z', ran: [CLEAN], stale: [], stuck: [], stuckUnread: 'read-failed' });
+
+    expect(rendered).toContain(
+      '## Could not be moved to the archive\n\nThe list of these files, .sync-aside.json, could not be read (invalid-json). No run moves them, or adds to the list, until it is repaired or deleted. Below are the files of this run alone.\n\n- To Do/Tasks/2026-09-01/Book the venue.md: write-failed: EBUSY (since 2026-10-15)\n'
+    );
+    expect(rendered).not.toContain('Each run tries to move these again');
+    expect(bare).toContain('could not be read (read-failed). No run moves them, or adds to the list, until it is repaired or deleted. Below are the files of this run alone.\n');
+  });
+
   it('a run that stopped early says so, so a file listing two sources is not read as covering twenty', () => {
     expect(renderGlobalReport({ at: '2026-08-28T20:00:00Z', ran: [CLEAN], stale: [], stopped: 'enumerate: token expired' })).toBe(`# What did not reach the knowledge base
 

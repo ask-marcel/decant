@@ -152,7 +152,7 @@ describe('naming the files still stuck in the report of the run', () => {
       },
     });
 
-    expect(await ledger.stuck()).toEqual([{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-14)' }]);
+    expect(await ledger.stuck()).toEqual({ files: [{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-14)' }] });
   });
 
   it('the day a file first would not move is told in the zone of the knowledge base', async () => {
@@ -161,7 +161,7 @@ describe('naming the files still stuck in the report of the run', () => {
       'Asia/Shanghai'
     );
 
-    expect(await ledger.stuck()).toEqual([{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-15)' }]);
+    expect(await ledger.stuck()).toEqual({ files: [{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-15)' }] });
   });
 
   it('a file this run wrote down is named as well', async () => {
@@ -169,17 +169,14 @@ describe('naming the files still stuck in the report of the run', () => {
 
     await ledger.writeDown([{ path: NOTE, error: LOCKED }]);
 
-    expect(await ledger.stuck()).toEqual([{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-15)' }]);
+    expect(await ledger.stuck()).toEqual({ files: [{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-15)' }] });
   });
 });
 
 // What it lists is named nowhere else, so a ledger that does not read stays as it is until someone
-// repairs or deletes it, and the report of the run names it in place of its files.
+// repairs or deletes it. The report of the run says why, and names the files this run let go.
 describe('a ledger that does not read', () => {
-  const unreadable = (cause: string): { path: string; reason: string } => ({
-    path: '.sync-aside.json',
-    reason: `could not be read (${cause}): no run moves the files it lists, or adds to it, until it is repaired or deleted`,
-  });
+  const NAMED = { path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-15)' };
 
   it('is logged and never written over: the retry, a file let go and a file landing leave it as it is', async () => {
     const { files, logger, ledger } = setUp({ texts: { [LEDGER]: 'not json', [NOTE]: 'the contract' } });
@@ -191,7 +188,7 @@ describe('a ledger that does not read', () => {
     expect(files.written.get(LEDGER)).toBe('not json');
     expect(files.moves).toStrictEqual([]);
     expect(logger.calls).toContainEqual({ level: 'warn', event: 'aside-ledger.unreadable', meta: { cause: 'invalid-json' } });
-    expect(await ledger.stuck()).toEqual([unreadable('invalid-json')]);
+    expect(await ledger.stuck()).toEqual({ files: [NAMED], unreadable: 'invalid-json' });
   });
 
   it('one the disk will not read, or one that holds an entry that is not one, is kept the same way', async () => {
@@ -203,8 +200,11 @@ describe('a ledger that does not read', () => {
 
     expect(refused.files.writeLog).toStrictEqual([]);
     expect(odd.files.written.get(LEDGER)).toBe(JSON.stringify({ [NOTE]: 'stuck' }));
-    expect(await refused.ledger.stuck()).toEqual([unreadable('read-failed')]);
-    expect(await odd.ledger.stuck()).toEqual([unreadable('an entry is not one')]);
+    expect(await refused.ledger.stuck()).toEqual({
+      files: [{ ...NAMED, reason: `${NAMED.reason}. It would not read when it stuck, so no run moves it` }],
+      unreadable: 'read-failed',
+    });
+    expect(await odd.ledger.stuck()).toEqual({ files: [NAMED], unreadable: 'malformed' });
   });
 });
 

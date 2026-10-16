@@ -107,12 +107,13 @@ describe('one file naming what a whole run left behind', () => {
       logger: createLoggerFake(),
       listSyncedSources: async () => ok([]),
       kbRoot: 'kb',
-      stuckFiles: async () => stuck,
+      stuckFiles: async () => ({ files: stuck, unreadable: 'invalid-json' }),
     });
 
     await writeGlobalReport({ ran: [contoso], dryRun: false });
 
     expect(files.written.get('kb/_sync-report.md')).toContain('- SharePoint sites/Espace Contoso/Documents/Contrat.docx.md: write-failed: EBUSY (since 2026-10-14)');
+    expect(files.written.get('kb/_sync-report.md')).toContain('could not be read (invalid-json)');
   });
 
   it('a dry run writes nothing, since nothing it reports actually happened', async () => {
