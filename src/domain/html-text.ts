@@ -51,6 +51,23 @@ const imageLink = (whole: string, attributes: string): string => {
   return `[${alt.length > 0 ? alt : 'image'}](${src})`;
 };
 
+// A link's text on one line: a break or a block in it reads as a space, the rest of its markup goes,
+// a picture in it reads as its alt text, and white space folds. The link is written before the breaks
+// become lines, and a link whose text ran over two lines is one no markdown reader joins back. A link
+// with no text left reads as its address.
+const WHITE_SPACE = /\s+/g;
+
+const linkOf = (_whole: string, href: string, inner: string): string => {
+  const text = inner
+    .replace(IMAGE, (_image, attributes: string) => ALT.exec(attributes)?.[1] ?? '')
+    .replace(BREAK, ' ')
+    .replace(BLOCK_END, ' ')
+    .replace(ANY_TAG, '')
+    .replace(WHITE_SPACE, ' ')
+    .trim();
+  return `[${text.length > 0 ? text : href}](${href})`;
+};
+
 // Order matters: the constructs that keep something (a link, a picture, a list item, a table cell)
 // are rewritten first, while their tags are still there to recognise them by, and only then is
 // every remaining tag stripped.
@@ -58,7 +75,7 @@ export const htmlToText = (html: string): string =>
   decodeEntities(
     html
       .replace(HIDDEN, '')
-      .replace(ANCHOR, '[$2]($1)')
+      .replace(ANCHOR, linkOf)
       .replace(IMAGE, imageLink)
       .replace(LIST_ITEM, '- $1\n')
       .replace(CELL_END, ' | ')
