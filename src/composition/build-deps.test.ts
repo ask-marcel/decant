@@ -557,7 +557,9 @@ describe('a file that would not move under the archive', () => {
     const locked = createFilesFake({ directories, texts: { [STATE]: held, [NOTE]: 'the contract' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'EBUSY' } });
     await updateWith(locked, [{ items: [deleted], skipped: 0, deltaLink: 'cursor-2' }]);
 
-    expect(JSON.parse(locked.written.get(LEDGER) ?? '{}')).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-15T09:00:00Z' } });
+    expect(JSON.parse(locked.written.get(LEDGER) ?? '{}')).toEqual({
+      [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-15T09:00:00Z', digest: expect.stringMatching(/^[0-9a-f]{64}$/) },
+    });
     expect(locked.written.get('kb/_sync-report.md')).toContain('- SharePoint sites/Espace Contoso/Documents/Contrat.docx.md: write-failed: EBUSY (since 2026-10-15)');
 
     const free = createFilesFake({ directories, texts: Object.fromEntries(locked.written) });

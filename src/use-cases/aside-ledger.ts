@@ -1,4 +1,4 @@
-import { ASIDE_LEDGER_NAME, causeOf, parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unreadableNote, unstuck } from '../domain/aside-ledger.ts';
+import { ASIDE_LEDGER_NAME, causeOf, digestOf, parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unreadableNote, unstuck } from '../domain/aside-ledger.ts';
 import type { AsideLedger, StuckFile } from '../domain/aside-ledger.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
@@ -36,6 +36,24 @@ const readLedger = async (files: Files, kbRoot: string): Promise<Result<AsideLed
 const writeLedger = async (files: Files, deps: AsideLedgerDeps, ledger: AsideLedger): Promise<void> => {
   const written = await files.writeText(ledgerPath(deps.kbRoot), serializeAsideLedger(ledger));
   if (!written.ok) deps.logger.warn('aside-ledger.unsaved', { cause: written.error.kind });
+};
+
+// Read as text, which serves every file: a digest only has to tell the same bytes from other ones.
+const digestAt = async (files: Files, path: string): Promise<string | undefined> => {
+  const text = await files.readText(path);
+  return text.ok ? digestOf(text.value) : undefined;
+};
+
+// Where a listed file stands at the start of a run: gone, still the file written down, another file
+// that took its path, or one that cannot be told, because it would not read then or now.
+type Standing = 'gone' | 'same' | 'other' | 'untold';
+
+const standingOf = async (files: Files, entry: StuckFile): Promise<Standing> => {
+  const held = await files.exists(entry.path);
+  if (held.ok && !held.value) return 'gone';
+  const now = held.ok && entry.digest !== undefined ? await digestAt(files, entry.path) : undefined;
+  if (now === undefined) return 'untold';
+  return now === entry.digest ? 'same' : 'other';
 };
 
 const onDisk = async <T extends { readonly path: string }>(files: Files, entries: ReadonlyArray<T>): Promise<ReadonlyArray<T>> => {
@@ -96,30 +114,42 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
     move: async (from, to) => after(await files.move(from, to), to),
   };
 
-  // A file handed on that is gone already owes nothing.
+  // A file handed on that is gone already owes nothing. One still there is written down with what it
+  // holds, so a later run can tell it from a file that takes its path.
   const writeDown: WriteDown = async (missed) => {
     const present = (await onDisk(files, missed)).filter((entry) => !landedAt.has(entry.path));
     if (present.length === 0) return;
+    const digests = await Promise.all(present.map(async (entry) => digestAt(files, entry.path)));
     const at = deps.clock.nowIso();
-    await change((ledger) => present.reduce((carried, entry) => stuckAt(carried, entry.path, causeOf(entry.error), at), ledger));
+    await change((ledger) => present.reduce((carried, entry, index) => stuckAt(carried, entry.path, causeOf(entry.error), at, digests[index]), ledger));
   };
 
-  // At the start of a run, before any source writes: each file still on disk goes under the archive
-  // again. One that moves, and one that is gone, leave the ledger; one that still will not move stays,
-  // with the day it first would not and the latest cause.
+  // At the start of a run, before any source writes: each file that is still the one written down
+  // goes under the archive again. One that moves, one that is gone, and another file that took the
+  // path leave the ledger: a removal a run could not save, or a path that differs only in letter case,
+  // must never send a live file away. One that will not move stays, with the day it first would not
+  // and the latest cause, and so does one that cannot be told.
   const retry: RetryAside = async () => {
     await loaded();
     const listed = Object.values(held);
     if (listed.length === 0) return;
-    const present = await onDisk(files, listed);
+    const standings = await Promise.all(listed.map(async (entry) => ({ entry, standing: await standingOf(files, entry) })));
+    const same = standings.filter((one) => one.standing === 'same').map((one) => one.entry);
     const aside = await setAside(
       { files, clock: deps.clock, kbRoot: deps.kbRoot },
-      present.map((entry) => entry.path)
+      same.map((entry) => entry.path)
     );
-    const settled = listed.map((entry) => entry.path).filter((path) => !aside.failed.some((missed) => missed.path === path));
+    const settled = standings.filter((one) => one.standing === 'gone' || one.standing === 'other').map((one) => one.entry.path);
+    const moved = aside.moved.map((move) => move.from);
     const at = deps.clock.nowIso();
-    await change((ledger) => aside.failed.reduce((carried, missed) => stuckAt(carried, missed.path, causeOf(missed.error), at), unstuck(ledger, settled)));
-    deps.logger.info('aside.retried', { moved: aside.moved.length, stuck: aside.failed.length });
+    await change((ledger) =>
+      aside.failed.reduce((carried, missed) => stuckAt(carried, missed.path, causeOf(missed.error), at, held[missed.path]?.digest), unstuck(ledger, [...settled, ...moved]))
+    );
+    deps.logger.info('aside.retried', {
+      moved: moved.length,
+      stuck: listed.length - settled.length - moved.length,
+      replaced: standings.filter((one) => one.standing === 'other').length,
+    });
   };
 
   // What the report of the run names: each file the ledger holds that is still on disk, or the ledger
