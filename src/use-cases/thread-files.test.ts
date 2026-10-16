@@ -371,6 +371,15 @@ describe('an email attached to an email', () => {
     expect(files.written.get(THREAD_FILE)).toContain('- [Customs documents MSDU1691268](<_attachments/Customs documents MSDU1691268.md>) (2.6 MB)');
   });
 
+  // A mail is not a file: the extension of its content type would rename a card the thread holds.
+  it('keeps the name it came by, whatever content type Graph gives it', async () => {
+    const typed = { ...EMBEDDED, contentType: 'message/rfc822' };
+    const seed = { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: { m1: [typed] }, attachmentTexts: { att1: RENDERED } };
+    const { files } = await run({ reader: seed });
+
+    expect(files.written.has(`${ATTACHMENTS_STORE}/${renderedName(EMBEDDED.name)}.md`)).toBe(true);
+  });
+
   it('is stored once, however many messages of the conversation forwarded it', async () => {
     const messages = [message({ id: 'm1', hasAttachments: true }), message({ id: 'm2', received: '2026-05-13T10:00:00Z', hasAttachments: true })];
     const attachments = { m1: [EMBEDDED], m2: [{ ...EMBEDDED, id: 'att2' }] };
