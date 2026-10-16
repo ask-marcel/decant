@@ -47,4 +47,22 @@ describe('reading where a link really goes', () => {
 
     expect(unwrapSafelinks(blank)).toBe(blank);
   });
+
+  // Every escape well formed, and still no text: a byte cut off from the rest of its letter. Decoding
+  // it threw, and the run that read the note stopped.
+  it('a destination whose escapes make no UTF-8 is kept as it came', () => {
+    const cut = 'https://apc01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2FFran%C3&reserved=0';
+
+    expect(unwrapSafelinks(cut)).toBe(cut);
+  });
+
+  // In a JSON, XML or script file, a link sits between quotes, and the quote that closes it is the
+  // file's own.
+  it('a wrapped link between quotes stops at the closing quote', () => {
+    const quoted = '{"link":"https://apc01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fa&reserved=0"}';
+    const single = "<a href='https://apc01.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fb&reserved=0'>b</a>";
+
+    expect(unwrapSafelinks(quoted)).toBe('{"link":"https://example.com/a"}');
+    expect(unwrapSafelinks(single)).toBe("<a href='https://example.com/b'>b</a>");
+  });
 });
