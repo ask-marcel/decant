@@ -646,6 +646,12 @@ describe('a zip in a thread that the library read in part', () => {
     ]);
   });
 
+  it('says in the manifest of the one it carried that one file kept back stays in it', async () => {
+    const { files } = await rendered(Object.assign([{ path: 'terms.docx', text: '# Terms' }], { totalEntries: 2 }));
+
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Contracts.zip.md`)).toContain('1 of its 2 files stays in the archive: the converter read the first 1.');
+  });
+
   it('is not named when the library read it whole, attached or linked', async () => {
     const { outcome } = await rendered([{ path: 'terms.docx', text: '# Terms' }]);
 
