@@ -22,6 +22,7 @@ const byName = <T extends { readonly name: string }>(left: T, right: T): number 
 // report has left has no reports.
 export const assembleDirectory = (people: ReadonlyArray<Person>, teamsOf: Readonly<Record<string, ReadonlyArray<string>>>): ReadonlyArray<Colleague> => {
   const colleagues = people.filter(isColleague);
+  const listed = new Set(colleagues.map((person) => person.id));
   return colleagues
     .map((person) => {
       const teams = [...(teamsOf[person.id] ?? [])].sort(compareText);
@@ -33,11 +34,7 @@ export const assembleDirectory = (people: ReadonlyArray<Person>, teamsOf: Readon
         person,
         teams,
         reports,
-        fingerprint: personFingerprint(
-          person,
-          teams,
-          reports.map((report) => report.id)
-        ),
+        fingerprint: personFingerprint(person, teams, reports, listed.has(person.manager?.id ?? '')),
       };
     })
     .sort((left, right) => byName(left.person, right.person));

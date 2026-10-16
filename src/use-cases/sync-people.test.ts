@@ -136,6 +136,34 @@ describe('syncing the people directory', () => {
     expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to [Dana Farrow](<Dana Farrow.md>)');
   });
 
+  // The page of a manager lists each report by name, linked to the report's page, so a renamed report
+  // is a change to it as well.
+  it('a report who is renamed has the page of their manager written again, with the new name and link', async () => {
+    const teams = { dana: ['NORTHWIND EMPLOYEES', 'Leadership'], jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
+    const state = withPerson(
+      withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: fingerprintOf('dana', [DANA, JANE], teams) }),
+      'jane',
+      { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [DANA, JANE], teams) }
+    );
+    const done = await run({ reader: { profiles: { ...PROFILES, jane: { ...JANE, name: 'Jane Doe-Smith' } } }, files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
+
+    expect(done.files.written.get(`${ROOT}/Dana Farrow.md`)).toContain('- [Jane Doe-Smith](<Jane Doe-Smith.md>)');
+  });
+
+  // A page links its manager only while the manager has a page, so the people under a manager who
+  // left are written again with the name as text, not as a link to a page put aside.
+  it('a manager who leaves has the pages of the people who reported to them written again, naming them as text', async () => {
+    const teams = { dana: ['NORTHWIND EMPLOYEES', 'Leadership'], jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
+    const state = withPerson(
+      withPerson(emptyPeopleState(), 'dana', { file: `${ROOT}/Dana Farrow.md`, name: 'Dana Farrow', fingerprint: fingerprintOf('dana', [DANA, JANE], teams) }),
+      'jane',
+      { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [DANA, JANE], teams) }
+    );
+    const done = await run({ reader: { profiles: { ...PROFILES, dana: { ...DANA, enabled: false } } }, files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
+
+    expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to Dana Farrow.');
+  });
+
   it('a run where nobody changed writes nothing but its own state file', async () => {
     const teams = { dana: ['NORTHWIND EMPLOYEES', 'Leadership'], jane: ['NORTHWIND EMPLOYEES', 'Leadership'] };
     const state = withPerson(
