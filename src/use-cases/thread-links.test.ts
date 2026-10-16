@@ -455,4 +455,20 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(files.written.get(REPORT_MD)).not.toContain('the same file');
     expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed.some((entry) => entry.path.endsWith(': Rapport.docx'))).toBe(true);
   });
+
+  // A file the thread kept was within the size cap, so a document past it cannot hold the same bytes,
+  // and downloading it only to compare would pay for what the cap says not to fetch.
+  it('a linked document past the size cap is not downloaded to compare it with an attachment of its name', async () => {
+    const { drive, files } = await run({ reader: attachedAndLinked, drive: { items: { '01ABC': { ...REPORT, size: 60 * 1024 * 1024 } } } });
+
+    expect(drive.calls.filter((call) => call === 'bytes:01ABC')).toStrictEqual([]);
+    expect(files.written.get(REPORT_MD)).not.toContain('the same file');
+  });
+
+  it('a linked document at the size cap is still compared, as the cap lets a file of that size in', async () => {
+    const atCap = { items: { '01ABC': { ...REPORT, size: 50 * 1024 * 1024 } }, bytes: { '01ABC': new TextEncoder().encode('bytes att1') } };
+    const { files } = await run({ reader: attachedAndLinked, drive: atCap });
+
+    expect(files.written.get(REPORT_MD)).toContain('the same file');
+  });
 });
