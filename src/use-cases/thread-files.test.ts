@@ -759,4 +759,11 @@ describe('a share link attached to a message', () => {
 
     expect(files.written.get(`${ATTACHMENTS_STORE}/Budget 2027.xlsx.md`)).toContain('a link to a shared file, not the file');
   });
+
+  it('holds no file in the thread but its card', async () => {
+    const { outcome } = await run({ reader: sharing });
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.attachments).toStrictEqual([]);
+    expect(outcome?.kind === 'rendered' && outcome.thread.record.files).toStrictEqual([`${ATTACHMENTS_STORE}/Budget 2027.xlsx.md`]);
+  });
 });
