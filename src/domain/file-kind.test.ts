@@ -11,6 +11,29 @@ describe('naming a file by what it is', () => {
     expect(namedForType('Budget', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')).toBe('Budget.xlsx');
   });
 
+  it('each kind decant reads gives the extension it goes by, whatever the spaces around it', () => {
+    const kinds: ReadonlyArray<readonly [string, string]> = [
+      ['application/pdf', 'pdf'],
+      ['application/vnd.openxmlformats-officedocument.presentationml.presentation', 'pptx'],
+      ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'xlsx'],
+      ['application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'docx'],
+      ['application/zip', 'zip'],
+      ['image/bmp', 'bmp'],
+      ['image/gif', 'gif'],
+      ['image/jpeg', 'jpg'],
+      ['image/png', 'png'],
+      ['image/tiff', 'tif'],
+      ['image/webp', 'webp'],
+      ['message/rfc822', 'eml'],
+      ['text/calendar', 'ics'],
+      ['text/csv', 'csv'],
+      ['text/html', 'html'],
+      ['text/plain', 'txt'],
+    ];
+
+    expect(kinds.map(([type]) => namedForType('File', ` ${type} `))).toStrictEqual(kinds.map(([, extension]) => `File.${extension}`));
+  });
+
   it('a name with an extension, a kind with none known, and a machine id keep the name they have', () => {
     expect(namedForType('Scan.png', 'image/jpeg')).toBe('Scan.png');
     expect(namedForType('Scan', 'application/octet-stream')).toBe('Scan');
@@ -25,6 +48,17 @@ describe('naming a file by what it is', () => {
     expect(namedForBytes('scan.png', bytes(0x49, 0x49, 0x2a, 0x00))).toBe('scan.tif');
     expect(namedForBytes('scan.png', bytes(0x4d, 0x4d, 0x00, 0x2a))).toBe('scan.tif');
     expect(namedForBytes('icon.png', ascii('RIFF\u0000\u0000\u0000\u0000WEBPVP8 '))).toBe('icon.webp');
+  });
+
+  it('a picture of any kind named for another takes the extension its bytes say', () => {
+    const gif = ascii('GIF89a');
+    const named = ['bmp', 'gif', 'jpeg', 'jpg', 'png', 'tif', 'tiff', 'webp'].map((extension) => namedForBytes(`a.${extension}`, extension === 'gif' ? ascii('BM') : gif));
+
+    expect(named).toStrictEqual(['a.gif', 'a.bmp', 'a.gif', 'a.gif', 'a.gif', 'a.gif', 'a.gif', 'a.gif']);
+  });
+
+  it('WebP is told by the RIFF container it opens with, and not by its name four bytes on alone', () => {
+    expect(namedForBytes('icon.png', ascii('XXXX\u0000\u0000\u0000\u0000WEBPVP8 '))).toBe('icon.png');
   });
 
   it('a picture whose bytes agree with its name, by any of its names, keeps it, and so does anything not a picture', () => {

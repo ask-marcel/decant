@@ -25,7 +25,11 @@ const EXTENSION_BY_TYPE: Readonly<Partial<Record<string, string>>> = {
   'text/plain': 'txt',
 };
 
-const typeOf = (contentType: string): string => (contentType.split(';')[0] ?? '').trim().toLowerCase();
+// The kind alone, without the parameters after a semicolon, in lower case.
+const typeOf = (contentType: string): string => {
+  const end = contentType.indexOf(';');
+  return (end === -1 ? contentType : contentType.slice(0, end)).trim().toLowerCase();
+};
 
 // A name with no extension takes the one its content type goes by. A name that is a machine id stays
 // as it is: it names the decoration of a sharing notification, which is left out unread.
@@ -35,8 +39,15 @@ export const namedForType = (name: string, contentType: string): string => {
   return extension === undefined ? name : `${name}.${extension}`;
 };
 
-// The kind each picture extension names, an alias by the kind it stands for.
-const KIND_BY_EXTENSION: Readonly<Partial<Record<string, string>>> = { bmp: 'bmp', gif: 'gif', jpeg: 'jpg', jpg: 'jpg', png: 'png', tif: 'tif', tiff: 'tif', webp: 'webp' };
+// The picture extensions, and the two that are another name for a kind.
+const PICTURE_EXTENSIONS: ReadonlySet<string> = new Set(['bmp', 'gif', 'jpeg', 'jpg', 'png', 'tif', 'tiff', 'webp']);
+const ALIASES: Readonly<Partial<Record<string, string>>> = { jpeg: 'jpg', tiff: 'tif' };
+
+const pictureKindOfName = (name: string): string | undefined => {
+  const extension = extensionOf(name);
+  if (extension === undefined || !PICTURE_EXTENSIONS.has(extension)) return undefined;
+  return ALIASES[extension] ?? extension;
+};
 
 const startsWith = (bytes: Uint8Array, signature: ReadonlyArray<number>, from = 0): boolean => signature.every((value, at) => bytes[from + at] === value);
 
@@ -60,7 +71,7 @@ const pictureKindOf = (bytes: Uint8Array): string | undefined => SIGNATURES.find
 // extension of what it is. Only a name that says picture is read this way: the bytes of a document
 // are its converter's business.
 export const namedForBytes = (name: string, bytes: Uint8Array): string => {
-  const said = KIND_BY_EXTENSION[extensionOf(name) ?? ''];
+  const said = pictureKindOfName(name);
   const found = said === undefined ? undefined : pictureKindOf(bytes);
   if (found === undefined || found === said) return name;
   return `${name.slice(0, name.lastIndexOf('.'))}.${found}`;
