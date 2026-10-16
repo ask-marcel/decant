@@ -168,6 +168,20 @@ describe('syncing a OneNote notebook', () => {
     expect(dry.summary.queued).toBe(2);
   });
 
+  // Out of tries on its version, a page is left alone until it changes, whatever folder it would go to.
+  it('a page given up on is not tried again when its section is renamed', async () => {
+    const OLD = `${ROOT}/Old meetings`;
+    const state = withPage(emptyNotebookState(NOTEBOOK), 'a', { file: `${OLD}/Kick-off.md`, lastModified: '2026-09-01T10:00:00Z', title: 'Kick-off', section: 'sec-m' });
+    const givenUp = { ...state, retry: { a: { attempts: 3, version: '2026-09-01T10:00:00Z', name: 'Meetings/Kick-off', reason: 'cannot read a' } } };
+    const done = await run({
+      reader: { pages: { 'sec-m': [page('a', 'Kick-off', '2026-09-01T10:00:00Z')], 'sec-b': [] } },
+      files: { texts: { [STATE_PATH]: serializeNotebookState(givenUp), [`${OLD}/Kick-off.md`]: 'kick-off' } },
+    });
+
+    expect(done.summary).toMatchObject({ converted: 0, failed: 0 });
+    expect(done.files.moves).toStrictEqual([]);
+  });
+
   it('a page retitled in the same run as a namesake puts only its own old copy aside, and the namesake is rewritten in the file its record names', async () => {
     // Where the namesake was put while the retitled page held the plain name.
     const namesakeFile = `${ROOT}/Meetings/${freeSegment('Kick-off.md', 'b', (name) => name === 'Kick-off.md')}`;

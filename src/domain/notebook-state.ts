@@ -148,8 +148,8 @@ export const planPageFiles = (root: string, listed: ReadonlyArray<ListedPage>, s
 };
 
 // The pages a run writes: those the worklist found changed, and each recorded page that its listing
-// now files under another folder, a section or a group renamed, which changes no page. Planned
-// together, so no two of them share a file.
+// now files under another folder, a section or a group renamed, which changes no page, unless it is
+// out of tries on its version. Planned together, so no two of them share a file.
 export const pagesToWrite = (
   root: string,
   state: NotebookState,
@@ -158,7 +158,9 @@ export const pagesToWrite = (
   budget?: number
 ): ReadonlyArray<PlannedPage> => {
   const ids = new Set(changed.map((entry) => entry.page.id));
-  const recorded = listed.filter((entry) => !ids.has(entry.page.id) && state.pages[entry.page.id] !== undefined);
+  const recorded = listed.filter(
+    (entry) => !ids.has(entry.page.id) && state.pages[entry.page.id] !== undefined && !isGivenUp(state.retry?.[entry.page.id], entry.page.lastModified)
+  );
   return planPageFiles(root, [...changed, ...recorded], state, budget).filter(
     (planned) => ids.has(planned.entry.page.id) || planned.file !== state.pages[planned.entry.page.id]?.file
   );
