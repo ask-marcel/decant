@@ -865,4 +865,34 @@ describe('linking a series and its exceptions', () => {
     expect(done.files.written.get(MARCH_NOTE)).toContain('Part of the series');
     expect(done.files.written.get(MASTER_NOTE)).toContain('## Exceptions');
   });
+
+  // A second try in the same run would spend one of the event's three tries and name it as failed twice.
+  it('a series the run could not read is not read again in the run for its links', async () => {
+    const state = withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [] }));
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'x', removed: false },
+          { id: 'm', removed: false },
+        ],
+        events: { m: MASTER, x: MARCH },
+        failEvents: ['m'],
+      },
+      files: seeded(state),
+      concurrency: 1,
+    });
+
+    expect(done.reader.calls.filter((call) => call === 'event:m')).toHaveLength(1);
+    expect(done.summary.failed).toBe(1);
+    expect(stateOf(done.files)).toMatchObject({ retry: { m: { attempts: 1 } } });
+  });
+
+  // Only a try this run made holds a note back: one an earlier run gave up on may read now.
+  it('a series earlier runs gave up reading is still read again for its links', async () => {
+    const tries = { attempts: 3, version: 'unread', name: 'm', reason: 'no such event: m' };
+    const state = { ...withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [] })), retry: { m: tries } };
+    const done = await run({ reader: { changes: [{ id: 'x', removed: false }], events: { m: MASTER, x: MARCH } }, files: seeded(state) });
+
+    expect(done.files.written.get(MASTER_NOTE)).toContain('- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)');
+  });
 });
