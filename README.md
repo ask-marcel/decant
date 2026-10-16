@@ -1094,12 +1094,13 @@ nothing went wrong.
 
 A share link that is attached to a message has no bytes in Microsoft 365. decant gives it a card and
 does not try to get its bytes. The card tells that it is a link to a shared file. When the text of
-the message also links to the file, the file is in `_linked/`. The report does not show a share link
-as a failure.
+the message also links to the file, the card of the file is in `_linked/`. The report does not show a
+share link as a failure.
 
 A sender can attach a file to a message and also link to it. When the linked file has the same name
-and the same bytes as the attachment, decant does not keep a second copy. Then the card in `_linked/`
-links to the card of the attachment.
+and the same bytes as the attachment, decant keeps only the attachment. Then the card in `_linked/`
+links to the card of the attachment. decant compares the bytes only when the linked file is not
+larger than the size cap.
 
 Each message's own section names the files that message carried, linking each card, so a reader
 following a conversation sees what arrived with which reply rather than one list at the head of
