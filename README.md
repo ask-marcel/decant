@@ -334,7 +334,7 @@ pdf: ./Roadmap.pptx.pdf
 | ics | one markdown record of the meeting: what it is called, when, where, who was asked |
 | url | one markdown file linking where the shortcut goes, when that is a web address |
 | eml | a folder: the message as markdown, and every file it carried taken out of the base64 it travelled in |
-| zip | a manifest listing every member with the text read out of it, one markdown file per document inside, and the archive itself |
+| zip | a folder that holds the archive and one markdown file for each document in it (a zip attached to a message also gets a manifest with the text of each file) |
 | jpg, png, gif, webp, bmp, tiff, heic | the image, plus markdown holding the text read out of it |
 | svg | the file, plus a markdown note pointing at it |
 | anything else | left in SharePoint and named in `_sync-report.md` |
@@ -344,14 +344,15 @@ a formula, a second sheet, a number format and a chart survive nowhere but the f
 markdown names it under `original:`. Every other document kind is markdown alone, since for text the
 markdown is the content.
 
-decant unpacks a zip file into a folder adjacent to it. A zip file can hold all its files in one
-folder with the name of the zip file. Then decant does not make that folder again. A link from one
-file in the zip file to a different file in it goes to the markdown of that file. Thus the pages of a
-zipped report link to each other. This is also correct for a zip file that is attached to a message.
+decant puts a zip file into a folder with the name of the zip file, without `.zip`. The markdown of
+each file in the zip file goes into this folder too, in the folders that the zip file holds. A link
+from one file in the zip file to a different file in it goes to the markdown of that file. Thus the
+pages of a report in a zip file link to each other. This is also correct for a zip file that is
+attached to a message.
 
 The converter reads the first 100 files of a zip file. When a zip file holds more files,
-`_sync-report.md` names it and gives the number of files that stay in it. The manifest of a zip file
-that is attached to a message also gives this number.
+`_sync-report.md` names the files that stay in the zip file, for example `Contracts.zip, files 101 to
+150`. The manifest of a zip file that is attached to a message also gives the number of these files.
 
 A saved email is unpacked the way an archive is. The library has no parser for raw MIME and hands
 the file back whole, which means every attachment sits in the middle of the text as base64, so the
