@@ -773,6 +773,19 @@ describe('choosing what to sync', () => {
     expect(lost.summaries?.[1]?.notes.failed).toEqual([{ path: 'Offsite 2026', reason: 'failed at savedPlan: no record of the plan Offsite 2026' }]);
   });
 
+  // A plan renamed in Planner since the last run is synced under the title it has now, which moves its
+  // files to the folder of that title.
+  it('an update syncs a plan under the title Planner gives it now, and one that will not read under the saved title', async () => {
+    const synced = [{ kind: 'plan' as const, id: 'plan-1', name: 'Offsite 2026', lastRun: '2026-09-11T09:00:00Z', fileCount: 4 }];
+    const saved = { id: 'plan-1', title: 'Offsite 2026', groupId: 'g-1' };
+    const renamed = await run([], { command: 'update' }, { synced, savedPlan: saved, plans: [{ ...saved, title: 'Offsite 2027' }] });
+    const unread = await run([], { command: 'update' }, { synced, savedPlan: saved });
+
+    expect(renamed.planRuns).toEqual(['Offsite 2027']);
+    expect(unread.planRuns).toEqual(['Offsite 2026']);
+    expect(unread.logger.calls).toContainEqual({ level: 'warn', event: 'plan.unread', meta: { plan: 'plan-1', cause: 'permanent' } });
+  });
+
   it('a plan listing that fails costs the plans and not the picker', async () => {
     const { calls, prompt, logger } = await run(['1', 'all'], {}, { failPlans: true });
 

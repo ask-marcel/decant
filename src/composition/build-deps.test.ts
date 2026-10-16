@@ -17,6 +17,7 @@ import { createPromptFake } from '../test-helpers/prompt-fake.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { disambiguateSegment, idHash } from '../domain/kb-path.ts';
 import { emptyNotebookState, notebookRootName, serializeNotebookState } from '../domain/notebook-state.ts';
+import { emptyPlanState, serializePlanState } from '../domain/plan-state.ts';
 import { buildDeps } from './build-deps.ts';
 import { readConfig } from './config.ts';
 
@@ -634,5 +635,39 @@ describe('a notebook in a folder suffixed with its id', () => {
 
     expect(files.written.get('kb/_sync-report.md')).not.toContain('no record of the notebook');
     expect(files.written.has(`kb/${suffixed}/.sync-cursor.json`)).toBe(true);
+  });
+});
+
+// A plan renamed in Planner since the last run: update reads it by id, and its files go to the folder
+// of the new title.
+describe('a plan renamed in Planner', () => {
+  it('is synced by an update into the folder of its new title, and the old folder is put aside', async () => {
+    const saved = { id: 'plan-1', title: 'Offsite 2026', groupId: 'g-1' };
+    const files = createFilesFake({
+      directories: { kb: ['Planner'], 'kb/Planner': ['Offsite 2026'] },
+      texts: { 'kb/Planner/Offsite 2026/.sync-state.json': serializePlanState(emptyPlanState(saved)) },
+    });
+
+    await buildDeps(configFor({}), {
+      files,
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake(),
+      mail: createMailReaderFake(),
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
+      people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
+      notebook: createNotebookReaderFake(),
+      list: createListReaderFake(),
+      plan: createPlanReaderFake({ plans: [{ ...saved, title: 'Offsite 2027' }], buckets: { 'plan-1': [] }, tasks: { 'plan-1': [] } }),
+      ocr: createOcrFake(),
+      prompt: createPromptFake(),
+      clock: createClockFake('2026-10-16T09:00:00Z'),
+    }).runSync({ command: 'update', driveIds: [], maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+
+    expect(files.written.has('kb/Planner/Offsite 2027/.sync-state.json')).toBe(true);
+    expect(files.written.has('kb/Planner/Offsite 2026/.sync-state.json')).toBe(false);
+    expect(files.written.has('kb/_archive/2026-10-16/Planner/Offsite 2026/.sync-state.json')).toBe(true);
   });
 });

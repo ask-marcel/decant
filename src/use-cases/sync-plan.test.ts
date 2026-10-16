@@ -369,3 +369,37 @@ describe('syncing a Planner plan', () => {
     expect(new Set(Object.values(stateOf(done.files).tasks).map((record) => record.file)).size).toBe(3);
   });
 });
+
+// A plan renamed in Planner: update reads its title by id and names the title its files were written
+// under. Every task is placed again in the folder of the new title, the old copies go to the archive
+// as for any move, and so do the files of the old folder itself.
+describe('a plan renamed since its files were written', () => {
+  it('writes its tasks and its board under the new title, and puts the whole old folder aside', async () => {
+    const first = await run();
+    const files = createFilesFake({ texts: Object.fromEntries(first.files.written) });
+    const renamed = { ...PLAN, title: 'Offsite 2027' };
+    const reader = createPlanReaderFake({ plans: [renamed], buckets: BUCKETS, tasks: TASKS, details: DETAILS, names: NAMES });
+    const syncPlan = createSyncPlan({ reader, files, clock: createClockFake('2026-09-13T14:00:00Z'), logger: createLoggerFake(), progress: createProgressFake(), kbRoot: 'kb' });
+
+    const done = await syncPlan({ plan: renamed, formerTitle: PLAN.title, dryRun: false, concurrency: 4 });
+
+    const NEW = 'kb/Planner/Offsite 2027';
+    expect(done.ok).toBe(true);
+    expect(files.written.get(`${NEW}/_board.md`)).toContain('Book the venue');
+    expect(JSON.parse(files.written.get(`${NEW}/.sync-state.json`) ?? '{}').source.name).toBe('Offsite 2027');
+    expect([...files.written.keys()].filter((path) => path.startsWith(`${ROOT}/`))).toStrictEqual([]);
+    expect(files.written.get('kb/_archive/2026-09-13/Planner/Offsite 2026/_board.md')).toBe(first.files.written.get(BOARD_PATH));
+  });
+
+  it('a title that gives the same folder, or a dry run, moves nothing', async () => {
+    const first = await run();
+    const files = createFilesFake({ texts: Object.fromEntries(first.files.written) });
+    const reader = createPlanReaderFake({ plans: [PLAN], buckets: BUCKETS, tasks: TASKS, details: DETAILS, names: NAMES });
+    const syncPlan = createSyncPlan({ reader, files, clock: createClockFake('2026-09-13T14:00:00Z'), logger: createLoggerFake(), progress: createProgressFake(), kbRoot: 'kb' });
+
+    await syncPlan({ plan: PLAN, formerTitle: PLAN.title, dryRun: false, concurrency: 4 });
+    await syncPlan({ plan: { ...PLAN, title: 'Offsite 2027' }, formerTitle: PLAN.title, dryRun: true, concurrency: 4 });
+
+    expect(files.moves).toStrictEqual([]);
+  });
+});
