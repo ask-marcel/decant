@@ -57,6 +57,13 @@ describe('a link from one member of an archive to another', () => {
     expect(linkMembers('[Home](../index.html "see [Week 2](week%202.html)")', 'pages/week 2.html', files)).toBe('[Home](../index.html.md "see [Week 2](week%202.html)")');
   });
 
+  // The converter escapes a quote inside a title, `\\"`.
+  it('a link whose title holds an escaped quote leads to the markdown of that member', () => {
+    expect(linkMembers('[Home](../index.html "The \\"best\\" [Week 2](week%202.html)")', 'pages/week 2.html', files)).toBe(
+      '[Home](../index.html.md "The \\"best\\" [Week 2](week%202.html)")'
+    );
+  });
+
   it('text that opens a link and holds no destination stays as it is', () => {
     expect(linkMembers('[Home](../index.html then [Week 2](<week 2.html>)', 'pages/week 2.html', files)).toBe('[Home](../index.html then [Week 2](<week 2.html.md>)');
   });

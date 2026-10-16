@@ -17,8 +17,9 @@ export const placeMembers = <T extends { readonly path: string }>(folder: string
 // log line, and a link that could start at each one read on to the end of the page from each.
 const OPENING = /(?<![!\\])\[((?:[^[\]\\!]|\\.|!(?!\[)|!\[[^[\]]*\]\([^()\s[\]]*\))*)\]\(/g;
 // The rest of a link from its destination on: bare, escaping each parenthesis with a backslash, or in
-// angle brackets, then a title in quotes and the closing parenthesis. Read where an opening ends.
-const REST = /(<[^<>\n]*>|(?:[^()\s<>\\]|\\.)*)(\s+"[^"\n]*")?\)/y;
+// angle brackets, then a title in quotes that escapes a quote, and the closing parenthesis. Read where
+// an opening ends.
+const REST = /(<[^<>\n]*>|(?:[^()\s<>\\]|\\.)*)(\s+"(?:[^"\\]|\\.)*")?\)/y;
 // A backslash escape, which a destination can hold before a parenthesis.
 const ESCAPE = /\\(.)/g;
 // A destination that names its own scheme leaves the archive: a site, a mail address. Read as a path,
