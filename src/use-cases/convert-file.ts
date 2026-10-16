@@ -10,6 +10,7 @@ import type { DocumentStamp } from '../domain/kb-document.ts';
 import { NO_SLIDES_NOTE, NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
 import { fitSegment, memberFile, safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import type { SkipReason } from '../domain/report.ts';
+import { unwrapSafelinks } from '../domain/safelink.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { Clock } from './ports/clock.ts';
@@ -315,7 +316,9 @@ const writeArchiveEntries = async (
   for (const entry of entries) {
     const file = memberFile(folder, entry.path, context.deps.pathBudget);
     const stamp = { ...context.stamp, zipEntry: entry.path };
-    const written = await context.deps.files.writeText(file, kbDocument(stamp, entry.text ?? entry.note ?? NO_TEXT_NOTE));
+    // A page someone saved out of Outlook and zipped keeps each link Outlook wrapped, and the wrapper
+    // comes off as it does in mail.
+    const written = await context.deps.files.writeText(file, kbDocument(stamp, unwrapSafelinks(entry.text ?? entry.note ?? NO_TEXT_NOTE)));
     if (!written.ok) return failure(written.error);
     outputs.push(file);
   }

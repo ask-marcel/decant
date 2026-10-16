@@ -3,6 +3,7 @@ import { renderFrontMatter, withFrontMatter, withoutFrontMatter } from './front-
 import type { FrontMatterField } from './front-matter.ts';
 import { htmlToText } from './html-text.ts';
 import { linkDestination } from './markdown-link.ts';
+import { unwrapSafelinks } from './safelink.ts';
 import { dayIn, timeIn } from './zoned-day.ts';
 
 export type EventAttachmentLink = { readonly name: string; readonly file: string };
@@ -61,8 +62,10 @@ const attachmentLine = (attachment: EventAttachmentLink): string => `- [${attach
 // An event with no subject is headed by its id, the same name its file gets.
 const titleOf = (event: CalendarEvent): string => (event.subject.length > 0 ? event.subject : `event ${event.id}`);
 
+// Outlook wraps each link of an invitation in a scanner of its own, as it does in mail, and the
+// wrapper comes off the same way.
 const bodyOf = (input: RenderEventInput): string => {
-  const said = htmlToText(input.event.body);
+  const said = unwrapSafelinks(htmlToText(input.event.body));
   return [
     `# ${titleOf(input.event)}`,
     ...(said.length === 0 ? [] : ['', said]),
@@ -92,4 +95,5 @@ const attachmentFields = (input: RenderEventAttachmentInput): ReadonlyArray<Fron
   ['synced_at', input.syncedAt],
 ];
 
-export const renderEventAttachment = (input: RenderEventAttachmentInput): string => withFrontMatter(renderFrontMatter(attachmentFields(input)), withoutFrontMatter(input.text));
+export const renderEventAttachment = (input: RenderEventAttachmentInput): string =>
+  withFrontMatter(renderFrontMatter(attachmentFields(input)), unwrapSafelinks(withoutFrontMatter(input.text)));

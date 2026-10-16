@@ -27,6 +27,8 @@ const event: CalendarEvent = {
   body: '<div><p>Agenda:</p><ul><li>Venue</li><li>Budget</li></ul></div>',
 };
 
+const SAFELINK = 'https://nam02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fagenda&data=05%7C02%7Cx&reserved=0';
+
 const rendered = (subject: CalendarEvent, attachments: ReadonlyArray<{ name: string; file: string }> = []): string =>
   renderEventDocument({ event: subject, zone: 'Asia/Shanghai', attachments, syncedAt: '2026-09-11T14:00:00Z' });
 
@@ -98,9 +100,22 @@ describe('writing one calendar event as a document', () => {
   it('an event whose body holds a character reference past Unicode is written, the reference read as the replacement character', () => {
     expect(rendered({ ...event, body: '<p>Room &#x110000;4</p>' })).toContain('Room \uFFFD4');
   });
+
+  // Outlook wraps each link of an invitation in a scanner of its own, as it does in mail.
+  it('a link Outlook wrapped in an event body reads as where it goes', () => {
+    const body = '<p>See the <a href="%s">agenda</a></p>'.replace('%s', SAFELINK.replaceAll('&', '&amp;'));
+
+    expect(rendered({ ...event, body })).toContain('See the [agenda](https://example.com/agenda)');
+  });
 });
 
 describe('writing what an event carried as a document of its own', () => {
+  it('a link Outlook wrapped in what an attachment says reads as where it goes', () => {
+    const written = renderEventAttachment({ event, name: 'Notes.docx', contentType: '', size: 10, text: `See ${SAFELINK} first.`, syncedAt: '2026-09-11T14:00:00Z' });
+
+    expect(written).toContain('See https://example.com/agenda first.');
+  });
+
   it('an attachment opens with what it is and which meeting it came with, then carries the text the library read out of it, its own stamp stripped', () => {
     const written = renderEventAttachment({
       event,
