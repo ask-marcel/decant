@@ -492,4 +492,47 @@ describe('following the SharePoint files a conversation points at', () => {
     expect(drive.calls.filter((call) => call.endsWith(':01ABC'))).toStrictEqual(['item:01ABC']);
     expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed.filter((entry) => entry.path.endsWith(': Rapport.docx'))).toHaveLength(1);
   });
+
+  // Only a file the thread kept can be the file a link points at: one too large to pull has no bytes to
+  // compare, and a download that fails has none either, so the two would pass for the same file.
+  it('a linked document with the name of an attachment too large to keep is pulled as any other, and is no copy of it', async () => {
+    const tooLarge = { m1: [{ id: 'att1', name: 'Rapport.docx', contentType: 'application/vnd', size: 60 * 1024 * 1024, isInline: false }] };
+    const { outcome, files } = await run({
+      reader: { ...attachedAndLinked, attachments: tooLarge },
+      drive: { ...items, failItems: { '01ABC': { kind: 'transient', message: 'timed out' } } },
+    });
+
+    expect(files.written.get(REPORT_MD)).not.toContain('the same file');
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed.some((entry) => entry.path.endsWith(': Rapport.docx'))).toBe(true);
+  });
+
+  // A picture shown in a body lives in the store the whole mailbox shares, with no card in the thread
+  // for a link to point at.
+  it('a linked document with the name and bytes of a picture shown in a body is pulled as any other', async () => {
+    const plan = { url: 'https://tenant.sharepoint.com/plan', driveId: 'b!one', itemId: '01PLN', name: 'Plan.png' };
+    const shown = { id: 'pic', name: 'Plan.png', contentType: 'image/png', size: 2048, isInline: true };
+    const { files } = await run({
+      reader: {
+        conversations: { [CONV]: [message({ hasAttachments: true })] },
+        bodies: { m1: 'See https://tenant.sharepoint.com/sites/team/Plan.png \\[inline image: Plan.png\\]' },
+        links: { m1: [plan] },
+        attachments: { m1: [shown] },
+        attachmentRaw: { pic: 'plan bytes' },
+      },
+      drive: { items: { '01PLN': { ...REPORT, id: '01PLN', name: 'Plan.png', path: 'Plan.png' } }, bytes: { '01PLN': new TextEncoder().encode('plan bytes') } },
+    });
+    const card = files.written.get(`${LINKED_HERE}/Plan.png.md`) ?? '';
+
+    expect(card).toContain('url: https://tenant.sharepoint.com/plan');
+    expect(card).not.toContain('the same file');
+  });
+
+  // The name says when to compare: a document no message carried under its name is never downloaded
+  // only to be compared.
+  it('a linked document no attachment shares a name with is pulled with no download to compare it', async () => {
+    const other = { m1: [{ id: 'att1', name: 'Annexe.pdf', contentType: 'application/pdf', size: 4096, isInline: false }] };
+    const { drive } = await run({ reader: { ...attachedAndLinked, attachments: other }, drive: items });
+
+    expect(drive.calls.filter((call) => call === 'bytes:01ABC')).toStrictEqual([]);
+  });
 });
