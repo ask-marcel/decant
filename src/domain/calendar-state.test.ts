@@ -163,9 +163,12 @@ describe('the notes of a series and its exceptions', () => {
   it('a series is stale when it gained or lost an exception, and an exception when its master was written after it', () => {
     const gained = withEvent(linked, 'sept', { ...record('kb/Calendar/2026-09-07/Monthly review.md'), series: { master: 'm', linked: MASTER } });
 
+    const swapped = withEvent(withoutEvent(linked, 'june'), 'sept', { ...record('kb/Calendar/2026-09-07/Monthly review.md'), series: { master: 'm', linked: MASTER } });
+
     expect(staleSeriesLinks(linked)).toStrictEqual([]);
     expect(staleSeriesLinks(gained)).toStrictEqual(['m']);
     expect(staleSeriesLinks(withoutEvent(linked, 'june'))).toStrictEqual(['m']);
+    expect(staleSeriesLinks(swapped)).toStrictEqual(['m']);
   });
 
   // Written before its master, an exception links to nothing until the master is written.
@@ -174,5 +177,6 @@ describe('the notes of a series and its exceptions', () => {
 
     expect(staleSeriesLinks(alone)).toStrictEqual([]);
     expect(staleSeriesLinks(withEvent(alone, 'm', { ...record(MASTER), series: { exceptions: [MARCH] } }))).toStrictEqual(['march']);
+    expect(staleSeriesLinks(withEvent(emptyCalendarState(), 'm', { ...record(MASTER), series: {} }))).toStrictEqual([]);
   });
 });

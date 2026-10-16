@@ -828,6 +828,30 @@ describe('linking a series and its exceptions', () => {
 
     expect(done.reader.calls.filter((call) => call.startsWith('event:'))).toStrictEqual(['event:x', 'event:m']);
     expect(done.files.written.get(MASTER_NOTE)).toContain('- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)');
+    expect(done.progress.started).toStrictEqual([
+      { total: 1, what: 'Calendar' },
+      { total: 1, what: 'Calendar' },
+    ]);
+  });
+
+  // A note that links what the state holds needs nothing: a series read again unchanged is left be,
+  // an event of no series keeps no series note, and with no stale note the run starts no second pass.
+  it('a series read again unchanged, its note linking what the state holds, is not written again', async () => {
+    const state = withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [] }));
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'm', removed: false },
+          { id: 'b', removed: false },
+        ],
+        events: { m: MASTER, b: STANDUP },
+      },
+      files: seeded(state),
+    });
+
+    expect(done.files.written.has(MASTER_NOTE)).toBe(false);
+    expect(stateOf(done.files).events['b']).not.toHaveProperty('series');
+    expect(done.progress.started).toStrictEqual([{ total: 2, what: 'Calendar' }]);
   });
 
   it('a series is written again without an exception deleted at the source', async () => {
