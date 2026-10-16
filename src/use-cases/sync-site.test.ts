@@ -1836,7 +1836,7 @@ describe('a changed document that is now left out', () => {
 // three runs in all, and the version on disk stays the current one.
 describe('an edited document whose earlier version will not move aside', () => {
   const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
-  const HELD = 'its earlier version would not move to _archive/: write-failed: held open';
+  const HELD = 'its earlier version would not move to _archive/: write-failed';
   const known = serializeSiteState({
     version: 1,
     source: { kind: 'site', ...site },

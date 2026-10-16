@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unreadableNote, unstuck } from './aside-ledger.ts';
+import { causeOf, parseAsideLedger, serializeAsideLedger, stuckAt, stuckNotes, unreadableNote, unstuck } from './aside-ledger.ts';
 
 const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md';
 const TASK = 'kb/To Do/Tasks/2026-09-01/Book the venue.md';
@@ -12,6 +12,15 @@ describe('keeping the files that would not move under the archive', () => {
     expect(Object.keys(JSON.parse(text))).toEqual([NOTE, TASK]);
     expect(parseAsideLedger(JSON.parse(text))).toEqual({ ok: true, value: ledger });
     expect(parseAsideLedger(JSON.parse(serializeAsideLedger({})))).toEqual({ ok: true, value: {} });
+  });
+
+  // The rest of the message names both paths, the day of the run among them: kept whole, the cause
+  // would change on each day a file stays stuck.
+  it('the cause of a failed move keeps its kind and the system code, and leaves the paths out', () => {
+    expect(causeOf({ kind: 'write-failed', message: "EBUSY: resource busy or locked, rename 'kb/a.md' -> 'kb/_archive/2026-10-15/a.md'" })).toBe('write-failed: EBUSY');
+    expect(causeOf({ kind: 'write-failed', message: 'EPERM' })).toBe('write-failed: EPERM');
+    expect(causeOf({ kind: 'write-failed', message: 'a file is already at kb/_archive/2026-10-15/a.md' })).toBe('write-failed');
+    expect(causeOf({ kind: 'write-failed', message: 'EBUSYNESS is no code' })).toBe('write-failed');
   });
 
   // The day it first would not move says how long it has waited; the cause is the latest one.
