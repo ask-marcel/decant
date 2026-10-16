@@ -113,6 +113,13 @@ describe('converting one document out of a library', () => {
     expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd/Fwd.eml.md')).toContain(NO_TEXT_NOTE);
   });
 
+  it('a saved email in a library whose text travelled 8-bit in UTF-8 keeps every letter it carried', async () => {
+    const eml = ['Subject: Fwd', 'Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: 8bit', '', 'Le contrat signé, 合同.'].join('\r\n');
+    const { files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd/Fwd.eml.md')).toContain('Le contrat signé, 合同.');
+  });
+
   it('a saved email in a library whose message cannot be written is reported', async () => {
     const eml = ['Subject: Fwd', 'Content-Type: text/plain', '', 'body'].join('\r\n');
     const { outcome } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } }, files: { failWritesMatching: 'Fwd.eml.md' } });

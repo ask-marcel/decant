@@ -302,6 +302,18 @@ describe('keeping what was attached to a mail', () => {
     expect(logger.calls).toContainEqual({ level: 'warn', event: 'images.failed', meta: { attachmentId: 'att1', filename: 'Contrat.docx', cause: 'transient' } });
   });
 
+  // Read as text first, a saved email lost every letter outside ASCII that it carried 8-bit, the
+  // bytes of UTF-8 read again as single characters.
+  it('a saved email whose text travelled 8-bit in UTF-8 keeps every letter it carried', async () => {
+    const accented = EML.replace('Content-Type: text/plain', 'Content-Type: text/plain; charset=utf-8\r\nContent-Transfer-Encoding: 8bit').replace(
+      'Voici le contrat.',
+      'Voici le contrat signé, 合同.'
+    );
+    const { files } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: accented } } });
+
+    expect(files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`)).toContain('Voici le contrat signé, 合同.');
+  });
+
   it('a saved email is unpacked: the message it held, and the file it carried as a file', async () => {
     const { outcome, files } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: EML } } });
     const written = files.written.get(`${FOLDER}/Fwd/Fwd.eml.md`) ?? '';

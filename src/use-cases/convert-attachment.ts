@@ -5,6 +5,7 @@ import { renderCalendar } from '../domain/icalendar.ts';
 import { shortcutLink } from '../domain/internet-shortcut.ts';
 import type { MimePart } from '../domain/mime.ts';
 import { readMime } from '../domain/mime.ts';
+import { byteString } from '../domain/mime-text.ts';
 import { unwrapSafelinks } from '../domain/safelink.ts';
 import type { CarriedPart } from '../domain/saved-mail.ts';
 import { savedMailBody } from '../domain/saved-mail.ts';
@@ -270,7 +271,7 @@ const asMessage = async (context: Context): Promise<AttachmentOutcome> => {
   const raw = await context.deps.reader.attachmentBytes(context.input.messageId, context.input.attachment.id);
   if (!raw.ok) return failure(raw.error);
   const folder = `${context.input.folder}/${safeSegment(context.name.slice(0, context.name.lastIndexOf('.')))}`;
-  const read = readMime(new TextDecoder().decode(raw.value));
+  const read = readMime(byteString(raw.value));
   // The parts are written FIRST now, because the document standing for the message has to name them
   // and cannot until it knows which of them the converter managed to read.
   const carried = await writeParts(context, folder, read.parts);
