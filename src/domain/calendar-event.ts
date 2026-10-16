@@ -26,6 +26,8 @@ export type CalendarEvent = {
   readonly hasAttachments: boolean;
   readonly lastModified: string;
   readonly body: string;
+  // The series an exception belongs to, by the id of its master. Absent from an event of no series.
+  readonly seriesMasterId?: string;
 };
 
 // What the delta says about one event: that it changed, or that it is gone. Nothing else, since
@@ -130,6 +132,11 @@ export const recurrenceText = (raw: unknown): string => {
   return `${said}, ${rangeText(raw['range'])}`;
 };
 
+const seriesOf = (raw: Record<string, unknown>): Pick<CalendarEvent, 'seriesMasterId'> => {
+  const master = textOf(raw, 'seriesMasterId');
+  return master.length === 0 ? {} : { seriesMasterId: master };
+};
+
 export const parseCalendarEvent = (raw: unknown): CalendarEvent | undefined => {
   const id = readString(raw, 'id');
   if (!isRecord(raw) || id === undefined) return undefined;
@@ -155,6 +162,7 @@ export const parseCalendarEvent = (raw: unknown): CalendarEvent | undefined => {
     hasAttachments: raw['hasAttachments'] === true,
     lastModified: textOf(raw, 'lastModifiedDateTime'),
     body: textOf(raw['body'], 'content'),
+    ...seriesOf(raw),
   };
 };
 

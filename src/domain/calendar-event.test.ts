@@ -83,6 +83,12 @@ describe('reading a calendar event as Graph answers for it', () => {
     expect(master?.cancelled).toBe(true);
   });
 
+  // Graph files an occurrence changed on its own as an exception of the series, by the id of its master.
+  it('an exception names the series it belongs to, and an event of no series names none', () => {
+    expect(parseCalendarEvent({ ...graphEvent, type: 'exception', seriesMasterId: 'AAMkAGI-master' })?.seriesMasterId).toBe('AAMkAGI-master');
+    expect(parseCalendarEvent(graphEvent)).not.toHaveProperty('seriesMasterId');
+  });
+
   it('an event with no id is no event, and one with nothing but an id is an event with blanks', () => {
     expect(parseCalendarEvent({ subject: 'No id' })).toBeUndefined();
     expect(parseCalendarEvent('nope')).toBeUndefined();
