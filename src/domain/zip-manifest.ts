@@ -1,3 +1,5 @@
+import { cutArchiveReason } from './report.ts';
+
 // What an archive holds, as one document a reader opens instead of unzipping. Every member is
 // listed with the text read out of it, so an archive of forty photographs reads as a contact sheet:
 // the text sits in one place with the rest of the archive around it, rather than scattered across
@@ -25,4 +27,9 @@ const countOf = (members: ReadonlyArray<ArchiveMember>): string => (members.leng
 const listOf = (members: ReadonlyArray<ArchiveMember>): ReadonlyArray<string> =>
   members.length === 0 ? [] : ['', ...members.map((member) => `- ${member.path}${summaryOf(member)}`)];
 
-export const renderZipManifest = (name: string, members: ReadonlyArray<ArchiveMember>): string => [`# ${name}`, '', countOf(members), ...listOf(members), ''].join('\n');
+// What the library left in an archive it read in part, when it says how many files the archive holds.
+const cutOf = (members: ReadonlyArray<ArchiveMember>, total: number | undefined): ReadonlyArray<string> =>
+  total === undefined ? [] : [`${cutArchiveReason(members.length, total)}.`];
+
+export const renderZipManifest = (name: string, members: ReadonlyArray<ArchiveMember>, total?: number): string =>
+  [`# ${name}`, '', countOf(members), ...cutOf(members, total), ...listOf(members), ''].join('\n');

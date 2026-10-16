@@ -328,6 +328,9 @@ const carriedNote = (file: AttachedCopy): string => {
 // metadata first, because the name in the link cannot say which version it is, how big it is, or what
 // kind of thing it is: the version decides whether a thread that holds it pulls it again, the size
 // whether it is pulled at all, and the kind whether a deck also renders a PDF beside its text.
+// What the library left in an archive it read in part, named for the report by the file's name.
+const leftOutOf = (name: string, leftOut: string | undefined): Pick<Pulled, 'skipped'> => (leftOut === undefined ? {} : { skipped: { path: name, reason: leftOut } });
+
 const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, asName: string, held: HeldDocument | undefined): Promise<Pulled> => {
   const { here, maxBytes } = place;
   const { driveId, itemId, name } = link;
@@ -358,7 +361,8 @@ const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, a
     into: `${here}/${LINKED_FOLDER}`,
     asName,
   });
-  if (outcome.kind === 'converted') return { record: { paths: outcome.outputs }, lastModified, modifiedBy, version };
+  // An archive the library read in part lands, and what it left in the archive goes to the report.
+  if (outcome.kind === 'converted') return { record: { paths: outcome.outputs }, lastModified, modifiedBy, version, ...leftOutOf(name, outcome.leftOut) };
   deps.logger.warn(outcome.kind === 'skipped' ? 'linked.skipped' : 'linked.failed', { itemId, name, cause: outcome.reason });
   if (outcome.kind === 'failed') return { failed: { path: name, reason: outcome.reason } };
   // The reason names the file at the SOURCE, not the link. A message can point at a document under

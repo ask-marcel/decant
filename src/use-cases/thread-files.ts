@@ -295,7 +295,18 @@ const convertFresh = async (deps: FileDeps, place: FilePlace, into: Record<strin
   if (outcome.kind === 'skipped') return { asName, paths: [], skipped: { path: sentAs, reason: skipReason(outcome.reason, place.maxBytes, attachment.name) } };
   if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: sentAs, reason: outcome.reason } };
   into[hash] = { name: storedAs, paths: outcome.outputs, primary: outcome.primary, media: outcome.media, text: outcome.text };
-  return { asName: storedAs, paths: outcome.outputs, primary: outcome.primary, picture: inline ? outcome.primary : undefined, text: outcome.text, media: outcome.media, hash };
+  // An archive the library read in part lands, and what it left in the archive goes to the report.
+  const leftOut = outcome.leftOut === undefined ? {} : { skipped: { path: sentAs, reason: outcome.leftOut } };
+  return {
+    asName: storedAs,
+    paths: outcome.outputs,
+    primary: outcome.primary,
+    picture: inline ? outcome.primary : undefined,
+    text: outcome.text,
+    media: outcome.media,
+    hash,
+    ...leftOut,
+  };
 };
 
 // Each path once, in the order first met.

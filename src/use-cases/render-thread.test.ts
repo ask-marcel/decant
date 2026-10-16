@@ -602,3 +602,26 @@ describe('when the mailbox or the disk refuses', () => {
     expect(error).toEqual({ kind: 'permanent', message: 'disk full' });
   });
 });
+
+// The library reads the first 100 members of a larger archive. A zip a message carried, or one it
+// linked to, is named in the report of the run with what stays in it, as a zip in a library is, and
+// the manifest of the one it carried says so too.
+describe('a zip in a thread that the library read in part', () => {
+  it('is named for what stays in the archive, attached or linked', async () => {
+    const cut = Object.assign([{ path: 'terms.docx', text: '# Terms' }], { totalEntries: 150 });
+    const zip = { id: 'att-zip', name: 'Contracts.zip', contentType: 'application/zip', size: 2048, isInline: false };
+    const bundle = { url: 'https://tenant.sharepoint.com/sites/team/Bundle.zip', driveId: 'b!one', itemId: '01ZIP', name: 'Bundle.zip' };
+    const item = { id: '01ZIP', name: 'Bundle.zip', kind: 'file' as const, size: 4096, path: 'Bundle.zip', lastModified: '2026-05-11T08:00:00Z', cTag: 'c1', webUrl: bundle.url };
+    const { outcome, files } = await run({
+      reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, bodies: { m1: `See ${bundle.url}` }, attachments: { m1: [zip] }, links: { m1: [bundle] } },
+      drive: { items: { '01ZIP': item }, archiveEntries: cut },
+    });
+    const reason = '149 of its 150 files stay in the archive: the converter read the first 1';
+
+    expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toEqual([
+      { path: `${THREAD_RELATIVE}: Contracts.zip`, reason },
+      { path: `${THREAD_RELATIVE}: Bundle.zip`, reason },
+    ]);
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Contracts.zip.md`)).toContain(`${reason}.`);
+  });
+});
