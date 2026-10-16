@@ -21,8 +21,9 @@ import type { LinkedFile, MailReader } from './ports/mail-reader.ts';
 import type { Logger } from './ports/logger.ts';
 
 // What following a link costs, named rather than taken whole: this asks the mailbox for the links a
-// message holds, the drive for one document's own metadata, and the converter for its text. It
-// never reads a message, never lists an attachment, and never touches the mailbox root.
+// message holds, the drive for one document's own metadata, and its bytes when a message carried a
+// file of that name, and the converter for its text. It never reads a message, never lists an
+// attachment, and never touches the mailbox root.
 export type LinkDeps = {
   readonly reader: Pick<MailReader, 'sharepointLinks'>;
   readonly drive: Pick<DriveReader, 'item' | 'bytes'>;
@@ -219,15 +220,12 @@ export const linkedFiles = async (deps: LinkDeps, place: LinksPlace, parts: Read
   return { paths, linked, referenced, skipped, failed, names, unread };
 };
 
-// The same route a file found by walking a library takes. A linked document is read for its own
-// metadata first, because the name in the link cannot say when the file changed, how big it is, or
-// what kind of thing it is: the day decides the folder, the size decides whether it is pulled at
-// all, and the kind decides whether a deck also renders a PDF beside its text.
 // A document a message of the thread also carried, when its bytes are that file's: the name says when
-// to compare, since Graph's size for an attachment is not its byte count, and the bytes decide.
+// to compare, since Graph's size for an attachment is not its byte count, and the bytes decide. A file
+// the thread kept was within the size cap, so a document past it is never downloaded to compare.
 const carriedAs = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, item: DriveItem): Promise<CarriedFile | undefined> => {
   const named = place.carried.filter((file) => sameIgnoringCase(file.name, item.name));
-  if (named.length === 0) return undefined;
+  if (named.length === 0 || item.size > place.maxBytes) return undefined;
   const bytes = await deps.drive.bytes({ driveId: link.driveId, itemId: link.itemId });
   const hash = bytes.ok ? contentHash(bytes.value) : undefined;
   return named.find((file) => file.hash === hash);
@@ -238,6 +236,10 @@ const carriedNote = (file: CarriedFile): string => {
   return `It is the same file as one a message of this thread carried, so it is not kept twice: [${file.name}](${card}).`;
 };
 
+// The same route a file found by walking a library takes. A linked document is read for its own
+// metadata first, because the name in the link cannot say when the file changed, how big it is, or
+// what kind of thing it is: the day decides the folder, the size decides whether it is pulled at
+// all, and the kind decides whether a deck also renders a PDF beside its text.
 const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, asName: string): Promise<Pulled> => {
   const { here, maxBytes } = place;
   const { driveId, itemId, name } = link;
