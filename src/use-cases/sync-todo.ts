@@ -1,4 +1,5 @@
 import { INDEX_FILE } from '../domain/index-page.ts';
+import { sameIgnoringCase } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { renderTaskDocument } from '../domain/todo-document.ts';
@@ -106,7 +107,7 @@ const writeOne = async (deps: SyncTodoDeps, input: SyncTodoInput, state: TodoSta
   const { task, file } = planned;
   const before = state.tasks[task.id];
   const aside = await setAsideBefore(deps, before);
-  const held = before?.file === file ? await heldInPlace(deps, aside) : undefined;
+  const held = sameIgnoringCase(before?.file ?? '', file) ? await heldInPlace(deps, aside) : undefined;
   if (held !== undefined) return notWritten(deps, state, task, aside, held);
   const written = await deps.files.writeText(file, renderTaskDocument({ task, list: input.list.name, syncedAt: deps.clock.nowIso() }));
   if (!written.ok) {

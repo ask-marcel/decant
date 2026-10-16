@@ -258,6 +258,17 @@ describe('keeping the ledger in step with what lands on disk', () => {
     expect(Object.keys(ledgerOf(files.written.get(LEDGER)))).toEqual([MOVED]);
   });
 
+  // On Windows and macOS, a path that differs only in letter case is the same file: written down, it
+  // would take the digest of the new file, and a later run would move that live file away.
+  it('a file let go at a path written in this run in another letter case is not written down', async () => {
+    const { files, ledger } = setUp({ texts: { [NOTE]: 'the contract' } });
+
+    await ledger.files.writeText(NOTE.toLowerCase(), 'the new contract');
+    await ledger.writeDown([{ path: NOTE, error: LOCKED }]);
+
+    expect(files.written.has(LEDGER)).toBe(false);
+  });
+
   // In one window, a file can land at a path before another item lets go of its own file there.
   it('a file let go at a path another file landed at in this run is not written down', async () => {
     const { files, ledger } = setUp({ texts: { [NOTE]: 'the contract' } });

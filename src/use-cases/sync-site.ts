@@ -7,7 +7,7 @@ import type { FolderMove } from '../domain/drive-folders.ts';
 import { goneItem, sameVersion } from '../domain/drive-item.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { categoryFolderOf } from '../domain/kb-category.ts';
-import { disambiguateSegment, idHash, safeSegment } from '../domain/kb-path.ts';
+import { disambiguateSegment, idHash, safeSegment, sameIgnoringCase } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import { PEOPLE_NAME, emptyPeopleState, parsePeopleState } from '../domain/people-state.ts';
@@ -543,7 +543,8 @@ type Ready = { readonly again: boolean; readonly aside: SetAside; readonly held?
 const ready = async (deps: SyncSiteDeps, input: ResolvedInput, driveState: DriveState, item: DriveItem): Promise<Ready> => {
   const again = atRecordedVersion(driveState, item);
   const aside = again ? NOTHING_ASIDE : await setAsideBefore(deps, ownOutputs(driveState, item.id));
-  const inPlace = driveState.items[item.id]?.path === item.path && planFile({ name: item.name, size: item.size }, input.maxBytes).kind !== 'skip';
+  // Letter case aside, as Windows and macOS read a path: a rename in case alone writes over the same file.
+  const inPlace = sameIgnoringCase(driveState.items[item.id]?.path ?? '', item.path) && planFile({ name: item.name, size: item.size }, input.maxBytes).kind !== 'skip';
   return { again, aside, held: inPlace ? await heldInPlace(deps, aside) : undefined };
 };
 

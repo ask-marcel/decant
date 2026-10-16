@@ -1883,6 +1883,18 @@ describe('an edited document whose earlier version will not move aside', () => {
     expect(files.written.get(NOTE)).toBe('the contract');
   });
 
+  // Windows and macOS read a path in any letter case as the same file, so a rename in case alone would
+  // write over the earlier version it could not move.
+  it('renamed in letter case alone, it waits as an edit in place does', async () => {
+    const { summary, files } = await run({
+      files: { texts: { [STATE_PATH]: known, [NOTE]: 'the contract' }, failMoveWith: { kind: 'write-failed', path: NOTE, message: 'held open' } },
+      reader: { pages: [{ items: [item({ cTag: 'c2', name: 'contrat.docx', path: 'Projets/contrat.docx' })], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
+
+    expect(summary).toMatchObject({ converted: 0, failed: 1 });
+    expect(files.written.get(NOTE)).toBe('the contract');
+  });
+
   // Moved, the document no longer holds its earlier note, so a note that would not move is handed on
   // to be written down. Held in place, the document keeps it, and hands on nothing.
   const handing = async (texts: Record<string, string>, seed: DriveReaderSeed): Promise<ReadonlyArray<string>> => {
