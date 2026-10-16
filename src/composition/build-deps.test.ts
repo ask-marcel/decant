@@ -15,6 +15,8 @@ import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import { createOcrFake } from '../test-helpers/ocr-fake.ts';
 import { createPromptFake } from '../test-helpers/prompt-fake.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
+import { disambiguateSegment, idHash } from '../domain/kb-path.ts';
+import { emptyNotebookState, notebookRootName, serializeNotebookState } from '../domain/notebook-state.ts';
 import { buildDeps } from './build-deps.ts';
 import { readConfig } from './config.ts';
 
@@ -593,5 +595,44 @@ describe('a file that would not move under the archive', () => {
     expect(JSON.parse(reused.written.get(LEDGER) ?? '{}')).toEqual({});
     expect(free.moves).toStrictEqual([]);
     expect(free.written.get(NOTE)).toContain('converted 01XYZ');
+  });
+});
+
+// Two notebooks can carry one name: the second takes a folder suffixed with its id, and an update must
+// find its state there, not stop at the folder the first one holds.
+describe('a notebook in a folder suffixed with its id', () => {
+  it('is refreshed by an update, beside the notebook that holds the plain folder', async () => {
+    const first = { id: 'nb-1', name: 'Northwind Notebook', webUrl: 'https://x/1', site: { id: 'site-1', name: 'Northwind' } };
+    const second = { ...first, id: 'nb-2', webUrl: 'https://x/2' };
+    const plain = notebookRootName(first.name);
+    const suffixed = notebookRootName(disambiguateSegment(second.name, idHash(second.id)));
+    const files = createFilesFake({
+      directories: { kb: ['OneNote'], 'kb/OneNote': [plain.slice('OneNote/'.length), suffixed.slice('OneNote/'.length)] },
+      texts: {
+        [`kb/${plain}/.sync-state.json`]: serializeNotebookState(emptyNotebookState(first)),
+        [`kb/${suffixed}/.sync-state.json`]: serializeNotebookState(emptyNotebookState(second)),
+      },
+    });
+
+    await buildDeps(configFor({}), {
+      files,
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake(),
+      mail: createMailReaderFake(),
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
+      people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
+      notebook: createNotebookReaderFake({ sections: { 'nb-1': [], 'nb-2': [] } }),
+      list: createListReaderFake(),
+      plan: createPlanReaderFake(),
+      ocr: createOcrFake(),
+      prompt: createPromptFake(),
+      clock: createClockFake('2026-10-16T09:00:00Z'),
+    }).runSync({ command: 'update', driveIds: [], maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+
+    expect(files.written.get('kb/_sync-report.md')).not.toContain('no record of the notebook');
+    expect(files.written.has(`kb/${suffixed}/.sync-cursor.json`)).toBe(true);
   });
 });
