@@ -195,4 +195,38 @@ describe('a thread written again and the documents it links to', () => {
 
     expect(twice?.record.linkedVersions).toStrictEqual({ [KEY]: 'c1' });
   });
+
+  // A document named as another's name with a dot and more after it: each keeps its own files.
+  it('tells apart two documents when the name of one opens with the name of the other', async () => {
+    const pdf = { url: 'https://tenant.sharepoint.com/p', driveId: 'b!one', itemId: '01PDF', name: 'Rapport.docx.pdf' };
+    const mail = { ...seed, links: { m1: [{ url: 'https://tenant.sharepoint.com/x', driveId: 'b!one', itemId: '01ABC', name: 'Rapport.docx' }, pdf] } };
+    const both = (): DriveReaderFake =>
+      createDriveReaderFake({ items: { '01ABC': REPORT, '01PDF': { ...REPORT, id: '01PDF', name: 'Rapport.docx.pdf', path: 'Rapport.docx.pdf', cTag: 'p1' } } });
+    const files = createFilesFake();
+    const once = await write(files, both(), undefined, { mail });
+    const later = both();
+    const twice = await write(files, later, once?.record, { mail });
+
+    expect(later.calls).toStrictEqual(['item:01ABC', 'item:01PDF']);
+    expect(twice?.linked).toStrictEqual(once?.linked);
+    expect(once?.linked['b!one:01PDF']?.paths).toContain(`${LINKED}/Rapport.docx.pdf`);
+  });
+
+  // Moved deeper on a disk, the knowledge base cuts names it gave before: the document is pulled again
+  // under the name it fits now, never kept under a name its files do not have.
+  it('pulls a document again when the name it goes by no longer fits the path budget', async () => {
+    const files = createFilesFake();
+    const once = await write(files, createDriveReaderFake(at()));
+    const later = createDriveReaderFake(at());
+    await write(files, later, once?.record, { pathBudget: LINKED.length + 1 + 55 + 8 });
+
+    expect(later.calls).toContain('markdown:01ABC');
+  });
+
+  it('keeps no version for a document the source gives none for, and pulls it again', async () => {
+    const { once, drive } = await writtenAgain(at({ cTag: '', lastModified: '' }), at({ cTag: '', lastModified: '' }));
+
+    expect(once?.record.linkedVersions).toStrictEqual({});
+    expect(drive.calls).toContain('markdown:01ABC');
+  });
 });
