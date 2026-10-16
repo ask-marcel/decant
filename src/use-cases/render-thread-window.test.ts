@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { contentHash } from '../domain/content-hash.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { createDriveReaderFake } from '../test-helpers/drive-reader-fake.ts';
@@ -26,7 +27,7 @@ describe('threads written side by side', () => {
     bodies: { m1: '\\[inline image: image001.png\\]', m2: '\\[inline image: image002.png\\]' },
     attachments: { m1: picture('image001.png'), m2: picture('image002.png') },
   });
-  const input = (conversation: string, root: string): RenderThreadInput => ({
+  const input = (conversation: string, root: string, attachments: RenderThreadInput['attachments'] = {}): RenderThreadInput => ({
     threadId: threadIdOf(root),
     label: conversation,
     conversationIds: [conversation],
@@ -34,7 +35,7 @@ describe('threads written side by side', () => {
     folder: '',
     maxBytes: 50 * 1024 * 1024,
     linked: {},
-    attachments: {},
+    attachments,
   });
 
   const renderWith = (files: FilesFake, convert?: (real: ConvertAttachment) => ConvertAttachment): RenderThread => {
@@ -66,6 +67,20 @@ describe('threads written side by side', () => {
 
     expect(inlineFiles(files)).toHaveLength(1);
     expect(first?.ok && second?.ok).toBe(true);
+  });
+
+  // The store also holds the files of other threads by the same address. A conversion that did not
+  // land leaves the threads waiting on it to convert the picture themselves, and never hands them the
+  // file of another thread to show.
+  it('a conversion that does not land leaves the other thread to convert the picture, never to show another thread`s file', async () => {
+    const files = createFilesFake({ failByteWritesMatching: '_inline' });
+    const other = 'kb/Mailbox/threads/2026-05-01-other/_attachments';
+    const held = { [contentHash(new TextEncoder().encode('bytes sig'))]: { name: 'logo.png', paths: [`${other}/logo.png`], primary: `${other}/logo.png.md`, media: [] } };
+    const render = renderWith(files);
+
+    await Promise.all([render(input('conv-a', '<a@example.com>', held)), render(input('conv-b', '<b@example.com>', held))]);
+
+    expect([...files.written.values()].filter((text) => text.includes('2026-05-01-other'))).toStrictEqual([]);
   });
 
   // A conversion that throws is a bug, and it reaches the thread that asked for it. The other thread
