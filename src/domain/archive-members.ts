@@ -10,8 +10,7 @@ export type PlacedMember<T> = { readonly entry: T; readonly file: string };
 // archive's name. The archive is routed by its extension, so its name has one to cut.
 const sharedTopLength = (archiveName: string, paths: ReadonlyArray<string>): number => {
   const top = `${archiveName.slice(0, archiveName.lastIndexOf('.'))}/`.toLowerCase();
-  const inTop = (path: string): boolean => path.length > top.length && path.slice(0, top.length).toLowerCase() === top;
-  return paths.length > 0 && paths.every(inTop) ? top.length : 0;
+  return paths.every((path) => path.toLowerCase().startsWith(top)) ? top.length : 0;
 };
 
 // Where each member of an archive unpacked into `folder` lands: under its own folders, less the one
@@ -32,8 +31,6 @@ export const placeMembers = <T extends { readonly path: string }>(
 // A link and not a picture, its destination bare or in angle brackets. `[^[\]]` and `[^()]` rather
 // than open classes, so a run of brackets with no close fails at each one instead of rescanning.
 const LINK = /(?<!!)\[([^[\]]*)\]\((<[^<>]*>|[^()\s<>]*)\)/g;
-// A destination that names its own scheme leaves the archive: a site, a mail address.
-const SCHEME = /^[a-z][a-z0-9+.-]*:/i;
 // Where the path of a destination stops: its anchor or its query, which go along as they are.
 const SUFFIX = /[?#]/;
 
@@ -47,13 +44,11 @@ const decoded = (path: string): string => {
   }
 };
 
-// The member a destination names, by its path inside the archive, read from the folder of the member
-// that links to it; empty for a site, an anchor, a root path or a path out of the archive.
-const memberAt = (from: string, path: string): string => {
-  if (path.length === 0 || SCHEME.test(path) || path.startsWith('/')) return '';
-  const inside = normalize(`${dirname(from)}/${decoded(path)}`);
-  return inside.startsWith('../') ? '' : inside;
-};
+// The path inside the archive a destination names, read from the folder of the member that links to
+// it. A site, a mail address, an anchor or a path out of the archive names no member, so the lookup
+// finds nothing for it. A root path is left as it is: it names the root of a site, which need not be
+// the root of the archive.
+const memberAt = (from: string, path: string): string => (path.startsWith('/') ? '' : normalize(`${dirname(from)}/${decoded(path)}`));
 
 const relinked = (whole: string, label: string, written: string, from: string, files: ReadonlyMap<string, string>): string => {
   const destination = written.startsWith('<') ? written.slice(1, -1) : written;
