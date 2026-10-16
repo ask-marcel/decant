@@ -916,6 +916,29 @@ describe('linking a series and its exceptions', () => {
     expect(givenUp.reader.calls).not.toContain('event:x');
   });
 
+  // An event written again for its links alone has not changed, so the files it holds for its
+  // attachments are still its own: they are linked again, not listed and converted again.
+  it('a series written again for its links alone keeps its attachments without reading them again', async () => {
+    const carrying = { ...MASTER, hasAttachments: true };
+    const kept = `${ROOT}/2026-01-05/Monthly review.attachments/Agenda.docx.md`;
+    const state = withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', {
+      ...recorded(MASTER_NOTE, carrying, { exceptions: [] }),
+      outputs: [MASTER_NOTE, kept],
+    });
+    const done = await run({
+      reader: {
+        changes: [{ id: 'x', removed: false }],
+        events: { m: carrying, x: MARCH },
+        attachments: { m: [{ id: 'att-m', name: 'Agenda.docx', contentType: 'application/msword', size: 1024 }] },
+      },
+      files: seeded(state),
+    });
+
+    expect(done.reader.calls).not.toContain('attachments:m');
+    expect(done.files.written.get(MASTER_NOTE)).toContain('- [Agenda.docx](<Monthly review.attachments/Agenda.docx.md>)');
+    expect(stateOf(done.files).events['m']?.outputs).toStrictEqual([MASTER_NOTE, kept]);
+  });
+
   it('a series that began before the kept day is still written again to list a new exception', async () => {
     const state = withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [] }));
     const done = await run({ reader: { changes: [{ id: 'x', removed: false }], events: { m: MASTER, x: MARCH } }, files: seeded(state), since: '2026-02-01' });
