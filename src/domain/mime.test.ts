@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { readMime } from './mime.ts';
+import { byteString } from './mime-text.ts';
 
 const lines = (...parts: ReadonlyArray<string>): string => parts.join('\r\n');
 
@@ -186,5 +187,32 @@ describe('the files a saved email carried', () => {
 
   it('leave an empty stretch between two boundaries to be passed over', () => {
     expect(readMime(multipart([''], TEXT)).text).toBe('**Subject:** Carried\n\nthe body');
+  });
+});
+
+describe('a saved email in a charset of its own', () => {
+  const carrying = (charset: string, encoding: string, body: string): string =>
+    lines(
+      'Subject: Accents',
+      'Content-Type: multipart/mixed; boundary="B"',
+      '',
+      '--B',
+      `Content-Type: text/plain; charset="${charset}"`,
+      `Content-Transfer-Encoding: ${encoding}`,
+      '',
+      body,
+      '--B--'
+    );
+
+  it('is read in the charset its text names, whatever the encoding it travelled in', () => {
+    expect(readMime(carrying('iso-8859-1', '8bit', 'Caf\u00e9 \u00e9t\u00e9')).text).toBe('**Subject:** Accents\n\nCafé été');
+    expect(readMime(carrying('iso-8859-1', 'quoted-printable', 'Caf=E9 =E9t=E9')).text).toBe('**Subject:** Accents\n\nCafé été');
+    expect(readMime(byteString(new TextEncoder().encode(carrying('utf-8', '8bit', 'Café été')))).text).toBe('**Subject:** Accents\n\nCafé été');
+  });
+
+  it('names a file by an 8-bit name the way it reads', () => {
+    const raw = byteString(new TextEncoder().encode(multipart(['Content-Type: application/pdf; name="Pièce.pdf"', 'Content-Transfer-Encoding: base64', '', 'JVBERg=='])));
+
+    expect(readMime(raw).parts).toStrictEqual([{ name: 'Pièce.pdf', contentType: 'application/pdf', bytes: new TextEncoder().encode('%PDF') }]);
   });
 });
