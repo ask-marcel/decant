@@ -15,8 +15,7 @@ import { safeSegment } from '../domain/kb-path.ts';
 import { renderZipManifest } from '../domain/zip-manifest.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
-import type { SkipReason } from '../domain/report.ts';
-import { cutArchiveReason } from '../domain/report.ts';
+import type { ArchiveCut, SkipReason } from '../domain/report.ts';
 import type { ArchiveEntries } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
 import type { MailAttachment, MailReaderError, ThreadReader } from './ports/mail-reader.ts';
@@ -62,14 +61,14 @@ export type AttachmentOutcome =
   // `media` names the pictures taken out of a document, which are outputs like any other but are not
   // files the message carried: the document's own markdown links them, so a thread naming them again
   // would put twelve lines in its head for one Word file.
-  // `leftOut` says what the library left in an archive it read in part.
+  // `leftOut` says how much of an archive the library read when it read it in part.
   | {
       readonly kind: 'converted';
       readonly outputs: ReadonlyArray<string>;
       readonly primary: string;
       readonly media: ReadonlyArray<string>;
       readonly text?: string;
-      readonly leftOut?: string;
+      readonly leftOut?: ArchiveCut;
     }
   | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
@@ -327,7 +326,7 @@ const writeArchiveEntries = async (context: Context, folder: string, archivePath
   const manifestPath = `${context.input.folder}/${context.name}.md`;
   const manifest = await context.deps.files.writeText(manifestPath, renderZipManifest(context.name, entries, entries.totalEntries));
   if (!manifest.ok) return failure(manifest.error);
-  const leftOut = entries.totalEntries === undefined ? {} : { leftOut: cutArchiveReason(entries.length, entries.totalEntries) };
+  const leftOut = entries.totalEntries === undefined ? {} : { leftOut: { read: entries.length, total: entries.totalEntries } };
   return { kind: 'converted', outputs: [...outputs, manifestPath], primary: manifestPath, media: [], ...leftOut };
 };
 

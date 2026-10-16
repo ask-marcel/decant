@@ -33,8 +33,8 @@ import { forgetSwept, givenUp, nextFailure } from '../domain/retry-policy.ts';
 import type { RetryEntry } from '../domain/retry-policy.ts';
 import { latestById, widens } from '../domain/sync-window.ts';
 import { buildWorklist, goneFromListing } from '../domain/worklist.ts';
-import type { ReportEntry, ReportNotes, ReportRun } from '../domain/report.ts';
-import { appendReportRun, hasSomethingToReport, skipReason } from '../domain/report.ts';
+import type { ArchiveCut, ReportEntry, ReportNotes, ReportRun } from '../domain/report.ts';
+import { appendReportRun, cutArchiveEntry, hasSomethingToReport, skipReason } from '../domain/report.ts';
 import type { ManifestEntry, WorkItem } from '../domain/worklist.ts';
 import type { RunSummary } from '../domain/run-summary.ts';
 import type { ConvertFile } from './convert-file.ts';
@@ -586,8 +586,8 @@ const convertOne = async (deps: SyncSiteDeps, input: ResolvedInput, drive: Drive
 
 // A document that landed whole, or an archive the library read in part: counted as left out as well,
 // with what it left in the archive, and not tried again, since no run would read more of it.
-const landed = (update: (manifest: DriveState) => DriveState, item: DriveItem, leftOut: string | undefined): WorkOutcome =>
-  leftOut === undefined ? { update, counted: { converted: 1 } } : { update, counted: { converted: 1, skipped: 1 }, notes: { skipped: [{ path: item.path, reason: leftOut }] } };
+const landed = (update: (manifest: DriveState) => DriveState, item: DriveItem, leftOut: ArchiveCut | undefined): WorkOutcome =>
+  leftOut === undefined ? { update, counted: { converted: 1 } } : { update, counted: { converted: 1, skipped: 1 }, notes: { skipped: [cutArchiveEntry(item.path, leftOut)] } };
 
 // A document that landed without a part of it, its pictures or its slides: recorded at what it wrote,
 // counted as failed as well, and tried again on the next run for the rest, three times in all, as one

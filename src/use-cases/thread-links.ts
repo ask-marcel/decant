@@ -5,8 +5,8 @@ import { renderLinkCard } from '../domain/link-card.ts';
 import { namesHeldIn, underName } from '../domain/mail-state.ts';
 import type { LinkedRecord } from '../domain/mail-state.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
-import type { ReportEntry } from '../domain/report.ts';
-import { skipReason } from '../domain/report.ts';
+import type { ArchiveCut, ReportEntry } from '../domain/report.ts';
+import { cutArchiveEntry, skipReason } from '../domain/report.ts';
 import { contentHash } from '../domain/content-hash.ts';
 import { fitSegment, safeSegment, sameIgnoringCase } from '../domain/kb-path.ts';
 import { linkDestination } from '../domain/markdown-link.ts';
@@ -55,6 +55,8 @@ type Pulled = {
   readonly modifiedBy?: string;
   readonly skipped?: ReportEntry;
   readonly failed?: ReportEntry;
+  // The files a zip the library read in part kept back, which only the report names: the zip was read.
+  readonly leftOut?: ReportEntry;
   // The version of the document whose files this write holds, pulled now or kept from the write before.
   readonly version?: string;
   // Kept as the write before left it: the source has the version the thread pulled then.
@@ -206,6 +208,7 @@ const followLink = async (deps: LinkDeps, following: Following, message: MailMes
   following.names[key] = asName;
   const pulled = await pulledOnce(deps, following, link, key, asName);
   if (pulled.skipped !== undefined) following.skipped.push(pulled.skipped);
+  if (pulled.leftOut !== undefined) following.skipped.push(pulled.leftOut);
   if (pulled.failed !== undefined) following.failed.push(pulled.failed);
   const kept = pulled.failed !== undefined && following.recorded[key] !== undefined;
   if (kept) addAll(following.unread, [`${following.here}/${LINKED_FOLDER}/${asName}`]);
@@ -324,12 +327,13 @@ const carriedNote = (file: AttachedCopy): string => {
   return `It is the same file as one a message of this thread carried, so it is not kept twice: [${file.name}](${card}).`;
 };
 
+// What the library left in an archive it read in part, named for the report by the file's name.
+const leftOutOf = (name: string, leftOut: ArchiveCut | undefined): Pick<Pulled, 'leftOut'> => (leftOut === undefined ? {} : { leftOut: cutArchiveEntry(name, leftOut) });
+
 // The same route a file found by walking a library takes. A linked document is read for its own
 // metadata first, because the name in the link cannot say which version it is, how big it is, or what
 // kind of thing it is: the version decides whether a thread that holds it pulls it again, the size
 // whether it is pulled at all, and the kind whether a deck also renders a PDF beside its text.
-// What the library left in an archive it read in part, named for the report by the file's name.
-const leftOutOf = (name: string, leftOut: string | undefined): Pick<Pulled, 'skipped'> => (leftOut === undefined ? {} : { skipped: { path: name, reason: leftOut } });
 
 const pullLinked = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, asName: string, held: HeldDocument | undefined): Promise<Pulled> => {
   const { here, maxBytes } = place;

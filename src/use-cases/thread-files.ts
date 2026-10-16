@@ -9,7 +9,7 @@ import { isOpaqueName } from '../domain/opaque-name.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import type { ReportEntry } from '../domain/report.ts';
-import { skipReason, tooLargeReason } from '../domain/report.ts';
+import { cutArchiveEntry, skipReason, tooLargeReason } from '../domain/report.ts';
 import { freeName } from '../domain/thread-card.ts';
 import type { MailMessage } from '../domain/mail-message.ts';
 import type { ThreadPart } from '../domain/thread.ts';
@@ -103,6 +103,9 @@ type Placed = {
   readonly media?: Media;
   readonly skipped?: ReportEntry;
   readonly failed?: ReportEntry;
+  // The files a zip the library read in part kept back. The zip itself was read, so it keeps its card
+  // and its line, and only the report names these.
+  readonly leftOut?: ReportEntry;
   readonly kept?: boolean;
   // What the card says of a file that is neither left out nor failed, a share link.
   readonly note?: string;
@@ -296,7 +299,7 @@ const convertFresh = async (deps: FileDeps, place: FilePlace, into: Record<strin
   if (outcome.kind === 'failed') return { asName, paths: [], failed: { path: sentAs, reason: outcome.reason } };
   into[hash] = { name: storedAs, paths: outcome.outputs, primary: outcome.primary, media: outcome.media, text: outcome.text };
   // An archive the library read in part lands, and what it left in the archive goes to the report.
-  const leftOut = outcome.leftOut === undefined ? {} : { skipped: { path: sentAs, reason: outcome.leftOut } };
+  const leftOut = outcome.leftOut === undefined ? {} : { leftOut: cutArchiveEntry(sentAs, outcome.leftOut) };
   return {
     asName: storedAs,
     paths: outcome.outputs,
@@ -357,6 +360,13 @@ type Tally = {
   readonly unread: string[];
 };
 
+// What a placed file adds to the report: a file left out, the files a zip kept back, a failure.
+const tallyReport = (tally: Tally, placed: Placed): void => {
+  if (placed.skipped) tally.skipped.push(placed.skipped);
+  if (placed.leftOut) tally.skipped.push(placed.leftOut);
+  if (placed.failed) tally.failed.push(placed.failed);
+};
+
 // One file a message carried, placed and added up; nothing for a file left out whole.
 const placeCarried = async (deps: FileDeps, place: FilePlace, placing: Placing, carrying: Carrying, stamp: DocumentStamp, tally: Tally): Promise<MessageFile | undefined> => {
   const { attachment, arrival } = carrying;
@@ -371,8 +381,7 @@ const placeCarried = async (deps: FileDeps, place: FilePlace, placing: Placing, 
   // gone wrong at all. It keeps its place in `taken`, so the numbering of what follows does not
   // shift with a decision about what to show.
   if (placed.skipped !== undefined && isOpaqueName(attachment.name)) return undefined;
-  if (placed.skipped) tally.skipped.push(placed.skipped);
-  if (placed.failed) tally.failed.push(placed.failed);
+  tallyReport(tally, placed);
   addAll(tally.media, placed.media ?? []);
   if (!isInlinePicture(attachment)) tally.names[arrival] = placed.asName;
   if (placed.kept === true) tally.unread.push(`${place.here}/${ATTACHMENTS_FOLDER}/${placed.asName}`);

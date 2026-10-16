@@ -530,7 +530,7 @@ describe('converting one document out of a library', () => {
     const entries = Object.assign([{ path: 'notes.docx', text: '# Notes' }], { totalEntries: 150 });
     const { outcome } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: entries } });
 
-    expect(outcome).toMatchObject({ kind: 'converted', leftOut: '149 of its 150 files stay in the archive: the converter read the first 1' });
+    expect(outcome).toMatchObject({ kind: 'converted', leftOut: { read: 1, total: 150 } });
   });
 
   it('a file inside an archive records where it sat in the archive', async () => {

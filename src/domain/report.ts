@@ -44,6 +44,16 @@ export const PROTECTED_REASON = 'locked with a password, so nothing could be rea
 // more, so the archive is said once, with what it left, rather than tried again.
 export const cutArchiveReason = (read: number, total: number): string => `${total - read} of its ${total} files stay in the archive: the converter read the first ${read}`;
 
+// How much of an archive the library read: the first `read` of its `total` files.
+export type ArchiveCut = { readonly read: number; readonly total: number };
+
+// The report line of such an archive, in the list of what was left in place with nothing written. It
+// names the files that stay in the archive, and not the archive, whose first files were written.
+export const cutArchiveEntry = (path: string, cut: ArchiveCut): ReportEntry => ({
+  path: `${path}, files ${cut.read + 1} to ${cut.total}`,
+  reason: `the converter reads the first ${cut.read} files of an archive`,
+});
+
 export const LOCK_FILE_REASON = 'a file Office leaves beside a document while it is open, holding no content of its own';
 
 export const tooLargeReason = (maxBytes: number): string => `larger than the ${Math.round(maxBytes / 1024 / 1024)} MB cap`;
