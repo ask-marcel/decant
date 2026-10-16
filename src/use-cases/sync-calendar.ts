@@ -1,5 +1,6 @@
+import { relative as pathBetween } from 'node:path/posix';
 import { renderEventAttachment, renderEventDocument } from '../domain/calendar-document.ts';
-import type { EventAttachmentLink } from '../domain/calendar-document.ts';
+import type { EventAttachmentLink, RenderEventInput } from '../domain/calendar-document.ts';
 import type { CalendarEvent, EventChange } from '../domain/calendar-event.ts';
 import {
   CALENDAR_ID,
@@ -9,11 +10,13 @@ import {
   eventFileFor,
   parseCalendarState,
   serializeCalendarState,
+  seriesLinksOf,
+  staleSeriesLinks,
   withCursor,
   withEvent,
   withoutEvent,
 } from '../domain/calendar-state.ts';
-import type { CalendarState, EventRecord } from '../domain/calendar-state.ts';
+import type { CalendarState, EventRecord, SeriesLinks } from '../domain/calendar-state.ts';
 import { fitSegment, freeSegment, holdsIgnoringCase, safeSegment } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
@@ -189,6 +192,8 @@ const attachmentsOf = async (deps: SyncCalendarDeps, event: CalendarEvent, file:
 
 type Planned = { readonly event: CalendarEvent; readonly file: string };
 
+const RELINK_NONE: ReadonlySet<string> = new Set();
+
 // An event that landed with an attachment that failed is written again on the next run, three runs in
 // all, as one that failed whole is: named as failed until it is out of tries, then once as given up.
 type Owing = { readonly retry: (ledger: Attempts | undefined) => Attempts | undefined; readonly failed: ReadonlyArray<ReportEntry> };
@@ -200,11 +205,37 @@ const owingFor = (state: CalendarState, event: CalendarEvent, failed: ReadonlyAr
   return { retry: (ledger) => recordAttempt(ledger, event.id, attempt), failed: isGivenUp(attempt, event.lastModified) ? [] : failed };
 };
 
+// The folder a note sits in, which is named for the day it is filed under.
+const folderOf = (file: string): string => file.slice(0, file.lastIndexOf('/'));
+
+const dayOfNote = (file: string): string => folderOf(file).slice(folderOf(file).lastIndexOf('/') + 1);
+
+// The other notes of its series an event's note links to, from its own folder: an exception the note
+// of its series, by the series' subject, and a series those of its exceptions, by day and subject.
+const seriesNotes = (state: CalendarState, file: string, links: SeriesLinks): Pick<RenderEventInput, 'series' | 'exceptions'> => {
+  const subjectOf = (note: string): string => Object.values(state.events).find((record) => record.file === note)?.subject ?? '';
+  const from = folderOf(file);
+  return {
+    ...(links.linked === undefined ? {} : { series: { name: subjectOf(links.linked), file: pathBetween(from, links.linked) } }),
+    exceptions: links.exceptions.map((note) => ({ name: `${dayOfNote(note)} ${subjectOf(note)}`, file: pathBetween(from, note) })),
+  };
+};
+
+// What the note says of its series, kept on the record so a later run can tell when the state has
+// moved on from it. An event of no series keeps nothing.
+const seriesNoteFor = (event: CalendarEvent, links: SeriesLinks): Pick<EventRecord, 'series'> => {
+  if (event.kind === 'seriesMaster') return { series: { exceptions: links.exceptions } };
+  if (event.seriesMasterId === undefined) return {};
+  return { series: { master: event.seriesMasterId, ...(links.linked === undefined ? {} : { linked: links.linked }) } };
+};
+
 const writeOne = async (deps: SyncCalendarDeps, state: CalendarState, planned: Planned): Promise<Done> => {
   const { event, file } = planned;
   const before = state.events[event.id];
   const attached = await attachmentsOf(deps, event, file, before);
-  const written = await deps.files.writeText(file, renderEventDocument({ event, zone: deps.timezone, attachments: attached.links, syncedAt: deps.clock.nowIso() }));
+  const links = seriesLinksOf(state, event.id, event.seriesMasterId);
+  const document = renderEventDocument({ event, zone: deps.timezone, attachments: attached.links, syncedAt: deps.clock.nowIso(), ...seriesNotes(state, file, links) });
+  const written = await deps.files.writeText(file, document);
   if (!written.ok) {
     deps.logger.warn('event.failed', { event: event.id, cause: written.error.kind });
     const attempt = nextAttempt(state.retry?.[event.id], event.lastModified, event.id, written.error.message);
@@ -218,7 +249,14 @@ const writeOne = async (deps: SyncCalendarDeps, state: CalendarState, planned: P
   }
   const outputs = [file, ...attached.outputs];
   await archiveSuperseded(deps, before, outputs);
-  const record: EventRecord = { file, lastModified: event.lastModified, subject: event.subject, outputs, ...(attached.failed.length > 0 ? { owed: true } : {}) };
+  const record: EventRecord = {
+    file,
+    lastModified: event.lastModified,
+    subject: event.subject,
+    outputs,
+    ...(attached.failed.length > 0 ? { owed: true } : {}),
+    ...seriesNoteFor(event, links),
+  };
   const owing = owingFor(state, event, attached.failed);
   return {
     apply: (carried) => ({ ...withEvent(carried, event.id, record), retry: owing.retry(carried.retry) }),
@@ -240,11 +278,18 @@ const fetchOne = async (deps: SyncCalendarDeps, id: string): Promise<Fetched> =>
 // ledger already holds it at the same `lastModifiedDateTime`, which is what a delta re-read after
 // a stopped run answers for everything that already landed, unless its record says an attachment
 // failed at that version. The debt lives on the record: an entry in the retry ledger can be one that
-// a run that could not fetch the event put there, which says nothing of an attachment.
-const wanted = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: CalendarState, event: CalendarEvent): boolean =>
-  inReach(deps, input, event) &&
-  (state.events[event.id]?.lastModified !== event.lastModified || state.events[event.id]?.owed === true) &&
-  !isGivenUp(state.retry?.[event.id], event.lastModified);
+// a run that could not fetch the event put there, which says nothing of an attachment. An event whose
+// note links to what the state no longer holds is written again (`relink`), and so is one of a series
+// written before notes linked their series, when a read fetches it.
+const wanted = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: CalendarState, event: CalendarEvent, relink: ReadonlySet<string>): boolean =>
+  inReach(deps, input, event) && (changedSince(state, event) || relink.has(event.id) || unlinked(state, event)) && !isGivenUp(state.retry?.[event.id], event.lastModified);
+
+const changedSince = (state: CalendarState, event: CalendarEvent): boolean => state.events[event.id]?.lastModified !== event.lastModified || state.events[event.id]?.owed === true;
+
+const unlinked = (state: CalendarState, event: CalendarEvent): boolean => {
+  const record = state.events[event.id];
+  return record !== undefined && record.series === undefined && (event.kind === 'seriesMaster' || event.seriesMasterId !== undefined);
+};
 
 // A recurring series is kept whatever day it began: Outlook holds it as one event starting on its
 // first occurrence, and a meeting that began before the day may be running still.
@@ -261,11 +306,17 @@ const heldByOthers = (state: CalendarState, id: string): ReadonlyArray<string> =
 
 // Paths settled one event at a time, in order, before the window's writes run side by side: two
 // events sharing a subject and a day must not both be handed the same file.
-const planWindow = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: CalendarState, fetched: ReadonlyArray<Fetched>): ReadonlyArray<Planned> => {
+const planWindow = (
+  deps: SyncCalendarDeps,
+  input: SyncCalendarInput,
+  state: CalendarState,
+  fetched: ReadonlyArray<Fetched>,
+  relink: ReadonlySet<string>
+): ReadonlyArray<Planned> => {
   const handedOut = new Set<string>();
   const planned: Planned[] = [];
   for (const entry of fetched) {
-    if (entry.event === undefined || !wanted(deps, input, state, entry.event)) continue;
+    if (entry.event === undefined || !wanted(deps, input, state, entry.event, relink)) continue;
     const taken = new Set([...heldByOthers(state, entry.event.id), ...handedOut]);
     const file = eventFileFor(calendarRoot(deps.kbRoot), entry.event, deps.timezone, taken, state.events[entry.event.id]?.file, deps.pathBudget);
     handedOut.add(file);
@@ -327,9 +378,15 @@ const shownAs = (entry: Fetched): string => {
   return entry.event.subject.length > 0 ? entry.event.subject : '(no subject)';
 };
 
-const writeWindow = async (deps: SyncCalendarDeps, input: SyncCalendarInput, carried: Progressing, ids: ReadonlyArray<string>): Promise<ReadonlyArray<Done>> => {
+const writeWindow = async (
+  deps: SyncCalendarDeps,
+  input: SyncCalendarInput,
+  carried: Progressing,
+  ids: ReadonlyArray<string>,
+  relink: ReadonlySet<string>
+): Promise<ReadonlyArray<Done>> => {
   const fetched = await Promise.all(ids.map((id) => fetchOne(deps, id)));
-  const planned = planWindow(deps, input, carried.state, fetched);
+  const planned = planWindow(deps, input, carried.state, fetched, relink);
   const written = await Promise.all(planned.map((entry) => writeOne(deps, carried.state, entry)));
   for (const entry of fetched) deps.progress.step(shownAs(entry));
   return [unread(carried.state, fetched), ...written];
@@ -337,15 +394,31 @@ const writeWindow = async (deps: SyncCalendarDeps, input: SyncCalendarInput, car
 
 // Saved once per window that changed the ledger, so a stopped run resumes without rewriting what
 // landed; a window that fetched and found nothing to write leaves the file alone.
-const writeChanged = async (deps: SyncCalendarDeps, input: SyncCalendarInput, carried: Progressing, ids: ReadonlyArray<string>): Promise<Result<Progressing, StepError>> => {
+const writeChanged = async (
+  deps: SyncCalendarDeps,
+  input: SyncCalendarInput,
+  carried: Progressing,
+  ids: ReadonlyArray<string>,
+  relink: ReadonlySet<string>
+): Promise<Result<Progressing, StepError>> => {
   let progressing = carried;
   for (let at = 0; at < ids.length; at += input.concurrency) {
-    const next = fold(progressing, await writeWindow(deps, input, progressing, ids.slice(at, at + input.concurrency)));
+    const next = fold(progressing, await writeWindow(deps, input, progressing, ids.slice(at, at + input.concurrency), relink));
     const saved = next.state === progressing.state ? ok(undefined) : await save(deps, next.state);
     if (!saved.ok) return saved;
     progressing = next;
   }
   return ok(progressing);
+};
+
+// The notes the state moved on from in this run: a series that gained or lost an exception, and an
+// exception whose series was written after it. Each is read again and written with its links in the
+// same run, so no note links to what the state no longer holds.
+const relinked = async (deps: SyncCalendarDeps, input: SyncCalendarInput, carried: Progressing): Promise<Result<Progressing, StepError>> => {
+  const stale = staleSeriesLinks(carried.state);
+  if (stale.length === 0) return ok(carried);
+  deps.progress.start(stale.length, CALENDAR_NAME);
+  return writeChanged(deps, input, carried, stale, new Set(stale));
 };
 
 // The cursor moves only once everything the delta reported has landed: an event that could not be
@@ -401,8 +474,9 @@ export const createSyncCalendar =
     deps.logger.info('calendar.delta', { changed: ids.length, removed: delta.value.changes.length - ids.length });
     const gone = await Promise.all(delta.value.changes.filter((change) => change.removed).map((change) => archiveGone(deps, state, change.id)));
     deps.progress.start(ids.length, CALENDAR_NAME);
-    const written = await writeChanged(deps, input, fold({ summary: EMPTY, notes: NO_NOTES, state }, gone), ids);
+    const written = await writeChanged(deps, input, fold({ summary: EMPTY, notes: NO_NOTES, state }, gone), ids, RELINK_NONE);
+    const linked = written.ok ? await relinked(deps, input, written.value) : written;
     deps.progress.done();
-    if (!written.ok) return written;
-    return finish(deps, input, state, written.value, delta.value.deltaLink);
+    if (!linked.ok) return linked;
+    return finish(deps, input, state, linked.value, delta.value.deltaLink);
   };
