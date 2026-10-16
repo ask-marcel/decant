@@ -93,6 +93,11 @@ describe('writing one calendar event as a document', () => {
     expect(bare).not.toContain('## Attachments');
     expect(bare.endsWith('# Offsite planning\n')).toBe(true);
   });
+
+  // A reference past Unicode in one body threw, and the calendar run stopped with it.
+  it('an event whose body holds a character reference past Unicode is written, the reference read as the replacement character', () => {
+    expect(rendered({ ...event, body: '<p>Room &#x110000;4</p>' })).toContain('Room \uFFFD4');
+  });
 });
 
 describe('writing what an event carried as a document of its own', () => {
