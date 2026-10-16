@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { decodeBytes, decodeHeader, decodeText, unfold } from './mime-text.ts';
+import { byteString, decodeBytes, decodeHeader, decodeText, unfold } from './mime-text.ts';
 
 describe('a header written across more lines than one', () => {
   it('continued after a space, joins the line before it', () => {
@@ -72,5 +72,46 @@ describe('the encoding a transport wrapped a body in', () => {
 
   it('text whose base64 is broken keeps the text as it stands rather than losing it', () => {
     expect(decodeText('!!!not base64!!!', 'base64')).toBe('!!!not base64!!!');
+  });
+});
+
+// A saved email is read as the bytes it holds, one character each, and each text in it is decoded in
+// the charset it names: decoded as UTF-8 first, Latin-1 text and 8-bit UTF-8 both came out wrong.
+describe('text in the charset a message names', () => {
+  const utf8 = (text: string): string => byteString(new TextEncoder().encode(text));
+
+  it('the bytes of a message are read one character each, and come back as the same bytes', () => {
+    const every = Uint8Array.from({ length: 256 }, (_, at) => at);
+
+    expect(decodeBytes(byteString(every), '8bit')).toStrictEqual(every);
+  });
+
+  it('a text in a charset other than UTF-8 is read in that charset, sent 8-bit or quoted-printable', () => {
+    expect(decodeText('Caf\u00e9 \u00e9t\u00e9', '8bit', 'iso-8859-1')).toBe('Café été');
+    expect(decodeText('Caf=E9', 'quoted-printable', 'windows-1252')).toBe('Café');
+    expect(decodeText('\u0092\u00a9\u008a\u00e7', '8bit', 'shift_jis')).toBe('朝顔');
+  });
+
+  it('a text sent 8-bit in UTF-8 is read as UTF-8', () => {
+    expect(decodeText(utf8('Café été'), '8bit', 'utf-8')).toBe('Café été');
+    expect(decodeText(utf8('Café été'), '8bit')).toBe('Café été');
+  });
+
+  it('a charset this runtime cannot decode, or none, is read as UTF-8 when the bytes are UTF-8, and as Windows-1252 when not', () => {
+    expect(decodeText(utf8('Café'), '8bit', 'x-unknown')).toBe('Café');
+    expect(decodeText('Caf\u00e9', '8bit', 'iso-8859-2')).toBe('Café');
+    expect(decodeText('Caf\u00e9', '8bit')).toBe('Café');
+    expect(decodeText('Caf\u00e9', '8bit', 'us-ascii')).toBe('Café');
+    expect(decodeText('Caf\u00e9', '8bit', 'utf-8')).toBe('Café');
+  });
+
+  it('an encoded word is read in the charset it names, a language after the charset aside', () => {
+    expect(decodeHeader('=?iso-8859-1?Q?Caf=E9?=')).toBe('Café');
+    expect(decodeHeader('=?ISO-8859-1*fr?Q?=E9t=E9?=')).toBe('été');
+  });
+
+  it('a header written in 8-bit text is read as the text it holds', () => {
+    expect(decodeHeader(utf8('Pièce jointe.pdf'))).toBe('Pièce jointe.pdf');
+    expect(decodeHeader('Pi\u00e8ce jointe.pdf')).toBe('Pièce jointe.pdf');
   });
 });

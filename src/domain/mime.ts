@@ -6,10 +6,19 @@ import { HEADER_BREAK, decodeBytes, decodeHeader, decodeText, unfold } from './m
 
 type Headers = ReadonlyArray<string>;
 
-const headerOf = (headers: Headers, name: string): string | undefined => {
+// A header as the message holds it, decoded once: a parameter is taken out of the raw value and
+// decoded alone, since text decoded twice comes out wrong.
+const rawHeaderOf = (headers: Headers, name: string): string | undefined => {
   const prefix = `${name.toLowerCase()}:`;
-  const found = headers.find((line) => line.toLowerCase().startsWith(prefix));
-  return found === undefined ? undefined : decodeHeader(found.slice(prefix.length).trim());
+  return headers
+    .find((line) => line.toLowerCase().startsWith(prefix))
+    ?.slice(prefix.length)
+    .trim();
+};
+
+const headerOf = (headers: Headers, name: string): string | undefined => {
+  const raw = rawHeaderOf(headers, name);
+  return raw === undefined ? undefined : decodeHeader(raw);
 };
 
 // A parameter of a header, quoted or bare. One pattern per parameter rather than one built from a
@@ -17,6 +26,7 @@ const headerOf = (headers: Headers, name: string): string | undefined => {
 const BOUNDARY = /boundary\s*=\s*("[^"]*"|[^;\s]+)/i;
 const FILENAME = /filename\s*=\s*("[^"]*"|[^;\s]+)/i;
 const NAME = /\bname\s*=\s*("[^"]*"|[^;\s]+)/i;
+const CHARSET = /charset\s*=\s*("[^"]*"|[^;\s]+)/i;
 
 const parameterOf = (header: string, pattern: RegExp): string | undefined => {
   const [value] = pattern.exec(header)?.slice(1, 2) ?? [];
@@ -46,7 +56,7 @@ const splitParts = (body: string, boundary: string): ReadonlyArray<string> =>
     .map((part) => part.replace(/^\r?\n/, ''))
     .filter((part) => part.trim().length > 0);
 
-const contentTypeOf = (headers: Headers): string => headerOf(headers, 'content-type') ?? 'text/plain';
+const contentTypeOf = (headers: Headers): string => rawHeaderOf(headers, 'content-type') ?? 'text/plain';
 
 const kindOf = (headers: Headers): string => (contentTypeOf(headers).split(';')[0] ?? '').trim().toLowerCase();
 
@@ -57,7 +67,7 @@ const EXTENSION_BY_KIND: Readonly<Partial<Record<string, string>>> = { 'applicat
 // A part the message never named still has to land under something, and the kind is the only thing
 // left to name it by.
 const nameOf = (headers: Headers, at: number): string => {
-  const named = parameterOf(headerOf(headers, 'content-disposition') ?? '', FILENAME) ?? parameterOf(contentTypeOf(headers), NAME);
+  const named = parameterOf(rawHeaderOf(headers, 'content-disposition') ?? '', FILENAME) ?? parameterOf(contentTypeOf(headers), NAME);
   return named ?? `part-${at}.${EXTENSION_BY_KIND[kindOf(headers)] ?? 'bin'}`;
 };
 
@@ -66,7 +76,8 @@ type Gathered = { readonly text: ReadonlyArray<string>; readonly parts: Readonly
 const gather = (section: Section, at: number): Gathered => {
   const boundary = parameterOf(contentTypeOf(section.headers), BOUNDARY);
   if (boundary !== undefined) return gatherParts(splitParts(section.body, boundary));
-  if (kindOf(section.headers).startsWith('text/')) return { text: [decodeText(section.body, encodingOf(section.headers))], parts: [] };
+  if (kindOf(section.headers).startsWith('text/'))
+    return { text: [decodeText(section.body, encodingOf(section.headers), parameterOf(contentTypeOf(section.headers), CHARSET))], parts: [] };
   const bytes = decodeBytes(section.body, encodingOf(section.headers));
   return { text: [], parts: bytes === undefined || bytes.length === 0 ? [] : [{ name: nameOf(section.headers, at), contentType: kindOf(section.headers), bytes }] };
 };
