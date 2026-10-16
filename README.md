@@ -708,18 +708,20 @@ Times are in the zone of the knowledge base, and the `timezone:` line names that
 zone). An all-day event shows days, not times. The body is the invitation's text with the markup gone.
 
 In calendar notes and mail threads, decant removes the block that Teams, Zoom and Google Meet put in
-an invitation. This block holds the meeting link, the `Meeting ID`, the passcode, the dial-in numbers
-and the help links. Graph gives the meeting link of a Teams or Skype meeting, and the calendar note
-keeps that link in `online_meeting:`. For other meetings, and in a mail thread, one line
-`Online meeting: <link>` replaces the block.
+an invitation. This block contains the meeting link, the `Meeting ID`, the passcode, the dial-in
+numbers and the help links. Graph gives the meeting link of a Teams or Skype meeting, and the
+calendar note keeps that link in `online_meeting:`. One line `Online meeting: <link>` replaces each
+block with a different link, and each block in a mail thread.
 
-decant removes only the blocks that it knows. A Teams or Meet block starts and ends with the same
-line of `_` or of `-::~:~::`. It holds a meeting link or a line that starts with `Meeting ID:` or
-`Conference ID:`. A Zoom block starts at `Join Zoom Meeting`. It ends at the line
-`Find your local number`, or at the end of the SIP, H.323 and Skype parts after that line.
+decant removes only the blocks that it knows. A Teams or Meet block has the same line of `_` or of
+`-::~:~::` at its start and at its end. This line has 40 characters or more. The block contains a
+meeting link or a line that starts with `Meeting ID:` or `Conference ID:`. A Zoom block starts at
+`Join Zoom Meeting`. It stops at the line `Find your local number`, or at the end of the SIP, H.323
+and Skype parts after that line.
 
-If the line `Online meeting: <link>` must replace a block, and decant finds no meeting link in the
-block, the block stays. A passcode that is not in such a block stays.
+decant looks for the end of a block in the 200 lines after its start. If the line
+`Online meeting: <link>` must replace a block, and decant finds no meeting link in the block, the
+block stays. A passcode that is not in such a block stays.
 
 In the body, the text of each link stays on one line, and a link with no text shows its address.
 decant removes the Outlook wrapper from each link, as it does in mail. A picture in the invitation
