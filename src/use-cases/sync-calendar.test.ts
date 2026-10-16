@@ -881,17 +881,38 @@ describe('linking a series and its exceptions', () => {
     expect(stateOf(done.files)).toMatchObject({ retry: { m: { attempts: 1 } } });
   });
 
-  // Only a try this run made holds a note back: one an earlier run gave up on may read now.
-  it('a series earlier runs gave up reading is still read again for its links', async () => {
+  // No run tries a given-up event again until its source changes and the delta names it, and the relink
+  // does not either, whether its reads or its writes were given up on.
+  it('a series given up on reads is not read again for its links', async () => {
     const tries = { attempts: 3, version: 'unread', name: 'm', reason: 'no such event: m' };
     const state = { ...withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [] })), retry: { m: tries } };
     const done = await run({ reader: { changes: [{ id: 'x', removed: false }], events: { m: MASTER, x: MARCH } }, files: seeded(state) });
 
+    expect(done.reader.calls).not.toContain('event:m');
+  });
+
+  // A try an earlier run made, which the main pass cleared by reading the event again, holds nothing back.
+  it('a series whose read failed in an earlier run, and works in this one, is written again for its links', async () => {
+    const tries = { attempts: 1, version: 'unread', name: 'm', reason: 'Graph is busy' };
+    const state = { ...withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [] })), retry: { m: tries } };
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'm', removed: false },
+          { id: 'x', removed: false },
+        ],
+        events: { m: MASTER, x: MARCH },
+      },
+      files: seeded(state),
+      concurrency: 1,
+    });
+
     expect(done.files.written.get(MASTER_NOTE)).toContain('- [2026-03-02 Monthly review](<../2026-03-02/Monthly review.md>)');
   });
 
-  // A run writes neither an exception before the kept day nor an event given up on at the version it
-  // holds, so reading one again for its links would read it on every run and write nothing.
+  // A run writes neither an exception before the kept day nor an event given up on, at any version, so
+  // reading one again for its links would read it on every run and write nothing. The kept day itself
+  // is in reach.
   it('an exception before the kept day, or given up on, is not read again when its series moves', async () => {
     const state = withEvent(
       withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'm', recorded(MASTER_NOTE, MASTER, { exceptions: [MARCH_NOTE] })),
@@ -901,13 +922,48 @@ describe('linking a series and its exceptions', () => {
     const renamed = { ...MASTER, subject: 'Monthly sync', lastModified: '2026-04-02T00:00:00Z' };
     const reader = { changes: [{ id: 'm', removed: false }], events: { m: renamed, x: MARCH } };
     const tries = { attempts: 3, version: MARCH.lastModified, name: 'Monthly review', reason: 'disk full' };
+    const edited = { ...MARCH, lastModified: '2026-03-05T00:00:00Z' };
     const early = await run({ reader, files: seeded(state), since: '2026-04-01' });
+    const onTheDay = await run({ reader, files: seeded(state), since: '2026-03-02' });
     const givenUp = await run({ reader, files: seeded({ ...state, retry: { x: tries } }) });
+    const givenUpLater = await run({
+      reader: { ...reader, events: { m: renamed, x: edited } },
+      files: seeded({ ...state, retry: { x: { ...tries, version: edited.lastModified } } }),
+    });
 
     expect(early.files.written.has(`${ROOT}/2026-01-05/Monthly sync.md`)).toBe(true);
     expect(early.reader.calls).not.toContain('event:x');
+    expect(onTheDay.reader.calls).toContain('event:x');
     expect(givenUp.files.written.has(`${ROOT}/2026-01-05/Monthly sync.md`)).toBe(true);
     expect(givenUp.reader.calls).not.toContain('event:x');
+    expect(givenUpLater.reader.calls).not.toContain('event:x');
+  });
+
+  // A namesake gone from the series' day frees its plain name, so the relink moves its note, and the
+  // files for its attachments are read again into the folder beside the new note.
+  it('a series whose note moves when a namesake goes reads its attachments again beside the new note', async () => {
+    const carrying = { ...MASTER, hasAttachments: true };
+    const NAMESAKE = event('n', 'Monthly review', '2026-01-05T15:00:00Z');
+    const suffixed = `${ROOT}/2026-01-05/${freeSegment('Monthly review.md', 'm', (name) => name === 'Monthly review.md')}`;
+    const kept = `${suffixed.slice(0, -'.md'.length)}.attachments/Agenda.docx.md`;
+    const state = withEvent(withEvent(withCursor(emptyCalendarState(), 'https://graph/delta?token=1'), 'n', recorded(MASTER_NOTE, NAMESAKE)), 'm', {
+      ...recorded(suffixed, carrying, { exceptions: [] }),
+      outputs: [suffixed, kept],
+    });
+    const done = await run({
+      reader: {
+        changes: [
+          { id: 'n', removed: true },
+          { id: 'x', removed: false },
+        ],
+        events: { m: carrying, x: MARCH },
+        attachments: { m: [{ id: 'att-m', name: 'Agenda.docx', contentType: 'application/msword', size: 1024 }] },
+      },
+      files: seeded(state),
+    });
+
+    expect(done.reader.calls).toContain('attachments:m');
+    expect(done.files.written.get(MASTER_NOTE)).toContain('- [Agenda.docx](<Monthly review.attachments/Agenda.docx.md>)');
   });
 
   // An event written again for its links alone has not changed, so the files it holds for its
