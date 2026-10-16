@@ -34,13 +34,14 @@ const LINK = /(?<!!)\[([^[\]]*)\]\((<[^<>]*>|[^()\s<>]*)\)/g;
 // Where the path of a destination stops: its anchor or its query, which go along as they are.
 const SUFFIX = /[?#]/;
 
-// `decodeURIComponent` throws on an escape that makes no UTF-8. A pure-domain fallback (rule 17): a
-// destination that does not decode names no member, and its link stays as it was.
+// `decodeURIComponent` throws on a `%` that starts no escape and on an escape that makes no UTF-8. A
+// pure-domain fallback (rule 17): such a destination is read as it is written, as a browser reads
+// it, so `100%.html` names the member `100%.html`.
 const decoded = (path: string): string => {
   try {
     return decodeURIComponent(path);
   } catch {
-    return '';
+    return path;
   }
 };
 
