@@ -524,6 +524,14 @@ describe('converting one document out of a library', () => {
     expect(files.written.get('kb/Espace Contoso/Documents/Livraison/pages/week2.html.md')).toContain('Back to [the summary](../index.html.md).');
   });
 
+  // The library reads the first 100 members of a larger archive.
+  it('an archive the library read in part says how many of its files stay in it', async () => {
+    const entries = Object.assign([{ path: 'notes.docx', text: '# Notes' }], { totalEntries: 150 });
+    const { outcome } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: entries } });
+
+    expect(outcome).toMatchObject({ kind: 'converted', leftOut: '149 of its 150 files stay in the archive: the converter read the first 1' });
+  });
+
   it('a file inside an archive records where it sat in the archive', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
