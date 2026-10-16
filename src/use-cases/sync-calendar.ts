@@ -28,7 +28,7 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
-import { clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
+import { UNREAD, clearAttempt, forgetAttempts, gaveUpNotes, givenUpNotes, isGivenUp, nextAttempt, recordAttempt, triedReads } from '../domain/retry-ledger.ts';
 import { withGaveUp } from '../domain/report.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import type { Attempts } from '../domain/retry-ledger.ts';
@@ -149,6 +149,16 @@ const attachOne = async (deps: SyncCalendarDeps, event: CalendarEvent, attachmen
 // read this run, since a list that said nothing says nothing of them either.
 const earlierAttachments = (before: EventRecord | undefined): ReadonlyArray<string> => (before === undefined ? [] : before.outputs.filter((path) => path !== before.file));
 
+// Links to the files kept when the list will not read, those in the folder the note links into, named
+// by their file: the name the list would give is out of reach.
+const keptLinks = (earlier: ReadonlyArray<string>, folder: string): ReadonlyArray<EventAttachmentLink> =>
+  earlier
+    .filter((path) => path.startsWith(`${folder}/`))
+    .map((path) => {
+      const name = path.slice(folder.length + 1);
+      return { name: name.slice(0, -MARKDOWN.length), file: `${folder.slice(folder.lastIndexOf('/') + 1)}/${name}` };
+    });
+
 // Markdown only: the library converts an event's attachment and nothing fetches its bytes, so there
 // is no PDF and no original the way a mail attachment has. One the library will not render, which
 // is a picture, is left out and said to be, with the library's reason; one that fails for any other
@@ -157,8 +167,8 @@ const attachmentsOf = async (deps: SyncCalendarDeps, event: CalendarEvent, file:
   if (!event.hasAttachments) return NONE;
   const earlier = earlierAttachments(before);
   const listed = await deps.reader.attachments(event.id);
-  if (!listed.ok) return { ...NONE, outputs: earlier, failed: [{ path: `${event.subject}/attachments`, reason: listed.error.message }] };
   const folder = attachmentFolder(file);
+  if (!listed.ok) return { ...NONE, links: keptLinks(earlier, folder), outputs: earlier, failed: [{ path: `${event.subject}/attachments`, reason: listed.error.message }] };
   const taken = new Set<string>();
   const links: EventAttachmentLink[] = [];
   const outputs: string[] = [];
@@ -229,8 +239,13 @@ const fetchOne = async (deps: SyncCalendarDeps, id: string): Promise<Fetched> =>
 // Whether a fetched event is written this run: not when it starts before `since`, not when the
 // ledger already holds it at the same `lastModifiedDateTime`, which is what a delta re-read after
 // a stopped run answers for everything that already landed.
-// An event that landed with an attachment that failed owes a retry at the version it holds.
-const owesRetry = (state: CalendarState, event: CalendarEvent): boolean => state.retry?.[event.id]?.version === event.lastModified;
+// An event that landed with an attachment that failed owes a retry at the version it holds. A run that
+// could not fetch it since put an entry of its own in that place, so a recorded event with one is
+// written again once it reads.
+const owesRetry = (state: CalendarState, event: CalendarEvent): boolean => {
+  const version = state.retry?.[event.id]?.version;
+  return version === event.lastModified || (version === UNREAD && state.events[event.id] !== undefined);
+};
 
 const wanted = (deps: SyncCalendarDeps, input: SyncCalendarInput, state: CalendarState, event: CalendarEvent): boolean =>
   inReach(deps, input, event) &&

@@ -732,6 +732,15 @@ describe('an attachment that fails on an event written again', () => {
     expect(JSON.parse(second.files.written.get(STATE_PATH) ?? '{}').retry).toBeUndefined();
   });
 
+  // A run that cannot fetch the event in between replaces its entry with one of its own.
+  it('is still written again when a run in between could not fetch it', async () => {
+    const first = await failing(held);
+    const second = await run({ reader: { events: { a: edited, b: STANDUP }, failEvents: ['a'] }, files: { texts: Object.fromEntries(first.files.written) } });
+    const third = await run({ reader: { events: { a: edited, b: STANDUP } }, files: { texts: Object.fromEntries(second.files.written) } });
+
+    expect(third.files.written.get(VENUES)).toContain('| Venue | Cost |');
+  });
+
   it('still failing on its third run, it is named once as given up, and the fourth run leaves it alone', async () => {
     const first = await failing(held);
     const second = await failing(Object.fromEntries(first.files.written));
@@ -748,5 +757,6 @@ describe('an attachment that fails on an event written again', () => {
     expect(done.files.moves.map((move) => move.from)).not.toContain(VENUES);
     expect(stateOf(done.files).events['a']?.outputs).toEqual([NOTE, VENUES]);
     expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').retry?.a).toBeDefined();
+    expect(done.files.written.get(NOTE)).toContain('Offsite planning.attachments/Venues.xlsx.md');
   });
 });
