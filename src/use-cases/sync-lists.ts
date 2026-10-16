@@ -153,10 +153,16 @@ const save = async (deps: SyncListsDeps, roots: Roots, state: ListsState): Promi
   return written.ok ? ok(undefined) : failed('saveState', written.error.kind, written.error.message);
 };
 
-// A list is worth writing when its fingerprint moved or it was never written, and it has not run out
-// of tries on this fingerprint. One that could not be read is counted apart, before any is written.
+// A list is worth writing when its fingerprint moved, its name changed, or it was never written, and it
+// has not run out of tries on this fingerprint: the name is the file and the heading of the table. One
+// that could not be read is counted apart, before any is written.
+const changed = (state: ListsState, read: TableRead): boolean => {
+  const record = state.lists[read.list.id];
+  return record?.fingerprint !== read.table.fingerprint || record.name !== read.list.name;
+};
+
 const owed = (state: ListsState, reads: ReadonlyArray<Read>): ReadonlyArray<TableRead> =>
-  reads.filter(hasTable).filter((read) => state.lists[read.list.id]?.fingerprint !== read.table.fingerprint && !isGivenUp(state.retry?.[read.list.id], read.table.fingerprint));
+  reads.filter(hasTable).filter((read) => changed(state, read) && !isGivenUp(state.retry?.[read.list.id], read.table.fingerprint));
 
 // Every table a list other than this one holds, rewritten in this run or not. A rewritten list still
 // holds its old table until its own write lands and puts it aside; handed to a namesake, that file
