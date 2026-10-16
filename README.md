@@ -1102,6 +1102,12 @@ and the same bytes as the attachment, decant keeps only the attachment. Then the
 links to the card of the attachment. decant compares the bytes only when the linked file is not
 larger than the size cap.
 
+decant writes a thread again for a new message, a new flag or a new folder name. Then it reads the
+metadata of each linked file. If the file at the source has the version that the thread holds,
+decant keeps the card and the files. It does not get or convert the file again. If the file has a
+new version, decant gets the new version. decant also gets each file that it did not get before, and
+each linked file of a thread from an earlier version of decant.
+
 Each message's own section names the files that message carried, linking each card, so a reader
 following a conversation sees what arrived with which reply rather than one list at the head of
 the file. A picture pasted into a message is shown where it stood, or after the text when the
