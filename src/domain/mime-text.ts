@@ -39,15 +39,15 @@ const decodedAs = (bytes: Uint8Array, charset: string, fatal: boolean): string |
   }
 };
 
-// A charset that says nothing a fallback does not: none, ASCII, which 8-bit bytes break, and UTF-8,
-// which a sender can claim for Latin-1.
-const UNSAID = /^(us-ascii|ascii|utf-?8)$/i;
+// The charsets that say nothing a fallback does not: ASCII, which 8-bit bytes break, and UTF-8, which
+// a sender can claim for Latin-1.
+const UNSAID: ReadonlySet<string> = new Set(['ascii', 'us-ascii', 'utf-8', 'utf8']);
 
 // The text bytes hold in the charset a message names. One this runtime cannot decode, or one that
 // says nothing more, reads as UTF-8 when the bytes are UTF-8 and as Windows-1252 when not: the two a
 // mail client writes most, and Windows-1252 reads every byte as some character.
 const decodeCharset = (bytes: Uint8Array, charset?: string): string => {
-  const named = charset === undefined || UNSAID.test(charset) ? undefined : decodedAs(bytes, charset, false);
+  const named = charset === undefined || UNSAID.has(charset.toLowerCase()) ? undefined : decodedAs(bytes, charset, false);
   return named ?? decodedAs(bytes, 'utf-8', true) ?? new TextDecoder('windows-1252').decode(bytes);
 };
 
