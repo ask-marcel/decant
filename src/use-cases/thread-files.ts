@@ -101,7 +101,13 @@ type Placed = {
   readonly skipped?: ReportEntry;
   readonly failed?: ReportEntry;
   readonly kept?: boolean;
+  // What the card says of a file that is neither left out nor failed, a share link.
+  readonly note?: string;
 };
+
+// A share link a message carried, a reference to Graph: it holds no bytes, and its size is the size of
+// the link Graph keeps. Asked for bytes, it failed on every run. It gets a card and nothing to fetch.
+const SHARED_LINK = 'It is a link to a shared file, not the file. When the text of the message links to the file, the file is in _linked/.';
 
 // One attachment into the shared store. Its content address decides everything: a content already
 // stored is referenced without being converted again; a new content is converted once, under a name
@@ -178,6 +184,7 @@ const placeAttachment = async (deps: FileDeps, place: FilePlace, placing: Placin
   // its arrival and the reason are written down, and the body needs a name to link at.
   const { messageId, attachment } = arrival;
   const inline = isInlinePicture(attachment);
+  if (attachment.kind === 'reference') return { asName: reserve(placing, nameOf(place, placing, arrival)), paths: [], note: SHARED_LINK };
   // Named by its content type before a byte is fetched, so a file too large to fetch is named so too.
   const typed = withName(arrival, typedName(attachment));
   if (attachment.size > place.maxBytes) {
@@ -299,7 +306,7 @@ const messageFileOf = (attachment: MailAttachment, placed: Placed): MessageFile 
   primary: placed.primary,
   picture: placed.picture,
   text: placed.text,
-  note: placed.skipped?.reason ?? placed.failed?.reason,
+  note: placed.skipped?.reason ?? placed.failed?.reason ?? placed.note,
   kept: placed.kept,
 });
 
