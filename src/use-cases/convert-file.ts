@@ -288,7 +288,9 @@ const convertMessage = async (context: Context): Promise<ConvertOutcome> => {
   const folder = `${context.dir}/${safeSegment(context.name.slice(0, context.name.lastIndexOf('.')))}`;
   const read = readMime(byteString(raw.value));
   const message = `${folder}/${context.name}.md`;
-  const wrote = await context.deps.files.writeText(message, kbDocument(context.stamp, read.text.trim().length === 0 ? NO_TEXT_NOTE : read.text));
+  // Outlook's wrapper comes off each link, as it does for the same email attached to a mail.
+  const text = unwrapSafelinks(read.text);
+  const wrote = await context.deps.files.writeText(message, kbDocument(context.stamp, text.trim().length === 0 ? NO_TEXT_NOTE : text));
   if (!wrote.ok) return failure(wrote.error);
   const carried = await writeParts(context, folder, read.parts);
   return carried.ok ? { kind: 'converted', outputs: [message, ...carried.value] } : failure(carried.error);
