@@ -49,14 +49,18 @@ const sectionOf = (raw: string): Section => {
 // The parts between one boundary and the next. Split on the delimiter as the text it is: a boundary
 // is chosen by the sending client and routinely carries `=`, `_`, `+` and `.`, which a pattern built
 // around it would read as syntax of its own. The preamble before the first one and the epilogue
-// after the last are what no client shows, so both ends go. The line end before a boundary belongs
-// to the boundary, so a file sent as it is ends where it ends.
+// after the last are what no client shows, so both ends go.
 const splitParts = (body: string, boundary: string): ReadonlyArray<string> =>
   body
     .split(`--${boundary}`)
     .slice(1, -1)
-    .map((part) => part.replace(/^\r?\n/, '').replace(/\r?\n$/, ''))
+    .map((part) => part.replace(/^\r?\n/, ''))
     .filter((part) => part.trim().length > 0);
+
+// The line end before a boundary belongs to the boundary, so the body of a part ends before it: a file
+// sent as it is ends where it ends. Taken from the body, once the headers are read, so a part of headers
+// and no body keeps the break that ends them.
+const bodyOfPart = (section: Section): Section => ({ ...section, body: section.body.replace(/\r?\n$/, '') });
 
 const contentTypeOf = (headers: Headers): string => rawHeaderOf(headers, 'content-type') ?? 'text/plain';
 
@@ -87,7 +91,7 @@ const gather = (section: Section, at: number): Gathered => {
 // A `multipart/alternative` offers the same message twice; the plain one is the one worth reading,
 // and taking the first text at every level keeps that true however deep the nesting goes.
 const gatherParts = (raws: ReadonlyArray<string>): Gathered => {
-  const gathered = raws.map((raw, at) => gather(sectionOf(raw), at + 1));
+  const gathered = raws.map((raw, at) => gather(bodyOfPart(sectionOf(raw)), at + 1));
   return { text: gathered.flatMap((one) => one.text).slice(0, 1), parts: gathered.flatMap((one) => one.parts) };
 };
 
