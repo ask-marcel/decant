@@ -1,8 +1,9 @@
 // The block a meeting invitation carries to say how to join it: Teams writes it between two rules of
 // underscores, Google Meet between two rules of `-::~:~::`, and Zoom from "Join Zoom Meeting" to the
-// line that sends a reader to the local numbers. It is the same dozen lines in every invitation (a
-// link to join, a meeting ID and a passcode, dial-in numbers, help, meeting options) and says nothing
-// a reader of the meeting looks for. The link to join can stand in its place.
+// line that sends a reader to the local numbers, with the ways to join by SIP or H.323 after it. It is
+// the same dozen lines in every invitation (a link to join, a meeting ID and a passcode, dial-in
+// numbers, help, meeting options) and says nothing a reader of the meeting looks for. The link to
+// join can stand in its place.
 
 // A rule of underscores, each escaped in the markdown a mail's body is, and Meet's rule, whose first
 // dash that markdown escapes too, since a dash that opens a line would make a list.
@@ -37,10 +38,28 @@ const ruledSpan = (lines: ReadonlyArray<string>, at: number): Span | undefined =
   return to > at && isJoinBlock(lines.slice(at + 1, to)) ? { from: at, to } : undefined;
 };
 
+// Past the local numbers Zoom can add ways to join by SIP, by H.323 and by Skype for Business: each a
+// heading and its addresses, with the meeting ID and the passcode again, between rules of dashes.
+const JOIN_BY = /^\W*Join by /i;
+const BLANKISH = /^\W*$/;
+const ZOOM_TAIL: ReadonlyArray<RegExp> = [BLANKISH, JOIN_BY, /^\W*(?:Meeting ID|Passcode|Password)\b/i, /^\W*\d{1,3}(?:\.\d{1,3}){3}\b/, /zoom(?:crc|gov)?\.(?:us|com)\b/i];
+
+const isZoomTail = (line: string): boolean => ZOOM_TAIL.some((pattern) => pattern.test(line));
+
+// The last line of what follows the local numbers when the first of it is a way to join by SIP, H.323
+// or Skype, else the line of the local numbers: a passcode a sender wrote after them stays.
+const zoomTailEnd = (lines: ReadonlyArray<string>, end: number): number => {
+  const after = lines.slice(end + 1);
+  const stop = after.findIndex((line) => !isZoomTail(line));
+  const run = stop === -1 ? after : after.slice(0, stop);
+  const first = run.find((line) => !BLANKISH.test(line));
+  return first !== undefined && JOIN_BY.test(first) ? end + 1 + run.findLastIndex((line) => !BLANKISH.test(line)) : end;
+};
+
 // A second invitation that opens first means this one never reached its local numbers.
 const zoomSpan = (lines: ReadonlyArray<string>, at: number): Span | undefined => {
   const to = lines.findIndex((line, index) => index > at && (ZOOM_ENDS.test(line) || ZOOM_OPENS.test(line)));
-  return to > at && ZOOM_ENDS.test(lines[to] ?? '') ? { from: at, to } : undefined;
+  return to > at && ZOOM_ENDS.test(lines[to] ?? '') ? { from: at, to: zoomTailEnd(lines, to) } : undefined;
 };
 
 // A block that opens at this line and closes, or none: a rule never closed, or rules around anything
