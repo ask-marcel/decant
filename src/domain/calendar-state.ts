@@ -17,7 +17,15 @@ export const CALENDAR_NAME = 'Calendar';
 // One event already written. `outputs` is the document and every attachment beside it, which is
 // what moves aside when the event is refiled under a later day or deleted; `lastModified` is what
 // a re-read delta is compared against; `subject` is what is left to call it by once it is gone.
-export type EventRecord = { readonly file: string; readonly lastModified: string; readonly subject: string; readonly outputs: ReadonlyArray<string> };
+// `owed` says that an attachment failed when this version was written, so the event is written again
+// while it holds this version, three runs in all. Absent, the event owes nothing.
+export type EventRecord = {
+  readonly file: string;
+  readonly lastModified: string;
+  readonly subject: string;
+  readonly outputs: ReadonlyArray<string>;
+  readonly owed?: true;
+};
 
 export type CalendarState = {
   readonly version: typeof CALENDAR_STATE_VERSION;
@@ -56,6 +64,7 @@ const recordOf = (entry: Record<string, unknown>): EventRecord => ({
   lastModified: readString(entry, 'lastModified') ?? '',
   subject: readString(entry, 'subject') ?? '',
   outputs: stringList(entry['outputs']),
+  ...(entry['owed'] === true ? { owed: true } : {}),
 });
 
 const eventsOf = (raw: unknown): Readonly<Record<string, EventRecord>> => {

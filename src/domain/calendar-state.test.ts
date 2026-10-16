@@ -63,6 +63,14 @@ describe('what a calendar run remembers between runs', () => {
     expect(parseCalendarState('nope')).toEqual({ ok: false, error: { kind: 'malformed', message: 'state is not an object' } });
   });
 
+  it('an event written with an attachment owed reads back owing it, and a flag that is not true reads as none', () => {
+    const owing = withEvent(emptyCalendarState(), 'a', { file: 'f', lastModified: 'v', subject: 's', outputs: ['f'], owed: true });
+    const loose = parseCalendarState({ version: 1, source: { kind: 'calendar' }, events: { a: { file: 'f', owed: 'yes' } } });
+
+    expect(parseCalendarState(JSON.parse(serializeCalendarState(owing)))).toEqual({ ok: true, value: owing });
+    expect(loose.ok ? loose.value.events['a'] : undefined).toStrictEqual({ file: 'f', lastModified: '', subject: '', outputs: [] });
+  });
+
   it('a state with fields missing reads back as blanks, never as holes', () => {
     expect(parseCalendarState({ version: 1, source: { kind: 'calendar' }, events: { a: { file: 'f' }, bad: 4 } })).toEqual({
       ok: true,

@@ -741,6 +741,17 @@ describe('an attachment that fails on an event written again', () => {
     expect(third.files.written.get(VENUES)).toContain('| Venue | Cost |');
   });
 
+  // A cursor held for another reason reads the event again; a fetch of it that fails puts an entry of
+  // its own in the ledger, which says nothing of an attachment owed.
+  it('an event that owed nothing is not written again after a run that could not fetch it', async () => {
+    const first = await run({ reader: { events: { a: edited, b: STANDUP } }, files: { texts: held } });
+    const second = await run({ reader: { events: { a: edited, b: STANDUP }, failEvents: ['a'] }, files: { texts: Object.fromEntries(first.files.written) } });
+    const third = await run({ reader: { events: { a: edited, b: STANDUP } }, files: { texts: Object.fromEntries(second.files.written) } });
+
+    expect(JSON.parse(second.files.written.get(STATE_PATH) ?? '{}').retry?.a).toBeDefined();
+    expect(third.files.writeLog.filter((path) => path.includes('Offsite planning'))).toStrictEqual([]);
+  });
+
   it('still failing on its third run, it is named once as given up, and the fourth run leaves it alone', async () => {
     const first = await failing(held);
     const second = await failing(Object.fromEntries(first.files.written));
