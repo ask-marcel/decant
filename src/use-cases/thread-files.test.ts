@@ -750,13 +750,13 @@ describe('a share link attached to a message', () => {
     expect(reader.calls.filter((call) => call.startsWith('attachmentBytes'))).toStrictEqual([]);
     expect(outcome?.kind === 'rendered' && outcome.thread.filesFailed).toStrictEqual([]);
     expect(outcome?.kind === 'rendered' && outcome.thread.filesSkipped).toStrictEqual([]);
-    expect(files.written.get(`${ATTACHMENTS_STORE}/Budget 2027.xlsx.md`)).toContain('It is a link to a shared file');
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Budget 2027.xlsx.md`)).toContain('a link to a shared file, not the file');
   });
 
   // Its size is the size of the link Graph keeps, not of the file, so no size cap applies to it.
   it('gets its card whatever size Graph gives it', async () => {
     const { files } = await run({ reader: { ...sharing, attachments: { m1: [{ ...link, size: 900 * 1024 * 1024 }] } } });
 
-    expect(files.written.get(`${ATTACHMENTS_STORE}/Budget 2027.xlsx.md`)).toContain('It is a link to a shared file');
+    expect(files.written.get(`${ATTACHMENTS_STORE}/Budget 2027.xlsx.md`)).toContain('a link to a shared file, not the file');
   });
 });

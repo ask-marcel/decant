@@ -95,10 +95,10 @@ export type LinksHeld = { readonly links?: Readonly<Record<string, string>>; rea
 
 // A file a message of this write carried, by the name it came by: a linked document with its bytes is
 // that file, and is not pulled a second time.
-export type CarriedFile = { readonly name: string; readonly hash: string; readonly card: string };
+export type AttachedCopy = { readonly name: string; readonly hash: string; readonly card: string };
 
 // Where this write's linked documents go, how big one may be, and what its messages carried.
-export type LinksPlace = { readonly here: string; readonly maxBytes: number; readonly carried: ReadonlyArray<CarriedFile> };
+export type LinksPlace = { readonly here: string; readonly maxBytes: number; readonly carried: ReadonlyArray<AttachedCopy> };
 
 // Asked only of a message whose text carries one. `extract-sharepoint-links-in-mail` costs a Graph
 // call per message and fetches the message again to scan it, and a full run over this mailbox spent
@@ -232,7 +232,7 @@ export const linkedFiles = async (deps: LinkDeps, place: LinksPlace, parts: Read
 // A document a message of the thread also carried, when its bytes are that file's: the name says when
 // to compare, since Graph's size for an attachment is not its byte count, and the bytes decide. A file
 // the thread kept was within the size cap, so a document past it is never downloaded to compare.
-const carriedAs = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, item: DriveItem): Promise<CarriedFile | undefined> => {
+const carriedAs = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, item: DriveItem): Promise<AttachedCopy | undefined> => {
   const named = place.carried.filter((file) => sameIgnoringCase(file.name, item.name));
   if (named.length === 0 || item.size > place.maxBytes) return undefined;
   const bytes = await deps.drive.bytes({ driveId: link.driveId, itemId: link.itemId });
@@ -240,7 +240,7 @@ const carriedAs = async (deps: LinkDeps, place: LinksPlace, link: LinkedFile, it
   return named.find((file) => file.hash === hash);
 };
 
-const carriedNote = (file: CarriedFile): string => {
+const carriedNote = (file: AttachedCopy): string => {
   const card = linkDestination(['..', ATTACHMENTS_FOLDER, file.card].join('/'));
   return `It is the same file as one a message of this thread carried, so it is not kept twice: [${file.name}](${card}).`;
 };

@@ -111,7 +111,7 @@ type Placed = {
 
 // A share link a message carried, a reference to Graph: it holds no bytes, and its size is the size of
 // the link Graph keeps. Asked for bytes, it failed on every run. It gets a card and nothing to fetch.
-const SHARED_LINK = 'It is a link to a shared file, not the file. When the text of the message links to the file, the file is in _linked/.';
+const SHARED_LINK = 'a link to a shared file, not the file: when the message text links to the file, its card is in _linked/';
 
 // One attachment into the shared store. Its content address decides everything: a content already
 // stored is referenced without being converted again; a new content is converted once, under a name
