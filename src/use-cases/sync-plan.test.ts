@@ -394,9 +394,10 @@ describe('a plan renamed since its files were written', () => {
   const renaming = async (
     texts: Record<string, string>,
     title: string,
-    seed: Partial<PlanReaderSeed> = {}
+    seed: Partial<PlanReaderSeed> = {},
+    disk: Omit<FilesFakeSeed, 'texts'> = {}
   ): Promise<{ files: FilesFake; done: Awaited<ReturnType<ReturnType<typeof createSyncPlan>>> }> => {
-    const files = createFilesFake({ texts });
+    const files = createFilesFake({ texts, ...disk });
     const renamed = { ...PLAN, title };
     const reader = createPlanReaderFake({ plans: [renamed], buckets: BUCKETS, tasks: TASKS, details: DETAILS, names: NAMES, ...seed });
     const syncPlan = createSyncPlan({ reader, files, clock: createClockFake('2026-09-13T14:00:00Z'), logger: createLoggerFake(), progress: createProgressFake(), kbRoot: 'kb' });
@@ -424,6 +425,33 @@ describe('a plan renamed since its files were written', () => {
     expect(done.ok ? undefined : done.error).toMatchObject({ step: 'placePlan', cause: 'folder-taken' });
     expect(files.writeLog).toStrictEqual([]);
     expect(files.moves).toStrictEqual([]);
+  });
+
+  // A run that stopped after it saved the state under the new title, and before it put the old
+  // folder's own files aside, leaves this plan's state in the new folder.
+  it('a new title whose folder holds this plan`s own state, left by a move that stopped half way, finishes the move', async () => {
+    const first = await run();
+    const own = serializePlanState(emptyPlanState({ ...PLAN, title: 'Offsite 2027' }));
+    const { files, done } = await renaming({ ...Object.fromEntries(first.files.written), 'kb/Planner/Offsite 2027/.sync-state.json': own }, 'Offsite 2027');
+
+    expect(done.ok).toBe(true);
+    expect(files.written.get('kb/Planner/Offsite 2027/_board.md')).toContain('Book the venue');
+    expect(files.written.has('kb/_archive/2026-09-13/Planner/Offsite 2026/.sync-state.json')).toBe(true);
+  });
+
+  // Whose state it is cannot be told, so the plan does not move in, and the error names the read rather
+  // than another plan: renaming a plan would not cure a disk that will not read.
+  it('a new title whose folder holds a state that will not read stops the plan naming why, and writes nothing', async () => {
+    const first = await run();
+    const texts = Object.fromEntries(first.files.written);
+    const broken = await renaming({ ...texts, 'kb/Planner/Offsite 2027/.sync-state.json': '{"source":' }, 'Offsite 2027');
+    const failing = await renaming(texts, 'Offsite 2027', {}, { failReadWith: { kind: 'read-failed', path: 'kb', message: 'disk error' } });
+
+    expect(broken.done.ok ? undefined : broken.done.error).toMatchObject({ step: 'placePlan', cause: 'invalid-json' });
+    expect(failing.done.ok ? undefined : failing.done.error).toMatchObject({ step: 'placePlan', cause: 'read-failed' });
+    expect(failing.done.ok ? '' : failing.done.error.message).toContain('disk error');
+    expect([...broken.files.writeLog, ...failing.files.writeLog]).toStrictEqual([]);
+    expect([...broken.files.moves, ...failing.files.moves]).toStrictEqual([]);
   });
 
   it('a renamed plan with no page to write still draws its board in the new folder', async () => {

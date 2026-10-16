@@ -56,14 +56,19 @@ type Roots = { readonly root: string };
 
 const rootsOf = (deps: SyncPlanDeps, plan: Plan): Roots => ({ root: `${deps.kbRoot}/${planRootName(plan.title)}` });
 
-// Whether a folder is free for this plan: no state in it, or this plan's own.
-const freeFor = async (deps: SyncPlanDeps, roots: Roots, planId: string): Promise<boolean> => {
+// Whether a folder is free for this plan: no state in it, or this plan's own, which a move that stopped
+// half way leaves. A state that will not read cannot say whose it is, so it stops the plan, named for
+// what it is: renaming a plan does not cure a disk that will not read.
+const freeFor = async (deps: SyncPlanDeps, roots: Roots, planId: string): Promise<Result<boolean, StepError>> => {
   const text = await deps.files.readText(`${roots.root}/${PLAN_STATE_FILE}`);
-  if (!text.ok) return text.error.kind === 'not-found';
+  if (!text.ok) return text.error.kind === 'not-found' ? ok(true) : unreadState(roots, text.error);
   const parsed = parseJson(text.value);
   const state = parsed.ok ? parsePlanState(parsed.value) : parsed;
-  return state.ok && state.value.plan.id === planId;
+  return state.ok ? ok(state.value.plan.id === planId) : unreadState(roots, state.error);
 };
+
+const unreadState = (roots: Roots, error: { readonly kind: string; readonly message: string }): Result<never, StepError> =>
+  failed('placePlan', error.kind, `the state in ${roots.root} will not read: ${error.message}`);
 
 // Where a run reads a plan's state and writes its files, and the plan as its state records it. A plan
 // renamed since moves to the folder of its new title, from the folder of its former one. A title
@@ -78,8 +83,9 @@ const placedOf = async (deps: SyncPlanDeps, input: SyncPlanInput): Promise<Resul
   const recorded = { ...input.plan, title: input.formerTitle };
   const former = rootsOf(deps, recorded);
   if (sameIgnoringCase(former.root, roots.root)) return ok({ roots: former, recorded });
-  if (!(await freeFor(deps, roots, input.plan.id)))
-    return failed('placePlan', 'folder-taken', `the folder of the title ${input.plan.title} holds another plan; rename one of them`);
+  const free = await freeFor(deps, roots, input.plan.id);
+  if (!free.ok) return free;
+  if (!free.value) return failed('placePlan', 'folder-taken', `the folder of the title ${input.plan.title} holds another plan; rename one of them`);
   return ok({ roots, recorded: input.plan, former });
 };
 
