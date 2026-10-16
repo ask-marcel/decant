@@ -309,7 +309,7 @@ const asArchive = async (context: Context): Promise<AttachmentOutcome> => {
 
 const writeArchiveEntries = async (context: Context, folder: string, archivePath: string, entries: ArchiveEntries): Promise<AttachmentOutcome> => {
   const outputs: string[] = [archivePath];
-  const placed = placeMembers(folder, context.name, entries, context.deps.pathBudget);
+  const placed = placeMembers(folder, entries, context.deps.pathBudget);
   const files = new Map(placed.map((member) => [member.entry.path, member.file]));
   for (const { entry, file } of placed) {
     const stamp = { ...context.input.stamp, zipEntry: entry.path };

@@ -3,27 +3,13 @@ import { linkMembers, placeMembers } from './archive-members.ts';
 
 const FOLDER = 'kb/Docs/Report';
 
-const placed = (archiveName: string, paths: ReadonlyArray<string>): ReadonlyArray<string> =>
-  placeMembers(
-    FOLDER,
-    archiveName,
-    paths.map((path) => ({ path })),
-    undefined
-  ).map((member) => member.file);
-
 describe('where the members of an archive are unpacked', () => {
-  // Zipping a folder puts every member in one folder named for it, which beside the archive only
-  // repeats its name.
-  it('drops the folder every member sits in when it is named for the archive', () => {
-    expect(placed('Weekly report.zip', ['Weekly report/index.html', 'Weekly report/pages/week2.html'])).toStrictEqual([`${FOLDER}/index.html.md`, `${FOLDER}/pages/week2.html.md`]);
-    expect(placed('weekly-report.zip', ['Weekly-Report/index.html'])).toStrictEqual([`${FOLDER}/index.html.md`]);
-  });
+  // A zip made of a folder holds every member in that folder, and a library often holds the folder
+  // itself beside the zip: without the folder, each member would land on the file of the same name.
+  it('each member lands under its own folders, also the one that every member shares', () => {
+    const placed = placeMembers(FOLDER, [{ path: 'Report/index.html' }, { path: 'Report/pages/week2.html' }], undefined);
 
-  it('keeps the folders of members that do not all sit in one folder named for the archive', () => {
-    expect(placed('Report.zip', ['Report/index.html', 'notes.docx'])).toStrictEqual([`${FOLDER}/Report/index.html.md`, `${FOLDER}/notes.docx.md`]);
-    expect(placed('Report.zip', ['Draft/index.html'])).toStrictEqual([`${FOLDER}/Draft/index.html.md`]);
-    expect(placed('Report.zip', ['Report'])).toStrictEqual([`${FOLDER}/Report.md`]);
-    expect(placed('Report.zip', ['Reports/index.html'])).toStrictEqual([`${FOLDER}/Reports/index.html.md`]);
+    expect(placed.map((member) => member.file)).toStrictEqual([`${FOLDER}/Report/index.html.md`, `${FOLDER}/Report/pages/week2.html.md`]);
   });
 });
 
