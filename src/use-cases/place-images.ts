@@ -1,4 +1,4 @@
-import { extensionOf } from '../domain/conversion-plan.ts';
+import { extensionOf, planFile } from '../domain/conversion-plan.ts';
 import { cutDataPictures } from '../domain/data-pictures.ts';
 import { safeSegment } from '../domain/kb-path.ts';
 import { linkDestination } from '../domain/markdown-link.ts';
@@ -76,6 +76,13 @@ const entryFor = async (deps: PlaceImagesDeps, folder: string, name: string, pic
 
 export type PlacedPictures = { readonly body: string; readonly paths: ReadonlyArray<string> };
 
+// OCR reads a photo, as it reads one in a library, and not a drawing: Word keeps a pasted drawing as EMF
+// or WMF, which OCR cannot load off Windows, and each try starts the reader again.
+const readable = (name: string): boolean => {
+  const decision = planFile({ name, size: 0 }, Number.POSITIVE_INFINITY);
+  return decision.kind === 'process' && decision.route === 'image';
+};
+
 // One entry of the end section: a link to the picture, then the words OCR read in it.
 const textEntry = (name: string, pictureName: string, text: string): string => {
   const target = linkDestination(`./${name}${MEDIA_SUFFIX}/${pictureName}`);
@@ -97,7 +104,7 @@ export const placeDataPictures = async (deps: PlaceImagesDeps, directory: string
     const written = await deps.files.writeBytes(path, picture.bytes);
     if (!written.ok) return written;
     paths.push(path);
-    const text = await textOf(deps, path);
+    const text = readable(picture.name) ? await textOf(deps, path) : '';
     if (text.length > 0) entries.push(textEntry(name, picture.name, text));
   }
   const section = entries.length === 0 ? '' : `\n\n## Text in the pictures\n\n${entries.join('\n\n')}\n`;
