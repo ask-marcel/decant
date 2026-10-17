@@ -21,8 +21,8 @@ const MIN_DIGITS = 2;
 
 // The picture types whose subtype names the extension of their file. The document declares the type,
 // so any other gives no extension: a declared `image/exe` names no `.exe`, and a long one no path past
-// what Windows accepts.
-const EXTENSIONS: ReadonlySet<string> = new Set(['bmp', 'emf', 'gif', 'jpeg', 'png', 'svg', 'tiff', 'webp', 'wmf']);
+// what Windows accepts. Word writes `image/jpeg`, and some documents declare `image/jpg`.
+const EXTENSIONS: ReadonlySet<string> = new Set(['bmp', 'emf', 'gif', 'jpeg', 'jpg', 'png', 'svg', 'tiff', 'webp', 'wmf']);
 
 const extensionOf = (type: string): string => {
   const subtype = SUBTYPE.exec(type)?.[1]?.toLowerCase();
