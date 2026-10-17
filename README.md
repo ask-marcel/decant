@@ -347,19 +347,24 @@ markdown is the content.
 decant puts a zip file of a library into a folder with the full name of the zip file, for example
 `Livraison.zip/`. The markdown of each file in the zip file goes into this folder too, in the folders
 that the zip file holds. A zip file can hold all its files in one folder with the name of the zip
-file. Then decant does not make that folder again. A saved email (`.eml`) of a library goes into a
-folder with its full name in the same way, for example `Fwd.eml/`.
+file. Then decant does not make that folder again. A saved email (`.eml`) of a library also goes into
+a folder with its full name, for example `Fwd.eml/`.
 
 A zip file that is attached to a message, or that a message links to, goes into a different folder.
 This folder has the name of the zip file without `.zip`, and it is adjacent to the card of the zip
-file. A link from one file in a zip file to a different file in it goes to the markdown of that file.
-Thus the pages of a report in a zip file link to each other.
+file.
+
+A link from one file in a zip file to a different file in it goes to the markdown of that file. Thus
+the pages of a report in a zip file link to each other.
 
 Before this version, the folder of a zip file of a library had the name without `.zip`. A library
 folder with that name can also hold documents. The first run after this version moves the files of
 each zip file and saved email into the folder with the full name. decant does not put these files in
-`_archive/`. A zip file that decant moved this way keeps its inner folder until it changes at the
-source.
+`_archive/`. A zip file that decant moved keeps its inner folder until it changes at the source.
+
+Some files do not move. A file that a program holds open stays in the folder with the name without
+`.zip`, and the next run tries to move it again. A markdown file that a document of the library
+folder also wrote stays in that folder too.
 
 The converter reads the first 100 files of a zip file. When a zip file holds more files,
 `_sync-report.md` names the files that stay in the zip file, for example `Contracts.zip, files 101 to
