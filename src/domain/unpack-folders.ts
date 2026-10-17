@@ -24,12 +24,13 @@ const foldersOf = (route: ConversionRoute, first: string): { readonly from: stri
   return { from: `${parent}/${safeSegment(name.slice(0, name.lastIndexOf('.')))}`, to: `${parent}/${name}` };
 };
 
-// The files more than one record holds. The first layout let two records write one file: a library
-// folder named for an archive and the archive unpacked into it, or a zip and a saved email of one name.
+// The files more than one record holds, in lower case, as Windows and macOS read two names that differ
+// only in letter case as one file. The first layout let two records write one file: a library folder
+// named for an archive and the archive unpacked into it, or a zip and a saved email of one name.
 const sharedFiles = (drive: DriveState): ReadonlySet<string> => {
   const seen = new Set<string>();
   const shared = new Set<string>();
-  for (const output of Object.values(drive.items).flatMap((entry) => entry.outputs)) (seen.has(output) ? shared : seen).add(output);
+  for (const output of Object.values(drive.items).flatMap((entry) => entry.outputs.map((path) => path.toLowerCase()))) (seen.has(output) ? shared : seen).add(output);
   return shared;
 };
 
@@ -38,7 +39,10 @@ const unpackEntry = (entry: ManifestEntry, shared: ReadonlySet<string>, moves: {
   const first = entry.outputs[0];
   if (route === undefined || first === undefined) return entry;
   const { from, to } = foldersOf(route, first);
-  const pairs = entry.outputs.map((output) => ({ from: output, to: output.startsWith(`${from}/`) && !shared.has(output) ? `${to}${output.slice(from.length)}` : output }));
+  const pairs = entry.outputs.map((output) => ({
+    from: output,
+    to: output.startsWith(`${from}/`) && !shared.has(output.toLowerCase()) ? `${to}${output.slice(from.length)}` : output,
+  }));
   moves.push(...pairs.filter((pair) => pair.from !== pair.to));
   return { ...entry, outputs: pairs.map((pair) => pair.to) };
 };
