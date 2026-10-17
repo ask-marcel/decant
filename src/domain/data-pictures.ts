@@ -19,9 +19,14 @@ const SUBTYPE = /^image\/(?:x-)?([a-z0-9]+)/i;
 
 const MIN_DIGITS = 2;
 
+// The picture types whose subtype names the extension of their file. The document declares the type,
+// so any other gives no extension: a declared `image/exe` names no `.exe`, and a long one no path past
+// what Windows accepts.
+const EXTENSIONS: ReadonlySet<string> = new Set(['bmp', 'emf', 'gif', 'jpeg', 'png', 'svg', 'tiff', 'webp', 'wmf']);
+
 const extensionOf = (type: string): string => {
-  const subtype = SUBTYPE.exec(type)?.[1];
-  return subtype === undefined ? '' : `.${subtype.toLowerCase()}`;
+  const subtype = SUBTYPE.exec(type)?.[1]?.toLowerCase();
+  return subtype !== undefined && EXTENSIONS.has(subtype) ? `.${subtype}` : '';
 };
 
 // `fromBase64` throws on data that ends out of step. A pure-domain fallback (rule 17): such a picture
