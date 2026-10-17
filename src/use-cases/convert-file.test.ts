@@ -709,6 +709,19 @@ describe('saying what a conversion is doing while it does it', () => {
     expect(progress.details.map((entry) => entry.what)).toEqual(['reading the text', 'reading picture 1/2', 'reading picture 2/2']);
   });
 
+  // A workbook gives its pictures apart from its text, and the wait for them is a step of its own.
+  it('a workbook says it is taking out its pictures, and which one it is reading', async () => {
+    const images = {
+      '01ABC': [
+        { path: 'xl/media/image1.png', bytes: new Uint8Array([1]) },
+        { path: 'xl/media/image2.png', bytes: new Uint8Array([2]) },
+      ],
+    };
+    const { progress } = await run({ name: 'Budget.xlsx', path: 'Projets/Budget.xlsx' }, { reader: { images, markdown: { '01ABC': '| Cost |' } } });
+
+    expect(progress.details.map((entry) => entry.what)).toEqual(['taking out the pictures', 'reading picture 1/2', 'reading picture 2/2']);
+  });
+
   it('a deck says it is rendering the slides, which is the wait a reader is actually in', async () => {
     const { progress } = await run({ name: 'Roadmap.pptx', path: 'Roadmap.pptx' });
 
@@ -782,6 +795,14 @@ describe('keeping the pictures a document embeds', () => {
     expect(outcome.kind === 'converted' && outcome.outputs).toEqual([DOCUMENT]);
     expect(files.written.get(DOCUMENT)).not.toContain('## Images');
     expect(files.written.get(DOCUMENT)).not.toContain('## Text in the pictures');
+  });
+
+  it('a workbook holding no pictures gains no folder and no section', async () => {
+    const { outcome, files } = await run(WORKBOOK, { reader: { markdown: { '01ABC': '| Cost |' } } });
+    const folder = 'kb/Espace Contoso/Documents/Projets';
+
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([`${folder}/Budget.xlsx`, `${folder}/Budget.xlsx.md`]);
+    expect(files.written.get(`${folder}/Budget.xlsx.md`)).not.toContain('## Images');
   });
 
   it('a kind that cannot hold pictures is never asked for them', async () => {
