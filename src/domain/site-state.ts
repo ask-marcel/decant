@@ -34,9 +34,15 @@ export type SiteState = {
   // document last changed; `LIBRARY_LAYOUT` files them by their folders alone. Additive, so
   // `STATE_VERSION` stays: a file from before reads as the first layout, which is what it holds.
   readonly layout?: number;
+  // The layout of the folder each archive and saved email unpacks into. Absent is the first one, named
+  // for the file less its extension, `Livraison/`, which a library folder of that name could share;
+  // `ARCHIVE_LAYOUT` names it for the whole file, `Livraison.zip/`. Additive, as `layout` is.
+  readonly archives?: number;
 };
 
 export const LIBRARY_LAYOUT = 2;
+
+export const ARCHIVE_LAYOUT = 2;
 
 export type SiteStateError = { readonly kind: 'malformed'; readonly message: string };
 
@@ -114,7 +120,15 @@ export const parseSiteState = (raw: unknown): Result<SiteState, SiteStateError> 
   const source = parseSource(raw['source']);
   if (!source.ok) return source;
   const layout = typeof raw['layout'] === 'number' ? raw['layout'] : undefined;
-  return ok({ version: STATE_VERSION, source: { kind: 'site', ...source.value }, lastRun: readString(raw, 'lastRun') ?? '', drives: parseDrives(raw['drives']), layout });
+  const archives = typeof raw['archives'] === 'number' ? { archives: raw['archives'] } : {};
+  return ok({
+    version: STATE_VERSION,
+    source: { kind: 'site', ...source.value },
+    lastRun: readString(raw, 'lastRun') ?? '',
+    drives: parseDrives(raw['drives']),
+    layout,
+    ...archives,
+  });
 };
 
 export const countSyncedItems = (state: SiteState): number => Object.values(state.drives).reduce((total, drive) => total + Object.keys(drive.items).length, 0);

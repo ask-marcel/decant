@@ -234,3 +234,15 @@ describe('filing a library again in the layout without day folders', () => {
     expect(refiled.drive.retry['01LOCK']?.attempts).toBe(3);
   });
 });
+
+describe('the folder each archive and saved email of a library unpacks into', () => {
+  // A state says which folder its archives are in, so the move into the folder named for the whole file
+  // runs once. A state from before reads as the first layout, which is what it holds.
+  it('a state keeps the layout its archives are in, reads one that is not a number as none, and adds none to a state from before', () => {
+    const state = { ...emptySiteState(site), layout: 2, archives: 2 };
+    const written = JSON.parse(serializeSiteState(state));
+
+    expect(parseSiteState(written)).toEqual({ ok: true, value: state });
+    expect(parseSiteState({ ...written, archives: '2' })).toStrictEqual({ ok: true, value: { ...emptySiteState(site), layout: 2 } });
+  });
+});

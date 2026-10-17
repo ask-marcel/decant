@@ -13,8 +13,9 @@ import { ok } from '../domain/result.ts';
 import { PEOPLE_NAME, emptyPeopleState, parsePeopleState } from '../domain/people-state.ts';
 import type { PeopleState } from '../domain/people-state.ts';
 import { hasMembers, peopleLinksOf, renderSiteMembers } from '../domain/site-members.ts';
-import type { DriveState, SiteRef, SiteState } from '../domain/site-state.ts';
+import type { DriveState, Refiled, SiteRef, SiteState } from '../domain/site-state.ts';
 import {
+  ARCHIVE_LAYOUT,
   LIBRARY_LAYOUT,
   belongsToAnotherSite,
   emptySiteState,
@@ -28,6 +29,7 @@ import {
   serializeSiteState,
   withDrive,
 } from '../domain/site-state.ts';
+import { unpackDrive } from '../domain/unpack-folders.ts';
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import { forgetSwept, givenUp, nextFailure } from '../domain/retry-policy.ts';
 import type { RetryEntry } from '../domain/retry-policy.ts';
@@ -159,19 +161,45 @@ const stayedAt = (drive: DriveState, stuck: ReadonlyMap<string, string>): DriveS
   items: Object.fromEntries(Object.entries(drive.items).map(([id, entry]) => [id, { ...entry, outputs: entry.outputs.map((output) => stuck.get(output) ?? output) }] as const)),
 });
 
-// The first run of this layout moves every document out of the day folder the first layout filed it
-// under, once. The moves are not put aside: nothing is superseded, only filed again. A file that will
-// not move keeps the library in the earlier layout, so the next run moves what is left.
-const refile = async (deps: SyncSiteDeps, input: ResolvedInput, state: SiteState): Promise<SiteState> => {
+// Each file of each library that a layout files elsewhere, moved there. The moves are not put aside:
+// nothing is superseded, only filed again. A file that will not move keeps its place in the record, and
+// the layout stays unsettled, so the next run moves what is left.
+const moveAll = async (
+  deps: SyncSiteDeps,
+  state: SiteState,
+  refiled: (id: string, drive: DriveState) => Refiled
+): Promise<{ readonly drives: Readonly<Record<string, DriveState>>; readonly settled: boolean }> => {
   const drives: Record<string, DriveState> = {};
   let settled = true;
   for (const [id, drive] of Object.entries(state.drives)) {
-    const refiled = refileDrive(libraryRootOf(deps.kbRoot, input.segment, { id, name: drive.name }), drive);
-    const stuck = await refileAll(deps, refiled.moves);
+    const moved = refiled(id, drive);
+    const stuck = await refileAll(deps, moved.moves);
     settled &&= stuck.size === 0;
-    drives[id] = stayedAt(refiled.drive, stuck);
+    drives[id] = stayedAt(moved.drive, stuck);
   }
+  return { drives, settled };
+};
+
+// The first run of this layout moves every document out of the day folder the first layout filed it
+// under, once.
+const refile = async (deps: SyncSiteDeps, input: ResolvedInput, state: SiteState): Promise<SiteState> => {
+  const { drives, settled } = await moveAll(deps, state, (id, drive) => refileDrive(libraryRootOf(deps.kbRoot, input.segment, { id, name: drive.name }), drive));
   return { ...state, drives, layout: settled ? LIBRARY_LAYOUT : state.layout };
+};
+
+// The first run of this archive layout moves each archive and saved email into the folder named for the
+// whole file, once.
+const unpackAgain = async (deps: SyncSiteDeps, state: SiteState): Promise<SiteState> => {
+  const { drives, settled } = await moveAll(deps, state, (_id, drive) => unpackDrive(drive));
+  return { ...state, drives, ...(settled ? { archives: ARCHIVE_LAYOUT } : {}) };
+};
+
+// The one-time moves of the layouts a library is not in yet: out of the day folders first, then into
+// the folder named for each archive. A dry run moves nothing.
+const settledLayouts = async (deps: SyncSiteDeps, input: ResolvedInput, state: SiteState): Promise<SiteState> => {
+  if (input.dryRun || hasQueue(state)) return state;
+  const filed = state.layout === LIBRARY_LAYOUT ? state : await refile(deps, input, state);
+  return filed.layout !== LIBRARY_LAYOUT || filed.archives === ARCHIVE_LAYOUT ? filed : unpackAgain(deps, filed);
 };
 
 // The library as a reader scans it, made from the state. A page that will not write is logged and
@@ -190,7 +218,7 @@ export const createSyncSite =
     const resolved = await resolveSite(deps, rawInput.site);
     const input: ResolvedInput = { ...rawInput, segment: resolved.segment };
     const statePath = `${siteRoot(deps.kbRoot, resolved.segment)}/${STATE_FILE_NAME}`;
-    let state = input.dryRun || resolved.state.layout === LIBRARY_LAYOUT || hasQueue(resolved.state) ? resolved.state : await refile(deps, input, resolved.state);
+    let state = await settledLayouts(deps, input, resolved.state);
     let summary = EMPTY;
     let notes = NO_NOTES;
     for (const drive of input.drives) {
