@@ -362,9 +362,9 @@ folder with that name can also hold documents. The first run after this version 
 each zip file and saved email into the folder with the full name. decant does not put these files in
 `_archive/`. A zip file that decant moved keeps its inner folder until it changes at the source.
 
-Some files do not move. A file that a program holds open stays in the folder with the name without
-`.zip`, and the next run tries to move it again. A markdown file that a document of the library
-folder also wrote stays in that folder too.
+Some files do not move. A file that a program holds open stays in the folder without the extension,
+and the next run tries to move it again. A file that a different document also wrote stays in that
+folder too.
 
 The converter reads the first 100 files of a zip file. When a zip file holds more files,
 `_sync-report.md` names the files that stay in the zip file, for example `Contracts.zip, files 101 to
