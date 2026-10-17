@@ -1970,3 +1970,77 @@ describe('an archive the library read in part', () => {
     expect(done.notes?.skipped).toEqual([{ path: 'Projets/Livraison.zip, file 2', reason: 'the converter reads the first 1 files of an archive' }]);
   });
 });
+
+// The first archive layout unpacked a zip or a saved email into a folder named for it less its
+// extension, which a library folder of that name could share. The first run of this one moves each into
+// the folder named for the whole file, once, and puts nothing aside: nothing is superseded.
+describe('moving the folder of each archive and saved email once', () => {
+  const ROOT = 'kb/SharePoint sites/Espace Contoso/Documents';
+  const OLD_ZIP = `${ROOT}/Projets/Livraison/Livraison.zip`;
+  const OLD_MEMBER = `${ROOT}/Projets/Livraison/Livraison/notes.docx.md`;
+  const NEW_ZIP = `${ROOT}/Projets/Livraison.zip/Livraison.zip`;
+  const NEW_MEMBER = `${ROOT}/Projets/Livraison.zip/Livraison/notes.docx.md`;
+  const NOTHING_NEW = { pages: [{ items: [], skipped: 0, deltaLink: 'c2' }] };
+  const before = (outputs: ReadonlyArray<string>, layouts: { readonly layout?: number; readonly archives?: number } = { layout: 2 }): string =>
+    serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      ...layouts,
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'c1', pending: [], items: { '01ZIP': { path: 'Projets/Livraison.zip', cTag: 'c1', outputs } }, retry: {}, folders: {} } },
+    });
+
+  it('the first run moves each file of an archive into the folder named for the whole file, puts nothing aside, and does it once', async () => {
+    const first = await run({ files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } }, reader: NOTHING_NEW });
+
+    expect(first.files.moves).toEqual([
+      { from: OLD_ZIP, to: NEW_ZIP },
+      { from: OLD_MEMBER, to: NEW_MEMBER },
+    ]);
+    expect(first.files.written.get(NEW_MEMBER)).toBe('# Notes');
+    expect(stateAfter(first.files).drives['b!one']?.items['01ZIP']?.outputs).toEqual([NEW_ZIP, NEW_MEMBER]);
+    expect(JSON.parse(first.files.written.get(STATE_PATH) ?? '{}').archives).toBe(2);
+
+    const second = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '', [NEW_ZIP]: 'the zip', [NEW_MEMBER]: '# Notes' } }, reader: NOTHING_NEW });
+
+    expect(second.files.moves).toHaveLength(0);
+  });
+
+  it('a file that will not move keeps its place in the record, and the next run moves it', async () => {
+    const stuck = await run({
+      files: {
+        texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' },
+        failMoveWith: { kind: 'write-failed', path: OLD_ZIP, message: 'in use' },
+      },
+      reader: NOTHING_NEW,
+    });
+
+    expect(stateAfter(stuck.files).drives['b!one']?.items['01ZIP']?.outputs).toEqual([OLD_ZIP, OLD_MEMBER]);
+    expect(JSON.parse(stuck.files.written.get(STATE_PATH) ?? '{}').archives).toBeUndefined();
+
+    const next = await run({ files: { texts: { [STATE_PATH]: stuck.files.written.get(STATE_PATH) ?? '', [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } }, reader: NOTHING_NEW });
+
+    expect(stateAfter(next.files).drives['b!one']?.items['01ZIP']?.outputs).toEqual([NEW_ZIP, NEW_MEMBER]);
+    expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').archives).toBe(2);
+  });
+
+  // A library still in the day folders of the first layout leaves them first, then the archive folder.
+  it('a library still in its day folders moves out of them and into the archive folder in the same run', async () => {
+    const dated = `${ROOT}/2026-05-12/Projets/Livraison/notes.docx.md`;
+    const done = await run({
+      files: { texts: { [STATE_PATH]: before([`${ROOT}/2026-05-12/Projets/Livraison/Livraison.zip`, dated], {}), [dated]: '# Notes' } },
+      reader: NOTHING_NEW,
+    });
+
+    expect(stateAfter(done.files).drives['b!one']?.items['01ZIP']?.outputs).toEqual([NEW_ZIP, `${ROOT}/Projets/Livraison.zip/notes.docx.md`]);
+    expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}')).toMatchObject({ layout: 2, archives: 2 });
+  });
+
+  it('a dry run moves nothing, and neither does a library already in this layout', async () => {
+    const dry = await run({ files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]) } }, reader: NOTHING_NEW, dryRun: true });
+    const settled = await run({ files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER], { layout: 2, archives: 2 }) } }, reader: NOTHING_NEW });
+
+    expect(dry.files.moves).toHaveLength(0);
+    expect(settled.files.moves).toHaveLength(0);
+  });
+});
