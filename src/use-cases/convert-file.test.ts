@@ -511,18 +511,26 @@ describe('converting one document out of a library', () => {
     expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/sous-dossier/deck.pptx.md')).toContain('## Slide 1');
   });
 
-  // A report saved as web pages and zipped as its folder, and each page links to the others by their
-  // own names. The folder stays: a library often holds the folder beside its zip, and without it each
-  // member would land on the file of the same name in that folder.
-  it('an archive of one folder keeps that folder, and its pages link to each other', async () => {
+  // A report saved as web pages and zipped as its folder: unpacked into `Livraison.zip/`, the folder only
+  // repeats the name of the archive, and each page links to the others by their own names.
+  it('an archive of one folder named for it unpacks without that folder, and its pages link to each other', async () => {
     const entries = [
       { path: 'Livraison/index.html', text: 'See [Week 2](pages/week2.html).' },
       { path: 'Livraison/pages/week2.html', text: 'Back to [the summary](../index.html).' },
     ];
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: entries } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/Livraison/index.html.md')).toContain('See [Week 2](pages/week2.html.md).');
-    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/Livraison/pages/week2.html.md')).toContain('Back to [the summary](../index.html.md).');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/index.html.md')).toContain('See [Week 2](pages/week2.html.md).');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/pages/week2.html.md')).toContain('Back to [the summary](../index.html.md).');
+  });
+
+  // The folder is compared with the name the archive has at the source, not with the name decant made
+  // safe or cut for the path.
+  it('an archive whose name decant made safe still unpacks without the folder named for it', async () => {
+    const entries = [{ path: 'Plans: Q3/notes.docx', text: '# Notes' }];
+    const { files } = await run({ name: 'Plans: Q3.zip', path: 'Plans: Q3.zip' }, { reader: { archiveEntries: entries } });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/Plans_ Q3.zip/notes.docx.md')).toContain('# Notes');
   });
 
   // The library reads the first 100 members of a larger archive.
