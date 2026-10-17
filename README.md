@@ -393,14 +393,15 @@ anything else, so the first reading returns Chinese-looking nonsense for a Korea
 returning nothing. Sync a Korean source with `--ocr-lang korean` and it reads correctly.
 
 A Word document in a library keeps its pictures in the text. decant writes each picture to a
-`<name>.media/` folder adjacent to the markdown, and the text links to the file. The names show the
-sequence in the text: `image-01.png`, `image-02.jpeg`. A picture that the document shows more than
-one time is one file.
+`<name>.media/` folder adjacent to the markdown, and the text has a link to the file. The names show
+the sequence in the text: `image-01.png`, `image-02.jpeg`. A picture that the document shows more
+than one time is one file.
 
 OCR reads each photo (PNG, JPEG, GIF, BMP, TIFF or WebP), as it reads a photo in a library. OCR does
-not read a vector picture (EMF or WMF), but decant keeps the file and its link. The text that OCR reads
-goes in the section `## Text in the pictures` at the end of the markdown. Each entry has a link to its
-picture. A picture without text has no entry.
+not read a vector picture (EMF, WMF or SVG), but decant keeps the file and its link. A picture of a
+type that is not in these two lists has no extension, and OCR does not read it. The text that OCR
+reads goes in the section `## Text in the pictures` at the end of the markdown. Each entry has a
+link to its picture. A picture without text has no entry.
 
 This text is not in the middle of the document, because there it can break a table or a list. With
 `--no-ocr`, decant keeps the pictures, but does not read them. A Word document that decant converted
@@ -413,7 +414,7 @@ also gets the section `## Images`. The converter of an attachment cannot put the
 text. The head of a thread does not show these pictures, because the markdown of the document has a
 link to each picture.
 
-decant takes the pictures out of a Word document and an Excel workbook only. decant keeps a PDF
+decant gets the pictures of a Word document and of an Excel workbook only. decant keeps a PDF
 adjacent to its markdown, and it makes a PDF from a deck. Thus the pictures of a PDF and of a deck are
 on the disk in a file that you can open. One manual of 14 MB has 172 pictures, and the OCR of these
 pictures uses more than 10 minutes.
