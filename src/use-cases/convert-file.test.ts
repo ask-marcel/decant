@@ -94,7 +94,7 @@ describe('converting one document out of a library', () => {
       '--B--',
     ].join('\r\n');
     const { outcome, files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } } });
-    const folder = 'kb/Espace Contoso/Documents/Projets/Fwd';
+    const folder = 'kb/Espace Contoso/Documents/Projets/Fwd.eml';
 
     expect(outcome).toEqual({ kind: 'converted', outputs: [`${folder}/Fwd.eml.md`, `${folder}/x.pdf`, `${folder}/x.pdf.md`] });
     expect(files.written.get(`${folder}/Fwd.eml.md`)).toContain('the body');
@@ -110,21 +110,21 @@ describe('converting one document out of a library', () => {
   it('a saved email in a library holding no message of its own still lands, saying so', async () => {
     const { files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode('') } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd/Fwd.eml.md')).toContain(NO_TEXT_NOTE);
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd.eml/Fwd.eml.md')).toContain(NO_TEXT_NOTE);
   });
 
   it('a saved email in a library whose text travelled 8-bit in UTF-8 keeps every letter it carried', async () => {
     const eml = ['Subject: Fwd', 'Content-Type: text/plain; charset=utf-8', 'Content-Transfer-Encoding: 8bit', '', 'Le contrat signé, 合同.'].join('\r\n');
     const { files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd/Fwd.eml.md')).toContain('Le contrat signé, 合同.');
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd.eml/Fwd.eml.md')).toContain('Le contrat signé, 合同.');
   });
 
   it('a saved email in a library whose message is only white space lands saying so', async () => {
     const eml = ['Content-Type: text/plain', '', '   '].join('\r\n');
     const { files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd/Fwd.eml.md')).toContain(NO_TEXT_NOTE);
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Fwd.eml/Fwd.eml.md')).toContain(NO_TEXT_NOTE);
   });
 
   // The same email attached to a mail loses the wrapper, so it does in a library too.
@@ -133,7 +133,7 @@ describe('converting one document out of a library', () => {
     const eml = ['Subject: Offer', 'Content-Type: text/plain', '', `See ${wrapped}`].join('\r\n');
     const { files } = await run({ name: 'Offer.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Offer/Offer.eml.md')).toContain('See https://example.com/offer');
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Offer.eml/Offer.eml.md')).toContain('See https://example.com/offer');
   });
 
   it('a saved email in a library whose message cannot be written is reported', async () => {
@@ -161,7 +161,7 @@ describe('converting one document out of a library', () => {
     );
 
     expect(outcome.kind).toBe('failed');
-    expect(files.binary.has('kb/Espace Contoso/Documents/Projets/Fwd/x.pdf')).toBe(false);
+    expect(files.binary.has('kb/Espace Contoso/Documents/Projets/Fwd.eml/x.pdf')).toBe(false);
   });
 
   it('a file inside a saved email in a library that cannot be written is reported', async () => {
@@ -507,8 +507,8 @@ describe('converting one document out of a library', () => {
     const { outcome, files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: entries } });
 
     expect(outcome.kind).toBe('converted');
-    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/notes.docx.md')).toContain('# Notes');
-    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/sous-dossier/deck.pptx.md')).toContain('## Slide 1');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/notes.docx.md')).toContain('# Notes');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/sous-dossier/deck.pptx.md')).toContain('## Slide 1');
   });
 
   // A report saved as web pages and zipped as its folder, and each page links to the others by their
@@ -521,8 +521,8 @@ describe('converting one document out of a library', () => {
     ];
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: entries } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/Livraison/index.html.md')).toContain('See [Week 2](pages/week2.html.md).');
-    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/Livraison/pages/week2.html.md')).toContain('Back to [the summary](../index.html.md).');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/Livraison/index.html.md')).toContain('See [Week 2](pages/week2.html.md).');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/Livraison/pages/week2.html.md')).toContain('Back to [the summary](../index.html.md).');
   });
 
   // The library reads the first 100 members of a larger archive.
@@ -536,20 +536,20 @@ describe('converting one document out of a library', () => {
   it('a file inside an archive records where it sat in the archive', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/notes.docx.md')).toContain('zip_entry: notes.docx');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/notes.docx.md')).toContain('zip_entry: notes.docx');
   });
 
   it('a link Outlook wrapped in a file of an archive reads as where it goes', async () => {
     const wrapped = 'https://nam02.safelinks.protection.outlook.com/?url=https%3A%2F%2Fexample.com%2Fagenda&data=05%7C02%7Cx&reserved=0';
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.html', text: `See ${wrapped}` }] } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/notes.html.md')).toContain('See https://example.com/agenda');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/notes.html.md')).toContain('See https://example.com/agenda');
   });
 
   it('a file inside an archive that could not be converted keeps the reason in its place', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'video.mp4', note: 'unsupported entry' }] } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/video.mp4.md')).toContain('unsupported entry');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/video.mp4.md')).toContain('unsupported entry');
   });
 
   it('a rich-text document is rendered to PDF first, then read back from it', async () => {
@@ -624,14 +624,14 @@ describe('converting one document out of a library', () => {
   it('the archive itself is kept beside what was unpacked from it', async () => {
     const { outcome, files } = await run({ name: 'Livraison.zip', path: 'Projets/Livraison.zip' }, { reader: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] } });
 
-    expect(outcome.kind === 'converted' && outcome.outputs[0]).toBe('kb/Espace Contoso/Documents/Projets/Livraison/Livraison.zip');
-    expect(files.binary.has('kb/Espace Contoso/Documents/Projets/Livraison/Livraison.zip')).toBe(true);
+    expect(outcome.kind === 'converted' && outcome.outputs[0]).toBe('kb/Espace Contoso/Documents/Projets/Livraison.zip/Livraison.zip');
+    expect(files.binary.has('kb/Espace Contoso/Documents/Projets/Livraison.zip/Livraison.zip')).toBe(true);
   });
 
   it('an entry with neither text nor reason still lands, so nothing inside an archive disappears', async () => {
     const { files } = await run({ name: 'Livraison.zip', path: 'Livraison.zip' }, { reader: { archiveEntries: [{ path: 'mystere.bin' }] } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Livraison/mystere.bin.md')).toContain('No text could be read');
+    expect(files.written.get('kb/Espace Contoso/Documents/Livraison.zip/mystere.bin.md')).toContain('No text could be read');
   });
 
   it('an archive that cannot be unpacked is reported after its bytes were kept', async () => {
@@ -696,7 +696,7 @@ describe('converting one document out of a library', () => {
 
     expect(outcome).toEqual({
       kind: 'converted',
-      outputs: ['kb/Espace Contoso/Documents/Livraison/Livraison.zip', 'kb/Espace Contoso/Documents/Livraison/notes.docx.md'],
+      outputs: ['kb/Espace Contoso/Documents/Livraison.zip/Livraison.zip', 'kb/Espace Contoso/Documents/Livraison.zip/notes.docx.md'],
     });
   });
 });

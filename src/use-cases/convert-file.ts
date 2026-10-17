@@ -286,10 +286,17 @@ const writeParts = async (context: Context, folder: string, parts: ReadonlyArray
   return ok(written);
 };
 
+// A saved email and an archive in a library unpack into a folder named for the whole file, `Fwd.eml/`,
+// `Livraison.zip/`. Named for the file less its extension, the folder met a library folder of that
+// name, which Windows makes beside each zip of a folder. A document a thread links to keeps the folder
+// named for it less its extension, beside its card, where no folder of the library sits.
+const unpackFolder = (context: Context): string =>
+  context.input.libraryRoot === undefined ? `${context.dir}/${safeSegment(context.name.slice(0, context.name.lastIndexOf('.')))}` : `${context.dir}/${context.name}`;
+
 const convertMessage = async (context: Context): Promise<ConvertOutcome> => {
   const raw = await context.deps.reader.bytes({ driveId: context.input.driveId, itemId: context.input.item.id });
   if (!raw.ok) return failure(raw.error);
-  const folder = `${context.dir}/${safeSegment(context.name.slice(0, context.name.lastIndexOf('.')))}`;
+  const folder = unpackFolder(context);
   const read = readMime(byteString(raw.value));
   const message = `${folder}/${context.name}.md`;
   // Outlook's wrapper comes off each link, as it does for the same email attached to a mail.
@@ -303,7 +310,7 @@ const convertMessage = async (context: Context): Promise<ConvertOutcome> => {
 const convertArchive = async (context: Context): Promise<ConvertOutcome> => {
   const raw = await context.deps.reader.bytes({ driveId: context.input.driveId, itemId: context.input.item.id });
   if (!raw.ok) return failure(raw.error);
-  const folder = `${context.dir}/${safeSegment(context.name.slice(0, context.name.lastIndexOf('.')))}`;
+  const folder = unpackFolder(context);
   const archivePath = `${folder}/${context.name}`;
   const wroteRaw = await context.deps.files.writeBytes(archivePath, raw.value);
   if (!wroteRaw.ok) return failure(wroteRaw.error);

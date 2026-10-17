@@ -67,7 +67,7 @@ describe('deciding what to produce for a document found in SharePoint', () => {
     expect(planFile({ name: 'Fwd.eml', size: 1000 }, CAP)).toEqual({
       kind: 'process',
       route: 'message',
-      outputs: [{ relName: 'Fwd', role: 'archive-folder' }],
+      outputs: [{ relName: 'Fwd.eml', role: 'archive-folder' }],
     });
   });
 
@@ -159,7 +159,7 @@ describe('deciding what to produce for a document found in SharePoint', () => {
     expect(planFile({ name: 'Livraison.zip', size: 1000 }, CAP)).toEqual({
       kind: 'process',
       route: 'archive',
-      outputs: [{ relName: 'Livraison', role: 'archive-folder' }],
+      outputs: [{ relName: 'Livraison.zip', role: 'archive-folder' }],
     });
   });
 
