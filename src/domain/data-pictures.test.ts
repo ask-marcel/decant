@@ -26,6 +26,12 @@ describe('the pictures a Word document holds in its text', () => {
     expect(bytesOf(cut)).toEqual([{ name: 'image-01.png', bytes: [1, 2, 3] }]);
   });
 
+  it('a picture shown twice under two types takes the type it was first shown with', () => {
+    const cut = cutDataPictures('![](data:image/png;base64,AQID) ![](data:image/jpeg;base64,AQID)', FOLDER);
+
+    expect(cut.pictures.map((picture) => picture.name)).toEqual(['image-01.png']);
+  });
+
   // Word keeps a drawing as EMF or WMF, and a picture of a type the document does not name has no
   // extension rather than a wrong one. The document declares the type, so only a picture type from a
   // known list gives an extension: no `.exe`, and no name too long for a path.
