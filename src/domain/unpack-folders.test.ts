@@ -34,9 +34,18 @@ describe('moving each archive and saved email of a library into the folder named
     expect(moved.drive.items['01ZIP']?.outputs).toEqual(['kb/S/D/Plans_ Q3.zip/Plans_ Q3.zip', 'kb/S/D/Plans_ Q3.zip/notes.docx.md']);
   });
 
+  // The first layout named the folder for the name less its extension made safe, which drops the space
+  // at its end.
+  it('a zip whose name less its extension ends in a space moves out of the folder named without it', () => {
+    const moved = unpackDrive(drive({ '01ZIP': { path: 'Rapport .zip', cTag: 'c1', outputs: ['kb/S/D/Rapport/Rapport .zip', 'kb/S/D/Rapport/notes.docx.md'] } }));
+
+    expect(moved.drive.items['01ZIP']?.outputs).toEqual(['kb/S/D/Rapport .zip/Rapport .zip', 'kb/S/D/Rapport .zip/notes.docx.md']);
+  });
+
   it('a document of another kind, an archive already in its folder and one with no file stay where they are', () => {
     const items = {
       '01DOC': { path: 'Livraison/notes.docx', cTag: 'c1', outputs: ['kb/S/D/Livraison/notes.docx.md'] },
+      '01PDF': { path: 'Rapport/Rapport.pdf', cTag: 'c1', outputs: ['kb/S/D/Rapport/Rapport.pdf', 'kb/S/D/Rapport/Rapport.pdf.md'] },
       '01NEW': { path: 'Livraison.zip', cTag: 'c1', outputs: ['kb/S/D/Livraison.zip/Livraison.zip', 'kb/S/D/Livraison.zip/notes.docx.md'] },
       '01NONE': { path: 'Empty.zip', cTag: 'c1', outputs: [] },
     };
