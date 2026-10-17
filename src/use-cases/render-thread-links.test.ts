@@ -169,6 +169,19 @@ describe('a thread written again and the documents it links to', () => {
     expect(twice?.record.files).toStrictEqual(once?.record.files);
   });
 
+  // A zip in a library drops the folder its members share when the folder is named for it. A linked
+  // one keeps it: its folder is named for it less its extension, as the folder of a saved email is.
+  it('a linked archive of one folder named for it keeps that folder', async () => {
+    const mail = { ...seed, links: { m1: [{ url: 'https://tenant.sharepoint.com/z', driveId: 'b!one', itemId: '01ZIP', name: 'Contracts.zip' }] } };
+    const reader = createDriveReaderFake({
+      items: { '01ZIP': { ...REPORT, id: '01ZIP', name: 'Contracts.zip', path: 'Contracts.zip' } },
+      archiveEntries: [{ path: 'Contracts/terms.docx', text: '# Terms' }],
+    });
+    const written = await write(createFilesFake(), reader, undefined, { mail });
+
+    expect(written?.record.files).toContain(`${LINKED}/Contracts/Contracts/terms.docx.md`);
+  });
+
   // A file a message attached is the copy the thread keeps: a document the thread holds is compared
   // with it first, as a document pulled for the first time is.
   it('keeps a document the thread holds once, as the attachment, when a later message attached it', async () => {
