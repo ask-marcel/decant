@@ -877,6 +877,16 @@ describe('keeping the pictures a document embeds', () => {
     ]);
   });
 
+  // Word keeps a pasted drawing as EMF or WMF. OCR cannot load one off Windows, and each try starts it
+  // again, so a drawing is kept and linked, and not read.
+  it('a drawing a Word document holds is kept and linked where it stood, and not given to OCR', async () => {
+    const drawing = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.media/image-01.emf';
+    const { outcome, files } = await run({}, { reader: { markdown: { '01ABC': 'Chart ![](data:image/x-emf;base64,AQID)' } }, ocr: { texts: { [drawing]: 'Quarterly chart' } } });
+
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([DOCUMENT, drawing]);
+    expect(files.written.get(DOCUMENT)).toEndWith('---\n\nChart ![image-01.emf](./Contrat.docx.media/image-01.emf)\n');
+  });
+
   it('the pictures of a workbook, which the library gives apart from its text, are listed under one heading at its end', async () => {
     const images = { '01ABC': [{ path: 'xl/media/image1.png', bytes: new Uint8Array([1]) }] };
     const ocr = { texts: { 'kb/Espace Contoso/Documents/Projets/Budget.xlsx.media/image-01.png': 'Totals' } };
