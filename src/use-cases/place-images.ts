@@ -33,8 +33,9 @@ export type PlacedImages = { readonly paths: ReadonlyArray<string>; readonly sec
 // A picture is written first and read second, because the reader works on a file already on disk.
 // Text that comes back empty (or OCR being off entirely) leaves the entry as a bare link: the
 // picture is still there to open, and the markdown does not pretend to know what it shows.
-// Shared by both sides of the sync: a Word file attached to a mail loses its diagrams exactly the
-// way one sitting in a library does, so it is the same folder, the same names, the same section.
+// Shared by a workbook in a library and by a document attached to a mail, which both get the pictures
+// apart from the text: the same folder, the same names, the same section. A Word document in a library
+// gets them in its text instead, and `placeDataPictures` below puts them in the same folder.
 // Reading a picture is slow enough to look like a stall, so the caller is told which one is being
 // read. A caller with nowhere to say it passes nothing.
 export type SayWhat = (what: string) => void;
