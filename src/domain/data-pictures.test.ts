@@ -82,6 +82,16 @@ describe('the pictures a Word document holds in its text', () => {
     ]);
   });
 
+  // Past 256 escapes in one alt text, the pattern stops at its bound, and the picture stays as the
+  // library wrote it. The pictures after it are still cut.
+  it('a picture whose alt text holds more than 256 escapes stays in the text as it was', () => {
+    const escaped = (count: number): string => `![${'\\_'.repeat(count)}](data:image/png;base64,AQID)`;
+    const past = `${escaped(257)} then ![ok](data:image/png;base64,BAUG)`;
+
+    expect(cutDataPictures(escaped(256), FOLDER).pictures).toHaveLength(1);
+    expect(cutDataPictures(past, FOLDER).text).toBe(`${escaped(257)} then ![ok](./Contrat.docx.media/image-01.png)`);
+  });
+
   it('a folder whose name holds a space is linked in the form a viewer follows past the space', () => {
     expect(cutDataPictures('![](data:image/png;base64,AQID)', './ASN Spec.docx.media').text).toBe('![image-01.png](<./ASN Spec.docx.media/image-01.png>)');
   });
