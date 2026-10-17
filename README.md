@@ -193,7 +193,7 @@ kb/
         Roadmap.pptx.pdf            the rendered deck
         Contrat.pdf                 the original
         Contrat.pdf.md              its text layer
-        Contrat.docx.md             the text, plus a section listing the pictures inside
+        Contrat.docx.md             the text, with a link to each picture at its position
         Contrat.docx.media/         those pictures, kept as files
   Loop workspaces/<Workspace>/      the same shape, for a Loop workspace
   OneDrive/<Owner>/                 the same shape, for a personal OneDrive
@@ -392,26 +392,34 @@ Korean is the one script the deciding pass cannot recognise: no model that reads
 anything else, so the first reading returns Chinese-looking nonsense for a Korean page instead of
 returning nothing. Sync a Korean source with `--ocr-lang korean` and it reads correctly.
 
-A picture inside a document does not survive the conversion to markdown: it becomes a bare
-`[image]`, usually with no alt text, so an architecture diagram contributes one word that says
-nothing. Word and Excel files are therefore also asked for the pictures they embed, which land in a
-`<name>.media/` folder beside the markdown and are listed under an `## Images` heading at its end.
-Each is read for its text the same way a photo in a library is, so the labels inside a diagram
-become searchable; with `--no-ocr` the pictures are still kept, just without the reading. The
-placeholders are unnumbered, so the section sits at the end rather than pretending to know where in
-the prose each picture stood.
+A Word document in a library keeps its pictures in the text. decant writes each picture to a
+`<name>.media/` folder adjacent to the markdown, and the text links to the file. The names show the
+sequence in the text: `image-01.png`, `image-02.jpeg`. A picture that the document shows more than
+one time is one file.
 
-This holds on both sides of the sync: a Word file attached to a mail loses its diagrams exactly the
-way one sitting in a library does, so it is asked the same question, and the pictures land in the
-same `<name>.media/` folder beside the same markdown. They are not named in the head of the thread,
-which lists what each message carried: the document's own markdown links them, and a Word file with
-a dozen diagrams would otherwise put a dozen lines at the top of a conversation.
+OCR reads each photo (PNG, JPEG, GIF, BMP, TIFF or WebP), as it reads a photo in a library. OCR does
+not read a vector picture (EMF or WMF), but decant keeps the file and its link. The text that OCR reads
+goes in the section `## Text in the pictures` at the end of the markdown. Each entry has a link to its
+picture. A picture without text has no entry.
 
-Only those two kinds are asked. A PDF is kept whole beside its markdown and a deck is rendered to
-one, so their pictures are already on disk in openable form: taking them out again would duplicate
-what is there, and it costs the most exactly where it buys the least, since one 14 MB manual answers
-with 172 images and tens of minutes of reading. Legacy `doc`, `xls` and `ppt` are refused by the
-source, and a plain-text kind has nothing embedded to ask about.
+This text is not in the middle of the document, because there it can break a table or a list. With
+`--no-ocr`, decant keeps the pictures, but does not read them. A Word document that decant converted
+before this version keeps the section `## Images` until the document changes at the source.
+
+An Excel workbook does not give the position of its pictures. Thus decant gets the pictures of a
+workbook as a different step, and writes them in the section `## Images` at the end of the markdown.
+Each picture has the text that OCR reads below it. A Word document that is attached to a message
+also gets the section `## Images`. The converter of an attachment cannot put the pictures in the
+text. The head of a thread does not show these pictures, because the markdown of the document has a
+link to each picture.
+
+decant takes the pictures out of a Word document and an Excel workbook only. decant keeps a PDF
+adjacent to its markdown, and it makes a PDF from a deck. Thus the pictures of a PDF and of a deck are
+on the disk in a file that you can open. One manual of 14 MB has 172 pictures, and the OCR of these
+pictures uses more than 10 minutes.
+
+The source does not accept the file types of Office 97-2003: `doc`, `xls` and `ppt`. A plain-text
+file has no pictures.
 
 A document carries more than the text it shows. Every conversion, in SharePoint and on mail
 attachments alike, also asks for the side channel the rendered body hides: comments and threaded
