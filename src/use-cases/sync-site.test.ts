@@ -2043,4 +2043,20 @@ describe('moving the folder of each archive and saved email once', () => {
     expect(dry.files.moves).toHaveLength(0);
     expect(settled.files.moves).toHaveLength(0);
   });
+
+  // The state is saved once the library is read: a read that fails after the move leaves the record at
+  // the old places, and the next run finds each file already at its new one.
+  it('a run that moved the files and stopped before it saved the state leaves the next run to record their new places', async () => {
+    const stopped = await run({
+      files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } },
+      reader: { failWith: { kind: 'auth', message: 'token expired' } },
+    });
+
+    expect(stopped.ok).toBe(false);
+
+    const next = await run({ files: { texts: Object.fromEntries(stopped.files.written) }, reader: NOTHING_NEW });
+
+    expect(stateAfter(next.files).drives['b!one']?.items['01ZIP']?.outputs).toEqual([NEW_ZIP, NEW_MEMBER]);
+    expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').archives).toBe(2);
+  });
 });
