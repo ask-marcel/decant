@@ -27,12 +27,13 @@ describe('the pictures a Word document holds in its text', () => {
   });
 
   // Word keeps a drawing as EMF or WMF, and a picture of a type the document does not name has no
-  // extension rather than a wrong one.
+  // extension rather than a wrong one. The document declares the type, so only a picture type from a
+  // known list gives an extension: no `.exe`, and no name too long for a path.
   it('each file takes the extension of its type', () => {
-    const types = ['image/x-emf', 'image/x-wmf', 'image/svg+xml', 'IMAGE/GIF', 'null', 'image/'];
-    const cut = cutDataPictures(types.map((type, at) => `![](data:${type};base64,AQI${'ABCDEF'[at] ?? ''})`).join(' '), FOLDER);
+    const types = ['image/x-emf', 'image/x-wmf', 'image/svg+xml', 'IMAGE/GIF', 'null', 'image/', 'image/exe', `image/${'a'.repeat(300)}`];
+    const cut = cutDataPictures(types.map((type, at) => `![](data:${type};base64,AQI${'ABCDEFGH'[at] ?? ''})`).join(' '), FOLDER);
 
-    expect(cut.pictures.map((picture) => picture.name)).toEqual(['image-01.emf', 'image-02.wmf', 'image-03.svg', 'image-04.gif', 'image-05', 'image-06']);
+    expect(cut.pictures.map((picture) => picture.name)).toEqual(['image-01.emf', 'image-02.wmf', 'image-03.svg', 'image-04.gif', 'image-05', 'image-06', 'image-07', 'image-08']);
   });
 
   // What the library writes: each bracket of an alt text escaped, the line break of Word's own alt text
