@@ -44,6 +44,7 @@ describe('where the members of a zip in a library are unpacked', () => {
     expect(unpacked(['Draft/index.html'], 'Report.zip')).toStrictEqual([`${FOLDER}/Draft/index.html.md`]);
     expect(unpacked(['Reports/index.html'], 'Report.zip')).toStrictEqual([`${FOLDER}/Reports/index.html.md`]);
     expect(unpacked(['Report'], 'Report.zip')).toStrictEqual([`${FOLDER}/Report.md`]);
+    expect(unpacked(['Reports', 'Report/index.html'], 'Report.zip')).toStrictEqual([`${FOLDER}/Reports.md`, `${FOLDER}/Report/index.html.md`]);
     expect(unpacked(['__MACOSX/Report/._index.html'], 'Report.zip')).toStrictEqual([`${FOLDER}/__MACOSX/Report/._index.html.md`]);
   });
 
