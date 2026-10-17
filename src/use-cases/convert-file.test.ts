@@ -895,11 +895,23 @@ describe('keeping the pictures a document embeds', () => {
   // Word keeps a pasted drawing as EMF or WMF. OCR cannot load one off Windows, and each try starts it
   // again, so a drawing is kept and linked, and not read.
   it('a drawing a Word document holds is kept and linked where it stood, and not given to OCR', async () => {
-    const drawing = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.media/image-01.emf';
-    const { outcome, files } = await run({}, { reader: { markdown: { '01ABC': 'Chart ![](data:image/x-emf;base64,AQID)' } }, ocr: { texts: { [drawing]: 'Quarterly chart' } } });
+    const media = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.media';
+    const markdown = 'Chart ![](data:image/x-emf;base64,AQID) and plan ![](data:image/svg+xml;base64,BAUG)';
+    const ocr = { texts: { [`${media}/image-01.emf`]: 'Quarterly chart', [`${media}/image-02.svg`]: 'Floor plan' } };
+    const { outcome, files } = await run({}, { reader: { markdown: { '01ABC': markdown } }, ocr });
 
-    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([DOCUMENT, drawing]);
-    expect(files.written.get(DOCUMENT)).toEndWith('---\n\nChart ![image-01.emf](./Contrat.docx.media/image-01.emf)\n');
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([DOCUMENT, `${media}/image-01.emf`, `${media}/image-02.svg`]);
+    expect(files.written.get(DOCUMENT)).toEndWith('---\n\nChart ![image-01.emf](./Contrat.docx.media/image-01.emf) and plan ![image-02.svg](./Contrat.docx.media/image-02.svg)\n');
+  });
+
+  it('the text of each picture has an entry of its own under the heading, in the order of the text', async () => {
+    const media = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.media';
+    const ocr = { texts: { [`${media}/image-01.png`]: 'One', [`${media}/image-02.png`]: 'Two' } };
+    const { files } = await run({}, { reader: { markdown: { '01ABC': 'A ![](data:image/png;base64,AQ==) B ![](data:image/png;base64,Ag==)' } }, ocr });
+
+    expect(files.written.get(DOCUMENT)).toEndWith(
+      '## Text in the pictures\n\n[image-01.png](./Contrat.docx.media/image-01.png)\n\nOne\n\n[image-02.png](./Contrat.docx.media/image-02.png)\n\nTwo\n'
+    );
   });
 
   // A workbook's picture is named for its number and the extension of its part, which can be named by a
@@ -934,13 +946,19 @@ describe('keeping the pictures a document embeds', () => {
     expect(outputs[101]).toEndWith('Budget.xlsx.media/image-100.png');
   });
 
+  // A picture nothing was read out of is a bare link, with no empty lines under it.
   it('the pictures of a workbook, which the library gives apart from its text, are listed under one heading at its end', async () => {
-    const images = { '01ABC': [{ path: 'xl/media/image1.png', bytes: new Uint8Array([1]) }] };
-    const ocr = { texts: { 'kb/Espace Contoso/Documents/Projets/Budget.xlsx.media/image-01.png': 'Totals' } };
+    const images = {
+      '01ABC': [
+        { path: 'xl/media/image1.png', bytes: new Uint8Array([1]) },
+        { path: 'xl/media/image2.png', bytes: new Uint8Array([2]) },
+      ],
+    };
+    const ocr = { texts: { 'kb/Espace Contoso/Documents/Projets/Budget.xlsx.media/image-02.png': 'Totals' } };
     const { files } = await run(WORKBOOK, { reader: { images, markdown: { '01ABC': '| Cost |' } }, ocr });
 
     expect(files.written.get('kb/Espace Contoso/Documents/Projets/Budget.xlsx.md')).toEndWith(
-      '| Cost |\n\n## Images\n\n![image-01.png](./Budget.xlsx.media/image-01.png)\n\nTotals\n'
+      '| Cost |\n\n## Images\n\n![image-01.png](./Budget.xlsx.media/image-01.png)\n\n![image-02.png](./Budget.xlsx.media/image-02.png)\n\nTotals\n'
     );
   });
 });
