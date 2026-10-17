@@ -5,11 +5,51 @@ import { linkDestination } from './markdown-link.ts';
 // Each member of an archive and the file its text lands in.
 export type PlacedMember<T> = { readonly entry: T; readonly file: string };
 
-// Where each member of an archive unpacked into `folder` lands: under its own folders. A zip made of a
-// folder holds every member in that folder, and the folder stays, because a library often holds the
-// folder itself beside the zip: without it, each member would land on the file of the same name.
-export const placeMembers = <T extends { readonly path: string }>(folder: string, entries: ReadonlyArray<T>, budget: number | undefined): ReadonlyArray<PlacedMember<T>> =>
-  entries.map((entry) => ({ entry, file: memberFile(folder, entry.path, budget) }));
+// What a Mac adds to a zip it makes: the resource forks of the zipped folder, in a folder beside it.
+const MAC_FORKS = '__MACOSX/';
+
+const topOf = (path: string): string | undefined => {
+  const slash = path.indexOf('/');
+  return slash <= 0 ? undefined : path.slice(0, slash);
+};
+
+// Two names for one folder: letter case aside, as Windows compares names, and the form of an accent
+// aside, since a Mac writes an accent decomposed in a zip it makes, and the name at the source can hold
+// it composed.
+const sameName = (one: string, other: string): boolean => one.normalize('NFC').toLowerCase() === other.normalize('NFC').toLowerCase();
+
+// The folder every member of an archive sits in, when it is named for the archive: Windows zips a
+// folder that way, `Livraison.zip` holding `Livraison/…`, and unpacked into `Livraison.zip/` the folder
+// only repeats the name. Only one and the same folder for each member, so two folders that differ in
+// letter case stay two; the resource forks a Mac adds beside it do not count. `archiveName` is the
+// name the source gave the archive, before decant made it safe, cut it or numbered it.
+const sharedFolderOf = (archiveName: string, paths: ReadonlyArray<string>): string | undefined => {
+  const members = paths.filter((path) => !path.startsWith(MAC_FORKS));
+  const top = topOf(members[0] ?? '');
+  if (top === undefined || !members.every((path) => topOf(path) === top)) return undefined;
+  return sameName(top, archiveName.slice(0, archiveName.lastIndexOf('.'))) ? top : undefined;
+};
+
+// Where each member of an archive unpacked into `folder` lands: under its own folders, less the one
+// every member shares when it is named for `archiveName`. Without the name, that folder stays: a zip
+// that a thread links to unpacks into a folder named for it less its extension, and the folder it
+// holds keeps its members apart from those of a saved email of that name.
+export const placeMembers = <T extends { readonly path: string }>(
+  folder: string,
+  entries: ReadonlyArray<T>,
+  budget: number | undefined,
+  archiveName?: string
+): ReadonlyArray<PlacedMember<T>> => {
+  const shared =
+    archiveName === undefined
+      ? undefined
+      : sharedFolderOf(
+          archiveName,
+          entries.map((entry) => entry.path)
+        );
+  const prefix = shared === undefined ? '' : `${shared}/`;
+  return entries.map((entry) => ({ entry, file: memberFile(folder, entry.path.startsWith(prefix) ? entry.path.slice(prefix.length) : entry.path, budget) }));
+};
 
 // The label of a link and the start of its destination, in each form the converter writes: text that
 // escapes a bracket with a backslash, and the picture of a linked picture. A link starts neither in a

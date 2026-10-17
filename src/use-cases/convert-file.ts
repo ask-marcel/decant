@@ -324,7 +324,7 @@ const leftOutOf = (entries: ArchiveEntries): { readonly leftOut?: ArchiveCut } =
 
 const writeArchiveEntries = async (context: Context, folder: string, archivePath: string, entries: ArchiveEntries): Promise<ConvertOutcome> => {
   const outputs: string[] = [archivePath];
-  const placed = placeMembers(folder, entries, context.deps.pathBudget);
+  const placed = placeMembers(folder, entries, context.deps.pathBudget, context.input.libraryRoot === undefined ? undefined : context.input.item.name);
   const files = new Map(placed.map((member) => [member.entry.path, member.file]));
   for (const { entry, file } of placed) {
     const stamp = { ...context.stamp, zipEntry: entry.path };

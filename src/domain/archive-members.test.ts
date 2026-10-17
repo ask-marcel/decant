@@ -13,6 +13,46 @@ describe('where the members of an archive are unpacked', () => {
   });
 });
 
+describe('where the members of a zip in a library are unpacked', () => {
+  // The name the source gave the archive comes with a zip in a library, which unpacks into a folder
+  // named for the whole file.
+  const unpacked = (paths: ReadonlyArray<string>, archiveName: string): ReadonlyArray<string> =>
+    placeMembers(
+      FOLDER,
+      paths.map((path) => ({ path })),
+      undefined,
+      archiveName
+    ).map((member) => member.file);
+
+  // Windows zips a folder that way, and unpacked into `Report.zip/`, the folder only repeats the name.
+  it('drops the folder every member sits in when it is named for the archive, letter case and accents written either way', () => {
+    expect(unpacked(['Weekly report/index.html', 'Weekly report/pages/week2.html'], 'Weekly report.zip')).toStrictEqual([
+      `${FOLDER}/index.html.md`,
+      `${FOLDER}/pages/week2.html.md`,
+    ]);
+    expect(unpacked(['Weekly-Report/index.html'], 'weekly-report.zip')).toStrictEqual([`${FOLDER}/index.html.md`]);
+    expect(unpacked(['Caf\u00e9/menu.html'], 'Cafe\u0301.zip')).toStrictEqual([`${FOLDER}/menu.html.md`]);
+  });
+
+  // A Mac adds the resource forks of the zipped folder beside it, in a folder of their own.
+  it('drops the shared folder beside the resource forks a Mac adds, which keep their own folder', () => {
+    expect(unpacked(['Report/index.html', '__MACOSX/Report/._index.html'], 'Report.zip')).toStrictEqual([`${FOLDER}/index.html.md`, `${FOLDER}/__MACOSX/Report/._index.html.md`]);
+  });
+
+  it('keeps the folders of members that do not all sit in one folder named for the archive', () => {
+    expect(unpacked(['Report/index.html', 'notes.docx'], 'Report.zip')).toStrictEqual([`${FOLDER}/Report/index.html.md`, `${FOLDER}/notes.docx.md`]);
+    expect(unpacked(['Draft/index.html'], 'Report.zip')).toStrictEqual([`${FOLDER}/Draft/index.html.md`]);
+    expect(unpacked(['Reports/index.html'], 'Report.zip')).toStrictEqual([`${FOLDER}/Reports/index.html.md`]);
+    expect(unpacked(['Report'], 'Report.zip')).toStrictEqual([`${FOLDER}/Report.md`]);
+    expect(unpacked(['__MACOSX/Report/._index.html'], 'Report.zip')).toStrictEqual([`${FOLDER}/__MACOSX/Report/._index.html.md`]);
+  });
+
+  // Two folders that differ in letter case are two folders in the archive, and would be one on disk.
+  it('keeps two folders whose names differ only in letter case', () => {
+    expect(unpacked(['Report/a.html', 'REPORT/a.html'], 'Report.zip')).toStrictEqual([`${FOLDER}/Report/a.html.md`, `${FOLDER}/REPORT/a.html.md`]);
+  });
+});
+
 describe('a link from one member of an archive to another', () => {
   const files = new Map([
     ['index.html', `${FOLDER}/index.html.md`],
