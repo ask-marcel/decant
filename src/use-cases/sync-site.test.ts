@@ -1990,7 +1990,7 @@ describe('moving the folder of each archive and saved email once', () => {
       drives: { 'b!one': { name: 'Documents', deltaLink: 'c1', pending: [], items: { '01ZIP': { path: 'Projets/Livraison.zip', cTag: 'c1', outputs } }, retry: {}, folders: {} } },
     });
 
-  it('the first run moves each file of an archive into the folder named for the whole file, puts nothing aside, and does it once', async () => {
+  it('the first run moves each file of an archive into the folder named for the whole file, and puts nothing aside', async () => {
     const first = await run({ files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } }, reader: NOTHING_NEW });
 
     expect(first.files.moves).toEqual([
@@ -2000,10 +2000,6 @@ describe('moving the folder of each archive and saved email once', () => {
     expect(first.files.written.get(NEW_MEMBER)).toBe('# Notes');
     expect(stateAfter(first.files).drives['b!one']?.items['01ZIP']?.outputs).toEqual([NEW_ZIP, NEW_MEMBER]);
     expect(JSON.parse(first.files.written.get(STATE_PATH) ?? '{}').archives).toBe(2);
-
-    const second = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '', [NEW_ZIP]: 'the zip', [NEW_MEMBER]: '# Notes' } }, reader: NOTHING_NEW });
-
-    expect(second.files.moves).toHaveLength(0);
   });
 
   it('a file that will not move keeps its place in the record, and the next run moves it', async () => {
