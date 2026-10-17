@@ -46,6 +46,21 @@ describe('moving each archive and saved email of a library into the folder named
     expect(moved.drive.items).toEqual(items);
   });
 
+  // The first layout let a library folder named for an archive and the archive unpacked into it write
+  // one file. Both records hold it, and a move would leave the other one naming a file that is gone.
+  it('a file that two records hold stays where it is, and the files only the archive holds move', () => {
+    const moved = unpackDrive(
+      drive({
+        '01DOC': { path: 'Livraison/notes.docx', cTag: 'c1', outputs: ['kb/S/D/Livraison/notes.docx.md'] },
+        '01ZIP': { path: 'Livraison.zip', cTag: 'c1', outputs: ['kb/S/D/Livraison/Livraison.zip', 'kb/S/D/Livraison/notes.docx.md'] },
+      })
+    );
+
+    expect(moved.moves).toEqual([{ from: 'kb/S/D/Livraison/Livraison.zip', to: 'kb/S/D/Livraison.zip/Livraison.zip' }]);
+    expect(moved.drive.items['01ZIP']?.outputs).toEqual(['kb/S/D/Livraison.zip/Livraison.zip', 'kb/S/D/Livraison/notes.docx.md']);
+    expect(moved.drive.items['01DOC']?.outputs).toEqual(['kb/S/D/Livraison/notes.docx.md']);
+  });
+
   // A move that failed left some files of an archive in each folder, and the next run moves the rest.
   it('an archive half moved by an earlier run moves the files still in the folder named less its extension', () => {
     const moved = unpackDrive(drive({ '01ZIP': { path: 'Livraison.zip', cTag: 'c1', outputs: ['kb/S/D/Livraison.zip/Livraison.zip', 'kb/S/D/Livraison/notes.docx.md'] } }));

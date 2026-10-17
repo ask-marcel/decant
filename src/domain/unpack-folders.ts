@@ -24,21 +24,32 @@ const foldersOf = (route: ConversionRoute, first: string): { readonly from: stri
   return { from: `${parent}/${safeSegment(name.slice(0, name.lastIndexOf('.')))}`, to: `${parent}/${name}` };
 };
 
-const unpackEntry = (entry: ManifestEntry, moves: { from: string; to: string }[]): ManifestEntry => {
+// The files more than one record holds. The first layout let two records write one file: a library
+// folder named for an archive and the archive unpacked into it, or a zip and a saved email of one name.
+const sharedFiles = (drive: DriveState): ReadonlySet<string> => {
+  const seen = new Set<string>();
+  const shared = new Set<string>();
+  for (const output of Object.values(drive.items).flatMap((entry) => entry.outputs)) (seen.has(output) ? shared : seen).add(output);
+  return shared;
+};
+
+const unpackEntry = (entry: ManifestEntry, shared: ReadonlySet<string>, moves: { from: string; to: string }[]): ManifestEntry => {
   const route = routeOf(entry.path);
   const first = entry.outputs[0];
   if (route === undefined || first === undefined) return entry;
   const { from, to } = foldersOf(route, first);
-  const pairs = entry.outputs.map((output) => ({ from: output, to: output.startsWith(`${from}/`) ? `${to}${output.slice(from.length)}` : output }));
+  const pairs = entry.outputs.map((output) => ({ from: output, to: output.startsWith(`${from}/`) && !shared.has(output) ? `${to}${output.slice(from.length)}` : output }));
   moves.push(...pairs.filter((pair) => pair.from !== pair.to));
   return { ...entry, outputs: pairs.map((pair) => pair.to) };
 };
 
 // A library as this archive layout files it, and the files to move to get there: each archive and saved
 // email out of the folder named for it less its extension, which a library folder of that name could
-// share, into the folder named for the whole file. A file already there stays where it is.
+// share, into the folder named for the whole file. A file already there stays where it is, and so does
+// a file another record also holds, which is not the archive's alone to move.
 export const unpackDrive = (drive: DriveState): Refiled => {
   const moves: { from: string; to: string }[] = [];
-  const items = Object.fromEntries(Object.entries(drive.items).map(([id, entry]) => [id, unpackEntry(entry, moves)] as const));
+  const shared = sharedFiles(drive);
+  const items = Object.fromEntries(Object.entries(drive.items).map(([id, entry]) => [id, unpackEntry(entry, shared, moves)] as const));
   return { drive: { ...drive, items }, moves };
 };
