@@ -49,8 +49,9 @@ describe('the pictures a Word document holds in its text', () => {
       'image/tiff',
       'image/webp',
       'text/image/png',
+      'image/jpg',
     ];
-    const cut = cutDataPictures(types.map((type, at) => `![](data:${type};base64,AQI${'ABCDEFGHIJKL'[at] ?? ''})`).join(' '), FOLDER);
+    const cut = cutDataPictures(types.map((type, at) => `![](data:${type};base64,AQI${'ABCDEFGHIJKLM'[at] ?? ''})`).join(' '), FOLDER);
 
     expect(cut.pictures.map((picture) => picture.name)).toEqual([
       'image-01.emf',
@@ -65,6 +66,7 @@ describe('the pictures a Word document holds in its text', () => {
       'image-10.tiff',
       'image-11.webp',
       'image-12',
+      'image-13.jpg',
     ]);
   });
 
