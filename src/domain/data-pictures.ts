@@ -7,9 +7,11 @@ export type CutPicture = { readonly name: string; readonly bytes: Uint8Array };
 // first shows them.
 export type CutPictures = { readonly text: string; readonly pictures: ReadonlyArray<CutPicture> };
 
-// A picture held in the text as base64: its alt text, its type and its data. `[^[\]]` rather than an
-// open class, so a run of brackets with no close fails at each one instead of rescanning.
-const DATA_PICTURE = /!\[([^[\]]*)\]\(data:([^;,()\s]*);base64,([A-Za-z0-9+/=]+)\)/g;
+// A picture held in the text as base64: its alt text, its type and its data. The library escapes each
+// bracket of an alt text, `\[`, so the alt text is runs of anything but a bracket or a backslash, with
+// one escaped character between two runs; a run of brackets with no close fails at each one. At most
+// 256 escapes: with no bound, the engine stops at its backtrack limit and cuts no picture of the text.
+const DATA_PICTURE = /!\[([^[\]\\]*(?:\\[\s\S][^[\]\\]*){0,256})\]\(data:([^;,()\s]*);base64,([A-Za-z0-9+/=]+)\)/g;
 
 // The subtype of a picture type, less the `x-` of a type no standard names: `image/x-emf` is `emf`,
 // and `image/svg+xml` is `svg`.

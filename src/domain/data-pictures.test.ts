@@ -35,6 +35,18 @@ describe('the pictures a Word document holds in its text', () => {
     expect(cut.pictures.map((picture) => picture.name)).toEqual(['image-01.emf', 'image-02.wmf', 'image-03.svg', 'image-04.gif', 'image-05', 'image-06']);
   });
 
+  // What the library writes: each bracket of an alt text escaped, the line break of Word's own alt text
+  // kept, and base64 with `+` and `/`.
+  it('a picture whose alt text holds brackets or a line break goes to its file as well', () => {
+    const cut = cutDataPictures('![Logo \\[Contoso\\]](data:image/png;base64,+/8=) ![A screenshot\nDescription automatically generated](data:image/png;base64,AQID)', FOLDER);
+
+    expect(cut.text).toBe('![Logo \\[Contoso\\]](./Contrat.docx.media/image-01.png) ![A screenshot\nDescription automatically generated](./Contrat.docx.media/image-02.png)');
+    expect(bytesOf(cut)).toEqual([
+      { name: 'image-01.png', bytes: [251, 255] },
+      { name: 'image-02.png', bytes: [1, 2, 3] },
+    ]);
+  });
+
   it('a folder whose name holds a space is linked in the form a viewer follows past the space', () => {
     expect(cutDataPictures('![](data:image/png;base64,AQID)', './ASN Spec.docx.media').text).toBe('![image-01.png](<./ASN Spec.docx.media/image-01.png>)');
   });
