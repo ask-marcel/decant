@@ -1,4 +1,5 @@
 import { extensionOf } from '../domain/conversion-plan.ts';
+import { cutDataPictures } from '../domain/data-pictures.ts';
 import { safeSegment } from '../domain/kb-path.ts';
 import { linkDestination } from '../domain/markdown-link.ts';
 import type { Result } from '../domain/result.ts';
@@ -60,10 +61,45 @@ export const placeImages = async (
   return ok({ paths, section: `\n\n## Images\n\n${entries.join('\n\n')}\n` });
 };
 
+// The words OCR reads in a picture on disk, or nothing when it reads none or cannot read it.
+const textOf = async (deps: PlaceImagesDeps, path: string): Promise<string> => {
+  const read = await deps.ocr.read(path);
+  return read.ok ? read.value.text.trim() : '';
+};
+
 const entryFor = async (deps: PlaceImagesDeps, folder: string, name: string, pictureName: string): Promise<string> => {
-  const read = await deps.ocr.read(`${folder}/${pictureName}`);
-  const text = read.ok ? read.value.text.trim() : '';
+  const text = await textOf(deps, `${folder}/${pictureName}`);
   const caption = text.length === 0 ? '' : `\n\n${text}`;
   const target = linkDestination(`./${name}${MEDIA_SUFFIX}/${pictureName}`);
   return `![${pictureName}](${target})${caption}`;
+};
+
+export type PlacedPictures = { readonly body: string; readonly paths: ReadonlyArray<string> };
+
+// One entry of the end section: a link to the picture, then the words OCR read in it.
+const textEntry = (name: string, pictureName: string, text: string): string => {
+  const target = linkDestination(`./${name}${MEDIA_SUFFIX}/${pictureName}`);
+  return `[${pictureName}](${target})\n\n${text}`;
+};
+
+// A Word document's pictures, which the library gives in their place in its text, go to the same
+// folder as the pictures taken out apart, and the text links to each one where it stood. What OCR
+// reads in them goes under one heading at the end, because a caption in the text breaks a table or a
+// list. A picture OCR reads nothing in has no entry there: the text already links it.
+export const placeDataPictures = async (deps: PlaceImagesDeps, directory: string, name: string, markdown: string, saying: SayWhat): Promise<Result<PlacedPictures, FilesError>> => {
+  const cut = cutDataPictures(markdown, `./${name}${MEDIA_SUFFIX}`);
+  const folder = `${directory}/${name}${MEDIA_SUFFIX}`;
+  const paths: string[] = [];
+  const entries: string[] = [];
+  for (const [at, picture] of cut.pictures.entries()) {
+    saying(`reading picture ${at + 1}/${cut.pictures.length}`);
+    const path = `${folder}/${picture.name}`;
+    const written = await deps.files.writeBytes(path, picture.bytes);
+    if (!written.ok) return written;
+    paths.push(path);
+    const text = await textOf(deps, path);
+    if (text.length > 0) entries.push(textEntry(name, picture.name, text));
+  }
+  const section = entries.length === 0 ? '' : `\n\n## Text in the pictures\n\n${entries.join('\n\n')}\n`;
+  return ok({ body: `${cut.text}${section}`, paths });
 };

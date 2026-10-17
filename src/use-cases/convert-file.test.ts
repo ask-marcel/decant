@@ -703,16 +703,10 @@ describe('converting one document out of a library', () => {
 
 describe('saying what a conversion is doing while it does it', () => {
   it('each stage of converting one document is reported under that document name', async () => {
-    const images = {
-      '01ABC': [
-        { path: 'word/media/image1.png', bytes: new Uint8Array([1]) },
-        { path: 'word/media/image2.png', bytes: new Uint8Array([2]) },
-      ],
-    };
-    const { progress } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
+    const { progress } = await run({}, { reader: { markdown: { '01ABC': 'Body ![](data:image/png;base64,AQ==) and ![](data:image/png;base64,Ag==).' } } });
 
-    expect(progress.details.map((entry) => entry.label)).toEqual(['Projets/Contrat.docx', 'Projets/Contrat.docx', 'Projets/Contrat.docx', 'Projets/Contrat.docx']);
-    expect(progress.details.map((entry) => entry.what)).toEqual(['reading the text', 'taking out the pictures', 'reading picture 1/2', 'reading picture 2/2']);
+    expect(progress.details.map((entry) => entry.label)).toEqual(['Projets/Contrat.docx', 'Projets/Contrat.docx', 'Projets/Contrat.docx']);
+    expect(progress.details.map((entry) => entry.what)).toEqual(['reading the text', 'reading picture 1/2', 'reading picture 2/2']);
   });
 
   it('a deck says it is rendering the slides, which is the wait a reader is actually in', async () => {
@@ -730,66 +724,54 @@ describe('saying what a conversion is doing while it does it', () => {
 
 describe('keeping the pictures a document embeds', () => {
   const MEDIA = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.media/image-01.png';
+  const DOCUMENT = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.md';
+  // The library gives each picture of a Word document in its place in the text, as base64.
+  const ONE_PICTURE = 'Body ![](data:image/png;base64,AQID) here.';
+  // Excel gives no place for its pictures, so a workbook is still asked for them apart.
+  const WORKBOOK = { name: 'Budget.xlsx', path: 'Projets/Budget.xlsx' };
 
   it('a document holding pictures keeps them beside its markdown, so a diagram is not lost to a placeholder', async () => {
-    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1, 2, 3]) }] };
-    const { outcome, files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body [image] here.' } } });
+    const { outcome, files } = await run({}, { reader: { markdown: { '01ABC': ONE_PICTURE } } });
 
-    expect(files.binary.has(MEDIA)).toBe(true);
-    expect(outcome.kind === 'converted' && outcome.outputs).toEqual(['kb/Espace Contoso/Documents/Projets/Contrat.docx.md', MEDIA]);
+    expect(files.binary.get(MEDIA)).toEqual(new Uint8Array([1, 2, 3]));
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([DOCUMENT, MEDIA]);
   });
 
   it('the text read out of an embedded picture is written under the document that held it', async () => {
-    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
-    const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: 'smartRoute\nExternal\nDB' } } });
-    const written = files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md') ?? '';
+    const { files } = await run({}, { reader: { markdown: { '01ABC': ONE_PICTURE } }, ocr: { texts: { [MEDIA]: 'smartRoute\nExternal\nDB' } } });
+    const written = files.written.get(DOCUMENT) ?? '';
 
-    expect(written).toContain('## Images');
+    expect(written).toContain('## Text in the pictures');
     expect(written).toContain('smartRoute');
   });
 
-  // A part can be named by a 40-character hash. Copied whole into the name, it once made a path one
-  // character longer than Windows accepts, and the document was never written.
+  // Each picture takes its number and the extension of its type. The name of the part a picture came
+  // from can be a 40-character hash: copied into the name, it once made a path one character longer
+  // than Windows accepts, and the document was never written.
   it('the pictures of a document are numbered in the order they came, each keeping its own extension', async () => {
-    const images = {
-      '01ABC': [
-        { path: 'word/media/30cd61b51f7c6391a2208eebdbb55edc3bb3c714.png', bytes: new Uint8Array([1]) },
-        { path: 'word/media/image2.JPEG', bytes: new Uint8Array([2]) },
-        { path: 'word/media/image3', bytes: new Uint8Array([3]) },
-      ],
-    };
-    const { outcome } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
+    const markdown = ['![](data:image/png;base64,AQ==)', '![](data:image/jpeg;base64,Ag==)', '![](data:null;base64,Aw==)'].join('\n\n');
+    const { outcome } = await run({}, { reader: { markdown: { '01ABC': markdown } } });
     const media = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.media';
 
-    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([
-      'kb/Espace Contoso/Documents/Projets/Contrat.docx.md',
-      `${media}/image-01.png`,
-      `${media}/image-02.jpeg`,
-      `${media}/image-03`,
-    ]);
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([DOCUMENT, `${media}/image-01.png`, `${media}/image-02.jpeg`, `${media}/image-03`]);
   });
 
-  // Pinned whole: the section is what a reader scrolls to. A picture nothing was read out of is a bare
-  // link, with no empty lines under it, and a reading that failed is the same.
-  it('each picture is a link under one heading, with the text read out of it below, and one with nothing read is a bare link', async () => {
-    const images = {
-      '01ABC': [
-        { path: 'word/media/image1.png', bytes: new Uint8Array([1]) },
-        { path: 'word/media/image2.png', bytes: new Uint8Array([2]) },
-      ],
-    };
-    const document = 'kb/Espace Contoso/Documents/Projets/Contrat.docx.md';
-    const section = '## Images\n\n![image-01.png](./Contrat.docx.media/image-01.png)';
-    const read = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: '  Scope of work  ' } } });
-    const refused = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { failWith: { kind: 'failed', message: 'no reader' } } });
+  // Pinned whole: a reader finds each picture where the document showed it, and the words in the
+  // pictures at the end, where a caption cannot break a table or a list. A picture nothing was read
+  // out of has no entry there, and a reading that failed is the same.
+  it('each picture is a link where it stood, and the text read out of it is under one heading at the end', async () => {
+    const markdown = '| Site | ![Org chart](data:image/png;base64,AQ==) |\n\nThen ![](data:image/png;base64,Ag==).';
+    const read = await run({}, { reader: { markdown: { '01ABC': markdown } }, ocr: { texts: { [MEDIA]: '  Scope of work  ' } } });
+    const refused = await run({}, { reader: { markdown: { '01ABC': markdown } }, ocr: { failWith: { kind: 'failed', message: 'no reader' } } });
+    const body = '| Site | ![Org chart](./Contrat.docx.media/image-01.png) |\n\nThen ![image-02.png](./Contrat.docx.media/image-02.png).';
 
-    expect(read.files.written.get(document)).toEndWith(`${section}\n\nScope of work\n\n![image-02.png](./Contrat.docx.media/image-02.png)\n`);
-    expect(refused.files.written.get(document)).toEndWith(`${section}\n\n![image-02.png](./Contrat.docx.media/image-02.png)\n`);
+    expect(read.files.written.get(DOCUMENT)).toEndWith(`---\n\n${body}\n\n## Text in the pictures\n\n[image-01.png](./Contrat.docx.media/image-01.png)\n\nScope of work\n`);
+    expect(refused.files.written.get(DOCUMENT)).toEndWith(`---\n\n${body}\n`);
   });
 
   it('a document with a hundred pictures or more numbers them wide enough to sort as numbers', async () => {
-    const images = { '01ABC': Array.from({ length: 100 }, (_, at) => ({ path: `word/media/image${at + 1}.png`, bytes: new Uint8Array([at]) })) };
-    const { outcome } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
+    const markdown = Array.from({ length: 100 }, (_, at) => `![](data:image/png;base64,${new Uint8Array([at]).toBase64()})`).join('\n');
+    const { outcome } = await run({}, { reader: { markdown: { '01ABC': markdown } } });
     const outputs = outcome.kind === 'converted' ? outcome.outputs : [];
 
     expect(outputs[1]).toEndWith('Contrat.docx.media/image-001.png');
@@ -809,30 +791,26 @@ describe('keeping the pictures a document embeds', () => {
   });
 
   it('pictures that could not be read leave the document itself intact', async () => {
-    const { outcome, files } = await run({}, { reader: { failImages: { kind: 'permanent', message: 'no media' }, markdown: { '01ABC': 'Body.' } } });
+    const { outcome, files } = await run(WORKBOOK, { reader: { failImages: { kind: 'permanent', message: 'no media' }, markdown: { '01ABC': 'Body.' } } });
 
     expect(outcome.kind).toBe('converted');
-    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toContain('Body.');
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Budget.xlsx.md')).toContain('Body.');
   });
 
   it('a picture nothing could be read from is still linked, with no empty caption beneath it', async () => {
-    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
-    const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } } });
+    const { files } = await run({}, { reader: { markdown: { '01ABC': ONE_PICTURE } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toContain('\n\n## Images\n\n![image-01.png](./Contrat.docx.media/image-01.png)\n');
+    expect(files.written.get(DOCUMENT)).toEndWith('---\n\nBody ![image-01.png](./Contrat.docx.media/image-01.png) here.\n');
   });
 
   it('the picture of a document whose name holds a space is linked in a form that a viewer follows past the space', async () => {
-    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
-    const { files } = await run({ name: 'ASN Spec.docx', path: 'Projets/ASN Spec.docx' }, { reader: { images, markdown: { '01ABC': 'Body.' } } });
+    const { files } = await run({ name: 'ASN Spec.docx', path: 'Projets/ASN Spec.docx' }, { reader: { markdown: { '01ABC': ONE_PICTURE } } });
 
     expect(files.written.get('kb/Espace Contoso/Documents/Projets/ASN Spec.docx.md')).toContain('![image-01.png](<./ASN Spec.docx.media/image-01.png>)');
   });
 
   it('a picture that cannot be written stops the document rather than leaving half of it', async () => {
-    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
-    // A docx writes no bytes of its own, so failing byte writes fails exactly the pictures.
-    const { outcome } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, files: { failWriteWith: { kind: 'write-failed', path: 'x', message: 'disk full' } } });
+    const { outcome } = await run({}, { reader: { markdown: { '01ABC': ONE_PICTURE } }, files: { failByteWritesMatching: 'Contrat.docx.media' } });
 
     expect(outcome.kind).toBe('failed');
   });
@@ -840,26 +818,72 @@ describe('keeping the pictures a document embeds', () => {
   // The document is the point and lands without them, but the outcome says what it went without, so
   // the run that asked can try it again for the rest.
   it('a document whose pictures could not be read says what it went without', async () => {
-    const { outcome } = await run({}, { reader: { failImages: { kind: 'transient', message: 'Graph is busy' }, markdown: { '01ABC': 'Body.' } } });
+    const { outcome } = await run(WORKBOOK, { reader: { failImages: { kind: 'transient', message: 'Graph is busy' }, markdown: { '01ABC': 'Body.' } } });
 
     expect(outcome).toEqual({
       kind: 'converted',
-      outputs: ['kb/Espace Contoso/Documents/Projets/Contrat.docx.md'],
+      outputs: ['kb/Espace Contoso/Documents/Projets/Budget.xlsx', 'kb/Espace Contoso/Documents/Projets/Budget.xlsx.md'],
       lost: 'the pictures could not be read: transient: Graph is busy',
     });
   });
 
   it('pictures that could not be read are logged and none are claimed as written', async () => {
-    const { outcome, logger } = await run({}, { reader: { failImages: { kind: 'permanent', message: 'no media' }, markdown: { '01ABC': 'Body.' } } });
+    const { outcome, logger } = await run(WORKBOOK, { reader: { failImages: { kind: 'permanent', message: 'no media' }, markdown: { '01ABC': 'Body.' } } });
 
-    expect(outcome.kind === 'converted' && outcome.outputs).toEqual(['kb/Espace Contoso/Documents/Projets/Contrat.docx.md']);
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual(['kb/Espace Contoso/Documents/Projets/Budget.xlsx', 'kb/Espace Contoso/Documents/Projets/Budget.xlsx.md']);
     expect(logger.calls.some((call) => call.event === 'images.failed')).toBe(true);
   });
 
   it('the text read out of a picture is trimmed before it goes under the picture', async () => {
-    const images = { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([1]) }] };
-    const { files } = await run({}, { reader: { images, markdown: { '01ABC': 'Body.' } }, ocr: { texts: { [MEDIA]: '  \n smartRoute \n  ' } } });
+    const { files } = await run({}, { reader: { markdown: { '01ABC': ONE_PICTURE } }, ocr: { texts: { [MEDIA]: '  \n smartRoute \n  ' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).toContain(')\n\nsmartRoute\n');
+    expect(files.written.get(DOCUMENT)).toContain(')\n\nsmartRoute\n');
+  });
+
+  // The library gives a Word document's pictures in the text only when it is asked for them. Taken
+  // apart as well, each picture would land twice.
+  it('a Word document is asked for its pictures in its text, and not for them apart', async () => {
+    const plain = createDriveReaderFake({ markdown: { '01ABC': 'Body [image] here.' }, images: { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([9]) }] } });
+    const pictured = createDriveReaderFake({ markdown: { '01ABC': ONE_PICTURE } });
+    const files = createFilesFake();
+    const convert = createConvertFile({
+      reader: { ...plain, markdown: async (ref, options) => (options?.pictures === true ? pictured : plain).markdown(ref) },
+      files,
+      ocr: createOcrFake(),
+      clock: createClockFake(),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+    });
+    const outcome = await convert({
+      item: item(),
+      driveId: 'b!one',
+      libraryRoot: 'kb/Espace Contoso/Documents',
+      site: 'Espace Contoso',
+      library: 'Documents',
+      maxBytes: 50 * 1024 * 1024,
+    });
+
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([DOCUMENT, MEDIA]);
+    expect(files.binary.get(MEDIA)).toEqual(new Uint8Array([1, 2, 3]));
+    expect(plain.calls.some((call) => call.startsWith('images:'))).toBe(false);
+  });
+
+  it('a macro-enabled Word document keeps its pictures in its text as well', async () => {
+    const { outcome } = await run({ name: 'Macros.docm', path: 'Projets/Macros.docm' }, { reader: { markdown: { '01ABC': ONE_PICTURE } } });
+
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([
+      'kb/Espace Contoso/Documents/Projets/Macros.docm.md',
+      'kb/Espace Contoso/Documents/Projets/Macros.docm.media/image-01.png',
+    ]);
+  });
+
+  it('the pictures of a workbook, which the library gives apart from its text, are listed under one heading at its end', async () => {
+    const images = { '01ABC': [{ path: 'xl/media/image1.png', bytes: new Uint8Array([1]) }] };
+    const ocr = { texts: { 'kb/Espace Contoso/Documents/Projets/Budget.xlsx.media/image-01.png': 'Totals' } };
+    const { files } = await run(WORKBOOK, { reader: { images, markdown: { '01ABC': '| Cost |' } }, ocr });
+
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Budget.xlsx.md')).toEndWith(
+      '| Cost |\n\n## Images\n\n![image-01.png](./Budget.xlsx.media/image-01.png)\n\nTotals\n'
+    );
   });
 });

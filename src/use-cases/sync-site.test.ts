@@ -1647,14 +1647,19 @@ describe('a document converted without a part of it', () => {
   const LOST = 'the pictures could not be read: transient: Graph is busy';
   const NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
   const NOTHING_CHANGED = { pages: [{ items: [], skipped: 0, deltaLink: 'cursor-2' }] };
+  // A Word document gives its pictures in its text. A workbook is still asked for them apart, and that
+  // read can fail.
+  const WORKBOOK = item({ name: 'Budget.xlsx', path: 'Projets/Budget.xlsx' });
+  const WORKBOOK_NOTE = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Budget.xlsx.md';
+  const WORKBOOK_FILES = ['kb/SharePoint sites/Espace Contoso/Documents/Projets/Budget.xlsx', WORKBOOK_NOTE];
 
   it('a document whose pictures could not be read lands, is counted as failed, and the next run tries it again for them', async () => {
-    const first = await run({ reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-1' }], failImages: BUSY } });
+    const first = await run({ reader: { pages: [{ items: [WORKBOOK], skipped: 0, deltaLink: 'cursor-1' }], failImages: BUSY } });
     const second = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } }, reader: NOTHING_CHANGED });
 
     expect(first.summary).toMatchObject({ converted: 1, failed: 1 });
-    expect(first.notes?.failed).toEqual([{ path: 'Projets/Contrat.docx', reason: LOST }]);
-    expect(stateAfter(first.files).drives['b!one']?.items['01ABC']?.outputs).toEqual([NOTE]);
+    expect(first.notes?.failed).toEqual([{ path: 'Projets/Budget.xlsx', reason: LOST }]);
+    expect(stateAfter(first.files).drives['b!one']?.items['01ABC']?.outputs).toEqual(WORKBOOK_FILES);
     expect(stateAfter(first.files).drives['b!one']?.retry['01ABC']).toMatchObject({ attempts: 1, reason: LOST });
     expect(second.summary).toMatchObject({ converted: 1, failed: 0 });
     expect(stateAfter(second.files).drives['b!one']?.retry).toEqual({});
@@ -1663,11 +1668,14 @@ describe('a document converted without a part of it', () => {
   // The retry converts the version that is already recorded, so it writes over its own files: a copy
   // of the same version under _archive/ for each try would keep nothing worth keeping.
   it('a document converted again for its pictures writes over its own files, with no copy of the same version put aside', async () => {
-    const first = await run({ reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-1' }], failImages: BUSY } });
-    const second = await run({ files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '', [NOTE]: 'without its pictures' } }, reader: NOTHING_CHANGED });
+    const first = await run({ reader: { pages: [{ items: [WORKBOOK], skipped: 0, deltaLink: 'cursor-1' }], failImages: BUSY } });
+    const second = await run({
+      files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '', [WORKBOOK_NOTE]: 'without its pictures' } },
+      reader: NOTHING_CHANGED,
+    });
 
     expect(second.files.moves).toStrictEqual([]);
-    expect(second.files.written.get(NOTE)).toContain('converted 01ABC');
+    expect(second.files.written.get(WORKBOOK_NOTE)).toContain('converted 01ABC');
   });
 
   const owing = (outputs: ReadonlyArray<string>, retried = item()): string =>
@@ -1748,8 +1756,8 @@ describe('a document converted without a part of it', () => {
           name: 'Documents',
           deltaLink: 'cursor-1',
           pending: [],
-          items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [NOTE] } },
-          retry: { '01ABC': { item: item(), attempts: 2, reason: LOST } },
+          items: { '01ABC': { path: 'Projets/Budget.xlsx', cTag: 'c1', outputs: WORKBOOK_FILES } },
+          retry: { '01ABC': { item: WORKBOOK, attempts: 2, reason: LOST } },
           folders: {},
         },
       },
@@ -1759,8 +1767,8 @@ describe('a document converted without a part of it', () => {
 
     expect(third.summary).toMatchObject({ converted: 1, failed: 1 });
     expect(third.notes?.failed).toStrictEqual([]);
-    expect(third.notes?.gaveUp).toEqual([{ path: 'Projets/Contrat.docx', reason: LOST }]);
-    expect(stateAfter(third.files).drives['b!one']?.items['01ABC']?.outputs).toEqual([NOTE]);
+    expect(third.notes?.gaveUp).toEqual([{ path: 'Projets/Budget.xlsx', reason: LOST }]);
+    expect(stateAfter(third.files).drives['b!one']?.items['01ABC']?.outputs).toEqual(WORKBOOK_FILES);
   });
 });
 

@@ -1,5 +1,5 @@
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
-import { embedsImages, planFile } from '../domain/conversion-plan.ts';
+import { embedsImages, picturesInText, planFile } from '../domain/conversion-plan.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { renderCalendar } from '../domain/icalendar.ts';
 import { shortcutLink } from '../domain/internet-shortcut.ts';
@@ -17,7 +17,7 @@ import { ok } from '../domain/result.ts';
 import type { Clock } from './ports/clock.ts';
 import type { ArchiveEntries, DriveReader, DriveReaderError, ItemRef } from './ports/drive-reader.ts';
 import type { Files, FilesError } from './ports/files.ts';
-import { placeImages } from './place-images.ts';
+import { placeDataPictures, placeImages } from './place-images.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Progress } from './ports/progress.ts';
 import type { Ocr } from './ports/ocr.ts';
@@ -101,9 +101,11 @@ const stampFor = (input: ConvertFileInput, clock: Clock): DocumentStamp => ({
 });
 
 // Every kind that produces markdown comes through here, so this is where a document's pictures are
-// taken as well. A picture read that fails costs the pictures and not the text: the document is the
-// point, and the placeholders left in its body already say something stood there.
+// taken as well. A Word document's pictures came in its text and go to their files from there. A
+// picture read that fails costs the pictures and not the text: the document is the point, and the
+// placeholders left in its body already say something stood there.
 const withImages = async (context: Context, body: string): Promise<Result<{ readonly body: string; readonly paths: ReadonlyArray<string> }, FilesError>> => {
+  if (picturesInText(context.name)) return placeDataPictures(context.deps, context.dir, context.name, body, (what) => saying(context, what));
   if (!embedsImages(context.name)) return ok({ body, paths: [] });
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
   saying(context, 'taking out the pictures');
@@ -129,7 +131,7 @@ const writeMarkdown = async (context: Context, fileName: string, stamp: Document
 const convertDocument = async (context: Context): Promise<ConvertOutcome> => {
   const ref = { driveId: context.input.driveId, itemId: context.input.item.id };
   saying(context, 'reading the text');
-  const converted = await context.deps.reader.markdown(ref);
+  const converted = await context.deps.reader.markdown(ref, { pictures: picturesInText(context.name) });
   if (!converted.ok) return failure(converted.error);
   const body = converted.value.trim().length === 0 ? NO_TEXT_NOTE : converted.value;
   const written = await writeMarkdown(context, `${context.name}.md`, context.stamp, body);

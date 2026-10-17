@@ -117,6 +117,16 @@ export const embedsImages = (name: string): boolean => {
   return extension !== undefined && EMBEDS_IMAGES.has(extension);
 };
 
+// The kinds whose pictures a library gives in their place in the text: a Word document. Excel gives no
+// place for its pictures, so a workbook in a library is still asked for them apart. A mail attachment
+// is converted by a call that cannot give them in the text, so it is asked apart as well.
+const PICTURES_IN_TEXT: ReadonlySet<string> = new Set(['docm', 'docx']);
+
+export const picturesInText = (name: string): boolean => {
+  const extension = extensionOf(name);
+  return extension !== undefined && PICTURES_IN_TEXT.has(extension);
+};
+
 // A picture small enough to be chrome is not worth reading. Measured across one vault: everything
 // OCR found real text in was 64 KB or more, a table screenshot at 104 KB and a signature block at
 // 64 KB; everything below ten was a logo, and what came back was `pe` from one logo and
