@@ -745,9 +745,7 @@ describe('keeping the pictures a document embeds', () => {
     expect(written).toContain('smartRoute');
   });
 
-  // Each picture takes its number and the extension of its type. The name of the part a picture came
-  // from can be a 40-character hash: copied into the name, it once made a path one character longer
-  // than Windows accepts, and the document was never written.
+  // Each picture takes its number, in the order of the text, and the extension of its type.
   it('the pictures of a document are numbered in the order they came, each keeping its own extension', async () => {
     const markdown = ['![](data:image/png;base64,AQ==)', '![](data:image/jpeg;base64,Ag==)', '![](data:null;base64,Aw==)'].join('\n\n');
     const { outcome } = await run({}, { reader: { markdown: { '01ABC': markdown } } });
@@ -779,9 +777,11 @@ describe('keeping the pictures a document embeds', () => {
   });
 
   it('a document holding no pictures gains no folder and no section', async () => {
-    const { files } = await run({}, { reader: { markdown: { '01ABC': 'Body.' } } });
+    const { outcome, files } = await run({}, { reader: { markdown: { '01ABC': 'Body.' } } });
 
-    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Contrat.docx.md')).not.toContain('## Images');
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([DOCUMENT]);
+    expect(files.written.get(DOCUMENT)).not.toContain('## Images');
+    expect(files.written.get(DOCUMENT)).not.toContain('## Text in the pictures');
   });
 
   it('a kind that cannot hold pictures is never asked for them', async () => {
@@ -840,9 +840,9 @@ describe('keeping the pictures a document embeds', () => {
     expect(files.written.get(DOCUMENT)).toContain(')\n\nsmartRoute\n');
   });
 
-  // The library gives a Word document's pictures in the text only when it is asked for them. Taken
-  // apart as well, each picture would land twice.
-  it('a Word document is asked for its pictures in its text, and not for them apart', async () => {
+  // The library gives the pictures in the text only when it is asked for them, as this reader does, and a
+  // placeholder for each picture when not.
+  const convertAsked = async (over: Partial<DriveItem>): Promise<{ outcome: ConvertOutcome; files: FilesFake; plain: ReturnType<typeof createDriveReaderFake> }> => {
     const plain = createDriveReaderFake({ markdown: { '01ABC': 'Body [image] here.' }, images: { '01ABC': [{ path: 'word/media/image1.png', bytes: new Uint8Array([9]) }] } });
     const pictured = createDriveReaderFake({ markdown: { '01ABC': ONE_PICTURE } });
     const files = createFilesFake();
@@ -855,17 +855,32 @@ describe('keeping the pictures a document embeds', () => {
       progress: createProgressFake(),
     });
     const outcome = await convert({
-      item: item(),
+      item: item(over),
       driveId: 'b!one',
       libraryRoot: 'kb/Espace Contoso/Documents',
       site: 'Espace Contoso',
       library: 'Documents',
       maxBytes: 50 * 1024 * 1024,
     });
+    return { outcome, files, plain };
+  };
+
+  // Taken apart as well, each picture of a Word document would land twice.
+  it('a Word document is asked for its pictures in its text, and not for them apart', async () => {
+    const { outcome, files, plain } = await convertAsked({});
 
     expect(outcome.kind === 'converted' && outcome.outputs).toEqual([DOCUMENT, MEDIA]);
     expect(files.binary.get(MEDIA)).toEqual(new Uint8Array([1, 2, 3]));
     expect(plain.calls.some((call) => call.startsWith('images:'))).toBe(false);
+  });
+
+  // The library also gives the pictures of a web page in the text when it is asked, and these would
+  // stay there as base64: only a Word document is asked.
+  it('a document that is not Word is not asked for its pictures in its text', async () => {
+    const { outcome, files } = await convertAsked({ name: 'Page.html', path: 'Projets/Page.html' });
+
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual(['kb/Espace Contoso/Documents/Projets/Page.html.md']);
+    expect(files.written.get('kb/Espace Contoso/Documents/Projets/Page.html.md')).toContain('Body [image] here.');
   });
 
   it('a macro-enabled Word document keeps its pictures in its text as well', async () => {
@@ -885,6 +900,38 @@ describe('keeping the pictures a document embeds', () => {
 
     expect(outcome.kind === 'converted' && outcome.outputs).toEqual([DOCUMENT, drawing]);
     expect(files.written.get(DOCUMENT)).toEndWith('---\n\nChart ![image-01.emf](./Contrat.docx.media/image-01.emf)\n');
+  });
+
+  // A workbook's picture is named for its number and the extension of its part, which can be named by a
+  // 40-character hash: copied into the name, it once made a path one character longer than Windows
+  // accepts, and the document was never written.
+  it('the pictures of a workbook are numbered in the order they came, each keeping the extension of its part', async () => {
+    const images = {
+      '01ABC': [
+        { path: 'xl/media/30cd61b51f7c6391a2208eebdbb55edc3bb3c714.png', bytes: new Uint8Array([1]) },
+        { path: 'xl/media/image2.JPEG', bytes: new Uint8Array([2]) },
+        { path: 'xl/media/image3', bytes: new Uint8Array([3]) },
+      ],
+    };
+    const { outcome } = await run(WORKBOOK, { reader: { images, markdown: { '01ABC': '| Cost |' } } });
+    const folder = 'kb/Espace Contoso/Documents/Projets';
+
+    expect(outcome.kind === 'converted' && outcome.outputs).toEqual([
+      `${folder}/Budget.xlsx`,
+      `${folder}/Budget.xlsx.md`,
+      `${folder}/Budget.xlsx.media/image-01.png`,
+      `${folder}/Budget.xlsx.media/image-02.jpeg`,
+      `${folder}/Budget.xlsx.media/image-03`,
+    ]);
+  });
+
+  it('a workbook with a hundred pictures or more numbers them wide enough to sort as numbers', async () => {
+    const images = { '01ABC': Array.from({ length: 100 }, (_, at) => ({ path: `xl/media/image${at + 1}.png`, bytes: new Uint8Array([at]) })) };
+    const { outcome } = await run(WORKBOOK, { reader: { images, markdown: { '01ABC': '| Cost |' } } });
+    const outputs = outcome.kind === 'converted' ? outcome.outputs : [];
+
+    expect(outputs[2]).toEndWith('Budget.xlsx.media/image-001.png');
+    expect(outputs[101]).toEndWith('Budget.xlsx.media/image-100.png');
   });
 
   it('the pictures of a workbook, which the library gives apart from its text, are listed under one heading at its end', async () => {
