@@ -81,9 +81,6 @@ export const extensionOf = (name: string): string | undefined => {
   return found.length === 0 ? undefined : found.toLowerCase();
 };
 
-// Only ever called for a route that was matched by extension, so a dot is guaranteed.
-const withoutExtension = (name: string): string => name.slice(0, name.lastIndexOf('.'));
-
 const outputsFor = (route: ConversionRoute, name: string): ReadonlyArray<PlannedOutput> => {
   if (route === 'slides')
     return [
@@ -95,7 +92,7 @@ const outputsFor = (route: ConversionRoute, name: string): ReadonlyArray<Planned
       { relName: `${name}.pdf`, role: 'pdf' },
       { relName: `${name}.md`, role: 'markdown' },
     ];
-  if (route === 'archive' || route === 'message') return [{ relName: withoutExtension(name), role: 'archive-folder' }];
+  if (route === 'archive' || route === 'message') return [{ relName: name, role: 'archive-folder' }];
   if (route === 'document' || route === 'calendar' || route === 'shortcut') return [{ relName: `${name}.md`, role: 'markdown' }];
   return [
     { relName: name, role: 'raw' },
