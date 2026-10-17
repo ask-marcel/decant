@@ -2032,6 +2032,40 @@ describe('moving the folder of each archive and saved email once', () => {
     expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}')).toMatchObject({ layout: 2, archives: 2 });
   });
 
+  // The archive folders move once the day folders are gone. A file still in a day folder would move
+  // into an archive folder inside that day folder, and the move out of it would then have to follow.
+  it('a library whose move out of the day folders is not done yet leaves its archive folders for a later run', async () => {
+    const datedZip = `${ROOT}/2026-05-12/Projets/Livraison/Livraison.zip`;
+    const datedMember = `${ROOT}/2026-05-12/Projets/Livraison/notes.docx.md`;
+    const done = await run({
+      files: { texts: { [STATE_PATH]: before([datedZip, datedMember], {}), [datedZip]: 'the zip', [datedMember]: '# Notes', [OLD_ZIP]: 'a file in the way' } },
+      reader: NOTHING_NEW,
+    });
+
+    expect(done.files.moves).toEqual([{ from: datedMember, to: `${ROOT}/Projets/Livraison/notes.docx.md` }]);
+    expect(JSON.parse(done.files.written.get(STATE_PATH) ?? '{}')).not.toHaveProperty('archives');
+  });
+
+  // The move out of the day folders gives back the tries of a document that could not be written, once.
+  // A library past both moves goes through neither, so a document given up on stays given up.
+  it('a library already in both layouts keeps a document it could not write given up', async () => {
+    const LONG = item({ id: '01LONG', name: 'Long report.docx', path: 'Long report.docx' });
+    const state = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-07-22T09:00:00Z',
+      layout: 2,
+      archives: 2,
+      drives: {
+        'b!one': { name: 'Documents', deltaLink: 'c1', pending: [], items: {}, retry: { '01LONG': { item: LONG, attempts: 3, reason: 'write-failed: ENOENT' } }, folders: {} },
+      },
+    });
+    const done = await run({ files: { texts: { [STATE_PATH]: state } }, reader: NOTHING_NEW });
+
+    expect(done.summary.converted).toBe(0);
+    expect(stateAfter(done.files).drives['b!one']?.retry['01LONG']).toMatchObject({ attempts: 3 });
+  });
+
   it('a dry run moves nothing, and neither does a library already in this layout', async () => {
     const dry = await run({ files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]) } }, reader: NOTHING_NEW, dryRun: true });
     const settled = await run({ files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER], { layout: 2, archives: 2 }) } }, reader: NOTHING_NEW });
