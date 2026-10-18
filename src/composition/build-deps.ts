@@ -245,7 +245,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     timezone: config.timezone,
     pathBudget,
   });
-  const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone });
+  const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone, writeDown });
   // A group inbox reads through its own commands but renders through the same path, so it gets the
   // same converters with the group reader underneath them, and a renderer per group because each
   // one writes into its own folder.
@@ -266,7 +266,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
       timezone: config.timezone,
       pathBudget,
     });
-  const syncGroup = createSyncGroup({ reader: group, files, renderThreadFor: renderGroupThreadFor, clock, logger, progress, kbRoot: config.kbRoot });
+  const syncGroup = createSyncGroup({ reader: group, files, renderThreadFor: renderGroupThreadFor, clock, logger, progress, kbRoot: config.kbRoot, writeDown });
   // A task is text with nothing hanging off it, so it needs none of the conversion machinery the
   // other sources are built out of: the reader, somewhere to write, and a clock to stamp it.
   const todo = given(overrides.todo, () => createTodoReaderFromCall(createMarcelCall(api), config.timezone));

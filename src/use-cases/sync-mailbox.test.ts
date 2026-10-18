@@ -1113,6 +1113,33 @@ describe('a thread with no message left at the source', () => {
     // The sweep queued the thread for itself, so the count of an earlier failure starts over.
     expect(after.retry['thread-1']).toEqual({ attempts: 1, reason: 'could not be moved aside: write-failed' });
   });
+
+  // The note moved, so the thread leaves the state, and a file of it that would not move is in no
+  // record now: handed on, its move stays owed to the archive.
+  it('a file of it that will not move once its note has is handed on, so its move stays owed', async () => {
+    const handed: string[] = [];
+    const empty: RenderThreadOutcome = { kind: 'empty' };
+    const files = createFilesFake({ texts: { [STATE_PATH]: serializeMailboxState(state()), [NOTE]: 'note', [CARD]: 'card' } });
+    const syncMailbox = createSyncMailbox({
+      reader: createMailReaderFake({ folders: [folder()], pages: gone }),
+      files: { ...files, move: async (from, to) => (from === CARD ? err({ kind: 'write-failed', path: CARD, message: 'locked' }) : files.move(from, to)) },
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      clock: createClockFake(),
+      kbRoot: 'kb',
+      timezone: 'UTC',
+      renderThread: async () => ok(empty),
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+
+    const outcome = await syncMailbox({ maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+
+    expect(outcome.ok).toBe(true);
+    expect(files.moves.map((move) => move.from)).toEqual([NOTE]);
+    expect(handed).toEqual([CARD]);
+  });
 });
 
 describe('what the mailbox sync reports', () => {

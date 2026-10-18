@@ -33,6 +33,7 @@ import type { StepError } from './ports/step-error.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn, writtenBefore } from './thread-folders.ts';
 import type { FoldersOnDisk } from './thread-folders.ts';
+import type { WriteDown } from './put-aside.ts';
 import { NOT_MOVED, NO_LONGER_LISTED, NO_MESSAGE_LEFT, threadAside, writtenAgain } from './thread-aside.ts';
 import type { RunNotes, RunSummary, SourceRun } from './sync-site.ts';
 import { writeReport } from './sync-site.ts';
@@ -49,6 +50,9 @@ export type SyncGroupDeps = {
   readonly logger: Logger;
   readonly progress: Progress;
   readonly kbRoot: string;
+  // Where the files of a thread put aside whole that would not move are written down, once its note
+  // has, so a later run moves them. Absent, such a file is only logged.
+  readonly writeDown?: WriteDown;
 };
 
 export type SyncGroupInput = {
