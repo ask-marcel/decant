@@ -145,7 +145,10 @@ describe('syncing the people directory', () => {
       'jane',
       { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [DANA, JANE], teams) }
     );
-    const done = await run({ reader: { profiles: { ...PROFILES, jane: { ...JANE, name: 'Jane Doe-Smith' } } }, files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
+    const done = await run({
+      reader: { profiles: { ...PROFILES, jane: { ...JANE, name: 'Jane Doe-Smith' } } },
+      files: { texts: { [STATE_PATH]: serializePeopleState(state), [`${ROOT}/Jane Doe.md`]: 'a page' } },
+    });
 
     expect(done.files.written.get(`${ROOT}/Dana Farrow.md`)).toContain('- [Jane Doe-Smith](<Jane Doe-Smith.md>)');
   });
@@ -159,7 +162,10 @@ describe('syncing the people directory', () => {
       'jane',
       { file: `${ROOT}/Jane Doe.md`, name: 'Jane Doe', fingerprint: fingerprintOf('jane', [DANA, JANE], teams) }
     );
-    const done = await run({ reader: { profiles: { ...PROFILES, dana: { ...DANA, enabled: false } } }, files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
+    const done = await run({
+      reader: { profiles: { ...PROFILES, dana: { ...DANA, enabled: false } } },
+      files: { texts: { [STATE_PATH]: serializePeopleState(state), [`${ROOT}/Dana Farrow.md`]: 'a page' } },
+    });
 
     expect(done.files.written.get(`${ROOT}/Jane Doe.md`)).toContain('Reports to Dana Farrow.');
   });
@@ -421,7 +427,7 @@ describe('syncing the people directory', () => {
     );
     const withLeaver = withPerson(settled, 'gone', { file: `${ROOT}/Left Already.md`, name: 'Left Already', fingerprint: 'x' });
 
-    const redrawn = await run({ files: { texts: { [STATE_PATH]: serializePeopleState(withLeaver) } } });
+    const redrawn = await run({ files: { texts: { [STATE_PATH]: serializePeopleState(withLeaver), [`${ROOT}/Left Already.md`]: 'a page' } } });
     expect(redrawn.summary).toMatchObject({ converted: 0, archived: 1 });
     expect(redrawn.files.writeLog).toContain(`${ROOT}/_org-chart.md`);
 

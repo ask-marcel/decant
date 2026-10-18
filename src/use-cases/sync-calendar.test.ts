@@ -873,7 +873,10 @@ describe('linking a series and its exceptions', () => {
       'x',
       recorded(MARCH_NOTE, MARCH, { master: 'm', linked: MASTER_NOTE })
     );
-    const done = await run({ reader: { changes: [{ id: 'x', removed: true }], events: { m: MASTER } }, files: seeded(state) });
+    const done = await run({
+      reader: { changes: [{ id: 'x', removed: true }], events: { m: MASTER } },
+      files: { texts: { ...seeded(state).texts, [MARCH_NOTE]: 'the exception' } },
+    });
 
     expect(done.files.written.get(MASTER_NOTE)).not.toContain('## Exceptions');
     expect(stateOf(done.files).events['m']).toMatchObject({ series: { exceptions: [] } });
@@ -960,12 +963,13 @@ describe('linking a series and its exceptions', () => {
     const reader = { changes: [{ id: 'm', removed: false }], events: { m: renamed, x: MARCH } };
     const tries = { attempts: 3, version: MARCH.lastModified, name: 'Monthly review', reason: 'disk full' };
     const edited = { ...MARCH, lastModified: '2026-03-05T00:00:00Z' };
-    const early = await run({ reader, files: seeded(state), since: '2026-04-01' });
-    const onTheDay = await run({ reader, files: seeded(state), since: '2026-03-02' });
-    const givenUp = await run({ reader, files: seeded({ ...state, retry: { x: tries } }) });
+    const note = { [MASTER_NOTE]: 'the series' };
+    const early = await run({ reader, files: { texts: { ...seeded(state).texts, ...note } }, since: '2026-04-01' });
+    const onTheDay = await run({ reader, files: { texts: { ...seeded(state).texts, ...note } }, since: '2026-03-02' });
+    const givenUp = await run({ reader, files: { texts: { ...seeded({ ...state, retry: { x: tries } }).texts, ...note } } });
     const givenUpLater = await run({
       reader: { ...reader, events: { m: renamed, x: edited } },
-      files: seeded({ ...state, retry: { x: { ...tries, version: edited.lastModified } } }),
+      files: { texts: { ...seeded({ ...state, retry: { x: { ...tries, version: edited.lastModified } } }).texts, ...note } },
     });
 
     expect(early.files.written.has(`${ROOT}/2026-01-05/Monthly sync.md`)).toBe(true);
@@ -996,7 +1000,7 @@ describe('linking a series and its exceptions', () => {
         events: { m: carrying, x: MARCH },
         attachments: { m: [{ id: 'att-m', name: 'Agenda.docx', contentType: 'application/msword', size: 1024 }] },
       },
-      files: seeded(state),
+      files: { texts: { ...seeded(state).texts, [MASTER_NOTE]: 'the namesake', [suffixed]: 'the series', [kept]: 'the agenda' } },
     });
 
     expect(done.reader.calls).toContain('attachments:m');
