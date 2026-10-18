@@ -20,7 +20,9 @@ const BLANK_LINES = /\n{2,}/g;
 const SRC = /\bsrc="([^"]*)"/i;
 const ALT = /\balt="([^"]*)"/i;
 
-const ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+// A map, not an object: an object also answers for `constructor`, which every object has, and a
+// body that wrote `&constructor;` read as the text of a function.
+const ENTITIES: ReadonlyMap<string, string> = new Map(Object.entries({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }));
 // A reference by number or by name, read in one pass: what one decodes to is text, never another
 // reference to read again, so `&#38;amp;` reads `&amp;`, as HTML reads it.
 const REFERENCE = /&(?:#(x[0-9a-f]+|\d+)|([a-z]+));/gi;
@@ -43,7 +45,7 @@ const pointOf = (code: string): number => (code.toLowerCase().startsWith('x') ? 
 
 const referenceOf = (match: string, code: string | undefined, name: string | undefined): string => {
   if (code !== undefined) return characterOf(pointOf(code));
-  return ENTITIES[(name ?? '').toLowerCase()] ?? match;
+  return ENTITIES.get((name ?? '').toLowerCase()) ?? match;
 };
 
 const decodeEntities = (text: string): string => text.replace(REFERENCE, referenceOf);

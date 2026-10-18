@@ -73,6 +73,10 @@ describe('reading a channel post as Graph answers for it', () => {
     expect(parseChannelPost(long)?.preview).toBe(`${'word '.repeat(40)}`.trim().slice(0, 80));
     expect(parseChannelPost({ ...graphPost, body: { contentType: 'text', content: 'plain &amp; simple\nsecond' } })?.preview).toBe('plain & simple');
   });
+
+  it('a reference named for a property of every object, such as &constructor;, stays in the preview as it was written', () => {
+    expect(parseChannelPost({ ...graphPost, body: { contentType: 'html', content: '<p>Bring &constructor; along</p>' } })?.preview).toBe('Bring &constructor; along');
+  });
 });
 
 describe('naming a post the way a person would find it', () => {
