@@ -630,8 +630,8 @@ that the thread no longer holds as usual.
 decant can fail to move a file, for example a file that is open on Windows. Such a file stays in the
 thread, and the next write of the thread tries again. When the note of a thread with no message
 cannot move, decant keeps the thread. It tries again on the next run, three times in all. When the
-note moves but another file of the thread does not, decant writes the path of that file in
-`kb/.sync-aside.json`. A later run moves it.
+note moves but a different file of the thread does not move, decant writes the path of that file in
+`kb/.sync-aside.json`. At the start of each run, decant tries again to move that file.
 
 Each file in a thread keeps the name that it got first, also a file with only a card, and also a
 linked document. A new file does not get the name of a file that the thread holds. This rule also
@@ -1107,8 +1107,10 @@ Each run gets the list of all the threads of the group. When a thread that decan
 the list, the group no longer holds it. decant then moves its note and its files to
 `kb/_archive/<day of the run>/`, and the report names it with `no longer at the source`. When the
 list has no thread at all, decant moves no file, because an empty list can be an error. decant does
-not see a post that is deleted from a thread that stays, until the thread gets a new post. Files
-that a thread no longer holds go to `_archive/` as in the mailbox.
+not see a post that is deleted from a thread that stays, until the thread gets a new post.
+
+Files that a thread no longer holds go to `_archive/` as in the mailbox. When the note or a
+different file of a group thread does not move, decant does the same steps as for the mailbox.
 
 A thread that could not be written is remembered and asked for again on the next run, three tries
 in all, whatever the dates say. It has to be remembered rather than found again: a thread that
