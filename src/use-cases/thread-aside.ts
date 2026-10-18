@@ -2,7 +2,7 @@ import { filesLeft, filesOf, stillHolding, storesWithout, underName } from '../d
 import type { FileStores, ThreadRecord } from '../domain/mail-state.ts';
 import type { ReportEntry } from '../domain/report.ts';
 import type { Logger } from './ports/logger.ts';
-import { setAside } from './put-aside.ts';
+import { letGo, setAside } from './put-aside.ts';
 import type { PutAsideDeps, SetAside } from './put-aside.ts';
 import type { RenderedThread } from './render-thread.ts';
 import type { RunNotes, RunSummary } from './sync-site.ts';
@@ -39,12 +39,16 @@ const filesAside = async (deps: ThreadAsideDeps, threadId: string, paths: Readon
 // would not move, why. Left where it is, the note still reads as current, so the thread is kept.
 export type ThreadAside = { readonly moved: true; readonly entry: ReportEntry } | { readonly moved: false; readonly reason: string };
 
-// A thread put aside whole: its note and every file its folder held, as one set.
+// A thread put aside whole: its note and every file its folder held, as one set. Once the note has
+// moved, the thread leaves the state, so a file of it that would not move is in no record: it is
+// handed on, and its move stays owed.
 export const threadAside = async (deps: ThreadAsideDeps, root: string, threadId: string, record: ThreadRecord, reason: string): Promise<ThreadAside> => {
   const note = `${root}/${record.file}`;
   const aside = await filesAside(deps, threadId, [note, ...filesOf(record)]);
   const stuck = aside.failed.find((missed) => missed.path === note);
-  return stuck === undefined ? { moved: true, entry: { path: record.file, reason } } : { moved: false, reason: `${NOT_MOVED}: ${stuck.error.kind}` };
+  if (stuck !== undefined) return { moved: false, reason: `${NOT_MOVED}: ${stuck.error.kind}` };
+  await letGo(deps, aside);
+  return { moved: true, entry: { path: record.file, reason } };
 };
 
 // What one thread's write adds to a run, folded onto the state after the window's writes.

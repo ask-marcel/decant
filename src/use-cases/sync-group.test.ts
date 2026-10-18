@@ -391,6 +391,38 @@ describe('a group thread the group no longer lists', () => {
     expect(stateAfter(files).retry['AAQkAD-thread']).toEqual({ attempts: 1, reason: 'could not be moved aside: write-failed' });
   });
 
+  // The note moved, so the thread leaves the state, and a file of it that would not move is in no
+  // record now: handed on, its move stays owed to the archive.
+  it('a file of it that will not move once its note has is handed on, so its move stays owed', async () => {
+    const CARD = `kb/Group inboxes/Northwind Leadership Team/threads/${RECORD.folder}/_attachments/a.pdf.md`;
+    const handed: string[] = [];
+    const files = createFilesFake({
+      texts: {
+        [STATE_PATH]: serializeGroupState(withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', { ...RECORD, files: [CARD] })),
+        [NOTE]: 'note',
+        [CARD]: 'card',
+      },
+    });
+    const syncGroup = createSyncGroup({
+      reader: createGroupReaderFake({ threads: { '0d3b-group': [thread({ id: 'other', lastDelivered: '2026-07-01T00:00:00Z' })] } }),
+      files: { ...files, move: async (from, to) => (from === CARD ? err({ kind: 'write-failed', path: CARD, message: 'locked' }) : files.move(from, to)) },
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      clock: createClockFake(),
+      kbRoot: 'kb',
+      renderThreadFor: () => async () => ok(rendered()),
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+
+    const outcome = await syncGroup({ group: GROUP, maxBytes: 50 * 1024 * 1024, dryRun: false, concurrency: 1 });
+
+    expect(outcome.ok).toBe(true);
+    expect(files.moves.map((move) => move.from)).toEqual([NOTE]);
+    expect(handed).toEqual([CARD]);
+  });
+
   // Out of tries because it could not be written, a thread is still put aside once the group deletes
   // it: putting it aside needs no write.
   it('a thread out of tries because it could not be written is still put aside once the group no longer lists it', async () => {

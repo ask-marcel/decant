@@ -57,6 +57,7 @@ import { expiredCursor } from './graph-status.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn, writtenBefore } from './thread-folders.ts';
 import type { FoldersOnDisk } from './thread-folders.ts';
+import type { WriteDown } from './put-aside.ts';
 import { NO_MESSAGE_LEFT, threadAside, writtenAgain } from './thread-aside.ts';
 import { MAX_CONVERSION_ATTEMPTS } from '../domain/retry-policy.ts';
 import { withGaveUp } from '../domain/report.ts';
@@ -77,6 +78,9 @@ export type SyncMailboxDeps = {
   readonly kbRoot: string;
   // The zone the knowledge base counts its days in, which the index page lists each thread under.
   readonly timezone: string;
+  // Where the files of a thread put aside whole that would not move are written down, once its note
+  // has, so a later run moves them. Absent, such a file is only logged.
+  readonly writeDown?: WriteDown;
 };
 
 export type SyncMailboxInput = {

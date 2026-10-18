@@ -629,7 +629,9 @@ that the thread no longer holds as usual.
 
 decant can fail to move a file, for example a file that is open on Windows. Such a file stays in the
 thread, and the next write of the thread tries again. When the note of a thread with no message
-cannot move, decant keeps the thread. It tries again on the next run, three times in all.
+cannot move, decant keeps the thread. It tries again on the next run, three times in all. When the
+note moves but another file of the thread does not, decant writes the path of that file in
+`kb/.sync-aside.json`. A later run moves it.
 
 Each file in a thread keeps the name that it got first, also a file with only a card, and also a
 linked document. A new file does not get the name of a file that the thread holds. This rule also
