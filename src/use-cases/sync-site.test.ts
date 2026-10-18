@@ -2082,6 +2082,18 @@ describe('moving the folder of each archive and saved email once', () => {
 
   // The state is saved once the library is read: a read that fails after the move leaves the record at
   // the old places, and the next run finds each file already at its new one.
+  // The run after a stopped one finds each file at its new place already: no failure to warn about.
+  it('the run after a stopped one logs no failure for the files that the stopped run moved', async () => {
+    const stopped = await run({
+      files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } },
+      reader: { failWith: { kind: 'auth', message: 'token expired' } },
+    });
+    const next = await run({ files: { texts: Object.fromEntries(stopped.files.written) }, reader: NOTHING_NEW });
+
+    expect(next.logger.calls.filter((call) => call.event === 'refile.failed')).toHaveLength(0);
+    expect(next.logger.calls).toContainEqual({ level: 'info', event: 'refile.gone', meta: { path: OLD_ZIP } });
+  });
+
   it('a run that moved the files and stopped before it saved the state leaves the next run to record their new places', async () => {
     const stopped = await run({
       files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } },

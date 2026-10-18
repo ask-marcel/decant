@@ -223,6 +223,20 @@ describe('syncing a Microsoft To Do list', () => {
     expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
   });
 
+  // A file someone took away by hand left its old place already: the move is done, and the layout
+  // settles with no failure to warn about.
+  it('a task file someone removed does not hold the move to the day it is due', async () => {
+    const OLD = 'kb/To Do/Tasks/2026-09-01/Book the venue.md';
+    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: OLD, lastModified: '2026-09-08T16:20:11Z', title: 'Book the venue' });
+    const done = await run({ reader: { tasks: { 'list-1': [task({ due: '2026-09-20' })] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
+    const kept = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}');
+
+    expect(kept.tasks['AAMkAGI-task'].file).toBe('kb/To Do/Tasks/2026-09-20/Book the venue.md');
+    expect(kept.layout).toBe(2);
+    expect(done.logger.calls.filter((call) => call.event === 'refile.failed')).toHaveLength(0);
+    expect(done.logger.calls).toContainEqual({ level: 'info', event: 'refile.gone', meta: { path: OLD } });
+  });
+
   it('a dry run counts the tasks the run would write once the list is filed by due day, and moves nothing', async () => {
     const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', {
       file: 'kb/To Do/Tasks/2026-09-01/Book the venue.md',

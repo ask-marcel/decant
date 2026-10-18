@@ -161,18 +161,6 @@ const stayedAt = (drive: DriveState, stuck: ReadonlyMap<string, string>): DriveS
   items: Object.fromEntries(Object.entries(drive.items).map(([id, entry]) => [id, { ...entry, outputs: entry.outputs.map((output) => stuck.get(output) ?? output) }] as const)),
 });
 
-// The moves that would not go and still owe a file. A file gone from its old place left it already: a
-// run moved it and stopped before it saved the state, or someone took it away by hand. Its record
-// takes the new place, or the layout would never settle.
-const stillThere = async (deps: SyncSiteDeps, stuck: ReadonlyMap<string, string>): Promise<ReadonlyMap<string, string>> => {
-  const left = new Map<string, string>();
-  for (const [to, from] of stuck) {
-    const held = await deps.files.exists(from);
-    if (!held.ok || held.value) left.set(to, from);
-  }
-  return left;
-};
-
 // Each file of each library that a layout files elsewhere, moved there. The moves are not put aside:
 // nothing is superseded, only filed again. A file that will not move keeps its place in the record, and
 // the layout stays unsettled, so the next run moves what is left.
@@ -185,7 +173,7 @@ const moveAll = async (
   let settled = true;
   for (const [id, drive] of Object.entries(state.drives)) {
     const moved = refiled(id, drive);
-    const stuck = await stillThere(deps, await refileAll(deps, moved.moves));
+    const stuck = await refileAll(deps, moved.moves);
     settled &&= stuck.size === 0;
     drives[id] = stayedAt(moved.drive, stuck);
   }
