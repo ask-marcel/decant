@@ -12,64 +12,68 @@ export type FileDecision =
 
 export type PlannedFile = { readonly name: string; readonly size: number };
 
-// Partial, because the key set is open: any extension not listed here is one we do not handle.
+// A map, because the key set is open: any extension not listed here is one we do not handle. An
+// object would also answer for `constructor` and `__proto__`, which every object has, with a route
+// that no converter takes, and that stopped the run.
 // A Loop page (`.loop`, and the same page under its older `.fluid` name, and a `.whiteboard`) holds
 // no body of its own: the text lives in the Fluid service and Graph renders it on request. It is a
 // document all the same, because the reader asks Graph for that rendering and hands back markdown.
-const ROUTE_BY_EXTENSION: Readonly<Partial<Record<string, ConversionRoute>>> = {
-  csv: 'document',
-  doc: 'document',
-  docm: 'document',
-  docx: 'document',
-  fluid: 'document',
-  htm: 'document',
-  html: 'document',
-  json: 'document',
-  log: 'document',
-  loop: 'document',
-  md: 'document',
-  msg: 'document',
-  odp: 'document',
-  odt: 'document',
-  // A SARIF report is JSON, which the converter already passes through as text.
-  sarif: 'document',
-  txt: 'document',
-  whiteboard: 'document',
-  xml: 'document',
-  yaml: 'document',
-  yml: 'document',
-  // A workbook is kept as it came as well as read. The conversion yields cell text and nothing else,
-  // so formulas, several sheets, formatting and charts survive nowhere but the file itself.
-  ods: 'spreadsheet',
-  xls: 'spreadsheet',
-  xlsm: 'spreadsheet',
-  xlsx: 'spreadsheet',
-  // A saved email is a folder like an archive is: the message it holds, and every file it carried
-  // taken out of the base64 it travelled in rather than left sitting in the middle of the text.
-  eml: 'message',
-  // An invitation is read rather than kept: what a reader wants of it is a handful of fields, and
-  // the file around them is daylight-saving rules and vendor properties.
-  ics: 'calendar',
-  // A Windows shortcut is a few lines naming where it goes. Somebody put it in the library as a link,
-  // so it is read for that address rather than reported as a kind nothing reads.
-  url: 'shortcut',
-  pptm: 'slides',
-  pptx: 'slides',
-  ppt: 'legacy-slides',
-  rtf: 'legacy-slides',
-  pdf: 'pdf',
-  zip: 'archive',
-  bmp: 'image',
-  gif: 'image',
-  heic: 'image',
-  jpeg: 'image',
-  jpg: 'image',
-  png: 'image',
-  tif: 'image',
-  tiff: 'image',
-  webp: 'image',
-  svg: 'vector',
-};
+const ROUTE_BY_EXTENSION: ReadonlyMap<string, ConversionRoute> = new Map(
+  Object.entries<ConversionRoute>({
+    csv: 'document',
+    doc: 'document',
+    docm: 'document',
+    docx: 'document',
+    fluid: 'document',
+    htm: 'document',
+    html: 'document',
+    json: 'document',
+    log: 'document',
+    loop: 'document',
+    md: 'document',
+    msg: 'document',
+    odp: 'document',
+    odt: 'document',
+    // A SARIF report is JSON, which the converter already passes through as text.
+    sarif: 'document',
+    txt: 'document',
+    whiteboard: 'document',
+    xml: 'document',
+    yaml: 'document',
+    yml: 'document',
+    // A workbook is kept as it came as well as read. The conversion yields cell text and nothing else,
+    // so formulas, several sheets, formatting and charts survive nowhere but the file itself.
+    ods: 'spreadsheet',
+    xls: 'spreadsheet',
+    xlsm: 'spreadsheet',
+    xlsx: 'spreadsheet',
+    // A saved email is a folder like an archive is: the message it holds, and every file it carried
+    // taken out of the base64 it travelled in rather than left sitting in the middle of the text.
+    eml: 'message',
+    // An invitation is read rather than kept: what a reader wants of it is a handful of fields, and
+    // the file around them is daylight-saving rules and vendor properties.
+    ics: 'calendar',
+    // A Windows shortcut is a few lines naming where it goes. Somebody put it in the library as a link,
+    // so it is read for that address rather than reported as a kind nothing reads.
+    url: 'shortcut',
+    pptm: 'slides',
+    pptx: 'slides',
+    ppt: 'legacy-slides',
+    rtf: 'legacy-slides',
+    pdf: 'pdf',
+    zip: 'archive',
+    bmp: 'image',
+    gif: 'image',
+    heic: 'image',
+    jpeg: 'image',
+    jpg: 'image',
+    png: 'image',
+    tif: 'image',
+    tiff: 'image',
+    webp: 'image',
+    svg: 'vector',
+  })
+);
 
 // A leading dot names a hidden file, so `.docx` has no extension: it is a file called `.docx`.
 // Outlook does not clean an attachment name the way SharePoint does, so `Budget.xlsx ` arrives with
@@ -144,7 +148,7 @@ export const planFile = (file: PlannedFile, maxBytes: number): FileDecision => {
   if (file.name.startsWith(LOCK_PREFIX)) return { kind: 'skip', reason: 'lock-file' };
   const extension = extensionOf(file.name);
   if (extension === undefined) return { kind: 'skip', reason: 'unsupported-type' };
-  const route = ROUTE_BY_EXTENSION[extension];
+  const route = ROUTE_BY_EXTENSION.get(extension);
   if (route === undefined) return { kind: 'skip', reason: 'unsupported-type' };
   if (file.size > maxBytes) return { kind: 'skip', reason: 'too-large' };
   return { kind: 'process', route, outputs: outputsFor(route, file.name) };

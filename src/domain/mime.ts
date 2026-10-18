@@ -68,13 +68,15 @@ const kindOf = (headers: Headers): string => (contentTypeOf(headers).split(';')[
 
 const encodingOf = (headers: Headers): string => (headerOf(headers, 'content-transfer-encoding') ?? '7bit').trim().toLowerCase();
 
-const EXTENSION_BY_KIND: Readonly<Partial<Record<string, string>>> = { 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif' };
+// A map, not an object: an object also answers for `constructor` and `__proto__`, which every object
+// has, and a part of either type took that answer as its extension.
+const EXTENSION_BY_KIND: ReadonlyMap<string, string> = new Map(Object.entries({ 'application/pdf': 'pdf', 'image/png': 'png', 'image/jpeg': 'jpg', 'image/gif': 'gif' }));
 
 // A part the message never named still has to land under something, and the kind is the only thing
 // left to name it by.
 const nameOf = (headers: Headers, at: number): string => {
   const named = parameterOf(rawHeaderOf(headers, 'content-disposition') ?? '', FILENAME) ?? parameterOf(contentTypeOf(headers), NAME);
-  return named ?? `part-${at}.${EXTENSION_BY_KIND[kindOf(headers)] ?? 'bin'}`;
+  return named ?? `part-${at}.${EXTENSION_BY_KIND.get(kindOf(headers)) ?? 'bin'}`;
 };
 
 type Gathered = { readonly text: ReadonlyArray<string>; readonly parts: ReadonlyArray<MimePart> };
