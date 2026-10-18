@@ -118,10 +118,14 @@ const LOOKUP_ID = 'LookupId';
 // A column as the table shows it: what to key the cells by, and what to head them with.
 type Shown = { readonly name: string; readonly label: string };
 
+// A cell Graph answered for the row, never a name every object has: the internal name of a column
+// is the list owner's to choose, and `constructor` or `toString` read a function of the object.
+const fieldOf = (row: ListItem, name: string): unknown => (Object.hasOwn(row.fields, name) ? row.fields[name] : undefined);
+
 const cellOf = (row: ListItem, column: Shown): string => {
-  const held = row.fields[column.name];
+  const held = fieldOf(row, column.name);
   if (held !== undefined) return cellText(held);
-  const lookup = row.fields[`${column.name}${LOOKUP_ID}`];
+  const lookup = fieldOf(row, `${column.name}${LOOKUP_ID}`);
   return lookup === undefined ? '' : `#${cellText(lookup)}`;
 };
 
