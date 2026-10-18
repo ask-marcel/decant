@@ -6,6 +6,10 @@ boundaries, branded types at trust boundaries, and the production disciplines: p
 isolation, reliability, observability). Run the `atelier-review-me` skill before landing
 changes. Journals: `.claude/LESSONS.md` (append-only memory), `.claude/PLAN.md` (current plan).
 
+When a fix or a feature changes one route of a pair (`convert-file.ts` and `convert-attachment.ts`,
+zip and eml, library and thread), change each route of the same shape, and give each one its own
+test.
+
 ## What this repo is
 
 `decant`, a Bun CLI that mirrors Microsoft 365 sources into `kb/` as markdown for local agents to
