@@ -275,6 +275,9 @@ each library, each To Do list and each Teams channel. These moves do not go to `
 can stay at its old place, for example because another program has the file open. Then the state
 keeps the file at that place, and the next run moves it. decant never moves a file over another file.
 
+If a file is not at its old place, for example because you deleted it, the state records its new
+place. The next run does not try to move it again.
+
 Two different SharePoint sites can share a display name (most often an unedited template title). The
 picker shows each one's address alongside the name so they can be told apart before choosing, and if
 a sync would otherwise land in a folder another site's `.sync-state.json` already claims, it is
