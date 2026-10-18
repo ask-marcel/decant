@@ -538,3 +538,33 @@ describe('handing on the earlier file of a task', () => {
     expect(waiting.handed).toStrictEqual([]);
   });
 });
+
+// A file a source lets go that would not move under the archive leaves the record all the same, so it
+// is handed on, and the ledger keeps its move owed.
+describe('handing on the file of a task gone from the list', () => {
+  const GONE = 'kb/To Do/Tasks/2026-09-01/Cancel the order.md';
+
+  it('the file of a task no longer in the list is handed on when it will not move aside', async () => {
+    const handed: string[] = [];
+    const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-gone', { file: GONE, lastModified: '2026-09-01T09:00:00Z', title: 'Cancel the order' });
+    const syncTodo = createSyncTodo({
+      reader: createTodoReaderFake({ tasks: { 'list-1': [task()] } }),
+      files: createFilesFake({
+        texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [GONE]: 'the gone task' },
+        failMoveWith: { kind: 'write-failed', path: GONE, message: 'held open' },
+      }),
+      clock: createClockFake('2026-09-09T14:00:00Z'),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      kbRoot: 'kb',
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+
+    const outcome = await syncTodo({ list: LIST, dryRun: false, concurrency: 4 });
+
+    expect(outcome.ok).toBe(true);
+    expect(handed).toEqual([GONE]);
+  });
+});

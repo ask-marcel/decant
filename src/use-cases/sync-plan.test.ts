@@ -494,3 +494,63 @@ describe('a plan renamed since its files were written', () => {
     expect(files.moves).toStrictEqual([]);
   });
 });
+
+// A file a source lets go that would not move under the archive leaves the record all the same, so it
+// is handed on, and the ledger keeps its move owed.
+describe('handing on the files of a plan that will not move aside', () => {
+  const OLD = `${ROOT}/To do/Book the venue.md`;
+  const RETIRED = `${ROOT}/Done/Retired.md`;
+  const held = { kind: 'write-failed', path: OLD, message: 'held open' } as const;
+
+  const handing = async (): Promise<ReadonlyArray<string>> => {
+    const handed: string[] = [];
+    const state = withTask(settled(), 'gone', { file: RETIRED, fingerprint: 'x', title: 'Retired' });
+    const syncPlan = createSyncPlan({
+      reader: createPlanReaderFake({
+        plans: [PLAN],
+        buckets: { 'plan-1': [bucket('b-done', 'Done', '8585 2'), bucket('b-todo', 'Next', '8585 1')] },
+        tasks: TASKS,
+        details: DETAILS,
+        names: NAMES,
+      }),
+      files: createFilesFake({ texts: { [STATE_PATH]: serializePlanState(state), [OLD]: 'the task as it was', [RETIRED]: 'the retired task' }, failMoveWith: held }),
+      clock: createClockFake('2026-09-12T14:00:00Z'),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      kbRoot: 'kb',
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+    await syncPlan({ plan: PLAN, dryRun: false, concurrency: 4 });
+    return handed;
+  };
+
+  it('the earlier page of a task filed under a renamed bucket is handed on when it will not move aside', async () => {
+    expect(await handing()).toContain(OLD);
+  });
+
+  it('the page of a task gone from the plan is handed on when it will not move aside', async () => {
+    expect(await handing()).toContain(RETIRED);
+  });
+
+  it('a file of the old folder of a renamed plan is handed on when it will not move aside', async () => {
+    const first = await run();
+    const handed: string[] = [];
+    const renamed = { ...PLAN, title: 'Offsite 2027' };
+    const syncPlan = createSyncPlan({
+      reader: createPlanReaderFake({ plans: [renamed], buckets: BUCKETS, tasks: TASKS, details: DETAILS, names: NAMES }),
+      files: createFilesFake({ texts: Object.fromEntries(first.files.written), failMoveWith: held }),
+      clock: createClockFake('2026-09-13T14:00:00Z'),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      kbRoot: 'kb',
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+    await syncPlan({ plan: renamed, formerTitle: PLAN.title, dryRun: false, concurrency: 4 });
+
+    expect(handed).toContain(STATE_PATH);
+  });
+});
