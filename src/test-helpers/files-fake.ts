@@ -67,10 +67,12 @@ export const createFilesFake = (seed: FilesFakeSeed = {}): FilesFake => {
       return ok(undefined);
     },
     // Refuses a path that already holds a file, as the port does: a fake that wrote over it let a
-    // test pass where the disk would have kept the file in the way and left the move undone.
+    // test pass where the disk would have kept the file in the way and left the move undone. Refuses a
+    // file that is not there too, as the disk does, so a test moves only what a run wrote.
     move: async (from, to) => {
       if (seed.failMoveWith) return err(seed.failMoveWith);
       if (written.has(to) || binary.has(to)) return err({ kind: 'write-failed', path: to, message: `a file is already at ${to}` });
+      if (!written.has(from) && !binary.has(from)) return err({ kind: 'write-failed', path: to, message: `no file at ${from}` });
       moves.push({ from, to });
       const text = written.get(from);
       if (text !== undefined) written.set(to, text);
