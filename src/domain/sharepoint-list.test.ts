@@ -142,6 +142,16 @@ describe('writing a list as a table', () => {
     );
   });
 
+  it('a column named for a property of every object, such as constructor or toString, reads empty where the row holds no cell for it', () => {
+    const named: ReadonlyArray<ListColumn> = [
+      { name: 'constructor', label: 'Builder', hidden: false, readOnly: false },
+      { name: 'toString', label: 'Text', hidden: false, readOnly: false },
+    ];
+    const row: ListItem = { id: '3', lastModified: '2026-09-12T10:00:00Z', webUrl: 'https://x/3', fields: { Title: 'Heron' } };
+
+    expect(renderListTable(named, [row])).toBe(['| Title | Builder | Text |', '|---|---|---|', '| Heron |  |  |'].join('\n'));
+  });
+
   it('a list with no rows is a header and nothing under it, said so', () => {
     expect(renderListTable(columns, [])).toBe(['| Title | Status | Owners | Sponsor |', '|---|---|---|---|', '', '_No rows._'].join('\n'));
   });
