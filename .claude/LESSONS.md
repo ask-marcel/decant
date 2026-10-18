@@ -91,14 +91,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   real call path never does, so time the code as it actually runs before promising a number, or
   promise none.
 
-## 2026-08-28
-
-- [mistake] A parser tested with fixtures I wrote myself is tested against my idea of the format, not
-  the format. The MIME boundary was escaped into a pattern and the escaping was wrong; every fixture
-  used `BOUND` or `B`, so the tests passed for a parser that would have broken on the first real
-  Outlook message, whose boundaries carry `.` and `+`. When a value comes from somewhere else, put
-  what that somewhere else actually sends in the fixture.
-
 ## 2026-08-30
 
 - [gotcha] Fragment assertions leave a document's shape untested. A `global-report.ts` suite built
@@ -159,18 +151,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   it tells the reader to open a file that no longer exists, once per signature down a long thread.
   A converter that returns text rather than a document has to drop it.
 
-- [gotcha] A file too big to score is a file too big to trust: `render-thread.ts` reached 692 lines
-  doing five jobs and crossed under 90 on three of four changes in one session, each time pulled
-  back by tests written against whatever survived. Splitting it into its jobs put every piece over
-  90 on its own, made each survivor attributable to one module, and turned up three pieces of dead
-  code.
-
-- [gotcha] Extracting a module is where narrow dependencies pay. Each piece took a `Pick<>` of the
-  ports it actually calls rather than the whole `RenderThreadDeps` bag, which is free at every call
-  site under structural typing and states, in the type, that following a link never reads a message
-  and that writing a card never fetches anything. The alternative, one shared context module every
-  piece imports whole, keeps the coupling and merely moves it.
-
 - [gotcha] The commit-size gate is 10 files AND 300 lines. A step touching a domain module and its
   wiring splits as the pure module first, while it has no caller, and the wiring second; a branch
   lands by rebase rather than one merge commit, which carries the whole cumulative diff and trips
@@ -180,11 +160,14 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   lint, typecheck, the suite, coverage and mutation have run by hand, said in the body.
   Merges: 2026-07-26, 2026-08-27, 2026-08-30.
 
-- [decision] The four thread modules got their own test files but kept ONE harness, because what
-  each does is only visible in the documents a whole run writes: a card names a file the placement
-  chose, and a body links a card the writing made. Narrower fakes per module would test the seams
-  between them rather than the vault they produce; mutation is scored per source file whatever
-  drives it, so readability was the reason to split the tests.
+- [gotcha] A file too big to score is a file too big to trust: `render-thread.ts` reached 692 lines
+  doing five jobs and crossed under 90 on three of four changes in one session. Split into its jobs,
+  every piece passed 90 on its own, each survivor pointed at one module, and three pieces of dead
+  code turned up. Give each piece a `Pick<>` of the ports it calls, not the whole `RenderThreadDeps`
+  bag: it is free under structural typing and states in the type what a piece never does. The four
+  thread modules kept ONE test harness, since what each does shows only in the documents a whole run
+  writes; mutation is scored per source file whatever drives it.
+  Merges: 2026-08-30, 2026-08-30, 2026-08-30.
 
 - [gotcha] An untested error path looks exactly like a covered one. `convert-file.ts` sat at 89.07
   with line coverage at 100: every `if (!x.ok) return failure(x.error)` could be deleted outright
@@ -231,12 +214,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   stayed green, and only counting the vault after a re-sync showed the ten markers still there.
   Wiring a transformation in needs one test at the level of the thing that uses it, and the proof is
   that removing the call turns a test red.
-
-- [mistake] A capability wired into one route and not its mirror is the shape this codebase keeps
-  producing: safelink unwrapping went into thread bodies and not card bodies, and OCR into inline
-  images and not the parts of a saved email. Both times the rule belonged to "text that came out of
-  mail" and was applied to one of the places such text lands. When adding one, list every route the
-  same content can arrive by before calling it done.
 
 - [gotcha] The OCR cache is keyed by content hash alone, so it is shared by every mailbox synced on
   this machine and cannot be cleaned per account. What can be identified is what the current vault
@@ -400,11 +377,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   timeout cannot interrupt synchronous code: the run hangs with no output until it is killed. Under
   `timeout`, exit 124 means the mutant was caught.
 
-- [gotcha] A re-check loop hides a missing hash: once a suffixed name that is taken moves on, a
-  suffix cut from the raw id still gives every namesake its own file, so "three namesakes, three
-  files" cannot tell hashed from raw. Stability can: take the middle namesake off the event and the
-  third must keep its file (`sync-calendar.test.ts`, 'naming the files an event carries').
-
 - [gotcha] Git hands a hook an absolute GIT_DIR when the push comes from a linked worktree, and
   everything the hook starts inherits it. Under the pre-push hook, `verify-commits.sh` detached the
   pushing worktree's HEAD with its `git -C "$tree" checkout`, and the suite's throwaway `git init`
@@ -412,25 +384,16 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   stopped working. A script that runs git anywhere but where it was called clears
   `git rev-parse --local-env-vars` first (`scripts/verify-commits.sh`).
 
-- [gotcha] A planner that frees every path held by an item rewritten in the same run assumes the item
-  moves off it before anyone else writes there, and nothing ordered that: `writeOne` puts the old
-  file aside only after its own write, a window's writes run side by side, and To Do and Teams plan
-  the whole run before the first window. A renamed event, task or post then archived its namesake's
-  fresh document. A path now stays taken while any record but the item's own holds it; sync-plan,
-  sync-people, sync-notebook and sync-lists still free it as of this entry.
-
-- [decision] Every planner that names a file in kb/ now keeps a path taken while any record but the
-  item's own holds it: Calendar, To Do, Teams, Planner, People, OneNote and lists, which empties the
-  list of sources the entry above says still free it. Planner was exposed beyond a rename: it places
-  every listed task to draw the board, so an unchanged task's page counted as free, and a new task
-  sharing its title and bucket, listed first, took the file.
-
 - [decision] Every namesake suffix goes through `freeSegment` or `freePath` (`kb-path.ts`): a hash
   of the id, then a re-check against what is taken that moves on to the hash of the hash, and no
-  planner calls `disambiguateSegment` with a raw id. The hash and the re-check are each pinned once,
-  by two attachment tests in `sync-calendar.test.ts` ('a namesake listed after it keeps its file',
-  'named the way its namesake would be suffixed'), while a planner's own test only shows its suffix
-  is not a raw slice. Keep `attachmentName` on the helper, or move those two tests with it.
+  planner calls `disambiguateSegment` with a raw id. A count cannot pin the hash, since the re-check
+  gives each namesake its own file even from a raw id; stability can: take the middle namesake off
+  the event and the third must keep its file (`sync-calendar.test.ts`, 'naming the files an event
+  carries'). The hash and the re-check are each pinned once there, by 'a namesake listed after it
+  keeps its file' and 'named the way its namesake would be suffixed', while a planner's own test
+  only shows its suffix is not a raw slice. Keep `attachmentName` on the helper, or move those two
+  tests with it.
+  Merges: 2026-10-01, 2026-10-01.
 
 - [gotcha] A Teams post id is the millisecond the post was sent, so posts sent within 100 seconds of
   each other can open on the same eight digits. Shared prefixes are not only Graph's base64 ids: any
@@ -452,12 +415,19 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   that writes the path planned first, so the test fails on window order alone (the namesake tests in
   `sync-plan`, `sync-people`, `sync-notebook` and `sync-lists`).
 
-- [gotcha] "A path another record holds is taken" has two forms that differ only when two records
-  already name one file, which the old failed-read race left behind in Planner, Lists and OneNote.
-  `freePath` given the item's own file (`todo-state.ts`, `team-state.ts`, `plan-state.ts`,
-  `people-state.ts`, `notebook-state.ts`) plans both onto that file and one page stays lost; a set
-  built per item from the other records plus the files already handed out (`heldByOthers` in
-  `sync-calendar.ts` and `sync-lists.ts`) gives each its own. The second is the one to reach for.
+- [decision] Every planner that names a file in kb/ keeps a path taken while any record but the
+  item's own holds it: Calendar, To Do, Teams, Planner, People, OneNote and lists. `writeOne` puts
+  the old file aside only after its own write, a window's writes run side by side, and To Do and
+  Teams plan the whole run before the first window, so a freed path let a renamed event, task or
+  post archive its namesake's fresh document; Planner also places every listed task to draw the
+  board, so a new task sharing an unchanged task's title and bucket, listed first, took its file.
+  Where two records already name one file (the old failed-read race left such pairs in Planner,
+  Lists and OneNote), `freePath` given the item's own file (`todo-state.ts`, `team-state.ts`,
+  `plan-state.ts`, `people-state.ts`, `notebook-state.ts`) plans both onto it and one page stays
+  lost; a set built per item from the other records plus the files already handed out
+  (`heldByOthers` in `sync-calendar.ts` and `sync-lists.ts`) gives each its own, and is the form to
+  reach for.
+  Merges: 2026-10-01, 2026-10-01, 2026-10-01.
 
 ## 2026-10-10
 
@@ -474,23 +444,25 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   lint ran 6.0.3 while every install of the package pulled 5.9.3 for nothing. Read the compiler from
   the lockfile's root entry or `bunx tsc --version`. typescript is now a dev dependency at `^6.0.3`.
 
-- [gotcha] npm refuses a new unscoped name that is too close to an existing package, and says so
-  only at publish time: `bun publish` of `decant` got 403 Forbidden, "too similar to existing
-  packages dedent, recast", although the registry answered 404 for the name and for each of its
-  punctuation variants. A 404 on the registry proves a name is unused, not that a publish will take
-  it. Try the publish itself, or take a scope, which the refusal suggests. The package became
-  `ask-marcel-decant`, and its bin keeps the command `decant`.
-
-- [gotcha] npm answers a publish without a valid sign-in with 404 Not Found ("'decant@0.1.0' does
-  not exist in this registry"), never 401, so an expired token in `~/.npmrc` reads as a missing
-  package. `bun pm whoami` tells the two apart: a 401 there means `bunx npm login` again.
+- [gotcha] npm's answers to a publish mislead. A new unscoped name too close to an existing package
+  is refused only at publish time: `bun publish` of `decant` got 403 Forbidden, "too similar to
+  existing packages dedent, recast", though the registry answered 404 for the name and each of its
+  punctuation variants. Try the publish itself, or take a scope; the package became
+  `ask-marcel-decant`, and its bin keeps the command `decant`. A publish without a valid sign-in
+  answers 404 Not Found ("'decant@0.1.0' does not exist in this registry"), never 401, so an expired
+  token in `~/.npmrc` reads as a missing package: `bun pm whoami` tells the two apart, and a 401
+  there means `bunx npm login` again.
+  Merges: 2026-10-10, 2026-10-10.
 
 ## 2026-10-18
 
-- [mistake] A fix to one of two mirror routes left the other one as it was, more than once in one
-  audit: in batch 10a the files of a zip lost the Outlook link wrapper and the files a saved email
-  carried kept it. Before a fix, list each route of the same shape (`convert-file.ts` and
-  `convert-attachment.ts`, zip and eml, library and thread) and give each one its own test.
+- [mistake] A capability or a fix wired into one route and not its mirror is the shape this codebase
+  keeps producing: safelink unwrapping went into thread bodies and not card bodies, OCR into inline
+  images and not the parts of a saved email, and in batch 10a the files of a zip lost the Outlook
+  link wrapper while the files a saved email carried kept it. Before calling a change done, list
+  each route the same content can arrive by (`convert-file.ts` and `convert-attachment.ts`, zip and
+  eml, library and thread) and give each one its own test.
+  Merges: 2026-08-30, 2026-10-18.
 
 - [gotcha] A one-time move of files that runs before the state is saved must count a file already
   gone from its old place as moved. A read that fails after the moves leaves the record at the old
@@ -503,10 +475,14 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   brackets (batch 11). Time each new pattern on a line of thousands of the same token, and anchor
   a start that must not be retried with a lookbehind.
 
-- [decision] Build converter and vendor fixtures from the real shape of the data: the output of the
-  package for a made-up document, the published form of a Zoom or Teams invitation. Hand-written
-  fixtures without turndown's escaped brackets passed while real Word documents failed (batch 12).
-  Made-up names still apply (rule 34): copy the shape, never the content.
+- [decision] Build each fixture of a value that comes from somewhere else from what that source
+  actually sends: the output of the package for a made-up document, the published form of a Zoom or
+  Teams invitation, a MIME boundary as Outlook writes it. Fixtures written to my idea of the format
+  passed twice for code that broke on real data: every MIME fixture used `BOUND` or `B` while a real
+  Outlook boundary carries `.` and `+`, and hand-written markdown without turndown's escaped
+  brackets passed while real Word documents failed (batch 12). Made-up names still apply (rule 34):
+  copy the shape, never the content.
+  Merges: 2026-08-28, 2026-10-18.
 
 - [mistake] A yes to change existing tests in named files does not cover a third file. Batch 11b
   changed a test of `archive-members.test.ts` that the question never named, and the review caught
