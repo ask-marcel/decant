@@ -186,7 +186,10 @@ describe('syncing a Planner plan', () => {
 
   it('a task moved to another bucket or a bucket renamed is written afresh with the old page put aside, and a task gone from the plan is put aside and named in the report', async () => {
     const moved = [task('t-venue', 'Book the venue', { bucketId: 'b-done', etag: 'W/"t-venue-2"' })];
-    const done = await run({ reader: { tasks: { 'plan-1': moved } }, files: { texts: { [STATE_PATH]: serializePlanState(settled()) } } });
+    const done = await run({
+      reader: { tasks: { 'plan-1': moved } },
+      files: { texts: { [STATE_PATH]: serializePlanState(settled()), [`${ROOT}/To do/Book the venue.md`]: 'the task', [`${ROOT}/Done/Pick a date.md`]: 'the gone task' } },
+    });
 
     expect(done.summary).toMatchObject({ converted: 1, archived: 1 });
     expect(done.files.moves.map((move) => move.to)).toEqual([
@@ -207,7 +210,7 @@ describe('syncing a Planner plan', () => {
 
     const renamed = await run({
       reader: { buckets: { 'plan-1': [bucket('b-done', 'Done', '8585 2'), bucket('b-todo', 'Next', '8585 1')] } },
-      files: { texts: { [STATE_PATH]: serializePlanState(settled()) } },
+      files: { texts: { [STATE_PATH]: serializePlanState(settled()), [`${ROOT}/To do/Book the venue.md`]: 'the task' } },
     });
     expect(renamed.summary.converted).toBe(1);
     expect(stateOf(renamed.files).tasks['t-venue']?.file).toBe(`${ROOT}/Next/Book the venue.md`);

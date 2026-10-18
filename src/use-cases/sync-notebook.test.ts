@@ -135,7 +135,9 @@ describe('syncing a OneNote notebook', () => {
       'gone',
       { file: `${ROOT}/Meetings/Deleted.md`, lastModified: 'x', title: 'Deleted', section: 'sec-m' }
     );
-    const done = await run({ files: { texts: { [STATE_PATH]: serializeNotebookState(state) } } });
+    const done = await run({
+      files: { texts: { [STATE_PATH]: serializeNotebookState(state), [`${ROOT}/Old section/Kick-off.md`]: 'the page', [`${ROOT}/Meetings/Deleted.md`]: 'the deleted page' } },
+    });
 
     expect(done.summary).toMatchObject({ converted: 3, archived: 1 });
     expect(done.files.moves.map((move) => move.to)).toEqual([

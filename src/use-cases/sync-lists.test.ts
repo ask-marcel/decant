@@ -150,7 +150,9 @@ describe('syncing the lists of a SharePoint site', () => {
       fingerprint: 'x',
       name: 'Retired',
     });
-    const done = await run({ files: { texts: { [STATE_PATH]: serializeListsState(state) } } });
+    const done = await run({
+      files: { texts: { [STATE_PATH]: serializeListsState(state), [`${ROOT}/Old name.md`]: 'the old table', [`${ROOT}/Retired.md`]: 'the retired list' } },
+    });
 
     expect(done.summary).toMatchObject({ converted: 2, archived: 1 });
     expect(done.files.moves.map((move) => move.to)).toEqual([
