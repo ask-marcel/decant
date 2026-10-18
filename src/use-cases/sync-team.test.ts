@@ -489,6 +489,7 @@ describe('reaching back only as far as the day', () => {
     expect(done.reader.calls).toEqual([`postsDelta:${GENERAL.id}:https://graph/delta?token=1`, `postsDelta:${GENERAL.id}:fresh`, 'postMarkdown:mid']);
     expect(done.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-08/Post new.md`, to: 'kb/_archive/2026-09-11/Teams/Northwind Leadership/General/2026-09-08/Post new.md' }]);
     expect(done.summary).toMatchObject({ converted: 1, archived: 1 });
+    expect(done.logger.calls.filter((call) => call.level === 'warn')).toStrictEqual([]);
   });
 
   it('the same day, or a later one, keeps following the cursor; all reads the channel again, and keeps no day', async () => {
@@ -498,7 +499,6 @@ describe('reaching back only as far as the day', () => {
       expect(kept.reader.calls).toContain(`postsDelta:${GENERAL.id}:https://graph/delta?token=1`);
       expect(kept.reader.calls).not.toContain(`postsDelta:${GENERAL.id}:fresh`);
       expect(stateOf(kept.files).channels[GENERAL.id]).toMatchObject({ since });
-      expect(kept.logger.calls.filter((call) => call.level === 'warn')).toStrictEqual([]);
     }
 
     const everything = await run({ files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } }, reader: POSTS });
