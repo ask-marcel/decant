@@ -1140,6 +1140,35 @@ describe('a thread with no message left at the source', () => {
     expect(files.moves.map((move) => move.from)).toEqual([NOTE]);
     expect(handed).toEqual([CARD]);
   });
+
+  // Held in place, the note keeps the thread and its record, so nothing of it is handed on: the
+  // ledger would otherwise move the note of a thread that is still kept.
+  it('a thread whose note will not move hands nothing on, and keeps its record', async () => {
+    const handed: string[] = [];
+    const empty: RenderThreadOutcome = { kind: 'empty' };
+    const files = createFilesFake({
+      texts: { [STATE_PATH]: serializeMailboxState(state()), [NOTE]: 'note', [CARD]: 'card' },
+      failMoveWith: { kind: 'write-failed', path: NOTE, message: 'locked' },
+    });
+    const syncMailbox = createSyncMailbox({
+      reader: createMailReaderFake({ folders: [folder()], pages: gone }),
+      files,
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      clock: createClockFake(),
+      kbRoot: 'kb',
+      timezone: 'UTC',
+      renderThread: async () => ok(empty),
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+
+    await syncMailbox({ maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+
+    expect(handed).toStrictEqual([]);
+    expect(stateAfter(files).threads['thread-1']).toMatchObject({ file: `threads/${FOLDER}/contrat.md` });
+  });
 });
 
 describe('what the mailbox sync reports', () => {
