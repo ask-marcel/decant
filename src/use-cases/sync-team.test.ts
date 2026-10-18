@@ -189,6 +189,7 @@ describe('syncing the channels of a Microsoft Team', () => {
     expect(unread.files.written.get(FILE)).toBe('before');
     expect(unread.logger.calls).toContainEqual({ level: 'warn', event: 'post.failed', meta: { post: 'a', cause: 'permanent' } });
     expect(unwritten.logger.calls).toContainEqual({ level: 'warn', event: 'post.failed', meta: { post: 'a', cause: 'write-failed' } });
+    expect([...unread.logger.calls, ...unwritten.logger.calls].filter((call) => call.level === 'warn' && call.event !== 'post.failed')).toStrictEqual([]);
   });
 
   // The first layout filed a post under the day it last changed; its id is the moment it was posted.
@@ -497,6 +498,7 @@ describe('reaching back only as far as the day', () => {
       expect(kept.reader.calls).toContain(`postsDelta:${GENERAL.id}:https://graph/delta?token=1`);
       expect(kept.reader.calls).not.toContain(`postsDelta:${GENERAL.id}:fresh`);
       expect(stateOf(kept.files).channels[GENERAL.id]).toMatchObject({ since });
+      expect(kept.logger.calls.filter((call) => call.level === 'warn')).toStrictEqual([]);
     }
 
     const everything = await run({ files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } }, reader: POSTS });

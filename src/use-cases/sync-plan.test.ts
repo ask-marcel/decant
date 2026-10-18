@@ -382,7 +382,8 @@ describe('a plan renamed since its files were written', () => {
     const files = createFilesFake({ texts: Object.fromEntries(first.files.written) });
     const renamed = { ...PLAN, title: 'Offsite 2027' };
     const reader = createPlanReaderFake({ plans: [renamed], buckets: BUCKETS, tasks: TASKS, details: DETAILS, names: NAMES });
-    const syncPlan = createSyncPlan({ reader, files, clock: createClockFake('2026-09-13T14:00:00Z'), logger: createLoggerFake(), progress: createProgressFake(), kbRoot: 'kb' });
+    const logger = createLoggerFake();
+    const syncPlan = createSyncPlan({ reader, files, clock: createClockFake('2026-09-13T14:00:00Z'), logger, progress: createProgressFake(), kbRoot: 'kb' });
 
     const done = await syncPlan({ plan: renamed, formerTitle: PLAN.title, dryRun: false, concurrency: 4 });
 
@@ -396,6 +397,7 @@ describe('a plan renamed since its files were written', () => {
     const own = files.moves.map((move) => move.from).filter((from) => !/\/(To do|Done)\//.test(from));
     expect(new Set(own)).toStrictEqual(new Set([STATE_PATH, BOARD_PATH]));
     expect(own).toHaveLength(2);
+    expect(logger.calls.filter((call) => call.level === 'warn')).toStrictEqual([]);
   });
 
   const renaming = async (

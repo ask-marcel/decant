@@ -951,7 +951,7 @@ describe('the files a thread written again no longer holds', () => {
 
   // Nothing is there to keep, so nothing is reported.
   it('a file listed but not on disk is passed over without a word', async () => {
-    const { files, summary, notes } = await run({
+    const { files, summary, notes, logger } = await run({
       files: { texts: { [STATE_PATH]: held(record({ files: [A, B] })), [A]: 'a' } },
       reader: { folders: [folder()], pages },
       outcome: () => writing([A]),
@@ -960,6 +960,7 @@ describe('the files a thread written again no longer holds', () => {
     expect(files.moves).toStrictEqual([]);
     expect(summary.archived).toBe(0);
     expect(notes?.archived).toStrictEqual([]);
+    expect(logger.calls.filter((call) => call.level === 'warn')).toStrictEqual([]);
   });
 
   // A record left behind would hand a later message carrying the same file a path that is no longer
