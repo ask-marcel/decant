@@ -2030,7 +2030,13 @@ describe('moving the folder of each archive and saved email once', () => {
   it('a library still in its day folders moves out of them and into the archive folder in the same run', async () => {
     const dated = `${ROOT}/2026-05-12/Projets/Livraison/notes.docx.md`;
     const done = await run({
-      files: { texts: { [STATE_PATH]: before([`${ROOT}/2026-05-12/Projets/Livraison/Livraison.zip`, dated], {}), [dated]: '# Notes' } },
+      files: {
+        texts: {
+          [STATE_PATH]: before([`${ROOT}/2026-05-12/Projets/Livraison/Livraison.zip`, dated], {}),
+          [`${ROOT}/2026-05-12/Projets/Livraison/Livraison.zip`]: 'the zip',
+          [dated]: '# Notes',
+        },
+      },
       reader: NOTHING_NEW,
     });
 
@@ -2073,8 +2079,11 @@ describe('moving the folder of each archive and saved email once', () => {
   });
 
   it('a dry run moves nothing, and neither does a library already in this layout', async () => {
-    const dry = await run({ files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]) } }, reader: NOTHING_NEW, dryRun: true });
-    const settled = await run({ files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER], { layout: 2, archives: 2 }) } }, reader: NOTHING_NEW });
+    const dry = await run({ files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } }, reader: NOTHING_NEW, dryRun: true });
+    const settled = await run({
+      files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER], { layout: 2, archives: 2 }), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } },
+      reader: NOTHING_NEW,
+    });
 
     expect(dry.files.moves).toHaveLength(0);
     expect(settled.files.moves).toHaveLength(0);
@@ -2082,18 +2091,6 @@ describe('moving the folder of each archive and saved email once', () => {
 
   // The state is saved once the library is read: a read that fails after the move leaves the record at
   // the old places, and the next run finds each file already at its new one.
-  // The run after a stopped one finds each file at its new place already: no failure to warn about.
-  it('the run after a stopped one logs no failure for the files that the stopped run moved', async () => {
-    const stopped = await run({
-      files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } },
-      reader: { failWith: { kind: 'auth', message: 'token expired' } },
-    });
-    const next = await run({ files: { texts: Object.fromEntries(stopped.files.written) }, reader: NOTHING_NEW });
-
-    expect(next.logger.calls.filter((call) => call.event === 'refile.failed')).toHaveLength(0);
-    expect(next.logger.calls).toContainEqual({ level: 'info', event: 'refile.gone', meta: { path: OLD_ZIP } });
-  });
-
   it('a run that moved the files and stopped before it saved the state leaves the next run to record their new places', async () => {
     const stopped = await run({
       files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } },
@@ -2106,5 +2103,17 @@ describe('moving the folder of each archive and saved email once', () => {
 
     expect(stateAfter(next.files).drives['b!one']?.items['01ZIP']?.outputs).toEqual([NEW_ZIP, NEW_MEMBER]);
     expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').archives).toBe(2);
+  });
+
+  // The run after a stopped one finds each file at its new place already: no failure to warn about.
+  it('the run after a stopped one logs no failure for the files that the stopped run moved', async () => {
+    const stopped = await run({
+      files: { texts: { [STATE_PATH]: before([OLD_ZIP, OLD_MEMBER]), [OLD_ZIP]: 'the zip', [OLD_MEMBER]: '# Notes' } },
+      reader: { failWith: { kind: 'auth', message: 'token expired' } },
+    });
+    const next = await run({ files: { texts: Object.fromEntries(stopped.files.written) }, reader: NOTHING_NEW });
+
+    expect(next.logger.calls.filter((call) => call.event === 'refile.failed')).toHaveLength(0);
+    expect(next.logger.calls).toContainEqual({ level: 'info', event: 'refile.gone', meta: { path: OLD_ZIP } });
   });
 });
