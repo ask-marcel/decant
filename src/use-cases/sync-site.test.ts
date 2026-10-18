@@ -1185,6 +1185,24 @@ describe('writing down who can open a site', () => {
     expect(logger.calls).toContainEqual({ level: 'warn', event: 'members.archive-failed', meta: { siteId: site.id, cause: 'write-failed' } });
   });
 
+  // The page leaves no record behind it, so a page that would not move is handed on to be written
+  // down, and a later run moves it.
+  it('a page that cannot be put aside is handed on, so its move stays owed', async () => {
+    const handed: string[] = [];
+    const files = createFilesFake({ texts: { [MEMBERS_PATH]: 'an older page' }, failMoveWith: { kind: 'write-failed', path: MEMBERS_PATH, message: 'locked' } });
+    const reader = createDriveReaderFake();
+    const clock = createClockFake();
+    const convertFile = createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() });
+    const writeDown = async (missed: ReadonlyArray<{ readonly path: string }>): Promise<void> => {
+      handed.push(...missed.map((entry) => entry.path));
+    };
+    const syncSite = createSyncSite({ reader, files, logger: createLoggerFake(), progress: createProgressFake(), clock, kbRoot: 'kb', timezone: 'UTC', convertFile, writeDown });
+
+    await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+
+    expect(handed).toEqual([MEMBERS_PATH]);
+  });
+
   it('a refused read keeps the page it had, since a refusal says nothing about who can open the site', async () => {
     const { files } = await run({ reader: { failMembers: { kind: 'transient', message: 'timeout' } }, files: { texts: { [MEMBERS_PATH]: 'an older page' } } });
 
