@@ -458,3 +458,12 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   changed a test of `archive-members.test.ts` that the question never named, and the review caught
   it. Before the pre-land review, list the removed lines of `git diff origin/main -- '*.test.ts'`
   against the yes, and put back anything outside it.
+
+- [gotcha] A table keyed by text from outside (an extension, a MIME type, an HTML reference, the
+  internal name of a list column) is a `Map` or a `Set`, or is read with `Object.hasOwn`, never an
+  object read by `[key]`: an object also answers for the names that every object has
+  (`constructor`, `__proto__`, `toString`), with a function or `Object.prototype`. A key in lower
+  case still reaches `constructor` and `__proto__`. It took three fixes: `file-kind.ts` (853259b),
+  then `conversion-plan.ts`, where `x.constructor` stopped the whole run, and `mime.ts` (45a2135),
+  then `html-text.ts`, `channel-post.ts` and `sharepoint-list.ts`, where a value read as
+  `function Object() { [native code] }`.
