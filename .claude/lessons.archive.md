@@ -3,6 +3,74 @@
 Entries a compaction pass retired from `LESSONS.md`, verbatim, newest first, each followed by why it
 left. Nothing reads this file at session start; grep it when a question needs the history.
 
+## 2026-10-18
+
+- [decision] Build converter and vendor fixtures from the real shape of the data: the output of the
+  package for a made-up document, the published form of a Zoom or Teams invitation. Hand-written
+  fixtures without turndown's escaped brackets passed while real Word documents failed (batch 12).
+  Made-up names still apply (rule 34): copy the shape, never the content.
+  Archived 2026-10-18: merge, into the fixture entry (2026-10-18).
+
+- [mistake] A fix to one of two mirror routes left the other one as it was, more than once in one
+  audit: in batch 10a the files of a zip lost the Outlook link wrapper and the files a saved email
+  carried kept it. Before a fix, list each route of the same shape (`convert-file.ts` and
+  `convert-attachment.ts`, zip and eml, library and thread) and give each one its own test.
+  Archived 2026-10-18: merge, into the mirror-route entry (2026-10-18).
+
+## 2026-10-10
+
+- [gotcha] npm answers a publish without a valid sign-in with 404 Not Found ("'decant@0.1.0' does
+  not exist in this registry"), never 401, so an expired token in `~/.npmrc` reads as a missing
+  package. `bun pm whoami` tells the two apart: a 401 there means `bunx npm login` again.
+  Archived 2026-10-18: merge, into the npm publish entry (2026-10-10).
+
+- [gotcha] npm refuses a new unscoped name that is too close to an existing package, and says so
+  only at publish time: `bun publish` of `decant` got 403 Forbidden, "too similar to existing
+  packages dedent, recast", although the registry answered 404 for the name and for each of its
+  punctuation variants. A 404 on the registry proves a name is unused, not that a publish will take
+  it. Try the publish itself, or take a scope, which the refusal suggests. The package became
+  `ask-marcel-decant`, and its bin keeps the command `decant`.
+  Archived 2026-10-18: merge, into the npm publish entry (2026-10-10).
+
+## 2026-10-01
+
+- [gotcha] "A path another record holds is taken" has two forms that differ only when two records
+  already name one file, which the old failed-read race left behind in Planner, Lists and OneNote.
+  `freePath` given the item's own file (`todo-state.ts`, `team-state.ts`, `plan-state.ts`,
+  `people-state.ts`, `notebook-state.ts`) plans both onto that file and one page stays lost; a set
+  built per item from the other records plus the files already handed out (`heldByOthers` in
+  `sync-calendar.ts` and `sync-lists.ts`) gives each its own. The second is the one to reach for.
+  Archived 2026-10-18: merge, into the entry on the paths a planner keeps taken (2026-10-01).
+
+- [decision] Every namesake suffix goes through `freeSegment` or `freePath` (`kb-path.ts`): a hash
+  of the id, then a re-check against what is taken that moves on to the hash of the hash, and no
+  planner calls `disambiguateSegment` with a raw id. The hash and the re-check are each pinned once,
+  by two attachment tests in `sync-calendar.test.ts` ('a namesake listed after it keeps its file',
+  'named the way its namesake would be suffixed'), while a planner's own test only shows its suffix
+  is not a raw slice. Keep `attachmentName` on the helper, or move those two tests with it.
+  Archived 2026-10-18: merge, into the namesake suffix entry (2026-10-01).
+
+- [decision] Every planner that names a file in kb/ now keeps a path taken while any record but the
+  item's own holds it: Calendar, To Do, Teams, Planner, People, OneNote and lists, which empties the
+  list of sources the entry above says still free it. Planner was exposed beyond a rename: it places
+  every listed task to draw the board, so an unchanged task's page counted as free, and a new task
+  sharing its title and bucket, listed first, took the file.
+  Archived 2026-10-18: merge, into the entry on the paths a planner keeps taken (2026-10-01).
+
+- [gotcha] A planner that frees every path held by an item rewritten in the same run assumes the item
+  moves off it before anyone else writes there, and nothing ordered that: `writeOne` puts the old
+  file aside only after its own write, a window's writes run side by side, and To Do and Teams plan
+  the whole run before the first window. A renamed event, task or post then archived its namesake's
+  fresh document. A path now stays taken while any record but the item's own holds it; sync-plan,
+  sync-people, sync-notebook and sync-lists still free it as of this entry.
+  Archived 2026-10-18: merge, into the entry on the paths a planner keeps taken (2026-10-01).
+
+- [gotcha] A re-check loop hides a missing hash: once a suffixed name that is taken moves on, a
+  suffix cut from the raw id still gives every namesake its own file, so "three namesakes, three
+  files" cannot tell hashed from raw. Stability can: take the middle namesake off the event and the
+  third must keep its file (`sync-calendar.test.ts`, 'naming the files an event carries').
+  Archived 2026-10-18: merge, into the namesake suffix entry (2026-10-01).
+
 ## 2026-09-26
 
 - [gotcha] `toEqual([])` passes on `[undefined]`: `toEqual` ignores undefined array items and
@@ -256,6 +324,34 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: merge, into the answer-honestly entry (2026-09-08).
 
 ## 2026-08-30
+
+- [mistake] A capability wired into one route and not its mirror is the shape this codebase keeps
+  producing: safelink unwrapping went into thread bodies and not card bodies, and OCR into inline
+  images and not the parts of a saved email. Both times the rule belonged to "text that came out of
+  mail" and was applied to one of the places such text lands. When adding one, list every route the
+  same content can arrive by before calling it done.
+  Archived 2026-10-18: merge, into the mirror-route entry (2026-10-18).
+
+- [decision] The four thread modules got their own test files but kept ONE harness, because what
+  each does is only visible in the documents a whole run writes: a card names a file the placement
+  chose, and a body links a card the writing made. Narrower fakes per module would test the seams
+  between them rather than the vault they produce; mutation is scored per source file whatever
+  drives it, so readability was the reason to split the tests.
+  Archived 2026-10-18: merge, into the `render-thread.ts` split entry (2026-08-30).
+
+- [gotcha] Extracting a module is where narrow dependencies pay. Each piece took a `Pick<>` of the
+  ports it actually calls rather than the whole `RenderThreadDeps` bag, which is free at every call
+  site under structural typing and states, in the type, that following a link never reads a message
+  and that writing a card never fetches anything. The alternative, one shared context module every
+  piece imports whole, keeps the coupling and merely moves it.
+  Archived 2026-10-18: merge, into the `render-thread.ts` split entry (2026-08-30).
+
+- [gotcha] A file too big to score is a file too big to trust: `render-thread.ts` reached 692 lines
+  doing five jobs and crossed under 90 on three of four changes in one session, each time pulled
+  back by tests written against whatever survived. Splitting it into its jobs put every piece over
+  90 on its own, made each survivor attributable to one module, and turned up three pieces of dead
+  code.
+  Archived 2026-10-18: merge, into the `render-thread.ts` split entry (2026-08-30).
 
 - [gotcha] Exchange sends the FULL RFC `References` chain, CRLF-folded across continuation lines: a
   30-message thread in this mailbox carries 52 ids on its newest reply. Three earlier samples each
@@ -645,6 +741,13 @@ left. Nothing reads this file at session start; grep it when a question needs th
   scripts/mutate-staged.sh:47).
 
 ## 2026-08-28
+
+- [mistake] A parser tested with fixtures I wrote myself is tested against my idea of the format, not
+  the format. The MIME boundary was escaped into a pattern and the escaping was wrong; every fixture
+  used `BOUND` or `B`, so the tests passed for a parser that would have broken on the first real
+  Outlook message, whose boundaries carry `.` and `+`. When a value comes from somewhere else, put
+  what that somewhere else actually sends in the fixture.
+  Archived 2026-10-18: merge, into the fixture entry (2026-10-18).
 
 - [gotcha] The mutation gate scores the aggregate of the staged files, so a new module can sit well
   under 90 inside a passing run, and a big weak file can fail a run where everything else is fine. It
