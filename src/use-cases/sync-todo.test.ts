@@ -413,7 +413,17 @@ describe('syncing a Microsoft To Do list', () => {
     });
     const state = withTask(moved, 'AAMkAGI-gone', { file: 'kb/To Do/Tasks/2026-09-01/Cancel the order.md', lastModified: '2026-09-01T09:00:00Z', title: 'Cancel the order' });
     const refused = { kind: 'write-failed' as const, path: 'kb/_archive', message: 'locked' };
-    const done = await run({ reader: { tasks: { 'list-1': [task()] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) }, failMoveWith: refused } });
+    const done = await run({
+      reader: { tasks: { 'list-1': [task()] } },
+      files: {
+        texts: {
+          [STATE_PATH]: serializeTodoState(state),
+          'kb/To Do/Tasks/2026-09-01/Book the venue.md': 'the task',
+          'kb/To Do/Tasks/2026-09-01/Cancel the order.md': 'the gone task',
+        },
+        failMoveWith: refused,
+      },
+    });
 
     expect(done.summary).toMatchObject({ converted: 1, archived: 1 });
     expect(done.logger.calls).toContainEqual({ level: 'warn', event: 'supersede.failed', meta: { path: 'kb/To Do/Tasks/2026-09-01/Book the venue.md', cause: 'write-failed' } });
