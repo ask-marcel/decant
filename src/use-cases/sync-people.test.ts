@@ -541,3 +541,34 @@ describe('handing on the page of someone who left', () => {
     expect(handed).toEqual([LEFT]);
   });
 });
+
+// A file a source lets go that would not move under the archive leaves the record all the same, so it
+// is handed on, and the ledger keeps its move owed.
+describe('handing on the earlier page of someone renamed', () => {
+  const OLD = `${ROOT}/Jane Smith.md`;
+
+  it('the earlier page of someone renamed in the directory is handed on when it will not move aside', async () => {
+    const handed: string[] = [];
+    const state = withPerson(emptyPeopleState(), 'jane', { file: OLD, name: 'Jane Smith', fingerprint: 'old' });
+    const syncPeople = createSyncPeople({
+      reader: createPeopleReaderFake({ members: ROSTERS, profiles: PROFILES }),
+      teams: { listTeams: async () => ok([ALL, LEAD]) },
+      files: createFilesFake({
+        texts: { [STATE_PATH]: serializePeopleState(state), [OLD]: 'the page as it was' },
+        failMoveWith: { kind: 'write-failed', path: OLD, message: 'held open' },
+      }),
+      clock: createClockFake('2026-09-11T14:00:00Z'),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      kbRoot: 'kb',
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+
+    const outcome = await syncPeople({ dryRun: false, concurrency: 4 });
+
+    expect(outcome.ok).toBe(true);
+    expect(handed).toEqual([OLD]);
+  });
+});

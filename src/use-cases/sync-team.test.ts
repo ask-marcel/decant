@@ -562,3 +562,31 @@ describe('handing on the earlier file of a post', () => {
     expect(await handing('Post a')).toStrictEqual([]);
   });
 });
+
+// A file a source lets go that would not move under the archive leaves the record all the same, so it
+// is handed on, and the ledger keeps its move owed.
+describe('handing on the file of a deleted post', () => {
+  const FILE = `${ROOT}/General/2026-09-01/Post a.md`;
+
+  it('the file of a post deleted in Teams is handed on when it will not move aside', async () => {
+    const handed: string[] = [];
+    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, 'a', { file: FILE, lastModified: '2026-09-01T09:00:00Z', title: 'Post a' });
+    const syncTeam = createSyncTeam({
+      reader: createTeamReaderFake({ posts: { [GENERAL.id]: [post('a', '2026-09-10T09:00:00Z', { deleted: true })] } }),
+      files: createFilesFake({ texts: { [STATE_PATH]: serializeTeamState(state), [FILE]: 'the post' }, failMoveWith: { kind: 'write-failed', path: FILE, message: 'held open' } }),
+      clock: createClockFake('2026-09-11T14:00:00Z'),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      kbRoot: 'kb',
+      timezone: 'UTC',
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+
+    const outcome = await syncTeam({ team: TEAM, channels: [GENERAL], dryRun: false, concurrency: 4 });
+
+    expect(outcome.ok).toBe(true);
+    expect(handed).toEqual([FILE]);
+  });
+});
