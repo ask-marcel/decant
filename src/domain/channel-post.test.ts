@@ -77,6 +77,10 @@ describe('reading a channel post as Graph answers for it', () => {
   it('a reference named for a property of every object, such as &constructor;, stays in the preview as it was written', () => {
     expect(parseChannelPost({ ...graphPost, body: { contentType: 'html', content: '<p>Bring &constructor; along</p>' } })?.preview).toBe('Bring &constructor; along');
   });
+
+  it('the preview reads each named reference it knows: angle brackets, quotes, apostrophes and a space that does not break', () => {
+    expect(parseChannelPost({ ...graphPost, body: { contentType: 'html', content: '<p>A &lt;B&gt; &quot;C&quot; &apos;D&apos;&nbsp;E</p>' } })?.preview).toBe('A <B> "C" \'D\' E');
+  });
 });
 
 describe('naming a post the way a person would find it', () => {
