@@ -52,23 +52,11 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
 
 ## 2026-08-14
 
-- [gotcha] `disambiguateSegment(name, id)` suffixes the first 8 characters of the id, which tells
-  nothing apart when ids share a prefix, and Graph ids do: every item in one drive starts
-  `01W25LGY...`, and two sites in one tenant agree for the first 20-odd characters. Hash before
-  slicing whenever a shared-prefix identifier feeds a short suffix, as `siteIdHash` in
-  `src/domain/site-state.ts` does for sites and notebooks.
-
 - [gotcha] RapidOCR's dotted-path params take enum members, never strings:
   `RapidOCR(params={"Rec.lang_type": "en"})` raises
   `TypeError: The value of Rec.lang_type must be Enum Type.` at engine construction, before an image
   is ever read. `src/infra/rapidocr-run.py` passes `LangRec(...)` and `OCRVersion(...)` from
   `rapidocr.utils.typings`; simplifying either back to a plain string breaks OCR.
-
-- [gotcha] Slide or PDF markdown that arrives as one run-on wall of text with no spaces between
-  words comes from the PDF text extraction inside ask-marcel-office-cli (`unpdf`), not from here: a
-  real synced file held a 34,252-character line 12. The only whitespace folding in this repo is
-  `front-matter.ts` `/\s+/g -> ' '` on front matter values, and a body goes through
-  `withFrontMatter` untouched, so the fix belongs in the library.
 
 ## 2026-08-27
 
@@ -201,11 +189,11 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
 
 - [gotcha] Check `my-quick-context` before diagnosing a slow or surprising run, since the signed-in
   account can change: a sync that took ninety seconds ran past an hour because the account had moved
-  to another tenant whose mail held 113 pasted screenshots against 5, each an OCR pass. The account
-  also sets the day: a thread's folder is dated in the `--timezone` zone (default: this machine's)
-  and frozen at creation, and `my-quick-context` reports the tenant zone in Windows spelling, which
-  `--timezone` refuses, so the mapping is a human step (Romance Standard Time is `Europe/Paris`).
-  Ask per run rather than carrying an answer forward.
+  to another tenant whose mail held 113 pasted screenshots against 5, each an OCR pass. Ask per run
+  rather than carrying an answer forward. A thread's folder is dated in the zone the knowledge base
+  keeps in `.decant.json` (`kept-zone.ts`) and frozen at creation; `my-quick-context` reports the
+  tenant zone in Windows spelling, which `--timezone` refuses, so the mapping is a human step
+  (Romance Standard Time is `Europe/Paris`).
   Merges: 2026-08-30, 2026-08-30.
 
 - [gotcha] A unit test proves the function, never the call: `withoutPlaceholders` was written and
@@ -355,13 +343,10 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   other refusal still ends the mailbox run), so an aged cursor costs one folder re-read, not the
   mailbox.
 
-- [decision] `update` carries on past a source that fails: it prints the source and the step it
-  failed at, lists it as failed in `kb/_sync-report.md`, moves on to the next source, and still
-  exits 1 at the end. Before, the first failure ended the run, so one broken source (a Loop
-  workspace that resolved to no library) left every source after it stale. Two cases still stop
-  the run: a lapsed sign-in (`SIGNED_OUT`, an `auth` error), since every later source would fail on
-  the same token, and the picker's runs (`runMany`, `runInTurn`), which were kept stopping at the
-  first failure when this scope was chosen. Applies to any new error kind: decide whether it breaks
+- [decision] Two cases stop `update` where any other failed source is passed over (`carryOn`,
+  `run-sync.ts`): a lapsed sign-in (`SIGNED_OUT`, an `auth` error), since every later source would
+  fail on the same token, and the picker's runs (`runMany`, `runInTurn`), which were kept stopping
+  at the first failure when this scope was chosen. Decide for each new error kind whether it breaks
   one source (carry on) or all of them (stop, like `auth`).
 
 ## 2026-10-01
@@ -377,13 +362,6 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   timeout cannot interrupt synchronous code: the run hangs with no output until it is killed. Under
   `timeout`, exit 124 means the mutant was caught.
 
-- [gotcha] Git hands a hook an absolute GIT_DIR when the push comes from a linked worktree, and
-  everything the hook starts inherits it. Under the pre-push hook, `verify-commits.sh` detached the
-  pushing worktree's HEAD with its `git -C "$tree" checkout`, and the suite's throwaway `git init`
-  reinitialized the real repository with `core.bare = true`, so the push failed and the checkout
-  stopped working. A script that runs git anywhere but where it was called clears
-  `git rev-parse --local-env-vars` first (`scripts/verify-commits.sh`).
-
 - [decision] Every namesake suffix goes through `freeSegment` or `freePath` (`kb-path.ts`): a hash
   of the id, then a re-check against what is taken that moves on to the hash of the hash, and no
   planner calls `disambiguateSegment` with a raw id. A count cannot pin the hash, since the re-check
@@ -395,18 +373,10 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   tests with it.
   Merges: 2026-10-01, 2026-10-01.
 
-- [gotcha] A Teams post id is the millisecond the post was sent, so posts sent within 100 seconds of
-  each other can open on the same eight digits. Shared prefixes are not only Graph's base64 ids: any
-  id that feeds a short suffix gets hashed first.
-
 - [gotcha] A state version bump cannot carry a change to how files are named. `loadState` starts an
   unreadable ledger over in memory and never archives, so every file the old ledger named would
   stay in the vault untracked. A naming change rides each item's next rewrite instead, where the
   supersede step puts the old file aside.
-
-- [decision] `siteIdHash` is now `idHash` in `src/domain/kb-path.ts`, beside the `freeSegment` and
-  `freePath` that cut every namesake's suffix from it, which supersedes the location the 2026-08-14
-  entry names; the path module no longer imports the site state for a hash every planner uses.
 
 - [gotcha] A race between two items of one window is settled by the fakes' scheduling, not by the
   code under test: the files fake's methods are `async` with no `await`, so a window's items advance
