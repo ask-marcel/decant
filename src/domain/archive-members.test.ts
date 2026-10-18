@@ -4,8 +4,8 @@ import { linkMembers, placeMembers } from './archive-members.ts';
 const FOLDER = 'kb/Docs/Report';
 
 describe('where the members of an archive are unpacked', () => {
-  // A zip made of a folder holds every member in that folder, and a library often holds the folder
-  // itself beside the zip: without the folder, each member would land on the file of the same name.
+  // A zip a message carries or a thread links to unpacks into a folder named for it less its
+  // extension, which a saved email of that name shares, so the folder its members share stays.
   it('each member lands under its own folders, also the one that every member shares', () => {
     const placed = placeMembers(FOLDER, [{ path: 'Report/index.html' }, { path: 'Report/pages/week2.html' }], undefined);
 
