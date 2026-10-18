@@ -423,6 +423,38 @@ describe('a group thread the group no longer lists', () => {
     expect(handed).toEqual([CARD]);
   });
 
+  // Held in place, the note keeps the thread and its record, so nothing of it is handed on: the
+  // ledger would otherwise move the note of a thread that is still kept.
+  it('a thread whose note will not move hands nothing on, and keeps its record', async () => {
+    const CARD = `kb/Group inboxes/Northwind Leadership Team/threads/${RECORD.folder}/_attachments/a.pdf.md`;
+    const handed: string[] = [];
+    const files = createFilesFake({
+      texts: {
+        [STATE_PATH]: serializeGroupState(withGroupThread(emptyGroupState(GROUP.id, GROUP.name), 'AAQkAD-thread', { ...RECORD, files: [CARD] })),
+        [NOTE]: 'note',
+        [CARD]: 'card',
+      },
+      failMoveWith: { kind: 'write-failed', path: NOTE, message: 'locked' },
+    });
+    const syncGroup = createSyncGroup({
+      reader: createGroupReaderFake({ threads: { '0d3b-group': [thread({ id: 'other', lastDelivered: '2026-07-01T00:00:00Z' })] } }),
+      files,
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      clock: createClockFake(),
+      kbRoot: 'kb',
+      renderThreadFor: () => async () => ok(rendered()),
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+
+    await syncGroup({ group: GROUP, maxBytes: 50 * 1024 * 1024, dryRun: false, concurrency: 1 });
+
+    expect(handed).toStrictEqual([]);
+    expect(Object.keys(stateAfter(files).threads)).toContain('AAQkAD-thread');
+  });
+
   // Out of tries because it could not be written, a thread is still put aside once the group deletes
   // it: putting it aside needs no write.
   it('a thread out of tries because it could not be written is still put aside once the group no longer lists it', async () => {
