@@ -614,6 +614,11 @@ describe('keeping what was attached to a mail', () => {
     expect((await run({ name: 'Demo.mp4' })).outcome).toEqual({ kind: 'skipped', reason: 'unsupported-type' });
   });
 
+  it('an attachment whose extension names a property of every object, such as x.constructor, is reported as a type this tool does not handle', async () => {
+    expect((await run({ name: 'x.constructor' })).outcome).toEqual({ kind: 'skipped', reason: 'unsupported-type' });
+    expect((await run({ name: 'x.__proto__' })).outcome).toEqual({ kind: 'skipped', reason: 'unsupported-type' });
+  });
+
   it('an attachment above the size cap is reported rather than stalling the thread', async () => {
     expect((await run({ size: 60 * 1024 * 1024 })).outcome).toEqual({ kind: 'skipped', reason: 'too-large' });
   });

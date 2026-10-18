@@ -101,6 +101,34 @@ describe('converting one document out of a library', () => {
     expect(files.binary.get(`${folder}/x.pdf`)).toEqual(new Uint8Array([65, 66, 67]));
   });
 
+  it('a file a saved email carries with no name, and a type that names a property of every object, lands as a file of no known kind', async () => {
+    const eml = [
+      'Subject: Fwd',
+      'Content-Type: multipart/mixed; boundary="B"',
+      '',
+      '--B',
+      'Content-Type: text/plain',
+      '',
+      'the body',
+      '--B',
+      'Content-Type: constructor',
+      'Content-Transfer-Encoding: base64',
+      '',
+      'QUJD',
+      '--B',
+      'Content-Type: __proto__',
+      'Content-Transfer-Encoding: base64',
+      '',
+      'QUJD',
+      '--B--',
+    ].join('\r\n');
+    const { files } = await run({ name: 'Fwd.eml' }, { reader: { bytes: { '01ABC': new TextEncoder().encode(eml) } } });
+    const folder = 'kb/Espace Contoso/Documents/Projets/Fwd.eml';
+
+    expect(files.binary.get(`${folder}/part-2.bin`)).toEqual(new Uint8Array([65, 66, 67]));
+    expect(files.binary.get(`${folder}/part-3.bin`)).toEqual(new Uint8Array([65, 66, 67]));
+  });
+
   it('a saved email in a library the source refused to hand over is reported', async () => {
     const { outcome } = await run({ name: 'Fwd.eml' }, { reader: { failWith: { kind: 'transient', message: 'timed out' } } });
 
@@ -650,6 +678,11 @@ describe('converting one document out of a library', () => {
 
   it('a video is reported as a type this tool does not handle', async () => {
     expect((await run({ name: 'Demo.mp4', path: 'Demo.mp4' })).outcome).toEqual({ kind: 'skipped', reason: 'unsupported-type' });
+  });
+
+  it('a document whose extension names a property of every object, such as Notes.constructor, is reported as a type this tool does not handle', async () => {
+    expect((await run({ name: 'Notes.constructor', path: 'Notes.constructor' })).outcome).toEqual({ kind: 'skipped', reason: 'unsupported-type' });
+    expect((await run({ name: 'Notes.__proto__', path: 'Notes.__proto__' })).outcome).toEqual({ kind: 'skipped', reason: 'unsupported-type' });
   });
 
   it('a document far above the size cap is reported rather than stalling the run', async () => {
