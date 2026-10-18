@@ -1330,6 +1330,14 @@ describe('moving a library out of the day folders once', () => {
     expect(stateAfter(next.files).drives['b!one']?.items['01ABC']?.outputs).toEqual([NEW]);
     expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
   });
+
+  // A file that moves is not gone from its old place before the move: the log says nothing of it.
+  it('a file that moves is not logged as one already gone', async () => {
+    const first = await run({ files: { texts: { [STATE_PATH]: dated([OLD]), [OLD]: 'the contract' } }, reader: NOTHING_NEW });
+
+    expect(first.files.moves).toEqual([{ from: OLD, to: NEW }]);
+    expect(first.logger.calls.filter((call) => call.event === 'refile.gone')).toHaveLength(0);
+  });
 });
 
 describe('following the folders of a library', () => {
