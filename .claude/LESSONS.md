@@ -484,3 +484,31 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
 - [gotcha] npm answers a publish without a valid sign-in with 404 Not Found ("'decant@0.1.0' does
   not exist in this registry"), never 401, so an expired token in `~/.npmrc` reads as a missing
   package. `bun pm whoami` tells the two apart: a 401 there means `bunx npm login` again.
+
+## 2026-10-18
+
+- [mistake] A fix to one of two mirror routes left the other one as it was, more than once in one
+  audit: in batch 10a the files of a zip lost the Outlook link wrapper and the files a saved email
+  carried kept it. Before a fix, list each route of the same shape (`convert-file.ts` and
+  `convert-attachment.ts`, zip and eml, library and thread) and give each one its own test.
+
+- [gotcha] A one-time move of files that runs before the state is saved must count a file already
+  gone from its old place as moved. A read that fails after the moves leaves the record at the old
+  paths, and every later run is refused at each destination, so the layout never settles
+  (`stillThere` in `sync-site.ts`, batch 11b). Ask `exists` only after a refusal: a clean run costs
+  no extra call, and a file still at its old place keeps it.
+
+- [gotcha] `sonarjs/slow-regex` does not see a pattern that is linear for one match but starts a
+  scan again at each position of a line: a link pattern took 6 s on 5,000 lines of escaped
+  brackets (batch 11). Time each new pattern on a line of thousands of the same token, and anchor
+  a start that must not be retried with a lookbehind.
+
+- [decision] Build converter and vendor fixtures from the real shape of the data: the output of the
+  package for a made-up document, the published form of a Zoom or Teams invitation. Hand-written
+  fixtures without turndown's escaped brackets passed while real Word documents failed (batch 12).
+  Made-up names still apply (rule 34): copy the shape, never the content.
+
+- [mistake] A yes to change existing tests in named files does not cover a third file. Batch 11b
+  changed a test of `archive-members.test.ts` that the question never named, and the review caught
+  it. Before the pre-land review, list the removed lines of `git diff origin/main -- '*.test.ts'`
+  against the yes, and put back anything outside it.
