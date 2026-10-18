@@ -510,3 +510,34 @@ describe('syncing the people directory', () => {
     expect(logged).not.toContain('example.com');
   });
 });
+
+// A page that will not move aside leaves the record all the same, so the source hands it on, and
+// the ledger keeps the move owed, as Teams and To Do do.
+describe('handing on the page of someone who left', () => {
+  const LEFT = `${ROOT}/Left Already.md`;
+
+  it('the page of someone no longer in the directory that will not move aside is handed on, so its move stays owed', async () => {
+    const handed: string[] = [];
+    const state = withPerson(emptyPeopleState(), 'gone', { file: LEFT, name: 'Left Already', fingerprint: 'x' });
+    const syncPeople = createSyncPeople({
+      reader: createPeopleReaderFake({ members: ROSTERS, profiles: PROFILES }),
+      teams: { listTeams: async () => ok([ALL, LEAD]) },
+      files: createFilesFake({
+        texts: { [STATE_PATH]: serializePeopleState(state), [LEFT]: 'the page as it was' },
+        failMoveWith: { kind: 'write-failed', path: LEFT, message: 'held open' },
+      }),
+      clock: createClockFake('2026-09-11T14:00:00Z'),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      kbRoot: 'kb',
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+
+    const outcome = await syncPeople({ dryRun: false, concurrency: 4 });
+
+    expect(outcome.ok).toBe(true);
+    expect(handed).toEqual([LEFT]);
+  });
+});
