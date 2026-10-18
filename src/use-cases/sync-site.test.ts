@@ -1301,7 +1301,10 @@ describe('moving a library out of the day folders once', () => {
 
     expect(dry.files.moves).toHaveLength(0);
 
-    const stuck = await run({ files: { texts: { [STATE_PATH]: dated([OLD]) }, failMoveWith: { kind: 'write-failed', path: OLD, message: 'locked' } }, reader: NOTHING_NEW });
+    const stuck = await run({
+      files: { texts: { [STATE_PATH]: dated([OLD]), [OLD]: 'the contract' }, failMoveWith: { kind: 'write-failed', path: OLD, message: 'locked' } },
+      reader: NOTHING_NEW,
+    });
 
     expect(stuck.ok).toBe(true);
     expect(stuck.logger.calls).toContainEqual({ level: 'warn', event: 'refile.failed', meta: { path: OLD, cause: 'write-failed' } });
