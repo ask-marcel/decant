@@ -346,3 +346,43 @@ describe('syncing the lists of a SharePoint site', () => {
     expect(new Set(Object.values(stateOf(done.files).lists).map((record) => record.file)).size).toBe(3);
   });
 });
+
+// A file a source lets go that would not move under the archive leaves the record all the same, so it
+// is handed on, and the ledger keeps its move owed.
+describe('handing on the tables of lists that will not move aside', () => {
+  const OLD = `${ROOT}/Old name.md`;
+  const RETIRED = `${ROOT}/Retired.md`;
+
+  const handing = async (): Promise<ReadonlyArray<string>> => {
+    const handed: string[] = [];
+    const state = withList(withList(emptyListsState(SITE.id, SITE.name), 'projects', { file: OLD, fingerprint: 'stale', name: 'Old name' }), 'gone', {
+      file: RETIRED,
+      fingerprint: 'x',
+      name: 'Retired',
+    });
+    const syncLists = createSyncLists({
+      reader: createListReaderFake({ lists: LISTS, columns: COLUMNS, rows: ROWS }),
+      files: createFilesFake({
+        texts: { [STATE_PATH]: serializeListsState(state), [OLD]: 'the old table', [RETIRED]: 'the retired list' },
+        failMoveWith: { kind: 'write-failed', path: OLD, message: 'held open' },
+      }),
+      clock: createClockFake('2026-09-12T14:00:00Z'),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      kbRoot: 'kb',
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+    await syncLists({ site: SITE, dryRun: false, concurrency: 4 });
+    return handed;
+  };
+
+  it('the earlier table of a renamed list is handed on when it will not move aside', async () => {
+    expect(await handing()).toContain(OLD);
+  });
+
+  it('the table of a list gone from the site is handed on when it will not move aside', async () => {
+    expect(await handing()).toContain(RETIRED);
+  });
+});

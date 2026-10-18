@@ -1073,3 +1073,48 @@ describe('linking a series and its exceptions', () => {
     expect(done.files.written.get(`${ROOT}/2026-01-05/event m.md`)).toContain('- [2026-03-02 event x](<../2026-03-02/event x.md>)');
   });
 });
+
+// A file a source lets go that would not move under the archive leaves the record all the same, so it
+// is handed on, and the ledger keeps its move owed.
+describe('handing on the files of events that will not move aside', () => {
+  const OLD = `${ROOT}/2026-09-05/Offsite planning.md`;
+  const CANCELLED = `${ROOT}/2026-09-01/Cancelled call.md`;
+
+  const handing = async (): Promise<ReadonlyArray<string>> => {
+    const handed: string[] = [];
+    const refiled = withEvent(emptyCalendarState(), 'a', { file: OLD, lastModified: 'older', subject: 'Offsite planning', outputs: [OLD] });
+    const state = withEvent(refiled, 'gone', { file: CANCELLED, lastModified: 'x', subject: 'Cancelled call', outputs: [CANCELLED] });
+    const syncCalendar = createSyncCalendar({
+      reader: createCalendarReaderFake({
+        changes: [
+          { id: 'a', removed: false },
+          { id: 'gone', removed: true },
+        ],
+        deltaLink: 'https://graph/delta?token=next',
+        events: { a: OFFSITE },
+      }),
+      files: createFilesFake({
+        texts: { [STATE_PATH]: serializeCalendarState(state), [OLD]: 'the event as it was', [CANCELLED]: 'the call' },
+        failMoveWith: { kind: 'write-failed', path: OLD, message: 'held open' },
+      }),
+      clock: createClockFake('2026-09-12T14:00:00Z'),
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      kbRoot: 'kb',
+      timezone: 'UTC',
+      writeDown: async (missed) => {
+        handed.push(...missed.map((entry) => entry.path));
+      },
+    });
+    await syncCalendar({ dryRun: false, concurrency: 4 });
+    return handed;
+  };
+
+  it('the earlier file of an event filed under another day is handed on when it will not move aside', async () => {
+    expect(await handing()).toContain(OLD);
+  });
+
+  it('the file of a deleted event is handed on when it will not move aside', async () => {
+    expect(await handing()).toContain(CANCELLED);
+  });
+});
