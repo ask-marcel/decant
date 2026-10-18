@@ -477,6 +477,7 @@ describe('syncing the calendar', () => {
     expect(done.reader.calls.filter((call) => call.startsWith('eventsDelta'))).toEqual(['eventsDelta:https://graph/delta?token=1', 'eventsDelta:fresh']);
     expect(done.files.moves).toEqual([{ from: `${ROOT}/2026-09-11/Cancelled call.md`, to: 'kb/_archive/2026-09-12/Calendar/2026-09-11/Cancelled call.md' }]);
     expect(done.summary).toMatchObject({ converted: 2, archived: 1 });
+    expect(done.logger.calls.filter((call) => call.level === 'warn')).toStrictEqual([]);
   });
 
   it('the same day, or a later one, keeps following the cursor; all widens it, and keeps no day', async () => {
