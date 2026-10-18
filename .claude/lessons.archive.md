@@ -42,6 +42,16 @@ left. Nothing reads this file at session start; grep it when a question needs th
   `sync-calendar.ts` and `sync-lists.ts`) gives each its own. The second is the one to reach for.
   Archived 2026-10-18: merge, into the entry on the paths a planner keeps taken (2026-10-01).
 
+- [decision] `siteIdHash` is now `idHash` in `src/domain/kb-path.ts`, beside the `freeSegment` and
+  `freePath` that cut every namesake's suffix from it, which supersedes the location the 2026-08-14
+  entry names; the path module no longer imports the site state for a hash every planner uses.
+  Archived 2026-10-18: graduate, now stated at src/domain/kb-path.ts:97-100.
+
+- [gotcha] A Teams post id is the millisecond the post was sent, so posts sent within 100 seconds of
+  each other can open on the same eight digits. Shared prefixes are not only Graph's base64 ids: any
+  id that feeds a short suffix gets hashed first.
+  Archived 2026-10-18: graduate, now stated at src/domain/kb-path.ts:120-122.
+
 - [decision] Every namesake suffix goes through `freeSegment` or `freePath` (`kb-path.ts`): a hash
   of the id, then a re-check against what is taken that moves on to the hash of the hash, and no
   planner calls `disambiguateSegment` with a raw id. The hash and the re-check are each pinned once,
@@ -65,11 +75,33 @@ left. Nothing reads this file at session start; grep it when a question needs th
   sync-people, sync-notebook and sync-lists still free it as of this entry.
   Archived 2026-10-18: merge, into the entry on the paths a planner keeps taken (2026-10-01).
 
+- [gotcha] Git hands a hook an absolute GIT_DIR when the push comes from a linked worktree, and
+  everything the hook starts inherits it. Under the pre-push hook, `verify-commits.sh` detached the
+  pushing worktree's HEAD with its `git -C "$tree" checkout`, and the suite's throwaway `git init`
+  reinitialized the real repository with `core.bare = true`, so the push failed and the checkout
+  stopped working. A script that runs git anywhere but where it was called clears
+  `git rev-parse --local-env-vars` first (`scripts/verify-commits.sh`).
+  Archived 2026-10-18: graduate, now stated at scripts/verify-commits.sh:20-24.
+
 - [gotcha] A re-check loop hides a missing hash: once a suffixed name that is taken moves on, a
   suffix cut from the raw id still gives every namesake its own file, so "three namesakes, three
   files" cannot tell hashed from raw. Stability can: take the middle namesake off the event and the
   third must keep its file (`sync-calendar.test.ts`, 'naming the files an event carries').
   Archived 2026-10-18: merge, into the namesake suffix entry (2026-10-01).
+
+## 2026-09-29
+
+- [decision] `update` carries on past a source that fails: it prints the source and the step it
+  failed at, lists it as failed in `kb/_sync-report.md`, moves on to the next source, and still
+  exits 1 at the end. Before, the first failure ended the run, so one broken source (a Loop
+  workspace that resolved to no library) left every source after it stale. Two cases still stop
+  the run: a lapsed sign-in (`SIGNED_OUT`, an `auth` error), since every later source would fail on
+  the same token, and the picker's runs (`runMany`, `runInTurn`), which were kept stopping at the
+  first failure when this scope was chosen. Applies to any new error kind: decide whether it breaks
+  one source (carry on) or all of them (stop, like `auth`).
+  Archived 2026-10-18: tighten, rewritten in place under 2026-09-29: a run that carries on now exits
+  3, not 1, and src/use-cases/run-sync.ts:286-288 and src/composition/exit-code.ts:4-9 state the
+  rule.
 
 ## 2026-09-26
 
@@ -331,6 +363,18 @@ left. Nothing reads this file at session start; grep it when a question needs th
   mail" and was applied to one of the places such text lands. When adding one, list every route the
   same content can arrive by before calling it done.
   Archived 2026-10-18: merge, into the mirror-route entry (2026-10-18).
+
+- [gotcha] Check `my-quick-context` before diagnosing a slow or surprising run, since the signed-in
+  account can change: a sync that took ninety seconds ran past an hour because the account had moved
+  to another tenant whose mail held 113 pasted screenshots against 5, each an OCR pass. The account
+  also sets the day: a thread's folder is dated in the `--timezone` zone (default: this machine's)
+  and frozen at creation, and `my-quick-context` reports the tenant zone in Windows spelling, which
+  `--timezone` refuses, so the mapping is a human step (Romance Standard Time is `Europe/Paris`).
+  Ask per run rather than carrying an answer forward.
+  Merges: 2026-08-30, 2026-08-30.
+  Archived 2026-10-18: tighten, rewritten in place under 2026-08-30: a detail changed: since batch 4
+  the zone is kept beside the knowledge base, not taken from the machine on each run
+  (src/composition/kept-zone.ts:7-9).
 
 - [decision] The four thread modules got their own test files but kept ONE harness, because what
   each does is only visible in the documents a whole run writes: a card names a file the placement
@@ -934,6 +978,22 @@ left. Nothing reads this file at session start; grep it when a question needs th
   Archived 2026-10-01: graduate, now stated at src/infra/drive-reader-marcel.ts:281-285.
 
 ## 2026-08-14
+
+- [gotcha] Slide or PDF markdown that arrives as one run-on wall of text with no spaces between
+  words comes from the PDF text extraction inside ask-marcel-office-cli (`unpdf`), not from here: a
+  real synced file held a 34,252-character line 12. The only whitespace folding in this repo is
+  `front-matter.ts` `/\s+/g -> ' '` on front matter values, and a body goes through
+  `withFrontMatter` untouched, so the fix belongs in the library.
+  Archived 2026-10-18: graduate, now filed upstream at docs/request-conversion-fidelity.md:91-97
+  (PDF text joined by unpdf).
+
+- [gotcha] `disambiguateSegment(name, id)` suffixes the first 8 characters of the id, which tells
+  nothing apart when ids share a prefix, and Graph ids do: every item in one drive starts
+  `01W25LGY...`, and two sites in one tenant agree for the first 20-odd characters. Hash before
+  slicing whenever a shared-prefix identifier feeds a short suffix, as `siteIdHash` in
+  `src/domain/site-state.ts` does for sites and notebooks.
+  Archived 2026-10-18: graduate, now stated at src/domain/kb-path.ts:97-98 and 120-124 (`idHash`,
+  and a namesake suffix cut from a hash of the id).
 
 - [gotcha] `disambiguateSegment(name, id)` takes the first 8 characters of the id, which
   disambiguates nothing when ids share a prefix, and Graph ids do. Every item in one drive starts
