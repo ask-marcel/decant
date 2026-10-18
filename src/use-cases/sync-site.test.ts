@@ -129,7 +129,10 @@ describe('reporting what did not reach the knowledge base', () => {
       lastRun: '2026-07-22T09:00:00Z',
       drives: { 'b!one': { name: 'Documents', deltaLink: 'c1', pending: [], items: { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['x.md'] } }, retry: {} } },
     });
-    const { files } = await run({ files: { texts: { [STATE_PATH]: known } }, reader: { pages: [{ items: [item({ kind: 'deleted' })], skipped: 0, deltaLink: 'c2' }] } });
+    const { files } = await run({
+      files: { texts: { [STATE_PATH]: known, 'x.md': 'the contract' } },
+      reader: { pages: [{ items: [item({ kind: 'deleted' })], skipped: 0, deltaLink: 'c2' }] },
+    });
 
     expect(files.written.get(REPORT_PATH)).toContain('- Projets/Contrat.docx: no longer at the source');
   });
@@ -508,7 +511,13 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     ];
 
     const { summary } = await run({
-      files: { texts: { [STATE_PATH]: known } },
+      files: {
+        texts: {
+          [STATE_PATH]: known,
+          'kb/SharePoint sites/Espace Contoso/Documents/old.docx.md': 'the old one',
+          'kb/SharePoint sites/Espace Contoso/Documents/gone.docx.md': 'the gone one',
+        },
+      },
       reader: { pages: [{ items, skipped: 0, deltaLink: 'cursor-2' }], failItems: { broken: { kind: 'permanent', message: 'locked' } } },
     });
 
@@ -1023,7 +1032,7 @@ describe('reaching back only as far as the day', () => {
     const known = filedUnder('2025-01-01', { '01OLD': { path: 'Archive/Old.docx', cTag: 'c1', outputs: ['kb/x/Old.docx.md'] } });
 
     const { summary } = await run({
-      files: { texts: { [STATE_PATH]: known } },
+      files: { texts: { [STATE_PATH]: known, 'kb/x/Old.docx.md': 'the old one' } },
       reader: { pages: [{ items: [OLD, MID, NEW, item({ id: '01OLDER', lastModified: '2023-01-01T00:00:00Z' })], skipped: 0, deltaLink: 'c2' }] },
       since: '2025-01-01',
     });
@@ -1041,7 +1050,11 @@ describe('reaching back only as far as the day', () => {
       { items: [NEW, MID, OLD], skipped: 2, deltaLink: 'c3' },
     ];
 
-    const { summary, reader, files, logger } = await run({ files: { texts: { [STATE_PATH]: known } }, reader: { pages }, since: '2025-01-01' });
+    const { summary, reader, files, logger } = await run({
+      files: { texts: { [STATE_PATH]: known, 'kb/x/Gone.docx.md': 'the gone one' } },
+      reader: { pages },
+      since: '2025-01-01',
+    });
 
     expect(reader.calls.filter((call) => call === 'delta' || call.startsWith('deltaFrom'))).toEqual(['deltaFrom:c1', 'delta']);
     expect(summary).toMatchObject({ converted: 1, archived: 1 });
@@ -1415,7 +1428,7 @@ describe('following the folders of a library', () => {
     const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01PLAN': elsewhere };
 
     const { summary, reader } = await run({
-      files: { texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets', '01G': 'Budget' }, items }) } },
+      files: { texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets', '01G': 'Budget' }, items }), [BEFORE]: 'the contract' } },
       reader: { pages: [{ items: [folder('01F', 'Contrats 2026'), MOVED], skipped: 0, deltaLink: 'cursor-2' }] },
     });
 
@@ -1539,7 +1552,7 @@ describe('following the folders of a library', () => {
     const items = { '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: [BEFORE] }, '01GONE': { path: 'Old.docx', cTag: 'c1', outputs: ['kb/x/Old.docx.md'] } };
 
     const { summary, reader } = await run({
-      files: { texts: { [STATE_PATH]: recorded({ deltaLink: undefined, items }) } },
+      files: { texts: { [STATE_PATH]: recorded({ deltaLink: undefined, items }), 'kb/x/Old.docx.md': 'the old one' } },
       reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }] },
     });
 
@@ -1556,7 +1569,7 @@ describe('following the folders of a library', () => {
     ];
 
     const { summary, files } = await run({
-      files: { texts: { [STATE_PATH]: recorded({ since: '2026-01-01', folders: {}, items, retry }) } },
+      files: { texts: { [STATE_PATH]: recorded({ since: '2026-01-01', folders: {}, items, retry }), 'kb/x/Old.docx.md': 'the old one' } },
       reader: { pages },
       since: '2025-01-01',
     });
@@ -1583,7 +1596,7 @@ describe('following the folders of a library', () => {
     const expired = { kind: 'permanent' as const, status: 410, message: 'resyncRequired: the sync state is not found' };
 
     const { summary, files, reader, logger } = await run({
-      files: { texts: { [STATE_PATH]: recorded({ folders: {}, items }) } },
+      files: { texts: { [STATE_PATH]: recorded({ folders: {}, items }), 'kb/x/Old.docx.md': 'the old one' } },
       reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }], failCursors: { 'cursor-1': expired } },
     });
 
@@ -1644,7 +1657,7 @@ describe('following the folders of a library', () => {
     const moved = Object.fromEntries(['a', 'b', 'c'].map((id) => [id, item({ id, name: `${id}.docx`, path: `Contrats 2026/${id}.docx` })]));
 
     const { reader, summary } = await run({
-      files: { texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets' }, items }) } },
+      files: { texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets' }, items }), 'kb/x/a.docx.md': 'a', 'kb/x/b.docx.md': 'b', 'kb/x/c.docx.md': 'c' } },
       reader: { pages: [{ items: [folder('01F', 'Contrats 2026')], skipped: 0, deltaLink: 'cursor-2' }], items: moved },
       concurrency: 2,
     });
