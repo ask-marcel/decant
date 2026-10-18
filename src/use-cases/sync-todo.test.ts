@@ -124,7 +124,10 @@ describe('syncing a Microsoft To Do list', () => {
       lastModified: '2026-09-01T09:00:00Z',
       title: 'Book the venue',
     });
-    const done = await run({ reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } }, files: { texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }) } } });
+    const done = await run({
+      reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } },
+      files: { texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), 'kb/To Do/Tasks/2026-09-01/Book the venue.md': 'the task' } },
+    });
 
     expect(done.summary.converted).toBe(1);
     expect(done.files.written.has('kb/To Do/Tasks/2026-09-08/Book the venue.md')).toBe(true);
@@ -239,7 +242,10 @@ describe('syncing a Microsoft To Do list', () => {
       lastModified: '2026-09-01T09:00:00Z',
       title: 'Cancel the order',
     });
-    const done = await run({ reader: { tasks: { 'list-1': [] } }, files: { texts: { [STATE_PATH]: serializeTodoState(state) } } });
+    const done = await run({
+      reader: { tasks: { 'list-1': [] } },
+      files: { texts: { [STATE_PATH]: serializeTodoState(state), 'kb/To Do/Tasks/2026-09-01/Cancel the order.md': 'the task' } },
+    });
 
     expect(done.summary.archived).toBe(1);
     expect(done.notes.archived).toEqual([{ path: 'Cancel the order', reason: 'no longer in the list' }]);

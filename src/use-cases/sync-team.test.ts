@@ -308,7 +308,7 @@ describe('syncing the channels of a Microsoft Team', () => {
     });
     const done = await run({
       reader: { posts: { [GENERAL.id]: [post('a', '2026-09-10T09:00:00Z', { deleted: true })] } },
-      files: { texts: { [STATE_PATH]: serializeTeamState(state) } },
+      files: { texts: { [STATE_PATH]: serializeTeamState(state), [`${ROOT}/General/2026-09-01/Post a.md`]: 'the post' } },
     });
 
     expect(done.summary.archived).toBe(1);
@@ -465,7 +465,7 @@ describe('reaching back only as far as the day', () => {
 
   it('moving the day earlier reads the old cursor out first, so a post deleted since the last run is still put aside', async () => {
     const done = await run({
-      files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } },
+      files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01'), [`${ROOT}/General/2026-09-08/Post new.md`]: 'the post' } },
       reader: { posts: { [GENERAL.id]: [OLD, MID] }, postsFrom: { 'https://graph/delta?token=1': [{ ...NEW, deleted: true }] } },
       since: '2025-01-01',
     });

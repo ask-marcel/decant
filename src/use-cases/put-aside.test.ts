@@ -70,7 +70,7 @@ describe('putting aside what an item held', () => {
   });
 
   it('a path outside the knowledge base keeps its whole path under the archive', async () => {
-    const files = createFilesFake();
+    const files = createFilesFake({ texts: { 'elsewhere/Old.md': 'old' } });
 
     await putAside({ files, clock: createClockFake('2026-10-13T08:00:00Z'), kbRoot: 'kb' }, ['elsewhere/Old.md']);
 

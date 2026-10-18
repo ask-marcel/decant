@@ -194,7 +194,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       },
     });
     const { files } = await run({
-      files: { texts: { [STATE_PATH]: known } },
+      files: { texts: { [STATE_PATH]: known, ['kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md']: 'the contract' } },
       reader: { pages: [{ items: [item({ cTag: 'c2', lastModified: '2026-06-01T10:00:00Z' })], skipped: 0, deltaLink: 'c2' }] },
     });
 
@@ -298,7 +298,10 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     });
     const renamed = item({ path: 'Archive/Contrat signe.docx', name: 'Contrat signe.docx' });
 
-    const { summary, files } = await run({ files: { texts: { [STATE_PATH]: known } }, reader: { pages: [{ items: [renamed], skipped: 0, deltaLink: 'cursor-2' }] } });
+    const { summary, files } = await run({
+      files: { texts: { [STATE_PATH]: known, ['kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md']: 'the contract' } },
+      reader: { pages: [{ items: [renamed], skipped: 0, deltaLink: 'cursor-2' }] },
+    });
 
     expect(summary).toEqual({ converted: 1, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 });
     expect(files.moves).toEqual([
@@ -434,7 +437,7 @@ describe('syncing a SharePoint library into the knowledge base', () => {
     });
 
     const { summary, files } = await run({
-      files: { texts: { [STATE_PATH]: known } },
+      files: { texts: { [STATE_PATH]: known, ['kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md']: 'the contract' } },
       reader: { pages: [{ items: [item({ kind: 'deleted' })], skipped: 0, deltaLink: 'cursor-2' }] },
     });
 

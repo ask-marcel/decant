@@ -234,7 +234,7 @@ describe('syncing the people directory', () => {
     const rosters = { 'team-all': [...ROSTERS['team-all'], { userId: 'off', name: 'Switched Off' }], 'team-lead': ROSTERS['team-lead'] };
     const done = await run({
       reader: { members: rosters, profiles: { ...PROFILES, off: person('off', 'Switched Off', { enabled: false }) } },
-      files: { texts: { [STATE_PATH]: serializePeopleState(state) } },
+      files: { texts: { [STATE_PATH]: serializePeopleState(state), [`${ROOT}/Left Already.md`]: 'a page', [`${ROOT}/Switched Off.md`]: 'a page' } },
     });
 
     expect(done.summary.archived).toBe(2);
@@ -248,7 +248,7 @@ describe('syncing the people directory', () => {
 
   it('a person whose name changed is written under the new name, and the page under the old one is put aside', async () => {
     const state = withPerson(emptyPeopleState(), 'jane', { file: `${ROOT}/Jane Smith.md`, name: 'Jane Smith', fingerprint: 'old' });
-    const done = await run({ files: { texts: { [STATE_PATH]: serializePeopleState(state) } } });
+    const done = await run({ files: { texts: { [STATE_PATH]: serializePeopleState(state), [`${ROOT}/Jane Smith.md`]: 'the old page' } } });
 
     expect(done.files.written.has(`${ROOT}/Jane Doe.md`)).toBe(true);
     expect(done.files.moves).toEqual([{ from: `${ROOT}/Jane Smith.md`, to: 'kb/_archive/2026-09-11/People/Jane Smith.md' }]);

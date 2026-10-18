@@ -155,7 +155,16 @@ describe('syncing the calendar', () => {
       subject: 'Offsite planning',
       outputs: [`${ROOT}/2026-09-05/Offsite planning.md`, `${ROOT}/2026-09-05/Offsite planning.attachments/Old.docx.md`],
     });
-    const done = await run({ reader: { changes: [{ id: 'a', removed: false }] }, files: { texts: { [STATE_PATH]: serializeCalendarState(state) } } });
+    const done = await run({
+      reader: { changes: [{ id: 'a', removed: false }] },
+      files: {
+        texts: {
+          [STATE_PATH]: serializeCalendarState(state),
+          [`${ROOT}/2026-09-05/Offsite planning.md`]: 'the event',
+          [`${ROOT}/2026-09-05/Offsite planning.attachments/Old.docx.md`]: 'the attachment',
+        },
+      },
+    });
 
     expect(done.summary.converted).toBe(1);
     expect(done.files.moves.map((move) => move.to)).toEqual([
@@ -171,7 +180,10 @@ describe('syncing the calendar', () => {
       subject: 'Cancelled call',
       outputs: [`${ROOT}/2026-09-01/Cancelled call.md`],
     });
-    const done = await run({ reader: { changes: [{ id: 'gone', removed: true }] }, files: { texts: { [STATE_PATH]: serializeCalendarState(state) } } });
+    const done = await run({
+      reader: { changes: [{ id: 'gone', removed: true }] },
+      files: { texts: { [STATE_PATH]: serializeCalendarState(state), [`${ROOT}/2026-09-01/Cancelled call.md`]: 'the event' } },
+    });
 
     expect(done.summary.archived).toBe(1);
     expect(done.notes.archived).toEqual([{ path: 'Cancelled call', reason: 'deleted from the calendar' }]);
@@ -459,7 +471,7 @@ describe('syncing the calendar', () => {
     const done = await run({
       since: '2026-09-01',
       reader: { changesFrom: { 'https://graph/delta?token=1': [{ id: 'gone', removed: true }] } },
-      files: { texts: { [STATE_PATH]: serializeCalendarState(state) } },
+      files: { texts: { [STATE_PATH]: serializeCalendarState(state), [`${ROOT}/2026-09-11/Cancelled call.md`]: 'the event' } },
     });
 
     expect(done.reader.calls.filter((call) => call.startsWith('eventsDelta'))).toEqual(['eventsDelta:https://graph/delta?token=1', 'eventsDelta:fresh']);
@@ -693,7 +705,7 @@ describe('naming the files an event carries', () => {
 
     const after = await run({
       reader: { changes: [{ id: 'a', removed: false }], events: { a: { ...OFFSITE, lastModified: '2026-09-13T08:00:00Z' } }, attachments: { a: [FIRST, THIRD] } },
-      files: { texts: { [STATE_PATH]: before.files.written.get(STATE_PATH) ?? '' } },
+      files: { texts: { [STATE_PATH]: before.files.written.get(STATE_PATH) ?? '', [secondFile]: 'the second attachment' } },
     });
 
     expect(after.files.moves.map(({ from }) => from)).toStrictEqual([secondFile]);
