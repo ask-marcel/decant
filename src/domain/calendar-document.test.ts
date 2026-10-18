@@ -147,6 +147,10 @@ describe('writing one calendar event as a document', () => {
 
     expect(rendered({ ...event, body })).toContain('See the [agenda](https://example.com/agenda)');
   });
+
+  it('a reference in an event body named for a property of every object, such as &constructor;, stays as it was written', () => {
+    expect(rendered({ ...event, body: '<p>Bring &constructor; and &amp; more</p>' })).toContain('Bring &constructor; and & more');
+  });
 });
 
 // A series and its exceptions are one meeting: each note says where the others are.

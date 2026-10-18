@@ -43,7 +43,9 @@ const authorOf = (raw: Record<string, unknown>): string => {
 
 const PREVIEW_LENGTH = 80;
 const TAGS = /<[^<>]+>/g;
-const ENTITIES: Readonly<Record<string, string>> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' };
+// A map, not an object: an object also answers for `constructor`, which every object has, and a
+// body that wrote `&constructor;` read as the text of a function.
+const ENTITIES: ReadonlyMap<string, string> = new Map(Object.entries({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' }));
 const NAMED_ENTITY = /&([a-z]+);/gi;
 
 // Enough of the body to name the file by: the first line with the markup gone. The body itself is
@@ -51,7 +53,7 @@ const NAMED_ENTITY = /&([a-z]+);/gi;
 const previewOf = (body: unknown): string => {
   const text = (readString(body, 'content') ?? '')
     .replace(TAGS, '\n')
-    .replace(NAMED_ENTITY, (match, name: string) => ENTITIES[name.toLowerCase()] ?? match)
+    .replace(NAMED_ENTITY, (match, name: string) => ENTITIES.get(name.toLowerCase()) ?? match)
     .split('\n')
     .map((line) => line.trim())
     .find((line) => line.length > 0);

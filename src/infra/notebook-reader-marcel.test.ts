@@ -92,4 +92,12 @@ describe('reading OneNote through the ask-marcel library', () => {
     expect(recorded[0]).toEqual({ name: 'get-onenote-page-as-markdown', params: { onenotePageId: 'p3' } });
     expect(recorded[1]).toEqual({ name: 'get-sharepoint-site-onenote-page-content', params: { siteId: 'site-1', onenotePageId: 'p1' } });
   });
+
+  it('a reference in a site page named for a property of every object, such as &constructor;, stays as it was written', async () => {
+    const { reader } = readerFor({
+      'get-sharepoint-site-onenote-page-content': [ok({ contentType: 'text/html; charset=utf-8', size: 50, text: '<html><body><p>Bring &constructor; along</p></body></html>' })],
+    });
+
+    expect(await reader.pageMarkdown(ON_SITE, 'p1')).toEqual({ ok: true, value: 'Bring &constructor; along' });
+  });
 });
