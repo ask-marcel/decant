@@ -495,7 +495,7 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
 - [gotcha] A one-time move of files that runs before the state is saved must count a file already
   gone from its old place as moved. A read that fails after the moves leaves the record at the old
   paths, and every later run is refused at each destination, so the layout never settles
-  (`stillThere` in `sync-site.ts`, batch 11b). Ask `exists` only after a refusal: a clean run costs
+  (`gone` in `refile.ts`, batch 11b and PR 34). Ask `exists` only after a refusal: a clean run costs
   no extra call, and a file still at its old place keeps it.
 
 - [gotcha] `sonarjs/slow-regex` does not see a pattern that is linear for one match but starts a
