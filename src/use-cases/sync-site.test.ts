@@ -1704,7 +1704,7 @@ describe('a document converted without a part of it', () => {
 
     const done = await run({
       files: { texts: { [STATE_PATH]: owing([NOTE, MEDIA]), [NOTE]: 'the contract', [MEDIA]: 'a picture' } },
-      reader: { ...NOTHING_CHANGED, failImages: BUSY },
+      reader: NOTHING_CHANGED,
     });
 
     expect(done.files.moves).toEqual([{ from: MEDIA, to: 'kb/_archive/2026-07-23/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.media/image-01.png' }]);
@@ -1946,7 +1946,7 @@ describe('an edited document whose earlier version will not move aside', () => {
         },
       },
     });
-    const seed = { pages: [{ items: [], skipped: 0, deltaLink: 'cursor-2' }], failImages: { kind: 'transient' as const, message: 'Graph is busy' } };
+    const seed = { pages: [{ items: [], skipped: 0, deltaLink: 'cursor-2' }] };
 
     expect(await handing({ [STATE_PATH]: owed, [NOTE]: 'the contract', [MEDIA]: 'a picture' }, seed)).toEqual([MEDIA]);
   });
