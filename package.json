@@ -68,6 +68,10 @@
     "winston": "^3.19.0"
   },
   "overrides": {
-    "qs": "^6.16.0"
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "body-parser": "^2.4.0",
+    "postal-mime": "^4.0.8",
+    "qs": "^6.16.0",
+    "zod": "^4.6.6"
   }
 }
