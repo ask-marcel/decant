@@ -1,5 +1,10 @@
 # Request: read the posts of a Microsoft 365 group conversation
 
+> **Resolved in `ask-marcel-office-cli` 2.5.0.** The release adds the three commands:
+> `list-group-thread-posts`, `get-group-post` and `convert-group-post-to-markdown`. They use the
+> `Group.Read.All` scope that the token already has. `decant` reads a group inbox through the first
+> and the third, in `src/infra/group-reader-marcel.ts`. Kept as the record of what was asked for and why.
+
 **Package:** `ask-marcel-office-cli` 2.4.0
 **Category:** mail
 **Kind:** missing command. Nothing is broken; a group's mail is reachable up to its titles and no further.
