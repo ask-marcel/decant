@@ -58,6 +58,14 @@ describe('reading the run configuration', () => {
     expect(on('linux', 'odd\\name', {})).toMatchObject({ kbRoot: 'odd\\name' });
   });
 
+  // One folder has one name in the states: `./kb` and `kb/` are `kb`, so a run that names it so does
+  // not rewrite every path the states record.
+  it('a folder named with a leading `./` or a trailing slash is the same folder', () => {
+    const named = (out: string): string => readConfig({ env: {}, out, ocrLang: 'en', interactive: true, timezone: '', machineTimezone: 'UTC' }).kbRoot;
+
+    expect([named('./kb'), named('kb/'), named('././kb//'), named('/srv/kb-test/'), named('/')]).toEqual(['kb', 'kb', 'kb', '/srv/kb-test', '/']);
+  });
+
   // Windows counts a path from the drive letter, so what stands in front of the knowledge base comes
   // off the 259 characters before any name inside it is planned.
   it('the path budget is what Windows accepts less the folders in front of the knowledge base, and none without a way to resolve the folder', () => {

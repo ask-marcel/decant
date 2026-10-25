@@ -35,7 +35,18 @@ export type ConfigInput = {
 // Every path under the knowledge base is joined with `/`. Windows accepts that separator, so a
 // folder named there with `\` is spelled with `/` too, and no path holds both. Elsewhere a backslash
 // is an ordinary character in a name, and is kept.
-const kbRootFor = (named: string, platform: string | undefined): string => (platform === 'win32' ? named.replaceAll('\\', '/') : named);
+// One folder also has one name: `./kb` and `kb/` are `kb`, as the states record the paths under it.
+const withoutTail = (named: string): string => {
+  let end = named.length;
+  while (end > 1 && named[end - 1] === '/') end -= 1;
+  return named.slice(0, end);
+};
+
+const kbRootFor = (named: string, platform: string | undefined): string => {
+  const slashed = withoutTail(platform === 'win32' ? named.replaceAll('\\', '/') : named);
+  const trimmed = slashed.replace(/^(?:\.\/)+/, '');
+  return trimmed.length === 0 ? slashed : trimmed;
+};
 
 // Windows counts a path from the drive letter, so the folders in front of the knowledge base come
 // off its limit before any name inside it is planned.
