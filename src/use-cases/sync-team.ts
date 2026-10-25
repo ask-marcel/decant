@@ -265,10 +265,20 @@ const writeIndex = async (context: ChannelContext, state: TeamState): Promise<vo
   if (!written.ok) deps.logger.warn('index.failed', { path, cause: written.error.kind });
 };
 
+// A channel whose posts Graph will not list costs itself, as a post that will not render does: named
+// in the report, with no cursor kept, so the next run reads it again, while the other channels land.
+// Graph refuses the delta of some channels outright (`Parameter 'DeltaToken' not supported`). A
+// lapsed sign-in is not such a refusal: it would fail every channel, so it ends the run.
+const unread = (deps: SyncTeamDeps, carried: Progressing, channel: ChannelSummary, error: TeamReaderError): Result<Progressing, StepError> => {
+  deps.logger.warn('team.channel-unread', { channel: channel.id, cause: error.kind });
+  const note = { path: channel.name, reason: `its posts could not be listed: ${error.message}` };
+  return ok({ ...carried, summary: { ...carried.summary, failed: carried.summary.failed + 1 }, notes: { ...carried.notes, failed: [...carried.notes.failed, note] } });
+};
+
 const syncChannel = async (deps: SyncTeamDeps, input: SyncTeamInput, carried: Progressing, channel: ChannelSummary): Promise<Result<Progressing, StepError>> => {
   const context: ChannelContext = { deps, input, channel, roots: channelRoots(deps, input.team, channel) };
   const delta = await postsFor(deps, input, channel, carried.state.channels[channel.id]);
-  if (!delta.ok) return failed('postsDelta', delta.error.kind, delta.error.message);
+  if (!delta.ok) return delta.error.kind === 'auth' ? failed('postsDelta', delta.error.kind, delta.error.message) : unread(deps, carried, channel, delta.error);
   const work = channelWork(carried.state, channel.id, delta.value.posts, input.since);
   if (input.dryRun) return ok({ ...carried, summary: { ...carried.summary, queued: carried.summary.queued + work.write.length } });
   deps.progress.start(work.write.length, `${input.team.name} / ${channel.name}`);

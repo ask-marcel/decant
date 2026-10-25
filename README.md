@@ -1067,6 +1067,11 @@ cursor moves only once every post the delta reported has landed: a post that wou
 named in the report, and the channel re-reads its delta next run to try it again, skipping by
 `lastModifiedDateTime` everything that already landed.
 
+Graph does not give the posts of some channels, and answers `Parameter 'DeltaToken' not supported`.
+The `_sync-report.md` of the team then names that channel as failed, and decant keeps no cursor for
+it. The other channels and sources continue, and the run ends with exit code 3. The next run tries
+that channel again. Only an expired sign-in stops the run.
+
 Only the channels of Teams you are a member of are offered, and only their standard, private and
 shared channels as Graph lists them. Teams chats (one-to-one and group chats) are a different thing
 and are not synced: the library can only reach them through Microsoft-internal endpoints whose token
