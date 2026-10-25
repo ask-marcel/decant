@@ -75,4 +75,13 @@ describe('keeping every file operation inside the knowledge base', () => {
     expect((await files.move(COPY, '/copy/kb/_archive/2026-10-24/People/Jane Doe.md')).ok).toBe(true);
     expect((await files.readBytes('/copy/kb/People/logo.png')).ok).toBe(true);
   });
+  // `--out ../kb-test` names the folder through `..` itself: only a `..` after it climbs out.
+  it('a knowledge base named through a parent folder takes every path under it, and refuses one that climbs out of it', async () => {
+    const disk = createFilesFake();
+    const files = withinKb(disk, '../kb-test');
+
+    expect((await files.writeText('../kb-test/People/Jane Doe.md', 'Jane')).ok).toBe(true);
+    expect((await files.writeText('../kb-test/People/../../note.md', 'x')).ok).toBe(false);
+    expect(disk.writeLog).toStrictEqual(['../kb-test/People/Jane Doe.md']);
+  });
 });
