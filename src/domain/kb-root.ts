@@ -8,9 +8,8 @@ type Json = Readonly<Record<string, unknown>>;
 
 const isRecord = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const isUnder = (folder: string, text: string): boolean => text === folder || text.startsWith(`${folder}/`);
-
-const moved = (text: string, from: string, to: string): string => (isUnder(from, text) ? `${to}${text.slice(from.length)}` : text);
+// A path under the folder, never the bare name of it, which a subject can hold as well.
+const moved = (text: string, from: string, to: string): string => (text.startsWith(`${from}/`) ? `${to}${text.slice(from.length)}` : text);
 
 // Each string a state holds, its keys too, since a map can be keyed by the paths it records.
 const stringsOf = (value: unknown): ReadonlyArray<string> => {
