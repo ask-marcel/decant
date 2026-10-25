@@ -66,6 +66,7 @@ import type { RunSyncDeps } from '../use-cases/run-sync.ts';
 import { createAsideLedger } from '../use-cases/aside-ledger.ts';
 import { withCursorFiles } from '../use-cases/cursor-files.ts';
 import { withinKb } from '../use-cases/kb-bounds.ts';
+import { withKbRoot } from '../use-cases/rooted-files.ts';
 import { withSteadyWrites } from '../use-cases/steady-files.ts';
 import type { Config } from './config.ts';
 import { SETTINGS_FILE, keepZone } from './kept-zone.ts';
@@ -203,11 +204,13 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // time and delta cursors of a sync go to a file beside its state, and a file that lands at a path the
   // ledger holds takes that path out of it. A run that found nothing new then changes no file but those
   // cursor files. The ledger lists the files a source lets go that would not move under the archive:
-  // moved again before each run, and named in the report of the run. Under them all, no file outside
-  // the knowledge base is read, written or moved.
+  // moved again before each run, and named in the report of the run. Each state names the folder it
+  // was written in, and reads with its paths in this one. Under them all, no file outside the knowledge
+  // base is read, written or moved.
   const onDisk = given(overrides.files, () => createBunFiles());
   const disk = withinKb(onDisk, config.kbRoot);
-  const ledger = createAsideLedger(withCursorFiles(withSteadyWrites(disk), logger), { clock, logger, kbRoot: config.kbRoot, timezone: config.timezone });
+  const kept = withKbRoot(withCursorFiles(withSteadyWrites(disk), logger), config.kbRoot);
+  const ledger = createAsideLedger(kept, { clock, logger, kbRoot: config.kbRoot, timezone: config.timezone });
   const files = ledger.files;
   const writeDown = ledger.writeDown;
   // Constructing the API reaches nothing: the sign-in ladder only runs on the first Graph call.
