@@ -66,6 +66,16 @@ describe('a state that names the folder of the knowledge base it was written in'
     expect(read.source.webUrl).toBe(calendar.source.webUrl);
   });
 
+  // A subject can hold the same words as a path. The folder that most paths start with wins.
+  it('a state saved before the folder was recorded takes the folder that most of its paths start with', async () => {
+    const quoted = { ...calendar, events: { ...calendar.events, 'AAMk-2': { subject: 'Notes/Calendar/archive', file: 'kb/Calendar/2026-10-13/Review.md', attachments: [] } } };
+    const copy = withKbRoot(createFilesFake({ texts: { [COPIED]: asText(quoted) } }), '/copy/kb');
+
+    const read = (await readJson(copy, COPIED)) as typeof quoted;
+
+    expect(read.events['AAMk-2']).toEqual({ subject: 'Notes/Calendar/archive', file: '/copy/kb/Calendar/2026-10-13/Review.md', attachments: [] });
+  });
+
   it('a map keyed by recorded paths takes the copy in its keys too', async () => {
     const keyed = { version: 1, files: { 'kb/Calendar/2026-10-12/Offsite planning.md': { hash: 'a1' } } };
     const copy = withKbRoot(createFilesFake({ texts: { [COPIED]: asText({ ...keyed, $kbRoot: 'kb' }) } }), '/copy/kb');
