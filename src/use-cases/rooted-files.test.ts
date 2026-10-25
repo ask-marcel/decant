@@ -150,4 +150,27 @@ describe('a state that names the folder of the knowledge base it was written in'
 
     expect(await readJson(files, STATE)).toEqual({ ...calendar, $kbRoot: 'kb' });
   });
+  // A SharePoint folder can be named `kb` too: the place of a document in its library is not a path
+  // of the knowledge base, and only paths into a folder of the knowledge base move to the copy.
+  it('a value under a folder of the same name that is not a folder of the knowledge base stays as it is', async () => {
+    const library = { version: 1, items: { '01ABC': { path: 'kb/Plan.docx', outputs: ['kb/SharePoint sites/Espace Contoso/Documents/kb/Plan.docx.md'] } }, $kbRoot: 'kb' };
+    const copy = withKbRoot(createFilesFake({ texts: { '/copy/kb/SharePoint sites/Espace Contoso/.sync-state.json': asText(library) } }), '/copy/kb');
+
+    expect(await readJson(copy, '/copy/kb/SharePoint sites/Espace Contoso/.sync-state.json')).toEqual({
+      version: 1,
+      items: { '01ABC': { path: 'kb/Plan.docx', outputs: ['/copy/kb/SharePoint sites/Espace Contoso/Documents/kb/Plan.docx.md'] } },
+    });
+  });
+
+  // A group inbox records the documents of its group under the site of the group, and nothing under
+  // its own place: the folder of the knowledge base is found from any folder of it that a path names.
+  it('a state saved before the folder was recorded, with paths only outside its own place, reads them in the copy', async () => {
+    const group = { version: 1, documents: ['kb/SharePoint sites/Northwind/Documents/Plan.docx.md'] };
+    const copy = withKbRoot(createFilesFake({ texts: { '/copy/kb/Group inboxes/Northwind/.sync-state.json': asText(group) } }), '/copy/kb');
+
+    expect(await readJson(copy, '/copy/kb/Group inboxes/Northwind/.sync-state.json')).toEqual({
+      version: 1,
+      documents: ['/copy/kb/SharePoint sites/Northwind/Documents/Plan.docx.md'],
+    });
+  });
 });
