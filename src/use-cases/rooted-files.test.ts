@@ -173,4 +173,29 @@ describe('a state that names the folder of the knowledge base it was written in'
       documents: ['/copy/kb/SharePoint sites/Northwind/Documents/Plan.docx.md'],
     });
   });
+  // The recorded folder wins over what the paths suggest, and a path is read from its first folder of
+  // the knowledge base: a library can hold a SharePoint folder named `Calendar`. Another folder of
+  // the same length, `xx/Mailbox/…`, is not under the recorded one.
+  it('a recorded folder wins over the paths, and a path moves from its first folder of the knowledge base', async () => {
+    const recorded = {
+      version: 1,
+      quotes: ['Notes/Calendar/a', 'Notes/Calendar/b', 'Notes/Calendar/c'],
+      other: 'xx/Mailbox/a.md',
+      outputs: ['kb/SharePoint sites/Espace Contoso/Documents/Calendar/Plan.docx.md'],
+      $kbRoot: 'kb',
+    };
+    const legacy = { version: 1, outputs: ['kb/SharePoint sites/Espace Contoso/Documents/Calendar/Plan.docx.md'] };
+    const copy = withKbRoot(createFilesFake({ texts: { [COPIED]: asText(recorded), '/copy/kb/SharePoint sites/Espace Contoso/.sync-state.json': asText(legacy) } }), '/copy/kb');
+
+    expect(await readJson(copy, COPIED)).toEqual({
+      version: 1,
+      quotes: recorded.quotes,
+      other: 'xx/Mailbox/a.md',
+      outputs: ['/copy/kb/SharePoint sites/Espace Contoso/Documents/Calendar/Plan.docx.md'],
+    });
+    expect(await readJson(copy, '/copy/kb/SharePoint sites/Espace Contoso/.sync-state.json')).toEqual({
+      version: 1,
+      outputs: ['/copy/kb/SharePoint sites/Espace Contoso/Documents/Calendar/Plan.docx.md'],
+    });
+  });
 });
