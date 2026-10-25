@@ -5,6 +5,7 @@ import type { FilesFake, FilesFakeSeed } from '../test-helpers/files-fake.ts';
 import { createLoggerFake } from '../test-helpers/logger-fake.ts';
 import type { LoggerFake } from '../test-helpers/logger-fake.ts';
 import { digestOf } from '../domain/aside-ledger.ts';
+import { err } from '../domain/result.ts';
 import { createAsideLedger } from './aside-ledger.ts';
 import type { AsideLedgerRun } from './aside-ledger.ts';
 
@@ -171,6 +172,19 @@ describe('naming the files still stuck in the report of the run', () => {
     );
 
     expect(await ledger.stuck()).toEqual({ files: [{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-15)' }] });
+  });
+
+  // The ledger keeps such a file, so the report names it: the move is still owed, and nothing else
+  // says so. A ledger copied with the knowledge base holds paths outside the copy, which read so.
+  it('a file of the ledger that cannot be checked is named as well, and the file stays where it is', async () => {
+    const disk = createFilesFake({ texts: { [LEDGER]: JSON.stringify({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-14T09:00:00Z', digest: 'd1' } }) } });
+    const unchecked = { ...disk, exists: async (path: string) => err({ kind: 'read-failed' as const, path, message: 'EACCES' }) };
+    const ledger = createAsideLedger(unchecked, { clock: createClockFake('2026-10-15T09:00:00Z'), kbRoot: 'kb', logger: createLoggerFake(), timezone: 'UTC' });
+
+    await ledger.retry();
+
+    expect(await ledger.stuck()).toEqual({ files: [{ path: 'SharePoint sites/Espace Contoso/Documents/Contrat.docx.md', reason: 'write-failed: EBUSY (since 2026-10-14)' }] });
+    expect(disk.moves).toStrictEqual([]);
   });
 
   it('a file this run wrote down is named as well', async () => {

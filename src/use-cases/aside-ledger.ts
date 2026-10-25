@@ -63,11 +63,13 @@ const standingOf = async (files: Files, entry: StuckFile): Promise<Standing> => 
   return now === entry.digest ? 'same' : 'other';
 };
 
-const onDisk = async <T extends { readonly path: string }>(files: Files, entries: ReadonlyArray<T>): Promise<ReadonlyArray<T>> => {
+// `untold` keeps an entry that cannot be checked, which the ledger keeps too: one outside the knowledge
+// base, most often, from a copy of it.
+const onDisk = async <T extends { readonly path: string }>(files: Files, entries: ReadonlyArray<T>, untold = false): Promise<ReadonlyArray<T>> => {
   const present: T[] = [];
   for (const entry of entries) {
     const held = await files.exists(entry.path);
-    if (held.ok && held.value) present.push(entry);
+    if (held.ok ? held.value : untold) present.push(entry);
   }
   return present;
 };
@@ -171,12 +173,13 @@ export const createAsideLedger = (files: Files, deps: AsideLedgerDeps): AsideLed
     });
   };
 
-  // What the report of the run names: each file the ledger holds that is still on disk, each one the
-  // retry of this run took off the list for another file at its path, and why the ledger would not
-  // read, when it would not.
+  // What the report of the run names: each file the ledger holds that is still on disk or cannot be
+  // checked, each one the
+  // retry of this run took off the list for another file at its path, and why the ledger would not read,
+  // when it would not.
   const stuck: StuckFiles = async () => {
     await loaded();
-    const listed = stuckNotes(await onDisk<StuckFile>(files, Object.values(held)), deps.kbRoot, deps.timezone);
+    const listed = stuckNotes(await onDisk<StuckFile>(files, Object.values(held), true), deps.kbRoot, deps.timezone);
     const named = [...listed, ...replacedNotes(replaced, deps.kbRoot, deps.timezone)];
     return unreadable === undefined ? { files: named } : { files: named, unreadable };
   };
