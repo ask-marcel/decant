@@ -68,12 +68,39 @@ describe('a state that names the folder of the knowledge base it was written in'
 
   // A subject can hold the same words as a path. The folder that most paths start with wins.
   it('a state saved before the folder was recorded takes the folder that most of its paths start with', async () => {
-    const quoted = { ...calendar, events: { ...calendar.events, 'AAMk-2': { subject: 'Notes/Calendar/archive', file: 'kb/Calendar/2026-10-13/Review.md', attachments: [] } } };
+    const quoted = { ...calendar, events: { 'AAMk-2': { subject: 'Notes/Calendar/archive', file: 'kb/Calendar/2026-10-13/Review.md', attachments: [] }, ...calendar.events } };
     const copy = withKbRoot(createFilesFake({ texts: { [COPIED]: asText(quoted) } }), '/copy/kb');
 
     const read = (await readJson(copy, COPIED)) as typeof quoted;
 
     expect(read.events['AAMk-2']).toEqual({ subject: 'Notes/Calendar/archive', file: '/copy/kb/Calendar/2026-10-13/Review.md', attachments: [] });
+  });
+
+  // A group inbox records the documents of its group under the site of the group, outside its own
+  // place: the folder it recorded is what tells where they start.
+  it('a state with paths outside its own place reads them in the copy from the folder it recorded', async () => {
+    const group = { version: 1, documents: ['kb/SharePoint sites/Northwind/Documents/Plan.docx.md'], $kbRoot: 'kb' };
+    const copy = withKbRoot(createFilesFake({ texts: { '/copy/kb/Group inboxes/Northwind/.sync-state.json': asText(group) } }), '/copy/kb');
+
+    expect(await readJson(copy, '/copy/kb/Group inboxes/Northwind/.sync-state.json')).toEqual({
+      version: 1,
+      documents: ['/copy/kb/SharePoint sites/Northwind/Documents/Plan.docx.md'],
+    });
+  });
+
+  // An address that names the place of the state is not a path: read as one, it would name the folder.
+  it('a state saved before the folder was recorded, with only an address and the bare name of a folder, reads as it is', async () => {
+    const linked = { version: 1, source: { webUrl: 'https://outlook.example/Calendar/view' }, subject: 'kb', also: '/Calendar/2026-10-12/Offsite.md' };
+    const copy = withKbRoot(createFilesFake({ texts: { [COPIED]: asText(linked), '/copy/kb/People/.sync-state.json': asText({ ...linked, $kbRoot: 'kb' }) } }), '/copy/kb');
+
+    expect(await readJson(copy, COPIED)).toEqual(linked);
+    expect(((await readJson(copy, '/copy/kb/People/.sync-state.json')) as typeof linked).subject).toBe('kb');
+  });
+
+  it('a state that is not an object of fields reads as it is', async () => {
+    const copy = withKbRoot(createFilesFake({ texts: { [COPIED]: asText(['kb/Calendar/2026-10-12/Offsite planning.md']) } }), '/copy/kb');
+
+    expect(await readJson(copy, COPIED)).toEqual(['kb/Calendar/2026-10-12/Offsite planning.md']);
   });
 
   it('a map keyed by recorded paths takes the copy in its keys too', async () => {
@@ -100,6 +127,10 @@ describe('a state that names the folder of the knowledge base it was written in'
 
     expect(await files.readText('/copy/kb/Calendar/notes.md')).toEqual({ ok: true, value: note });
     expect(await files.readText(COPIED)).toEqual({ ok: true, value: '{ not json' });
+    expect(await withKbRoot(createFilesFake({ texts: { '/copy/kb/.decant.json': '{"since":"2026-09-26"}' } }), '/copy/kb').readText('/copy/kb/.decant.json')).toEqual({
+      ok: true,
+      value: '{"since":"2026-09-26"}',
+    });
 
     await files.writeText('/copy/kb/Calendar/notes.md', note);
     await files.writeText(COPIED, '{ not json');
@@ -112,5 +143,11 @@ describe('a state that names the folder of the knowledge base it was written in'
     const files = withKbRoot(createFilesFake(), '/copy/kb');
 
     expect(await files.readText(COPIED)).toEqual({ ok: false, error: expect.objectContaining({ kind: 'not-found', path: COPIED }) });
+  });
+  // Only the guard of the knowledge base reads outside it, and refuses: a state there is not one of its own.
+  it('a state outside the folder of the knowledge base reads as it is', async () => {
+    const files = withKbRoot(createFilesFake({ texts: { [STATE]: asText({ ...calendar, $kbRoot: 'kb' }) } }), '/copy/kb');
+
+    expect(await readJson(files, STATE)).toEqual({ ...calendar, $kbRoot: 'kb' });
   });
 });
