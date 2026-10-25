@@ -18,6 +18,8 @@ import { createClockFake } from '../test-helpers/clock-fake.ts';
 import { disambiguateSegment, idHash } from '../domain/kb-path.ts';
 import { emptyNotebookState, notebookRootName, serializeNotebookState } from '../domain/notebook-state.ts';
 import { emptyPlanState, serializePlanState } from '../domain/plan-state.ts';
+import { emptyMailboxState, serializeMailboxState, withConversation, withThread } from '../domain/mail-state.ts';
+import type { MailMessage } from '../domain/mail-message.ts';
 import { buildDeps } from './build-deps.ts';
 import { readConfig } from './config.ts';
 
@@ -669,5 +671,116 @@ describe('a plan renamed in Planner', () => {
     expect(files.written.has('kb/Planner/Offsite 2027/.sync-state.json')).toBe(true);
     expect(files.written.has('kb/Planner/Offsite 2026/.sync-state.json')).toBe(false);
     expect(files.written.has('kb/_archive/2026-10-16/Planner/Offsite 2026/.sync-state.json')).toBe(true);
+  });
+});
+
+// A knowledge base copied to another folder keeps the paths its states recorded, and each one names the
+// folder it was copied from. A run on the copy then moved the files of the original, and found nothing
+// of its own to move. The copy follows its own paths, and nothing outside it is touched.
+describe('a knowledge base copied to another folder', () => {
+  const COPY = '/copy/kb';
+  const updateIn = async (files: ReturnType<typeof createFilesFake>, readers: Partial<Pick<NonNullable<Parameters<typeof buildDeps>[1]>, 'reader' | 'mail'>>): Promise<void> => {
+    await buildDeps(configFor({ KB_ROOT: COPY }), {
+      files,
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake(),
+      mail: createMailReaderFake(),
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
+      people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
+      notebook: createNotebookReaderFake(),
+      list: createListReaderFake(),
+      plan: createPlanReaderFake(),
+      ocr: createOcrFake(),
+      prompt: createPromptFake(),
+      clock: createClockFake('2026-10-24T09:00:00Z'),
+      ...readers,
+    }).runSync({ command: 'update', driveIds: [], maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+  };
+  const touchedOutside = (files: ReturnType<typeof createFilesFake>): ReadonlyArray<string> =>
+    [...files.writeLog, ...files.moves.flatMap((move) => [move.from, move.to])].filter((path) => !path.startsWith(`${COPY}/`));
+
+  it('a library in the day folders of the first layout moves out of them in the copy, and the original stays as it was', async () => {
+    const dated = (root: string): string => `${root}/SharePoint sites/Espace Contoso/Documents/2026-05-12/Contrat.docx.md`;
+    const state = JSON.stringify({
+      version: 1,
+      source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://x' },
+      lastRun: '',
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [], items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: [dated('kb')] } }, retry: {} } },
+    });
+    const contract = {
+      id: '01ABC',
+      name: 'Contrat.docx',
+      kind: 'file' as const,
+      size: 4096,
+      path: 'Contrat.docx',
+      lastModified: '2026-05-12T09:31:00Z',
+      cTag: 'c1',
+      webUrl: 'https://x/Contrat.docx',
+    };
+    const files = createFilesFake({
+      directories: { [COPY]: ['SharePoint sites'], [`${COPY}/SharePoint sites`]: ['Espace Contoso'] },
+      texts: { [`${COPY}/SharePoint sites/Espace Contoso/.sync-state.json`]: state, [dated(COPY)]: 'the copy', [dated('kb')]: 'the original' },
+    });
+
+    await updateIn(files, { reader: createDriveReaderFake({ pages: [{ items: [contract], skipped: 0, deltaLink: 'cursor-2' }] }) });
+
+    expect(files.moves).toContainEqual({ from: dated(COPY), to: `${COPY}/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md` });
+    expect(files.written.get(dated('kb'))).toBe('the original');
+    expect(touchedOutside(files)).toStrictEqual([]);
+  });
+
+  it('a mail thread with no message left goes under the archive of the copy, and the original stays as it was', async () => {
+    const FOLDER = '2026-05-12-thread-1-contrat';
+    const card = (root: string): string => `${root}/Mailbox/threads/${FOLDER}/_attachments/a.pdf.md`;
+    const note = (root: string): string => `${root}/Mailbox/threads/${FOLDER}/contrat.md`;
+    const fed = withConversation(emptyMailboxState(), 'conv-1', { threadId: 'thread-1', root: '<r@example.com>' });
+    const state = withThread(fed, 'thread-1', {
+      folder: FOLDER,
+      conversationIds: ['conv-1'],
+      file: `threads/${FOLDER}/contrat.md`,
+      messageIds: ['m0'],
+      lastMessage: '2026-05-12T09:31:00Z',
+      attachments: [],
+      inlineImages: [],
+      files: [card('kb')],
+    });
+    const removed: MailMessage = { id: 'm0', conversationId: '', subject: '', received: '', hasAttachments: false, from: { name: '', address: '' }, to: [], isDeleted: true };
+    const files = createFilesFake({
+      directories: { [COPY]: ['Mailbox'] },
+      texts: { [`${COPY}/Mailbox/.sync-state.json`]: serializeMailboxState(state), [note(COPY)]: 'note', [card(COPY)]: 'card', [note('kb')]: 'note', [card('kb')]: 'card' },
+    });
+
+    await updateIn(files, {
+      mail: createMailReaderFake({ folders: [{ id: 'AAMk-inbox', name: 'Inbox', childCount: 0, itemCount: 1 }], pages: [{ messages: [removed], skipped: 0, deltaLink: 'c1' }] }),
+    });
+
+    expect(files.moves).toContainEqual({ from: card(COPY), to: `${COPY}/_archive/2026-10-24/Mailbox/threads/${FOLDER}/_attachments/a.pdf.md` });
+    expect(files.moves).toContainEqual({ from: note(COPY), to: `${COPY}/_archive/2026-10-24/Mailbox/threads/${FOLDER}/contrat.md` });
+    expect(files.written.get(card('kb'))).toBe('card');
+    expect(touchedOutside(files)).toStrictEqual([]);
+  });
+
+  // The ledger keeps the paths it was given, and names no folder: an entry from the original is never
+  // moved from the copy, and the report of the run names it with why.
+  it('an entry the ledger holds from the original is not moved, and the report names it', async () => {
+    const held = 'kb/People/Jane Doe.md';
+    const files = createFilesFake({
+      directories: { [COPY]: ['Mailbox'] },
+      texts: {
+        [`${COPY}/Mailbox/.sync-state.json`]: serializeMailboxState(emptyMailboxState()),
+        [`${COPY}/.sync-aside.json`]: JSON.stringify({ [held]: { cause: 'write-failed: EBUSY', since: '2026-10-20T09:00:00Z' } }),
+        [held]: 'Jane',
+      },
+    });
+
+    await updateIn(files, {});
+
+    expect(files.written.get(held)).toBe('Jane');
+    expect(touchedOutside(files)).toStrictEqual([]);
+    expect(Object.keys(JSON.parse(files.written.get(`${COPY}/.sync-aside.json`) ?? '{}'))).toEqual([held]);
+    expect(files.written.get(`${COPY}/_sync-report.md`)).toContain(`- ${held}: write-failed: EBUSY (since 2026-10-20)`);
   });
 });
