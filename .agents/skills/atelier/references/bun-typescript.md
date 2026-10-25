@@ -6,13 +6,13 @@ Identifiable by `"module": "src/main.ts"` in `package.json` and the Clean Archit
 
 ## Runtime
 
-- **Runtime**: Bun (`bun init`, Bun v1.3 or newer: `bun test --randomize` prints its seed and `--seed` replays it from 1.3, which rule 36 relies on).
+- **Runtime**: Bun (`bun init`, Bun v1.4 or newer: the TypeScript aliases below need 1.4, and `bun test --randomize` prints its seed and `--seed` replays it from 1.3, which rule 36 relies on).
 - **Package manager**: Bun. `bun.lock` is committed.
 - **Module system**: ESM. `"type": "module"` and `moduleDetection: "force"`.
 - **Entry point**: `src/main.ts` (`"module": "src/main.ts"` in package.json).
 - **Install**: `bun install`.
 - **Run**: `bun run src/main.ts`.
-- **TypeScript**: a devDependency held at `^5` (eslint-plugin-sonarjs crashes under TypeScript 7; the weekly canary re-probes it). A `peerDependencies` entry would not hold it: Bun installs TypeScript 6 over it with only a warning.
+- **TypeScript**: two devDependency aliases. `typescript` is `@typescript/typescript6`, the 6.0 API that typescript-eslint and eslint-plugin-sonarjs load. `@typescript/native` is TypeScript 7 and gives the `tsc` binary. TypeScript 7.0 has no JavaScript API, so ESLint cannot load it; the weekly canary re-probes it. The aliases need Bun 1.4: Bun 1.3.14 resolves the wrapper's own `@typescript/old` dependency (`npm:typescript@^6`) to the wrapper itself, so `require('typescript')` returns an empty object and ESLint crashes, and a `bun.lock` that Bun 1.3 wrote keeps that entry under Bun 1.4 until its `@typescript/old` line is deleted.
 
 Never call `node`, `ts-node`, `vite`, `npm`, `pnpm`, or `yarn`. TypeScript's compiler runs as the type checker only (`tsc --noEmit`, the `typecheck` script), never to build or run.
 
@@ -35,7 +35,7 @@ Minimal skeleton:
     "test": "bun test --randomize",
     "typecheck": "tsc --noEmit",
     "coverage": "bun run scripts/check-coverage.ts",
-    "mutate": "stryker run",
+    "mutate": "stryker run && bun run scripts/check-mutation-score.ts",
     "mutate:changed": "bash scripts/mutate-changed.sh",
     "mutate:staged": "bash scripts/mutate-staged.sh"
   },
@@ -43,6 +43,7 @@ Minimal skeleton:
     "@eslint/js": "^10.0.1",
     "@stryker-mutator/core": "^10.0.0",
     "@types/bun": "^1.4.2",
+    "@typescript/native": "npm:typescript@^7.0.2",
     "eslint": "^10.11.0",
     "eslint-plugin-prettier": "^5.5.6",
     "eslint-plugin-security": "^4.1.0",
@@ -50,13 +51,13 @@ Minimal skeleton:
     "eslint-plugin-unicorn": "^76.0.0",
     "globals": "^17.12.0",
     "prettier": "^3.9.9",
-    "typescript": "^5.9.3",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
     "typescript-eslint": "^8.70.1"
   }
 }
 ```
 
-The version ranges above are sample pins as of writing, with one that is load-bearing: keep `typescript` on `^5` until eslint-plugin-sonarjs supports TypeScript 7 (sonarjs <= 4.1.0 reads `ts.SyntaxKind` at rule-module load and crashes under TS 7's module shape; found by the repo smoke test 2026-07-12). **Never use `"latest"` or `"*"`** (atelier hard rule 19, enforced by `scripts/check-package-json.sh` in pre-commit gate 2). To get the actual current latest of every dep on a fresh repo, run `bun install` first (resolving the ranges above), then `bun update` (which rewrites the `^X.Y.Z` ranges to the latest matching version) and commit the lockfile change. After that, every new package goes in via `bun add <pkg>` (runtime) or `bun add -d <pkg>` (dev): Bun pins it to `^X.Y.Z` automatically. Hand-editing `package.json` to add a dep is a smell.
+The version ranges above are sample pins as of writing, with one that is load-bearing: the two TypeScript aliases. Keep them until typescript-eslint and eslint-plugin-sonarjs support TypeScript 7.1 (TypeScript 7.0 has no JavaScript API: typescript-eslint 8.71.2 refuses it and sonarjs 4.2.2 crashes in ts-api-utils; found 2026-10-18). Never run `bun add typescript@latest`: it replaces the alias. **Never use `"latest"` or `"*"`** (atelier hard rule 19, enforced by `scripts/check-package-json.sh` in pre-commit gate 2). To get the actual current latest of every dep on a fresh repo, run `bun install` first (resolving the ranges above), then `bun update` (which rewrites the `^X.Y.Z` ranges to the latest matching version) and commit the lockfile change. After that, every new package goes in via `bun add <pkg>` (runtime) or `bun add -d <pkg>` (dev): Bun pins it to `^X.Y.Z` automatically. Hand-editing `package.json` to add a dep is a smell.
 
 Common runtime deps in this class of repo (install on demand with `bun add <name>`):
 `@google/genai`, `canvas`, `chardet`, `csv-writer`, `firebase-admin`, `iconv-lite`, `jsonwebtoken` (+ `@types/jsonwebtoken`), `papaparse`, `pdf-extract-image`, `pdf-to-png-converter`, `pdfjs-dist`, `winston`, `xlsx`.
@@ -334,6 +335,15 @@ export default [
       'unicorn/prefer-global-number-constants': 'off',
       // `ok(undefined)` is how a `Result<void, E>` succeeds (hard rule 16).
       'unicorn/no-useless-undefined': ['error', { checkArguments: false }],
+    },
+  },
+  {
+    // The entry point exists for its side effect: it runs the composition root and sets
+    // `process.exitCode` (Error handling, below). unicorn 79's no-top-level-side-effects flags exactly
+    // that assignment (found 2026-10-24); every other module stays under the rule.
+    files: ['src/main.ts'],
+    rules: {
+      'unicorn/no-top-level-side-effects': 'off',
     },
   },
   {
@@ -616,6 +626,7 @@ Why: keeping file IO on `Bun.file` is faster, has zero import ceremony, fits the
     - `cp <skill-path>/assets/stryker.conf.json stryker.conf.json`
     - `cp <skill-path>/assets/mutate-staged.sh scripts/mutate-staged.sh`
     - `cp <skill-path>/assets/mutate-changed.sh scripts/mutate-changed.sh`
+    - `cp <skill-path>/assets/check-mutation-score.ts scripts/check-mutation-score.ts` (holds every file to the break threshold; Stryker's own break judges the whole run)
     - `chmod +x scripts/*.sh`
     - Add to `.gitignore`: `.stryker-tmp/` and `reports/` (Stryker scratch + output dirs).
 14. Install the git hooks (fast-gate pre-commit + commit-msg) and the CI workflow:
@@ -626,8 +637,9 @@ Why: keeping file IO on `Bun.file` is faster, has zero import ceremony, fits the
     - `cp <skill-path>/assets/lint-staged.sh scripts/lint-staged.sh` (hook gate 6 runs it via the `lint:staged` script)
     - `cp <skill-path>/assets/check-commit-messages.sh scripts/check-commit-messages.sh` (CI re-runs the message check over the pushed range, so `--no-verify` cannot slip one past)
     - `cp <skill-path>/assets/check-commit-range.sh scripts/check-commit-range.sh` (the same for commit SIZE: the hook sees one staged diff, CI walks every commit in the range)
-    - `cp <skill-path>/assets/check-branches.sh scripts/check-branches.sh` and `cp <skill-path>/assets/branches.yml .github/workflows/branches.yml` (the daily branch watchdog, hard rule 38: a branch whose work already landed, or one more than a day off `main`), and the owner sets the host to rebase-only merges with automatic head-branch deletion, once (`references/workflow.md`, Branch lifecycle)
-    - `cp <skill-path>/assets/check-identity.sh scripts/check-identity.sh` (hook gate 4, rule 26: no person, employer, or client named in file contents; CI runs it over the whole tree with `--all`)
+    - `cp <skill-path>/assets/land-on-green.sh scripts/land-on-green.sh` (the CI workflow's `land` job: a green pull request lands itself by rebase, `references/workflow.md` § Landing on green)
+    - `cp <skill-path>/assets/check-branches.sh scripts/check-branches.sh`, `cp <skill-path>/assets/check-host.py scripts/check-host.py`, `cp <skill-path>/assets/host-ruleset.json scripts/host-ruleset.json` and `cp <skill-path>/assets/branches.yml .github/workflows/branches.yml` (the daily watchdog, hard rule 38: a branch whose work already landed or one more than a day off `main`, and a host whose default branch is not `main`, whose `main` is unprotected, or whose merges are not rebase-only with head-branch deletion); after the first push the owner runs `python3 scripts/check-host.py --apply` once, with an admin token (`references/workflow.md`, Branch lifecycle)
+    - `cp <skill-path>/assets/check-identity.sh scripts/check-identity.sh` (hook gate 4, rule 26: no person, employer, or client named in file contents; CI runs it over the whole tree with `--all`; a private repository also commits `.github/visibility` reading `private`, and the gate then warns instead of blocking)
     - `cp <skill-path>/assets/check-reply.py scripts/check-reply.py` and `mkdir -p .claude && cp <skill-path>/assets/claude-settings.json .claude/settings.json` (the reply gate: a Claude Code Stop hook, not a git hook, that has the agent restate a reply breaking the Interaction section's mechanical rules; merge its `Stop` entry instead when `.claude/settings.json` exists; `references/workflow.md`, Reply gate)
     - `cp <skill-path>/assets/check-disciplines.sh <skill-path>/assets/check-pii-channels.sh <skill-path>/assets/check-io-deadlines.sh <skill-path>/assets/check-data-lifecycle.sh scripts/` (hook gate 5, rules 27, 29, 30: the three discipline tripwires that are core gates, run by the wrapper; CI runs it with `--all`). Where tenants or owners exist, copy `check-isolation-tests.sh` too and call it beside the wrapper in the hook and CI (rule 28, `references/workflow.md`, Discipline tripwires)
     - `chmod +x scripts/lint-staged.sh scripts/check-commit-messages.sh`
