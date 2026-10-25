@@ -35,6 +35,17 @@ describe('writing down the files a source lets go that would not move under the 
     expect(ledgerOf(files.written.get(LEDGER))).toEqual({ [NOTE]: { cause: 'write-failed: EBUSY', since: '2026-10-15T09:00:00Z', digest: digestOf('the contract') } });
   });
 
+  // Neither on disk nor gone, as one outside the knowledge base reads: nothing tells what it holds.
+  it('a file that cannot be checked is not written down', async () => {
+    const disk = createFilesFake({ texts: { [NOTE]: 'the contract' } });
+    const unchecked = { ...disk, exists: async (path: string) => err({ kind: 'read-failed' as const, path, message: 'EACCES' }) };
+    const ledger = createAsideLedger(unchecked, { clock: createClockFake('2026-10-15T09:00:00Z'), kbRoot: 'kb', logger: createLoggerFake(), timezone: 'UTC' });
+
+    await ledger.writeDown([{ path: NOTE, error: LOCKED }]);
+
+    expect(disk.written.has(LEDGER)).toBe(false);
+  });
+
   it('a file that will not read is written down with no digest', async () => {
     const { files, ledger } = setUp();
     await files.writeBytes(NOTE, new Uint8Array([1, 2, 3]));
