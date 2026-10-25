@@ -14,6 +14,7 @@ import type { TeamReaderFake, TeamReaderSeed } from '../test-helpers/team-reader
 import type { StepError } from './ports/step-error.ts';
 import type { RunNotes, RunSummary } from './sync-site.ts';
 import { createSyncTeam } from './sync-team.ts';
+import { err } from '../domain/result.ts';
 
 const TEAM = { id: 'team-1', name: 'Northwind Leadership' };
 const GENERAL = { id: '19:gen@thread.tacv2', name: 'General' };
@@ -403,6 +404,30 @@ describe('syncing the channels of a Microsoft Team', () => {
 
     expect(done.ok).toBe(false);
     expect(done.error).toEqual({ step: 'postsDelta', cause: 'auth', message: 'sign-in has lapsed' });
+  });
+
+  // Graph refuses the delta of some channels (`Parameter 'DeltaToken' not supported`). Such a channel
+  // costs itself, as a post that will not render does: the report names it, it keeps no cursor, so the
+  // next run reads it again, and the other channels land. Only a lapsed sign-in ends the run.
+  it('a channel whose posts Graph will not list is named as failed, and the other channels still land', async () => {
+    const files = createFilesFake();
+    const fake = createTeamReaderFake({ posts: { [GENERAL.id]: [post('a', '2026-09-08T09:00:00Z')] }, deltaLinks: { [GENERAL.id]: 'https://graph/delta?token=next' } });
+    const refused = { kind: 'permanent' as const, message: "BadRequest: Parameter 'DeltaToken' not supported for this request." };
+    const reader = {
+      ...fake,
+      postsDelta: async (teamId: string, channelId: string, cursor: string | undefined) => (channelId === PLANNING.id ? err(refused) : fake.postsDelta(teamId, channelId, cursor)),
+    };
+    const logger = createLoggerFake();
+    const syncTeam = createSyncTeam({ reader, files, clock: createClockFake('2026-09-11T14:00:00Z'), logger, progress: createProgressFake(), kbRoot: 'kb', timezone: 'UTC' });
+
+    const outcome = await syncTeam({ team: TEAM, channels: [PLANNING, GENERAL], dryRun: false, concurrency: 4 });
+
+    expect(outcome.ok && outcome.value.summary).toMatchObject({ converted: 1, failed: 1 });
+    expect(outcome.ok && outcome.value.notes.failed).toEqual([{ path: 'Planning', reason: `its posts could not be listed: ${refused.message}` }]);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'team.channel-unread', meta: { channel: PLANNING.id, cause: 'permanent' } });
+    const saved = JSON.parse(files.written.get(STATE_PATH) ?? '{}');
+    expect(saved.channels[PLANNING.id]).toBeUndefined();
+    expect(saved.channels[GENERAL.id].deltaLink).toBe('https://graph/delta?token=next');
   });
 
   it('a dry run says how many posts it would write and writes nothing at all', async () => {
