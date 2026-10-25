@@ -1333,6 +1333,15 @@ start: a mail folder, a library or the calendar. For a library, decant then move
 recorded document that is not in the new list. For the calendar, decant does not compare, because it
 reads only from the kept day.
 
+You can copy or move the kb to a different folder, or open it through a different path. Each
+`.sync-state.json` records the folder of the kb that wrote it. When decant reads a state, it changes
+the start of each recorded path to the current folder. A state from an earlier version does not
+record the folder, so decant finds the folder from the paths in the state.
+
+decant does not read, write or move a file outside the folder of the kb. An entry of
+`kb/.sync-aside.json` that points outside this folder stays in the list, and the report names it.
+Move that file to `_archive/` yourself, or remove the entry from the list.
+
 A run that finds nothing new at the source changes no file in `kb/`, with one exception: the
 `.sync-cursor.json` beside each `.sync-state.json`. That file holds the time of the last run and the
 delta cursors, which change on each run. If the cursor file is lost or does not agree with the
