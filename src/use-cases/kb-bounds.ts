@@ -3,8 +3,9 @@ import { err } from '../domain/result.ts';
 import type { Files, FilesError } from './ports/files.ts';
 
 // A path names a place inside the knowledge base when it is the folder itself or starts with it and a
-// slash, and when no segment of it climbs back out: `kb-old/` sits beside `kb/`, and `..` leaves it.
-const inside = (kbRoot: string, path: string): boolean => (path === kbRoot || path.startsWith(`${kbRoot}/`)) && !path.split('/').includes('..');
+// slash, and when no segment after the folder climbs back out: `kb-old/` sits beside `kb/`, and `..`
+// leaves it. A folder named through `..` itself, `../kb-test`, is still the folder.
+const inside = (kbRoot: string, path: string): boolean => (path === kbRoot || path.startsWith(`${kbRoot}/`)) && !path.slice(kbRoot.length).split('/').includes('..');
 
 const refused = (kbRoot: string, path: string): string => `outside the knowledge base ${kbRoot}: ${path}`;
 
