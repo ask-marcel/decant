@@ -1214,8 +1214,7 @@ describe('writing down who can open a site', () => {
   });
 });
 
-// The first layout filed each document under the day it last changed, so every edit moved it and
-// broke every link into the knowledge base. The first run of this layout files them by their folders.
+// A document stays in the folders it has in SharePoint, so an edit keeps the path the page links to.
 describe('the page a reader scans a library by', () => {
   it('the library page lists every document on disk, the one changed last first, with who changed it, and leaves out what produced no file', async () => {
     const pages = [

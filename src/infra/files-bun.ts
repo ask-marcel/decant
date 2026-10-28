@@ -104,8 +104,7 @@ const sharedFolder = (from: string, to: string): string => {
 };
 
 // The folders a move leaves empty go with it, from the one it left up to the one the two paths
-// share: a library filed again out of its day folders, or the last file of a folder put aside, leaves
-// no empty folder behind. A folder that still holds something refuses to go, and ends the climb.
+// share: the last file of a folder put aside leaves no empty folder behind. A folder that still holds something refuses to go, and ends the climb.
 const removeEmptied = async (from: string, to: string): Promise<void> => {
   const shared = sharedFolder(from, to);
   for (let folder = dirname(from); folder.length > shared.length && folder !== dirname(folder); folder = dirname(folder)) {

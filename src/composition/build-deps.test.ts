@@ -715,7 +715,9 @@ describe('a knowledge base copied to another folder', () => {
       version: 1,
       source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://x' },
       lastRun: '',
-      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [], items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: [note('kb')] } }, retry: {} } },
+      drives: {
+        'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [], items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: [note('kb')] } }, retry: {}, folders: {} },
+      },
     });
     const deleted = { id: '01ABC', name: '', kind: 'deleted' as const, size: 0, path: '', lastModified: '', cTag: '', webUrl: '' };
     const files = createFilesFake({

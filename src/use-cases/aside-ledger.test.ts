@@ -280,7 +280,7 @@ describe('keeping the ledger in step with what lands on disk', () => {
     expect(refused.files.written.get(LEDGER)).toBe(listed);
   });
 
-  // A file moved by its own source, a layout change of Teams for one, is still that source's file, and
+  // A file moved by its own source, a renamed post for one, is still that source's file, and
   // the source can let it go later in the same run.
   it('a file moved to a path in this run is still written down when its source lets it go', async () => {
     const MOVED = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
