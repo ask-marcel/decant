@@ -193,60 +193,6 @@ describe('syncing the channels of a Microsoft Team', () => {
     expect([...unread.logger.calls, ...unwritten.logger.calls].filter((call) => call.level === 'warn' && call.event !== 'post.failed')).toStrictEqual([]);
   });
 
-  // The first layout filed a post under the day it last changed; its id is the moment it was posted.
-  it('the first run of this layout moves each post to the day it was first posted, once, and puts nothing aside', async () => {
-    const posted = String(Date.parse('2026-09-01T09:00:00Z'));
-    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, posted, {
-      file: `${ROOT}/General/2026-09-08/Kick-off.md`,
-      lastModified: '2026-09-08T09:00:00Z',
-      title: 'Kick-off',
-    });
-    const quiet = { posts: { [GENERAL.id]: [] }, deltaLinks: { [GENERAL.id]: 'next' } };
-    const first = await run({ reader: quiet, files: { texts: { [STATE_PATH]: serializeTeamState(state), [`${ROOT}/General/2026-09-08/Kick-off.md`]: 'the post' } } });
-
-    expect(first.files.moves).toEqual([{ from: `${ROOT}/General/2026-09-08/Kick-off.md`, to: `${ROOT}/General/2026-09-01/Kick-off.md` }]);
-    expect(JSON.parse(first.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
-
-    const second = await run({ reader: quiet, files: { texts: { [STATE_PATH]: first.files.written.get(STATE_PATH) ?? '' } } });
-
-    expect(second.files.moves).toHaveLength(0);
-  });
-
-  it('a post that will not move stays recorded where it is, and the next run moves it', async () => {
-    const posted = String(Date.parse('2026-09-01T09:00:00Z'));
-    const OLD = `${ROOT}/General/2026-09-08/Kick-off.md`;
-    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, posted, { file: OLD, lastModified: '2026-09-08T09:00:00Z', title: 'Kick-off' });
-    const quiet = { posts: { [GENERAL.id]: [] }, deltaLinks: { [GENERAL.id]: 'next' } };
-    const stuck = await run({
-      reader: quiet,
-      files: { texts: { [STATE_PATH]: serializeTeamState(state), [OLD]: 'the post' }, failMoveWith: { kind: 'write-failed', path: OLD, message: 'locked' } },
-    });
-    const kept = JSON.parse(stuck.files.written.get(STATE_PATH) ?? '{}');
-
-    expect(kept.channels[GENERAL.id].posts[posted].file).toBe(OLD);
-    expect(kept.layout).toBeUndefined();
-
-    const next = await run({ reader: quiet, files: { texts: { [STATE_PATH]: stuck.files.written.get(STATE_PATH) ?? '', [OLD]: 'the post' } } });
-
-    expect(next.files.moves).toEqual([{ from: OLD, to: `${ROOT}/General/2026-09-01/Kick-off.md` }]);
-    expect(JSON.parse(next.files.written.get(STATE_PATH) ?? '{}').layout).toBe(2);
-  });
-
-  // A file someone took away by hand left its old place already: the move is done, and the layout
-  // settles with no failure to warn about.
-  it('a post file someone removed does not hold the move to the day it was first posted', async () => {
-    const posted = String(Date.parse('2026-09-01T09:00:00Z'));
-    const OLD = `${ROOT}/General/2026-09-08/Kick-off.md`;
-    const state = withPost(emptyTeamState(TEAM.id, TEAM.name), GENERAL.id, GENERAL.name, posted, { file: OLD, lastModified: '2026-09-08T09:00:00Z', title: 'Kick-off' });
-    const done = await run({ reader: { posts: { [GENERAL.id]: [] }, deltaLinks: { [GENERAL.id]: 'next' } }, files: { texts: { [STATE_PATH]: serializeTeamState(state) } } });
-    const kept = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}');
-
-    expect(kept.channels[GENERAL.id].posts[posted].file).toBe(`${ROOT}/General/2026-09-01/Kick-off.md`);
-    expect(kept.layout).toBe(2);
-    expect(done.logger.calls.filter((call) => call.event === 'refile.failed')).toHaveLength(0);
-    expect(done.logger.calls).toContainEqual({ level: 'info', event: 'refile.gone', meta: { path: OLD } });
-  });
-
   // Mail, the calendar and To Do count their days in the zone of the knowledge base, and so do posts.
   it('a post sent just after midnight in the zone of the knowledge base is filed under that day, not the UTC day before', async () => {
     const done = await run({ reader: { posts: { [GENERAL.id]: [post('a', '2026-09-07T22:30:00Z')] } }, timezone: 'Europe/Paris' });

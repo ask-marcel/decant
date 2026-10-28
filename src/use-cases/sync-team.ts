@@ -6,13 +6,11 @@ import { safeSegment, sameIgnoringCase } from '../domain/kb-path.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
 import {
-  TEAMS_LAYOUT,
   TEAM_STATE_VERSION,
   channelWork,
   emptyTeamState,
   parseTeamState,
   planPostFiles,
-  refileChannel,
   serializeTeamState,
   teamRootName,
   withChannelCursor,
@@ -35,7 +33,6 @@ import type { ChannelPost } from '../domain/channel-post.ts';
 import { withGaveUp } from '../domain/report.ts';
 import { heldInPlace, letGo, putAside, putBack, setAside } from './put-aside.ts';
 import type { SetAside, WriteDown } from './put-aside.ts';
-import { refileAll } from './refile.ts';
 
 export const TEAM_STATE_FILE = '.sync-state.json';
 
@@ -301,34 +298,12 @@ const syncChannels = async (deps: SyncTeamDeps, input: SyncTeamInput, state: Tea
   return ok(progressing);
 };
 
-// Each post a move left behind, recorded where it still is.
-const stayedAt = (channel: ChannelState, stuck: ReadonlyMap<string, string>): ChannelState => ({
-  ...channel,
-  posts: Object.fromEntries(Object.entries(channel.posts).map(([id, record]) => [id, { ...record, file: stuck.get(record.file) ?? record.file }] as const)),
-});
-
-// The first run of this layout moves every post from the day it last changed to the day it was first
-// posted, once. The moves are not put aside: nothing is superseded, only filed again. A post that will
-// not move keeps the team in the earlier layout, so the next run moves what is left.
-const refile = async (deps: SyncTeamDeps, input: SyncTeamInput, state: TeamState): Promise<TeamState> => {
-  const channels: Record<string, ChannelState> = {};
-  let settled = true;
-  for (const [id, channel] of Object.entries(state.channels)) {
-    const refiled = refileChannel(`${teamRoot(deps.kbRoot, input.team.name)}/${safeSegment(channel.name)}`, channel, deps.pathBudget, deps.timezone);
-    const stuck = await refileAll(deps, refiled.moves);
-    settled &&= stuck.size === 0;
-    channels[id] = stayedAt(refiled.channel, stuck);
-  }
-  return { ...state, channels, layout: settled ? TEAMS_LAYOUT : state.layout };
-};
-
 export const createSyncTeam =
   (deps: SyncTeamDeps): SyncTeam =>
   async (input) => {
     if (input.channels.length === 0) return failed('sync', 'no-channel', `no channel chosen for ${input.team.name}`);
     const loaded = await loadState(deps, `${teamRoot(deps.kbRoot, input.team.name)}/${TEAM_STATE_FILE}`, input.team);
-    const state = input.dryRun || loaded.layout === TEAMS_LAYOUT ? loaded : await refile(deps, input, loaded);
-    const done = await syncChannels(deps, input, { ...state, version: TEAM_STATE_VERSION });
+    const done = await syncChannels(deps, input, { ...loaded, version: TEAM_STATE_VERSION });
     if (!done.ok) return done;
     if (input.dryRun) return ok({ id: input.team.id, source: input.team.name, summary: done.value.summary, notes: NO_NOTES });
     // Saved once at the end as well as per window, so a run that found nothing to write still
@@ -336,7 +311,7 @@ export const createSyncTeam =
     const saved = await save(deps, input, done.value.state);
     if (!saved.ok) return saved;
     const after = done.value.state.retry;
-    const notes = withGaveUp({ ...done.value.notes, givenUp: givenUpNotes(after) }, gaveUpNotes(state.retry, after));
+    const notes = withGaveUp({ ...done.value.notes, givenUp: givenUpNotes(after) }, gaveUpNotes(loaded.retry, after));
     await writeReport(deps, input, teamRoot(deps.kbRoot, input.team.name), input.team.name, done.value.summary, notes);
     return ok({ id: input.team.id, source: input.team.name, summary: done.value.summary, notes });
   };
