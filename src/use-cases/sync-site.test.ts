@@ -1679,6 +1679,37 @@ describe('following the folders of a library', () => {
     expect(logger.calls).toContainEqual({ level: 'warn', event: 'sync.library-unread', meta: { driveId: 'b!locked', cause: 'permanent' } });
   });
 
+  // Only a library Graph will not list costs itself alone. A state that will not save is no fault of
+  // Graph, and every library after it would fail the same way, so it still ends the site.
+  it('a library whose state will not save still ends the site, naming the step', async () => {
+    const disk = createFilesFake();
+    let refused = false;
+    const files = {
+      ...disk,
+      writeText: async (path: string, content: string) => {
+        if (path !== STATE_PATH || refused) return disk.writeText(path, content);
+        refused = true;
+        return err({ kind: 'write-failed' as const, path, message: 'ENOSPC' });
+      },
+    };
+    const reader = createDriveReaderFake({ pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }] });
+    const clock = createClockFake();
+    const syncSite = createSyncSite({
+      reader,
+      files,
+      logger: createLoggerFake(),
+      progress: createProgressFake(),
+      clock,
+      kbRoot: 'kb',
+      timezone: 'UTC',
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
+    });
+
+    const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+
+    expect(result).toEqual({ ok: false, error: { step: 'saveState', cause: 'write-failed', message: 'ENOSPC' } });
+  });
+
   it('a failed read by id under a moved folder names the library as failed, with the message', async () => {
     const files = createFilesFake({ texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets' } }) } });
     const reader = createDriveReaderFake({
