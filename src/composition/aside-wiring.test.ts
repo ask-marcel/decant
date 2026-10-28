@@ -65,7 +65,7 @@ describe('a file a source lets go that will not move under the archive', () => {
     const state = withTask(emptyTodoState('list-1', 'Tasks'), 'gone', { file, lastModified: '2026-09-01T09:00:00Z', title: 'Cancel the order' });
     const files = createFilesFake({
       directories: { kb: ['To Do'], 'kb/To Do': ['Tasks'] },
-      texts: { 'kb/To Do/Tasks/.sync-state.json': serializeTodoState({ ...state, layout: 2 }), [file]: 'the task' },
+      texts: { 'kb/To Do/Tasks/.sync-state.json': serializeTodoState(state), [file]: 'the task' },
       failMoveWith: HELD,
     });
 

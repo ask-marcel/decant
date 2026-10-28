@@ -126,7 +126,7 @@ describe('syncing a Microsoft To Do list', () => {
     });
     const done = await run({
       reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } },
-      files: { texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), 'kb/To Do/Tasks/2026-09-01/Book the venue.md': 'the task' } },
+      files: { texts: { [STATE_PATH]: serializeTodoState(state), 'kb/To Do/Tasks/2026-09-01/Book the venue.md': 'the task' } },
     });
 
     expect(done.summary.converted).toBe(1);
@@ -141,7 +141,7 @@ describe('syncing a Microsoft To Do list', () => {
     const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: FILE, lastModified: '2026-09-01T09:00:00Z', title: 'Book the venue' });
     const done = await run({
       reader: { tasks: { 'list-1': [task({ due: '2026-09-08', notes: 'Ask about parking' })] } },
-      files: { texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [FILE]: 'the task as it was' } },
+      files: { texts: { [STATE_PATH]: serializeTodoState(state), [FILE]: 'the task as it was' } },
     });
 
     expect(done.files.written.get(FILE)).toContain('Ask about parking');
@@ -155,7 +155,7 @@ describe('syncing a Microsoft To Do list', () => {
     const done = await run({
       reader: { tasks: { 'list-1': [task({ due: '2026-09-08', notes: 'Ask about parking' })] } },
       files: {
-        texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [FILE]: 'the task as it was' },
+        texts: { [STATE_PATH]: serializeTodoState(state), [FILE]: 'the task as it was' },
         failMoveWith: { kind: 'write-failed', path: FILE, message: 'held open' },
       },
     });
@@ -173,7 +173,7 @@ describe('syncing a Microsoft To Do list', () => {
     const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: FILE, lastModified: '2026-09-01T09:00:00Z', title: 'Book the venue' });
     const done = await run({
       reader: { tasks: { 'list-1': [task({ due: '2026-09-08' })] } },
-      files: { texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [FILE]: 'the task as it was' }, failWritesMatching: 'Book the venue' },
+      files: { texts: { [STATE_PATH]: serializeTodoState(state), [FILE]: 'the task as it was' }, failWritesMatching: 'Book the venue' },
     });
 
     expect(done.summary.failed).toBe(1);
@@ -218,7 +218,7 @@ describe('syncing a Microsoft To Do list', () => {
     ];
     const done = await run({
       reader: { tasks: { 'list-1': tasks } },
-      files: { texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [renamed.file]: 'the task as it was', [namesake.file]: 'the namesake as it was' } },
+      files: { texts: { [STATE_PATH]: serializeTodoState(state), [renamed.file]: 'the task as it was', [namesake.file]: 'the namesake as it was' } },
     });
 
     const recorded = JSON.parse(done.files.written.get(STATE_PATH) ?? '{}').tasks['namesake'].file;
@@ -440,7 +440,7 @@ describe('handing on the earlier file of a task', () => {
     const handed: string[] = [];
     const state = withTask(emptyTodoState('list-1', 'Tasks'), 'AAMkAGI-task', { file: OLD, lastModified: '2026-09-01T09:00:00Z', title: 'Book the venue' });
     const files = createFilesFake({
-      texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [OLD]: 'the task as it was' },
+      texts: { [STATE_PATH]: serializeTodoState(state), [OLD]: 'the task as it was' },
       failMoveWith: { kind: 'write-failed', path: OLD, message: 'held open' },
     });
     const writeDown = async (missed: ReadonlyArray<{ readonly path: string }>): Promise<void> => {
@@ -481,7 +481,7 @@ describe('handing on the file of a task gone from the list', () => {
     const syncTodo = createSyncTodo({
       reader: createTodoReaderFake({ tasks: { 'list-1': [task()] } }),
       files: createFilesFake({
-        texts: { [STATE_PATH]: serializeTodoState({ ...state, layout: 2 }), [GONE]: 'the gone task' },
+        texts: { [STATE_PATH]: serializeTodoState(state), [GONE]: 'the gone task' },
         failMoveWith: { kind: 'write-failed', path: GONE, message: 'held open' },
       }),
       clock: createClockFake('2026-09-09T14:00:00Z'),

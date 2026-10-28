@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { emptyTodoState, parseTodoState, planTaskFiles, refileTasks, serializeTodoState, todoRootName, todoWorklist, withTask, withoutTask } from './todo-state.ts';
+import { emptyTodoState, parseTodoState, planTaskFiles, serializeTodoState, todoRootName, todoWorklist, withTask, withoutTask } from './todo-state.ts';
 import type { TodoTask } from './todo-task.ts';
 
 const task = (id: string, lastModified: string): TodoTask => ({
@@ -175,80 +175,5 @@ describe('deciding where each task about to be written goes', () => {
     const held = withTask(emptyTodoState('list-1', 'Tasks'), 'a', { file: 'kb/To Do/Tasks/2026-09-08/a.md', lastModified: '2026-09-01T09:00:00Z', title: 'a' });
 
     expect(planTaskFiles('kb/To Do/Tasks', [{ ...task('a', '2026-09-08T16:20:11Z'), due: '2026-09-08' }], held)[0]?.file).toBe('kb/To Do/Tasks/2026-09-08/a.md');
-  });
-});
-
-// The first layout filed a task under the day it last changed. The listing says the day each task is
-// due, so a list is filed again from it, without writing a task.
-describe('filing a list again under the day each task is due', () => {
-  const byChange = (): ReturnType<typeof emptyTodoState> =>
-    withTask(withTask(emptyTodoState('list-1', 'Tasks'), 'a', { file: 'kb/To Do/Tasks/2026-09-01/a.md', lastModified: '2026-09-01T09:00:00Z', title: 'a' }), 'b', {
-      file: 'kb/To Do/Tasks/2026-09-02/b.md',
-      lastModified: '2026-09-02T09:00:00Z',
-      title: 'b',
-    });
-
-  it('each task moves from the day it last changed to the day it is due, or to undated/, and the list says it is filed so', () => {
-    const refiled = refileTasks(ROOT, byChange(), [task('b', '2026-09-02T09:00:00Z'), { ...task('a', '2026-09-01T09:00:00Z'), due: '2026-10-15' }]);
-
-    expect(refiled.moves).toEqual([
-      { from: 'kb/To Do/Tasks/2026-09-01/a.md', to: 'kb/To Do/Tasks/2026-10-15/a.md' },
-      { from: 'kb/To Do/Tasks/2026-09-02/b.md', to: 'kb/To Do/Tasks/undated/b.md' },
-    ]);
-    expect(refiled.state.tasks['b']).toEqual({ file: 'kb/To Do/Tasks/undated/b.md', lastModified: '2026-09-02T09:00:00Z', title: 'b' });
-    expect(refiled.state.layout).toBe(2);
-  });
-
-  // Moved to the name a write would give it, the task needs no write in the same run: a name from
-  // before titles were cut, or a suffix a namesake no longer forces, would otherwise be written again
-  // and its copy put aside, though nothing changed.
-  it('a task moves to the name its title gives now, so the run that moves it does not write it again', () => {
-    const long = `${'Long title '.repeat(10)}end`;
-    const state = withTask(byChange(), 'l', { file: `kb/To Do/Tasks/2026-09-03/${long}.md`, lastModified: '2026-09-03T09:00:00Z', title: long });
-    const refiled = refileTasks(ROOT, state, [
-      { ...task('a', '2026-09-05T09:00:00Z'), title: 'Renamed' },
-      { ...task('l', '2026-09-03T09:00:00Z'), title: long },
-    ]);
-
-    expect(refiled.moves).toEqual([
-      { from: `kb/To Do/Tasks/2026-09-03/${long}.md`, to: `kb/To Do/Tasks/undated/${'Long title '.repeat(7).trimEnd()}.md` },
-      { from: 'kb/To Do/Tasks/2026-09-01/a.md', to: 'kb/To Do/Tasks/undated/Renamed.md' },
-    ]);
-    expect(todoWorklist(ROOT, refiled.state, [{ ...task('l', '2026-09-03T09:00:00Z'), title: long }]).write).toHaveLength(0);
-  });
-
-  it('a task already under its due day stays, and one the list no longer holds or the state never recorded moves nowhere', () => {
-    const state = withTask(byChange(), 'a', { file: 'kb/To Do/Tasks/undated/a.md', lastModified: '2026-09-01T09:00:00Z', title: 'a' });
-    const refiled = refileTasks(ROOT, state, [task('a', '2026-09-01T09:00:00Z'), task('new', '2026-09-03T09:00:00Z')]);
-
-    expect(refiled.moves).toHaveLength(0);
-    expect(refiled.state.tasks['b']?.file).toBe('kb/To Do/Tasks/2026-09-02/b.md');
-    expect(refiled.state.tasks['new']).toBeUndefined();
-  });
-
-  it('two tasks landing on one name under one day are kept apart, the one that changed first keeping the plain name', () => {
-    const state = withTask(
-      withTask(emptyTodoState('list-1', 'Tasks'), 'late', { file: 'kb/To Do/Tasks/2026-09-05/Call.md', lastModified: '2026-09-05T09:00:00Z', title: 'Call' }),
-      'early',
-      {
-        file: 'kb/To Do/Tasks/2026-09-01/Call.md',
-        lastModified: '2026-09-01T09:00:00Z',
-        title: 'Call',
-      }
-    );
-    const refiled = refileTasks(ROOT, state, [
-      { ...task('late', '2026-09-05T09:00:00Z'), title: 'Call', due: '2026-10-01' },
-      { ...task('early', '2026-09-01T09:00:00Z'), title: 'Call', due: '2026-10-01' },
-    ]);
-
-    expect(refiled.state.tasks['early']?.file).toBe('kb/To Do/Tasks/2026-10-01/Call.md');
-    expect(refiled.state.tasks['late']?.file).toStartWith('kb/To Do/Tasks/2026-10-01/Call-');
-  });
-
-  it('a state written by the layout that files tasks by their due day says so when read back, and a layout that is not a number is no layout', () => {
-    const written = JSON.parse(serializeTodoState({ ...emptyTodoState('list-1', 'Tasks'), layout: 2 }));
-
-    expect(parseTodoState(written)).toMatchObject({ ok: true, value: { layout: 2 } });
-    expect(parseTodoState({ ...written, layout: '2' })).toMatchObject({ ok: true, value: { layout: undefined } });
   });
 });
