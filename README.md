@@ -255,13 +255,10 @@ it. Thus the state of each library keeps its folders by id. decant reads each do
 path of the folder again by id, and converts it at its new path. A document that Graph no longer has
 goes to `_archive/`.
 
-The first run of this version reads each library whole one time, to record its folders. When decant
-reads a library whole, it gets a list of each document of the library. Thus decant moves to
-`_archive/` each recorded document that is not in that list, and the report names it with `no
-longer at the source`. OneDrive for Business does not send the name of a deleted document, and
-older versions of decant did not see such a deletion. Thus this first run moves these documents to
-`_archive/`. A run with an earlier `--since` day also reads each library whole and compares the
-result with the state.
+When decant reads a library whole, it gets a list of each document of the library. Thus decant moves
+to `_archive/` each recorded document that is not in that list. The report names each such document
+with `no longer at the source`. A run with an earlier `--since` day reads each library whole and
+compares the result with the state.
 
 Before an edit replaces a document, a task or a Teams post, decant moves the earlier version to
 `_archive/<day of the run>/`. There, it keeps the path that it had in `kb/`. A file that you delete,
@@ -269,14 +266,6 @@ rename or move at the source goes there too. If the folder of that day already h
 decant uses `<day>-2`, then `<day>-3`. Thus decant never writes over an archived copy, and the
 knowledge base keeps each earlier version without git. A move also deletes each folder that it makes
 empty.
-
-The first run after an update to this layout moves the files to their new places. This applies to
-each library, each To Do list and each Teams channel. These moves do not go to `_archive/`. A file
-can stay at its old place, for example because another program has the file open. Then the state
-keeps the file at that place, and the next run moves it. decant never moves a file over another file.
-
-If a file is not at its old place, for example because you deleted it, the state records its new
-place. The next run does not try to move it again.
 
 Two different SharePoint sites can share a display name (most often an unedited template title). The
 picker shows each one's address alongside the name so they can be told apart before choosing, and if
@@ -360,15 +349,6 @@ file.
 A link from one file in a zip file to a different file in it goes to the markdown of that file. Thus
 the pages of a report in a zip file link to each other.
 
-Before this version, the folder of a zip file of a library had the name without `.zip`. A library
-folder with that name can also hold documents. The first run after this version moves the files of
-each zip file and saved email into the folder with the full name. decant does not put these files in
-`_archive/`. A zip file that decant moved keeps its inner folder until it changes at the source.
-
-Some files do not move. A file that a program holds open stays in the folder without the extension,
-and the next run tries to move it again. A file that a different document also wrote stays in that
-folder too.
-
 The converter reads the first 100 files of a zip file. When a zip file holds more files,
 `_sync-report.md` names the files that stay in the zip file, for example `Contracts.zip, files 101 to
 150`. The manifest of a zip file that is attached to a message also gives the number of these files.
@@ -423,8 +403,7 @@ reads goes in the section `## Text in the pictures` at the end of the markdown. 
 link to its picture. A picture without text has no entry.
 
 This text is not in the middle of the document, because there it can break a table or a list. With
-`--no-ocr`, decant keeps the pictures, but does not read them. A Word document that decant converted
-before this version keeps the section `## Images` until the document changes at the source.
+`--no-ocr`, decant keeps the pictures, but does not read them.
 
 An Excel workbook does not give the position of its pictures. Thus decant gets the pictures of a
 workbook as a different step, and writes them in the section `## Images` at the end of the markdown.
@@ -639,10 +618,6 @@ applies after a message before it goes, and after a message moves to another fol
 keeps its first name. When the state file is missing, decant finds the folder of each thread by the
 id in the name of the folder.
 
-When decant finds a mailbox from before this version, it updates the mailbox one time. The first run
-reads each mail folder again from the start, and writes each thread again. Then each note has the
-new headings, and `_meta/messages.jsonl` has a line for each message.
-
 ### What a To Do sync writes
 
 One markdown file per task. decant files each task under the day that it is due, or under `undated/`
@@ -724,12 +699,6 @@ decant writes the series note again in the same run. A link shows an event with 
 `event <id>`, as the title of its note does. decant does not write again the note of an exception
 that starts before the date from How far back. Such a note can keep a link to a note of the series
 that moved to `_archive/`.
-
-A series that decant wrote before this version gets these links when decant reads all of the
-calendar. To read all of the calendar one time:
-
-1. Delete `kb/Calendar/.sync-cursor.json`.
-2. Run `decant update`.
 
 ```yaml
 ---
@@ -850,8 +819,7 @@ drawn again whenever any page was.
 The fingerprint also includes the names of the reports. It also records if the manager is in the
 directory. When a report gets a new name, decant writes the page of the manager again, with the new
 name and link. When the manager of a person goes out of the directory, decant writes the page of
-that person again. That page shows the name of the manager as text. The first run of this version
-writes each page again one time, but a page with the same text does not change on disk.
+that person again. That page shows the name of the manager as text.
 
 If the profile of a person does not read in a run, decant keeps the page of that person and the
 links to it. When that profile reads again, decant draws the org chart again.
