@@ -211,7 +211,7 @@ describe('syncing the channels of a Microsoft Team', () => {
     });
     const done = await run({
       reader: { posts: { [GENERAL.id]: [post('a', '2026-09-08T16:00:00Z')] } },
-      files: { texts: { [STATE_PATH]: serializeTeamState({ ...state, layout: 2 }) } },
+      files: { texts: { [STATE_PATH]: serializeTeamState(state) } },
     });
 
     expect(done.files.written.get(`${ROOT}/General/_index.md`)).toBe(

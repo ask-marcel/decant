@@ -1,17 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import type { ChannelPost } from './channel-post.ts';
-import {
-  channelWork,
-  emptyTeamState,
-  parseTeamState,
-  planPostFiles,
-  refileChannel,
-  serializeTeamState,
-  teamRootName,
-  withChannelCursor,
-  withPost,
-  withoutPost,
-} from './team-state.ts';
+import { channelWork, emptyTeamState, parseTeamState, planPostFiles, serializeTeamState, teamRootName, withChannelCursor, withPost, withoutPost } from './team-state.ts';
 
 const post = (id: string, lastModified: string, over: Partial<ChannelPost> = {}): ChannelPost => ({
   id,
@@ -158,51 +147,5 @@ describe('deciding where each post about to be written goes', () => {
     const held = withPost(emptyTeamState('t', 'n'), CHANNEL, 'General', 'a', { file: 'kb/Teams/T/General/2026-09-08/Venue.md', lastModified: 'old', title: 'Venue' });
 
     expect(planPostFiles('kb/Teams/T/General', [post('a', '2026-09-08T16:20:11Z', { subject: 'Venue' })], held, CHANNEL)[0]?.file).toBe('kb/Teams/T/General/2026-09-08/Venue.md');
-  });
-});
-
-// The first layout filed a post under the day it last changed. Its id is the moment it was first
-// posted, so the post can be filed again under that day without asking Teams for it.
-describe('filing a channel again under the day each post was first posted', () => {
-  const channel = (posts: Record<string, { file: string; lastModified: string; title: string }>): { name: string; posts: typeof posts } => ({ name: 'General', posts });
-
-  it('a post moves from the day it last changed to the day it was first posted, under the name it has', () => {
-    const refiled = refileChannel(
-      'kb/Teams/T/General',
-      channel({ '1757347211000': { file: 'kb/Teams/T/General/2026-09-20/Venue.md', lastModified: '2026-09-20T08:00:00Z', title: 'Venue' } })
-    );
-
-    expect(refiled.moves).toEqual([{ from: 'kb/Teams/T/General/2026-09-20/Venue.md', to: 'kb/Teams/T/General/2025-09-08/Venue.md' }]);
-    expect(refiled.channel.posts['1757347211000']?.file).toBe('kb/Teams/T/General/2025-09-08/Venue.md');
-  });
-
-  it('a post moves to the day it was first posted where the knowledge base counts its days', () => {
-    const refiled = refileChannel(
-      'kb/Teams/T/General',
-      channel({ '1757284200000': { file: 'kb/Teams/T/General/2026-09-20/Venue.md', lastModified: '2026-09-20T08:00:00Z', title: 'Venue' } }),
-      undefined,
-      'Europe/Paris'
-    );
-
-    expect(refiled.moves).toEqual([{ from: 'kb/Teams/T/General/2026-09-20/Venue.md', to: 'kb/Teams/T/General/2025-09-08/Venue.md' }]);
-  });
-
-  it('a post already on its day stays, one whose id says no moment stays, and two landing on one name are kept apart', () => {
-    const refiled = refileChannel(
-      'kb/Teams/T/General',
-      channel({
-        '1757347211000': { file: 'kb/Teams/T/General/2025-09-08/Venue.md', lastModified: 'x', title: 'Venue' },
-        '1757350000000': { file: 'kb/Teams/T/General/2026-01-02/Venue.md', lastModified: 'x', title: 'Venue' },
-        'not-a-moment': { file: 'kb/Teams/T/General/2026-01-02/Other.md', lastModified: 'x', title: 'Other' },
-      })
-    );
-
-    expect(refiled.moves).toHaveLength(1);
-    expect(refiled.moves[0]?.to).toStartWith('kb/Teams/T/General/2025-09-08/Venue-');
-    expect(refiled.channel.posts['not-a-moment']?.file).toBe('kb/Teams/T/General/2026-01-02/Other.md');
-  });
-
-  it('a state written by the layout that files posts by their first day says so when read back', () => {
-    expect(parseTeamState(JSON.parse(serializeTeamState({ ...emptyTeamState('t', 'n'), layout: 2 })))).toMatchObject({ ok: true, value: { layout: 2 } });
   });
 });

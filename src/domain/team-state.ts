@@ -36,12 +36,7 @@ export type TeamState = {
   readonly channels: Readonly<Record<string, ChannelState>>;
   // The posts that would not render, by post id, three runs at most on the same version.
   readonly retry?: Attempts;
-  // The layout the posts on disk were filed in. Absent is the first one, under the day each post last
-  // changed; `TEAMS_LAYOUT` files them under the day they were first posted.
-  readonly layout?: number;
 };
-
-export const TEAMS_LAYOUT = 2;
 
 export type TeamStateError = { readonly kind: 'malformed'; readonly message: string };
 
@@ -84,7 +79,6 @@ export const parseTeamState = (raw: unknown): Result<TeamState, TeamStateError> 
     lastRun: readString(raw, 'lastRun') ?? '',
     channels: recordsOf(raw['channels'], channelOf),
     retry: parseAttempts(raw['retry']),
-    layout: typeof raw['layout'] === 'number' ? raw['layout'] : undefined,
   });
 };
 
@@ -162,33 +156,4 @@ export const planPostFiles = (
     planned.push({ post, file });
   }
   return planned;
-};
-
-// A post's id is the moment it was first posted, in milliseconds, so a post filed by an earlier
-// layout can be filed again without asking Teams for it. An id of any other shape says nothing.
-const POSTED_ID = /^\d{13}$/;
-
-const postedOn = (id: string): string | undefined => (POSTED_ID.test(id) ? new Date(Number(id)).toISOString() : undefined);
-
-const baseName = (file: string): string => file.slice(file.lastIndexOf('/') + 1);
-
-export type RefiledChannel = { readonly channel: ChannelState; readonly moves: ReadonlyArray<{ readonly from: string; readonly to: string }> };
-
-// A channel as the current layout files it, and the files to move to get there: each post from the
-// day it last changed to the day it was first posted, under the name it already has.
-export const refileChannel = (channelRoot: string, channel: ChannelState, budget?: number, zone = 'UTC'): RefiledChannel => {
-  const taken = new Set(Object.values(channel.posts).map((record) => record.file));
-  const moves: { from: string; to: string }[] = [];
-  const posts = Object.fromEntries(
-    Object.entries(channel.posts).map(([id, record]) => {
-      const posted = postedOn(id);
-      if (posted === undefined) return [id, record] as const;
-      taken.delete(record.file);
-      const file = freePath(datedRoot(channelRoot, postedDay(posted, zone)), baseName(record.file), id, taken, record.file, budget);
-      taken.add(file);
-      if (file !== record.file) moves.push({ from: record.file, to: file });
-      return [id, { ...record, file }] as const;
-    })
-  );
-  return { channel: { ...channel, posts }, moves };
 };
