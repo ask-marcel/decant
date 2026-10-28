@@ -3,7 +3,6 @@ import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 import type { RetryEntry, RetryLedger } from './retry-policy.ts';
 import type { Manifest, ManifestEntry, WorkItem } from './worklist.ts';
-import { undatedOutput } from './output-paths.ts';
 
 // What one run leaves behind so the next one, or a restart after a stop, picks up exactly where it
 // left off: the cursor Graph gave us, the queue still to process, what every item produced, and what
@@ -30,19 +29,7 @@ export type SiteState = {
   readonly source: { readonly kind: 'site' } & SiteRef;
   readonly lastRun: string;
   readonly drives: Readonly<Record<string, DriveState>>;
-  // The layout the documents on disk were filed in. Absent is the first one, under the day each
-  // document last changed; `LIBRARY_LAYOUT` files them by their folders alone. Additive, so
-  // `STATE_VERSION` stays: a file from before reads as the first layout, which is what it holds.
-  readonly layout?: number;
-  // The layout of the folder each archive and saved email unpacks into. Absent is the first one, named
-  // for the file less its extension, `Livraison/`, which a library folder of that name could share;
-  // `ARCHIVE_LAYOUT` names it for the whole file, `Livraison.zip/`. Additive, as `layout` is.
-  readonly archives?: number;
 };
-
-export const LIBRARY_LAYOUT = 2;
-
-export const ARCHIVE_LAYOUT = 2;
 
 export type SiteStateError = { readonly kind: 'malformed'; readonly message: string };
 
@@ -119,15 +106,11 @@ export const parseSiteState = (raw: unknown): Result<SiteState, SiteStateError> 
   if (!isRecord(raw)) return err({ kind: 'malformed', message: 'state is not an object' });
   const source = parseSource(raw['source']);
   if (!source.ok) return source;
-  const layout = typeof raw['layout'] === 'number' ? raw['layout'] : undefined;
-  const archives = typeof raw['archives'] === 'number' ? { archives: raw['archives'] } : {};
   return ok({
     version: STATE_VERSION,
     source: { kind: 'site', ...source.value },
     lastRun: readString(raw, 'lastRun') ?? '',
     drives: parseDrives(raw['drives']),
-    layout,
-    ...archives,
   });
 };
 
@@ -168,25 +151,4 @@ export const rememberFailure = (drive: DriveState, entry: RetryEntry): DriveStat
 export const forgetFailure = (drive: DriveState, itemId: string): DriveState => {
   const remaining = Object.entries(drive.retry).filter(([id]) => id !== itemId);
   return { ...drive, retry: Object.fromEntries(remaining) };
-};
-
-export type Refiled = { readonly drive: DriveState; readonly moves: ReadonlyArray<{ readonly from: string; readonly to: string }> };
-
-const WRITE_FAILED = 'write-failed';
-
-// A library as the current layout files it, and the files to move to get there: each document out of
-// the day folder the first layout filed it under, to the folders it has in SharePoint. A document
-// that could not be written gets its tries back, since the commonest cause, a path too long for
-// Windows, may no longer hold with the day folder gone.
-export const refileDrive = (libraryRoot: string, drive: DriveState): Refiled => {
-  const moves: { from: string; to: string }[] = [];
-  const items = Object.fromEntries(
-    Object.entries(drive.items).map(([id, entry]) => {
-      const pairs = entry.outputs.map((from) => ({ from, to: undatedOutput(libraryRoot, entry.path, from) }));
-      moves.push(...pairs.filter((pair) => pair.from !== pair.to));
-      return [id, { ...entry, outputs: pairs.map((pair) => pair.to) }] as const;
-    })
-  );
-  const retry = Object.fromEntries(Object.entries(drive.retry).map(([id, entry]) => [id, entry.reason.startsWith(WRITE_FAILED) ? { ...entry, attempts: 0 } : entry] as const));
-  return { drive: { ...drive, items, retry }, moves };
 };

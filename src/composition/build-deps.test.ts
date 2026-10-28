@@ -538,7 +538,6 @@ describe('a file that would not move under the archive', () => {
     version: 1,
     source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://x' },
     lastRun: '',
-    layout: 2,
     drives: {
       'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [], items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: [NOTE] } }, retry: {}, folders: {} },
     },

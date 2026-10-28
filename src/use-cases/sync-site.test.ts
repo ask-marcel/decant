@@ -225,7 +225,6 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           retry: {},
         },
       },
-      layout: 2,
     });
     const held = 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md';
     const { files } = await run({
@@ -337,7 +336,6 @@ describe('syncing a SharePoint library into the knowledge base', () => {
           retry: {},
         },
       },
-      layout: 2,
     });
     const renamed = item({ path: 'Archive/Contrat signe.docx', name: 'Contrat signe.docx' });
     const refused = { kind: 'write-failed' as const, path: 'kb/SharePoint sites/Espace Contoso/Documents/Projets/Contrat.docx.md', message: 'held open' };
@@ -356,7 +354,6 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      layout: 2,
       drives: {
         'b!one': {
           name: 'Documents',
@@ -384,7 +381,6 @@ describe('syncing a SharePoint library into the knowledge base', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      layout: 2,
       drives: {
         'b!one': {
           name: 'Documents',
@@ -1276,7 +1272,6 @@ describe('following the folders of a library', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      layout: 2,
       drives: {
         'b!one': {
           name: 'Documents',
@@ -1684,7 +1679,6 @@ describe('a document converted without a part of it', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      layout: 2,
       drives: {
         'b!one': {
           name: 'Documents',
@@ -1722,7 +1716,6 @@ describe('a document converted without a part of it', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      layout: 2,
       drives: {
         'b!one': {
           name: 'Documents',
@@ -1751,7 +1744,6 @@ describe('a document converted without a part of it', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      layout: 2,
       drives: {
         'b!one': {
           name: 'Documents',
@@ -1783,7 +1775,6 @@ describe('a changed document that is now left out', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      layout: 2,
       drives: {
         'b!one': {
           name: 'Documents',
@@ -1812,7 +1803,6 @@ describe('a changed document that is now left out', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      layout: 2,
       drives: {
         'b!one': {
           name: 'Documents',
@@ -1850,7 +1840,6 @@ describe('an edited document whose earlier version will not move aside', () => {
     version: 1,
     source: { kind: 'site', ...site },
     lastRun: '2026-07-22T09:00:00Z',
-    layout: 2,
     drives: {
       'b!one': {
         name: 'Documents',
@@ -1932,7 +1921,6 @@ describe('an edited document whose earlier version will not move aside', () => {
       version: 1,
       source: { kind: 'site', ...site },
       lastRun: '2026-07-22T09:00:00Z',
-      layout: 2,
       drives: {
         'b!one': {
           name: 'Documents',
