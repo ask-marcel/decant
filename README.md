@@ -1338,6 +1338,11 @@ start: a mail folder, a library or the calendar. For a library, decant then move
 recorded document that is not in the new list. For the calendar, decant does not compare, because it
 reads only from the kept day.
 
+Graph can refuse to list the documents of a library, for example with an access error. Then the
+`_sync-report.md` of the site names that library as failed, and decant keeps its record and cursor.
+The other libraries and sources continue, and the run ends with exit code 3. The next run tries that
+library again. Only an expired sign-in stops the run.
+
 You can copy or move the kb to a different folder, or open it through a different path. Each
 `.sync-state.json` records the folder of the kb that wrote it. When decant reads a state, it changes
 the start of each recorded path to the current folder. A state from an earlier version does not
