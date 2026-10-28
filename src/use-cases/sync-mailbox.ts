@@ -12,7 +12,6 @@ import type { AttachmentRecord, LinkedRecord, MailboxState, SweptMarks, ThreadRe
 import {
   MAILBOX_ID,
   MAILBOX_NAME,
-  MAIL_FIELDS,
   abandonedThreads,
   emptyMailboxState,
   filesOf,
@@ -307,8 +306,7 @@ const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
     swept.value.state,
     swept.value.messages.filter((message) => message.isDeleted).map((message) => message.id)
   );
-  const extra = updating(state) ? Object.keys(state.threads).sort(compareText) : renamed;
-  return finishQueue(deps, input, { ...swept.value.state, since: input.since, fields: MAIL_FIELDS }, statePath, { messages: swept.value.messages, extra, removed });
+  return finishQueue(deps, input, { ...swept.value.state, since: input.since }, statePath, { messages: swept.value.messages, extra: renamed, removed });
 };
 
 // The addresses the mailbox sends from, read again on every sweep. A failed read keeps the ones held
@@ -319,10 +317,6 @@ const ownAddressesRead = async (deps: SyncMailboxDeps, state: MailboxState): Pro
   deps.logger.warn('mail.owner-unread', { cause: own.error.kind });
   return state;
 };
-
-// A state from before the fields the sweep reads now: its cursors read without them, and its threads
-// keep no record of their messages.
-const updating = (state: MailboxState): boolean => (state.fields ?? 0) < MAIL_FIELDS;
 
 const sweepFolders = async (deps: SyncMailboxDeps, state: MailboxState, folders: ReadonlyArray<MailFolder>): Promise<Result<Swept, MailReaderError>> => {
   let current = state;
@@ -340,13 +334,8 @@ const sweepFolders = async (deps: SyncMailboxDeps, state: MailboxState, folders:
 
 // A day earlier than the one the cursors were taken under: what they passed over never comes back
 // through them, so every folder is swept from the start. What is already filed stays as it is, since
-// a conversation is written again only when it holds a message the state has not seen. A state from
-// before the fields read now is swept from the start too, its cursors reading without them.
+// a conversation is written again only when it holds a message the state has not seen.
 const sweptFrom = (deps: SyncMailboxDeps, state: MailboxState, since: string | undefined): MailboxState => {
-  if (updating(state)) {
-    deps.logger.info('mail.fields-upgraded', { threads: Object.keys(state.threads).length });
-    return withoutCursors(state);
-  }
   if (!widens(state.since, since)) return state;
   deps.logger.info('mail.widened', { from: state.since, to: since ?? 'all' });
   return withoutCursors(state);
