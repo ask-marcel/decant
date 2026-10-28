@@ -30,12 +30,7 @@ export type TodoState = {
   readonly lastRun: string;
   readonly tasks: Readonly<Record<string, TaskRecord>>;
   readonly retry?: Attempts;
-  // The layout the tasks on disk were filed in. Absent is the first one, under the day each task last
-  // changed; the second files them under the day they are due.
-  readonly layout?: number;
 };
-
-export const TODO_LAYOUT = 2;
 
 export type TodoStateError = { readonly kind: 'malformed'; readonly message: string };
 
@@ -77,7 +72,6 @@ export const parseTodoState = (raw: unknown): Result<TodoState, TodoStateError> 
     lastRun: readString(raw, 'lastRun') ?? '',
     tasks: tasksOf(raw['tasks']),
     retry: parseAttempts(raw['retry']),
-    layout: typeof raw['layout'] === 'number' ? raw['layout'] : undefined,
   });
 };
 
@@ -138,22 +132,4 @@ export const planTaskFiles = (root: string, tasks: ReadonlyArray<TodoTask>, stat
     planned.push({ task, file });
   }
   return planned;
-};
-
-export type RefiledTasks = { readonly state: TodoState; readonly moves: ReadonlyArray<{ readonly from: string; readonly to: string }> };
-
-// A list as the current layout files it, and the files to move to get there: each task from the day
-// it last changed to the day it is due, or to `undated/` when it has none, under the name a write
-// would give it now, so the run that moves it does not write it again. A task the list no longer
-// holds stays where it is, for the run to put aside.
-export const refileTasks = (root: string, state: TodoState, tasks: ReadonlyArray<TodoTask>, budget?: number): RefiledTasks => {
-  const moves: { from: string; to: string }[] = [];
-  const records: Record<string, TaskRecord> = { ...state.tasks };
-  for (const { task, file } of planTaskFiles(root, tasks.toSorted(oldestFirst), state, budget)) {
-    const record = state.tasks[task.id];
-    if (record === undefined || record.file === file) continue;
-    moves.push({ from: record.file, to: file });
-    records[task.id] = { ...record, file };
-  }
-  return { state: { ...state, tasks: records, layout: TODO_LAYOUT }, moves };
 };
