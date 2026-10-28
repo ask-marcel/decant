@@ -13,6 +13,7 @@ import { createOcrFake } from '../test-helpers/ocr-fake.ts';
 import { createProgressFake } from '../test-helpers/progress-fake.ts';
 import type { ProgressFake } from '../test-helpers/progress-fake.ts';
 import { createConvertFile } from './convert-file.ts';
+import { err } from '../domain/result.ts';
 import { createSyncSite } from './sync-site.ts';
 import type { RunNotes, RunSummary } from './sync-site.ts';
 
@@ -1062,7 +1063,7 @@ describe('reaching back only as far as the day', () => {
     expect(logger.calls).toContainEqual({ level: 'info', event: 'sync.enumerated', meta: { driveId: 'b!one', items: 4, skipped: 3 } });
   });
 
-  it('a whole read that breaks off stops the library the way any sweep does, and keeps the cursor and the day it had', async () => {
+  it('a whole read that breaks off names the library as failed the way any sweep does, and keeps the cursor and the day it had', async () => {
     const known = filedUnder('2025-06-01', {});
     const pages = [
       { items: [], skipped: 0, deltaLink: 'c2' },
@@ -1075,8 +1076,8 @@ describe('reaching back only as far as the day', () => {
       since: '2025-01-01',
     });
 
-    expect(ok).toBe(false);
-    expect(files.written.get(STATE_PATH)).toBe(known);
+    expect(ok).toBe(true);
+    expect(JSON.parse(files.written.get(STATE_PATH) ?? '{}').drives['b!one']).toEqual(JSON.parse(known).drives['b!one']);
   });
 
   it('the same day, or a later one, follows the cursor; all reads the library whole again, and keeps no day', async () => {
@@ -1494,7 +1495,7 @@ describe('following the folders of a library', () => {
   });
 
   // The cursor stays where it was, so the next run reads the same changes, the moved folder with them.
-  it('a document under a moved folder that cannot be read for now stops the library, keeping the state it had', async () => {
+  it('a document under a moved folder that cannot be read for now names the library as failed, keeping the record it had', async () => {
     const before = recorded({ folders: { '01F': 'Projets' } });
 
     const { ok, files } = await run({
@@ -1506,8 +1507,8 @@ describe('following the folders of a library', () => {
       },
     });
 
-    expect(ok).toBe(false);
-    expect(files.written.get(STATE_PATH)).toBe(before);
+    expect(ok).toBe(true);
+    expect(libraryAfter(files)).toEqual(JSON.parse(before).drives['b!one']);
   });
 
   // A whole read lists every document the library holds: one recorded that it does not list was deleted
@@ -1624,17 +1625,19 @@ describe('following the folders of a library', () => {
     expect(libraryAfter(files)?.deltaLink).toBe('cursor-9');
   });
 
-  it('a cursor Graph refuses for a while stops the library without reading it whole', async () => {
-    const { ok, reader } = await run({
+  it('a cursor Graph refuses for a while names the library as failed without reading it whole', async () => {
+    const { ok, reader, summary, notes } = await run({
       files: { texts: { [STATE_PATH]: recorded({ folders: {} }) } },
       reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }], failCursors: { 'cursor-1': { kind: 'transient', message: 'Graph is busy' } } },
     });
 
-    expect(ok).toBe(false);
+    expect(ok).toBe(true);
     expect(reads(reader)).toEqual(['deltaFrom:cursor-1']);
+    expect(summary.failed).toBe(1);
+    expect(notes?.failed).toEqual([{ path: 'Documents', reason: 'its documents could not be listed: Graph is busy' }]);
   });
 
-  it('a cursor Graph refuses for another reason stops the library, keeping the state it had', async () => {
+  it('a cursor Graph refuses for another reason names the library as failed, keeping the record it had', async () => {
     const before = recorded({ folders: {} });
 
     const { ok, files, reader } = await run({
@@ -1642,12 +1645,41 @@ describe('following the folders of a library', () => {
       reader: { pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }], failCursors: { 'cursor-1': { kind: 'permanent', status: 403, message: 'accessDenied' } } },
     });
 
-    expect(ok).toBe(false);
+    expect(ok).toBe(true);
     expect(reads(reader)).toEqual(['deltaFrom:cursor-1']);
-    expect(files.written.get(STATE_PATH)).toBe(before);
+    expect(libraryAfter(files)).toEqual(JSON.parse(before).drives['b!one']);
   });
 
-  it('a failed read by id under a moved folder ends the library with the step, the cause and the message', async () => {
+  // Graph can refuse the listing of one library. It costs that library, as a document that will not
+  // convert does: named in the report, with its cursor kept, so the next run reads it again, while the
+  // other libraries of the site land. Only a lapsed sign-in ends the site.
+  it('a library Graph will not list is named as failed, and the other libraries of the site still land', async () => {
+    const two = [{ id: 'b!locked', name: 'Archives' }, ...drives];
+    const fake = createDriveReaderFake({ pages: [{ items: [item()], skipped: 0, deltaLink: 'cursor-9' }] });
+    const refused = { kind: 'permanent' as const, status: 403, message: 'accessDenied' };
+    const reader = { ...fake, delta: async (ref: Parameters<typeof fake.delta>[0]) => (ref.driveId === 'b!locked' ? err(refused) : fake.delta(ref)) };
+    const files = createFilesFake();
+    const logger = createLoggerFake();
+    const clock = createClockFake();
+    const syncSite = createSyncSite({
+      reader,
+      files,
+      logger,
+      progress: createProgressFake(),
+      clock,
+      kbRoot: 'kb',
+      timezone: 'UTC',
+      convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
+    });
+
+    const result = await syncSite({ site, drives: two, maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
+
+    expect(result.ok && result.value.summary).toMatchObject({ converted: 1, failed: 1 });
+    expect(result.ok && result.value.notes.failed).toEqual([{ path: 'Archives', reason: 'its documents could not be listed: accessDenied' }]);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'sync.library-unread', meta: { driveId: 'b!locked', cause: 'permanent' } });
+  });
+
+  it('a failed read by id under a moved folder names the library as failed, with the message', async () => {
     const files = createFilesFake({ texts: { [STATE_PATH]: recorded({ folders: { '01F': 'Projets' } }) } });
     const reader = createDriveReaderFake({
       pages: [{ items: [folder('01F', 'Contrats 2026')], skipped: 0, deltaLink: 'cursor-2' }],
@@ -1667,7 +1699,8 @@ describe('following the folders of a library', () => {
 
     const result = await syncSite({ site, drives, maxBytes: 50 * 1024 * 1024, concurrency: 1, dryRun: false });
 
-    expect(result).toEqual({ ok: false, error: { step: 'enumerate', cause: 'transient', message: 'Graph is busy' } });
+    expect(result.ok && result.value.summary.failed).toBe(1);
+    expect(result.ok && result.value.notes.failed).toEqual([{ path: 'Documents', reason: 'its documents could not be listed: Graph is busy' }]);
   });
 
   it('each document under a moved folder is read again once, also when several are read at a time', async () => {

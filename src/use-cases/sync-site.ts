@@ -212,6 +212,21 @@ const writeLibraryIndex = async (deps: SyncSiteDeps, input: ResolvedInput, drive
   if (!written.ok) deps.logger.warn('index.failed', { path, cause: written.error.kind });
 };
 
+// A library Graph will not list costs itself, as a document that will not convert does: named in the
+// report, with its record and cursor kept, so the next run reads it again, while the other libraries
+// land. A lapsed sign-in is not such a refusal: it would fail every library, so it ends the site.
+const unlisted = <T>(outcome: Result<T, StepError>): outcome is { readonly ok: false; readonly error: StepError } =>
+  !outcome.ok && outcome.error.step === 'enumerate' && outcome.error.cause !== 'auth';
+
+const unread = (
+  deps: SyncSiteDeps,
+  drive: DriveSummary,
+  error: StepError
+): Result<{ readonly state?: SiteState; readonly summary: RunSummary; readonly notes: Partial<RunNotes> }, StepError> => {
+  deps.logger.warn('sync.library-unread', { driveId: drive.id, cause: error.cause });
+  return ok({ summary: { ...EMPTY, failed: 1 }, notes: { failed: [{ path: drive.name, reason: `its documents could not be listed: ${error.message}` }] } });
+};
+
 export const createSyncSite =
   (deps: SyncSiteDeps): SyncSite =>
   async (rawInput) => {
@@ -222,9 +237,10 @@ export const createSyncSite =
     let summary = EMPTY;
     let notes = NO_NOTES;
     for (const drive of input.drives) {
-      const outcome = await syncDrive(deps, input, drive, state, statePath);
+      const tried = await syncDrive(deps, input, drive, state, statePath);
+      const outcome = unlisted(tried) ? unread(deps, drive, tried.error) : tried;
       if (!outcome.ok) return outcome;
-      state = outcome.value.state;
+      state = outcome.value.state ?? state;
       summary = add(summary, outcome.value.summary);
       notes = mergeNotes(notes, outcome.value.notes);
       await writeLibraryIndex(deps, input, drive, state);
