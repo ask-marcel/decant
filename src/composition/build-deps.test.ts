@@ -710,33 +710,24 @@ describe('a knowledge base copied to another folder', () => {
   const touchedOutside = (files: ReturnType<typeof createFilesFake>): ReadonlyArray<string> =>
     [...files.writeLog, ...files.moves.flatMap((move) => [move.from, move.to])].filter((path) => !path.startsWith(`${COPY}/`));
 
-  it('a library in the day folders of the first layout moves out of them in the copy, and the original stays as it was', async () => {
-    const dated = (root: string): string => `${root}/SharePoint sites/Espace Contoso/Documents/2026-05-12/Contrat.docx.md`;
+  it('a document deleted in its library goes under the archive of the copy, and the original stays as it was', async () => {
+    const note = (root: string): string => `${root}/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md`;
     const state = JSON.stringify({
       version: 1,
       source: { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', webUrl: 'https://x' },
       lastRun: '',
-      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [], items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: [dated('kb')] } }, retry: {} } },
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: [], items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: [note('kb')] } }, retry: {} } },
     });
-    const contract = {
-      id: '01ABC',
-      name: 'Contrat.docx',
-      kind: 'file' as const,
-      size: 4096,
-      path: 'Contrat.docx',
-      lastModified: '2026-05-12T09:31:00Z',
-      cTag: 'c1',
-      webUrl: 'https://x/Contrat.docx',
-    };
+    const deleted = { id: '01ABC', name: '', kind: 'deleted' as const, size: 0, path: '', lastModified: '', cTag: '', webUrl: '' };
     const files = createFilesFake({
       directories: { [COPY]: ['SharePoint sites'], [`${COPY}/SharePoint sites`]: ['Espace Contoso'] },
-      texts: { [`${COPY}/SharePoint sites/Espace Contoso/.sync-state.json`]: state, [dated(COPY)]: 'the copy', [dated('kb')]: 'the original' },
+      texts: { [`${COPY}/SharePoint sites/Espace Contoso/.sync-state.json`]: state, [note(COPY)]: 'the copy', [note('kb')]: 'the original' },
     });
 
-    await updateIn(files, { reader: createDriveReaderFake({ pages: [{ items: [contract], skipped: 0, deltaLink: 'cursor-2' }] }) });
+    await updateIn(files, { reader: createDriveReaderFake({ pages: [{ items: [deleted], skipped: 0, deltaLink: 'cursor-2' }] }) });
 
-    expect(files.moves).toContainEqual({ from: dated(COPY), to: `${COPY}/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md` });
-    expect(files.written.get(dated('kb'))).toBe('the original');
+    expect(files.moves).toContainEqual({ from: note(COPY), to: `${COPY}/_archive/2026-10-24/SharePoint sites/Espace Contoso/Documents/Contrat.docx.md` });
+    expect(files.written.get(note('kb'))).toBe('the original');
     expect(touchedOutside(files)).toStrictEqual([]);
   });
 

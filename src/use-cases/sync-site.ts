@@ -13,9 +13,8 @@ import { ok } from '../domain/result.ts';
 import { PEOPLE_NAME, emptyPeopleState, parsePeopleState } from '../domain/people-state.ts';
 import type { PeopleState } from '../domain/people-state.ts';
 import { hasMembers, peopleLinksOf, renderSiteMembers } from '../domain/site-members.ts';
-import type { DriveState, Refiled, SiteRef, SiteState } from '../domain/site-state.ts';
+import type { DriveState, SiteRef, SiteState } from '../domain/site-state.ts';
 import {
-  LIBRARY_LAYOUT,
   belongsToAnotherSite,
   emptySiteState,
   forgetFailure,
@@ -23,7 +22,6 @@ import {
   ownOutputs,
   parseSiteState,
   recordItem,
-  refileDrive,
   rememberFailure,
   serializeSiteState,
   withDrive,
@@ -49,7 +47,6 @@ import type { Progress } from './ports/progress.ts';
 import type { StepError } from './ports/step-error.ts';
 import { heldInPlace, letGo, putAside, putBack, setAside } from './put-aside.ts';
 import type { SetAside, WriteDown } from './put-aside.ts';
-import { refileAll } from './refile.ts';
 
 export const STATE_FILE_NAME = '.sync-state.json';
 
@@ -149,48 +146,6 @@ export const resolveSite = async (deps: ResolveSiteDeps, site: SiteRef): Promise
 
 export type ResolvedInput = SyncSiteInput & { readonly segment: string };
 
-// The work a stopped run queued holds the paths of the earlier layout, so it is worked through first,
-// and the run after it moves the library.
-const hasQueue = (state: SiteState): boolean => Object.values(state.drives).some((drive) => drive.pending.length > 0);
-
-// Each file a move left behind, recorded where it still is.
-const stayedAt = (drive: DriveState, stuck: ReadonlyMap<string, string>): DriveState => ({
-  ...drive,
-  items: Object.fromEntries(Object.entries(drive.items).map(([id, entry]) => [id, { ...entry, outputs: entry.outputs.map((output) => stuck.get(output) ?? output) }] as const)),
-});
-
-// Each file of each library that a layout files elsewhere, moved there. The moves are not put aside:
-// nothing is superseded, only filed again. A file that will not move keeps its place in the record, and
-// the layout stays unsettled, so the next run moves what is left.
-const moveAll = async (
-  deps: SyncSiteDeps,
-  state: SiteState,
-  refiled: (id: string, drive: DriveState) => Refiled
-): Promise<{ readonly drives: Readonly<Record<string, DriveState>>; readonly settled: boolean }> => {
-  const drives: Record<string, DriveState> = {};
-  let settled = true;
-  for (const [id, drive] of Object.entries(state.drives)) {
-    const moved = refiled(id, drive);
-    const stuck = await refileAll(deps, moved.moves);
-    settled &&= stuck.size === 0;
-    drives[id] = stayedAt(moved.drive, stuck);
-  }
-  return { drives, settled };
-};
-
-// The first run of this layout moves every document out of the day folder the first layout filed it
-// under, once.
-const refile = async (deps: SyncSiteDeps, input: ResolvedInput, state: SiteState): Promise<SiteState> => {
-  const { drives, settled } = await moveAll(deps, state, (id, drive) => refileDrive(libraryRootOf(deps.kbRoot, input.segment, { id, name: drive.name }), drive));
-  return { ...state, drives, layout: settled ? LIBRARY_LAYOUT : state.layout };
-};
-
-// The one-time move of a library out of the day folders. A dry run moves nothing.
-const settledLayouts = async (deps: SyncSiteDeps, input: ResolvedInput, state: SiteState): Promise<SiteState> => {
-  if (input.dryRun || hasQueue(state)) return state;
-  return state.layout === LIBRARY_LAYOUT ? state : refile(deps, input, state);
-};
-
 // The library as a reader scans it, made from the state. A page that will not write is logged and
 // leaves the run standing: the documents themselves already landed.
 const writeLibraryIndex = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, state: SiteState): Promise<void> => {
@@ -222,7 +177,7 @@ export const createSyncSite =
     const resolved = await resolveSite(deps, rawInput.site);
     const input: ResolvedInput = { ...rawInput, segment: resolved.segment };
     const statePath = `${siteRoot(deps.kbRoot, resolved.segment)}/${STATE_FILE_NAME}`;
-    let state = await settledLayouts(deps, input, resolved.state);
+    let state = resolved.state;
     let summary = EMPTY;
     let notes = NO_NOTES;
     for (const drive of input.drives) {
