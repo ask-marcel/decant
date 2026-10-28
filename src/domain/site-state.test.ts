@@ -8,7 +8,6 @@ import {
   forgetItem,
   parseSiteState,
   recordItem,
-  refileDrive,
   rememberFailure,
   serializeSiteState,
   withDrive,
@@ -33,20 +32,18 @@ describe('remembering where a site sync got to', () => {
     expect(parseSiteState(JSON.parse(serializeSiteState(state)))).toEqual({ ok: true, value: state });
   });
 
-  // The layout says whether the files are still in the day folders of the first one; the day and the
-  // author of each change are what the library page lists a document by.
-  it('a state keeps the layout its files are in and who changed each document when, and reads a layout that is not a number as none', () => {
+  // The day and the author of each change are what the library page lists a document by.
+  it('a state keeps who changed each document when', () => {
     const library = {
       name: 'Documents',
       pending: [],
       items: { '01ABC': { path: 'Contrat.docx', cTag: 'c1', outputs: ['Contrat.docx.md'], modified: '2026-05-12T09:31:00Z', modifiedBy: 'Jane Doe' } },
       retry: {},
     };
-    const state = { ...withDrive(emptySiteState(site), 'b!one', library), layout: 2 };
+    const state = withDrive(emptySiteState(site), 'b!one', library);
     const written = JSON.parse(serializeSiteState(state));
 
     expect(parseSiteState(written)).toEqual({ ok: true, value: state });
-    expect(parseSiteState({ ...written, layout: '2' })).toMatchObject({ ok: true, value: { layout: undefined } });
   });
 
   // The folders tell which documents moved when Graph reports a folder at a new path. A state from
@@ -177,72 +174,5 @@ describe('remembering a document the run could not read', () => {
 
     expect(forgotten.items).toEqual({});
     expect(forgotten.retry).toEqual({});
-  });
-});
-
-describe('filing a library again in the layout without day folders', () => {
-  const drive = {
-    name: 'Documents',
-    pending: [],
-    items: {
-      '01ABC': { path: 'Projets/Contrat.docx', cTag: 'c1', outputs: ['kb/S/D/2026-05-12/Projets/Contrat.docx.md', 'kb/S/D/2026-05-12/Projets/Contrat.docx.pdf'] },
-      '01NEW': { path: 'Notes.txt', cTag: 'c1', outputs: ['kb/S/D/Notes.txt.md'] },
-    },
-    retry: {},
-  };
-
-  it('each document leaves the day folder for its folders in the library, and one already there stays put', () => {
-    const refiled = refileDrive('kb/S/D', drive);
-
-    expect(refiled.moves).toEqual([
-      { from: 'kb/S/D/2026-05-12/Projets/Contrat.docx.md', to: 'kb/S/D/Projets/Contrat.docx.md' },
-      { from: 'kb/S/D/2026-05-12/Projets/Contrat.docx.pdf', to: 'kb/S/D/Projets/Contrat.docx.pdf' },
-    ]);
-    expect(refiled.drive.items['01ABC']?.outputs).toEqual(['kb/S/D/Projets/Contrat.docx.md', 'kb/S/D/Projets/Contrat.docx.pdf']);
-    expect(refiled.drive.items['01NEW']).toEqual(drive.items['01NEW']);
-  });
-
-  // A name cut to fit Windows does not hold the full name, and an archive's first file sits in the
-  // folder it was unpacked in: neither leads anywhere wrong.
-  it('a document under a cut name and an archive with its members move out of the day folder, every file keeping its name', () => {
-    const refiled = refileDrive('kb/S/D', {
-      ...drive,
-      items: {
-        '01CUT': { path: 'Contrat de service avec le fournisseur.docx', cTag: 'c1', outputs: ['kb/S/D/2026-05-12/Contrat de servi-4db6e62d.docx.md'] },
-        '01ZIP': { path: 'Projets/pack.zip', cTag: 'c1', outputs: ['kb/S/D/undated/Projets/pack/pack.zip', 'kb/S/D/Projets/pack/readme.txt.md'] },
-      },
-    });
-
-    expect(refiled.moves).toEqual([
-      { from: 'kb/S/D/2026-05-12/Contrat de servi-4db6e62d.docx.md', to: 'kb/S/D/Contrat de servi-4db6e62d.docx.md' },
-      { from: 'kb/S/D/undated/Projets/pack/pack.zip', to: 'kb/S/D/Projets/pack/pack.zip' },
-    ]);
-    expect(refiled.drive.items['01ZIP']?.outputs).toEqual(['kb/S/D/Projets/pack/pack.zip', 'kb/S/D/Projets/pack/readme.txt.md']);
-  });
-
-  // A path too long for Windows failed as a write, and the day folder was part of the length.
-  it('a document given up on because it could not be written gets its tries back, and one that failed otherwise does not', () => {
-    const item = { id: '01LONG', name: 'Long report.docx', kind: 'file' as const, size: 1, path: 'Long report.docx', lastModified: '', cTag: 'c1', webUrl: '' };
-    const failing = {
-      ...drive,
-      retry: { '01LONG': { item, attempts: 3, reason: 'write-failed: ENOENT' }, '01LOCK': { item: { ...item, id: '01LOCK' }, attempts: 3, reason: 'transient: busy' } },
-    };
-
-    const refiled = refileDrive('kb/S/D', failing);
-
-    expect(refiled.drive.retry['01LONG']?.attempts).toBe(0);
-    expect(refiled.drive.retry['01LOCK']?.attempts).toBe(3);
-  });
-});
-
-describe('the folder each archive and saved email of a library unpacks into', () => {
-  // A state says which folder its archives are in, so the move into the folder named for the whole file
-  // runs once. A state from before reads as the first layout, which is what it holds.
-  it('a state keeps the layout its archives are in, reads one that is not a number as none, and adds none to a state from before', () => {
-    const state = { ...emptySiteState(site), lastRun: '2026-07-22T09:00:00Z', layout: 2, archives: 2 };
-    const written = JSON.parse(serializeSiteState(state));
-
-    expect(parseSiteState(written)).toEqual({ ok: true, value: state });
-    expect(parseSiteState({ ...written, archives: '2' })).toStrictEqual({ ok: true, value: { ...emptySiteState(site), lastRun: '2026-07-22T09:00:00Z', layout: 2 } });
   });
 });
