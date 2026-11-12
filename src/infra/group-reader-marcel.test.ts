@@ -113,6 +113,31 @@ describe('reading a group inbox through the ask-marcel library', () => {
     expect(recorded).toHaveLength(0);
   });
 
+  it('a file attached to a post is converted in a child process, and an embedded email still by Graph', async () => {
+    const recorded: Recorded[] = [];
+    const children: Array<{ readonly text: string; readonly name: string; readonly params: Record<string, string> }> = [];
+    const attachments: Readonly<Record<string, unknown>> = {
+      'att-file': { '@odata.type': '#microsoft.graph.fileAttachment', name: 'Pre-read.docx', base64: Buffer.from('PK word').toString('base64') },
+      'att-item': { '@odata.type': '#microsoft.graph.itemAttachment', name: 'Agenda' },
+    };
+    const reader = createGroupReaderFromCall(
+      async (name, params) => {
+        recorded.push({ name, params });
+        return ok(name === 'get-group-post-attachment' ? attachments[params['attachmentId'] ?? ''] : { text: '# Agenda' });
+      },
+      async (bytes, name, params) => {
+        children.push({ text: new TextDecoder().decode(bytes), name, params });
+        return ok({ text: '# Pre-read' });
+      }
+    );
+    const ref = '0d3b-group|AAQkAD-thread|AAMkAD-post';
+
+    expect(await reader.attachmentMarkdown(ref, 'att-file')).toEqual({ ok: true, value: '# Pre-read' });
+    expect(await reader.attachmentMarkdown(ref, 'att-item')).toEqual({ ok: true, value: '# Agenda' });
+    expect(children).toEqual([{ text: 'PK word', name: 'Pre-read.docx', params: {} }]);
+    expect(recorded.map((call) => call.name)).toEqual(['get-group-post-attachment', 'get-group-post-attachment', 'convert-group-post-attachment-to-markdown']);
+  });
+
   it('a post is rendered, listed and fetched by all three parts of its reference', async () => {
     const { reader, recorded } = readerFor({
       'convert-group-post-to-markdown': [ok({ text: '**From:** Dana Farrow' })],

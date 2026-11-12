@@ -1,3 +1,4 @@
+import { tmpdir } from 'node:os';
 import { buildDeps as buildMarcelDeps, commands } from 'ask-marcel-office-cli';
 import type { SiteRef } from '../domain/site-state.ts';
 import { createSystemClock } from '../infra/clock-system.ts';
@@ -31,6 +32,8 @@ import { disambiguateSegment, idHash } from '../domain/kb-path.ts';
 import type { Notebook } from '../domain/onenote.ts';
 import type { ChannelSummary, TeamReader, TeamSummary } from '../use-cases/ports/team-reader.ts';
 import { createMailReaderFromCall } from '../infra/mail-reader-marcel.ts';
+import type { ChildConversion } from '../infra/convert-in-child.ts';
+import { createBunSpawn, createChildConversion } from '../infra/convert-in-child.ts';
 import { createBunFiles } from '../infra/files-bun.ts';
 import { createWinstonLogger } from '../infra/logger.ts';
 import { createBunShell, createFileOcrCache, createNoOcr, createRapidOcr } from '../infra/ocr-rapid.ts';
@@ -98,12 +101,20 @@ export type DepOverrides = {
   readonly progress?: Progress;
 };
 
+// Every conversion of a file on disk, a zip, a part of a saved email, the text of a rendered deck,
+// runs in a child process with the time limit, the way a downloaded file does.
+const withChildConversion = (registry: Readonly<Partial<Record<string, MarcelCommand>>>, child: ChildConversion): Readonly<Partial<Record<string, MarcelCommand>>> => {
+  const local = registry['convert-local-file-to-markdown'];
+  return local === undefined ? registry : { ...registry, 'convert-local-file-to-markdown': { ...local, executeLocal: async (_fs, params) => child.path(params) } };
+};
+
 // `interactive: false` keeps a lapsed sign-in from opening a browser mid-run: the call fails with
 // an auth error the run reports, which is what a scheduled `update` needs.
-const realApi = (interactive: boolean): MarcelApi => {
+const realApi = (interactive: boolean, child: ChildConversion): MarcelApi => {
   const marcel = buildMarcelDeps({ interactive });
   const status = createStderrStatus();
-  return { graph: marcel.graph, fs: marcel.fs, commands: commands as Readonly<Partial<Record<string, MarcelCommand>>>, notify: status };
+  const registry = withChildConversion(commands as Readonly<Partial<Record<string, MarcelCommand>>>, child);
+  return { graph: marcel.graph, fs: marcel.fs, commands: registry, notify: status, convertBytes: child.bytes };
 };
 
 // Resolved the same way the sync itself resolves it: two sites can share a display name, and the
@@ -216,9 +227,10 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const files = ledger.files;
   const writeDown = ledger.writeDown;
   // Constructing the API reaches nothing: the sign-in ladder only runs on the first Graph call.
-  const api = realApi(config.interactive);
+  const child = createChildConversion({ spawn: createBunSpawn(), timeoutMs: config.convertTimeoutSeconds * 1000, scratch: tmpdir() });
+  const api = realApi(config.interactive, child);
   const reader = given(overrides.reader, () => createDriveReaderFromApi(api));
-  const mail = given(overrides.mail, () => createMailReaderFromCall(createMarcelCall(api)));
+  const mail = given(overrides.mail, () => createMailReaderFromCall(createMarcelCall(api), child.bytes));
   // Shared across every source, not filed under the mailbox: the same picture reaches the knowledge
   // base as a mail attachment and as a file in a library, and reading it twice is the thing this
   // exists to stop.
@@ -253,7 +265,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // A group inbox reads through its own commands but renders through the same path, so it gets the
   // same converters with the group reader underneath them, and a renderer per group because each
   // one writes into its own folder.
-  const group = given(overrides.group, () => createGroupReaderFromCall(createMarcelCall(api)));
+  const group = given(overrides.group, () => createGroupReaderFromCall(createMarcelCall(api), child.bytes));
   const convertGroupAttachment = createConvertAttachment({ reader: group, files, ocr, logger, unpackArchive: reader.localArchive, convertLocal: reader.localMarkdown, pathBudget });
   const renderGroupThreadFor = (root: string, name: string): ReturnType<typeof createRenderThread> =>
     createRenderThread({

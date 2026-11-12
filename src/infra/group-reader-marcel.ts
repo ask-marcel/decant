@@ -5,8 +5,8 @@ import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { GroupReader, GroupSummary } from '../use-cases/ports/group-reader.ts';
 import type { MailReaderError } from '../use-cases/ports/mail-reader.ts';
-import { mediaOf } from './drive-reader-marcel.ts';
-import type { MarcelCall } from './drive-reader-marcel.ts';
+import { fileAttachmentOf, mediaOf, textFrom } from './drive-reader-marcel.ts';
+import type { ConvertBytes, MarcelCall } from './drive-reader-marcel.ts';
 import { listOf, readString, toAttachment, toBytes, toLinks } from './mail-reader-marcel.ts';
 
 // A group inbox reads through the same commands a person would run. 2.5.0 had no group equivalent
@@ -32,7 +32,9 @@ const NEWEST_FIRST = 'lastDeliveredDateTime desc';
 
 const PAGE_SIZE = '50';
 
-export const createGroupReaderFromCall = (call: MarcelCall): GroupReader => {
+// `convertBytes` converts a file attached to a post in a child process with a time limit. Absent, the
+// library converts it inside this process.
+export const createGroupReaderFromCall = (call: MarcelCall, convertBytes?: ConvertBytes): GroupReader => {
   const textOf = async (name: string, params: Record<string, string>): Promise<Result<string, MailReaderError>> => {
     const raw = await call(name, params);
     return raw.ok ? ok(readString(raw.value, 'text') ?? '') : raw;
@@ -108,7 +110,14 @@ export const createGroupReaderFromCall = (call: MarcelCall): GroupReader => {
         return raw.ok ? ok(listOf(raw.value).flatMap(toAttachment)) : raw;
       }),
     attachmentMarkdown: async (ref, attachmentId) =>
-      forPost(ref, (parts) => textOf('convert-group-post-attachment-to-markdown', { groupId: parts.groupId, threadId: parts.threadId, postId: parts.postId, attachmentId })),
+      forPost(ref, async (parts) => {
+        const params = { groupId: parts.groupId, threadId: parts.threadId, postId: parts.postId, attachmentId };
+        if (convertBytes === undefined) return textOf('convert-group-post-attachment-to-markdown', params);
+        const raw = await call('get-group-post-attachment', params);
+        if (!raw.ok) return raw;
+        const file = fileAttachmentOf(raw.value);
+        return file === undefined ? textOf('convert-group-post-attachment-to-markdown', params) : textFrom(await convertBytes(file.bytes, file.name, {}));
+      }),
     attachmentBytes: async (ref, attachmentId) =>
       forPost(ref, (parts) => bytesOf('get-group-post-attachment', { groupId: parts.groupId, threadId: parts.threadId, postId: parts.postId, attachmentId })),
     attachmentPdf: async (ref, attachmentId) =>

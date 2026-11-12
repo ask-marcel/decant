@@ -219,6 +219,30 @@ describe('reading a mailbox through the ask-marcel library', () => {
     expect(recorded[0]?.params).toEqual({ messageId: 'm1', attachmentId: 'att1', includeMetadata: 'true' });
   });
 
+  it('a file attachment is converted in a child process with its metadata, and an embedded email still by Graph', async () => {
+    const recorded: Recorded[] = [];
+    const children: Array<{ readonly text: string; readonly name: string; readonly params: Record<string, string> }> = [];
+    const attachments: Readonly<Record<string, unknown>> = {
+      'att-file': { '@odata.type': '#microsoft.graph.fileAttachment', name: 'Budget.xlsx', base64: Buffer.from('PK sheet').toString('base64') },
+      'att-item': { '@odata.type': '#microsoft.graph.itemAttachment', name: 'Re: Budget' },
+    };
+    const reader = createMailReaderFromCall(
+      async (name, params) => {
+        recorded.push({ name, params });
+        return ok(name === 'get-mail-attachment' ? attachments[params['attachmentId'] ?? ''] : { text: '# Re: Budget' });
+      },
+      async (bytes, name, params) => {
+        children.push({ text: new TextDecoder().decode(bytes), name, params });
+        return ok({ text: '| Poste | Montant |' });
+      }
+    );
+
+    expect(await reader.attachmentMarkdown('m1', 'att-file')).toEqual({ ok: true, value: '| Poste | Montant |' });
+    expect(await reader.attachmentMarkdown('m1', 'att-item')).toEqual({ ok: true, value: '# Re: Budget' });
+    expect(children).toEqual([{ text: 'PK sheet', name: 'Budget.xlsx', params: { includeMetadata: 'true' } }]);
+    expect(recorded.map((call) => call.name)).toEqual(['get-mail-attachment', 'get-mail-attachment', 'convert-mail-attachment-to-markdown']);
+  });
+
   it('an attachment rendered to PDF comes back as bytes', async () => {
     const { reader } = readerFor({ 'convert-mail-attachment-to-pdf': ok({ base64: Buffer.from('%PDF-1.7').toString('base64') }) });
 
