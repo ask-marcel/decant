@@ -310,6 +310,50 @@ describe('reading SharePoint through the ask-marcel library', () => {
     ]);
   });
 
+  it('a Word document is downloaded as it is and converted in a child process, with its metadata and pictures', async () => {
+    const recorded: Recorded[] = [];
+    const children: Array<{ readonly text: string; readonly name: string; readonly params: Record<string, string> }> = [];
+    const reader = createDriveReaderFromApi({
+      graph: {},
+      fs: {},
+      commands: registry(
+        {
+          'get-drive-item': [ok({ id: '01A', name: 'Contrat.docx' })],
+          'download-drive-item-content': [ok({ contentType: 'application/octet-stream', base64: Buffer.from('PK word').toString('base64') })],
+        },
+        recorded
+      ),
+      sleep: async () => undefined,
+      convertBytes: async (bytes, name, params) => {
+        children.push({ text: new TextDecoder().decode(bytes), name, params });
+        return ok({ text: '# Contrat' });
+      },
+    });
+
+    expect(await reader.markdown({ driveId: 'b!one', itemId: '01A' }, { pictures: true })).toEqual({ ok: true, value: '# Contrat' });
+    expect(children).toEqual([{ text: 'PK word', name: 'Contrat.docx', params: { includeMetadata: 'true', inlineImages: 'true' } }]);
+    expect(recorded.map((call) => call.name)).toEqual(['get-drive-item', 'download-drive-item-content']);
+  });
+
+  it('a Loop page is still rendered by Graph, which holds its text, and not by a child process', async () => {
+    const recorded: Recorded[] = [];
+    const children: string[] = [];
+    const reader = createDriveReaderFromApi({
+      graph: {},
+      fs: {},
+      commands: registry({ 'get-drive-item': [ok({ id: '01L', name: 'Compte rendu.loop' })], 'download-drive-item-as-markdown': [ok({ text: '# Compte rendu' })] }, recorded),
+      sleep: async () => undefined,
+      convertBytes: async (_bytes, name) => {
+        children.push(name);
+        return ok({ text: 'never' });
+      },
+    });
+
+    expect(await reader.markdown({ driveId: 'b!one', itemId: '01L' })).toEqual({ ok: true, value: '# Compte rendu' });
+    expect(children).toHaveLength(0);
+    expect(recorded.map((call) => call.name)).toEqual(['get-drive-item', 'download-drive-item-as-markdown']);
+  });
+
   it('a rendered PDF comes back as the bytes it was encoded as', async () => {
     const { reader } = readerFor({ 'download-drive-item-as-pdf': [ok({ contentType: 'application/pdf', base64: Buffer.from('%PDF-1.7').toString('base64') })] });
 

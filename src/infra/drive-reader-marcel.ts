@@ -30,7 +30,13 @@ export type MarcelApi = {
   // Says what a long listing is doing while it does it. Optional the way `sleep` is: a test hands in
   // a collector, production hands in a terminal line, and everything else needs neither.
   readonly notify?: (what: string) => void;
+  // Converts a file held in memory in a child process the run stops after a time limit
+  // (`convert-in-child.ts`), so one file can neither stall the run nor take it down. Absent, as in a
+  // test of the Graph calls alone, the library converts the document inside this process.
+  readonly convertBytes?: ConvertBytes;
 };
+
+export type ConvertBytes = (bytes: Uint8Array, name: string, params: Record<string, string>) => Promise<Result<unknown, GraphErrorShape>>;
 
 const RETRY_DELAYS_MS = [2_000, 8_000, 30_000];
 
@@ -84,6 +90,21 @@ const missing = (what: string): Result<never, DriveReaderError> => err({ kind: '
 // Asked with `inlineImages`, the library gives each picture of a Word document in its place in the
 // text as base64. It is a no-op on a kind with no pictures of its own in the text.
 const picturesOf = (options: MarkdownOptions | undefined): Readonly<Record<string, string>> => (options?.pictures === true ? { inlineImages: 'true' } : {});
+
+// The kinds whose text is not in the file at all but in the Fluid service, which Graph renders on
+// request. They are read through Graph whatever else changes about how documents are converted.
+const RENDERED_BY_GRAPH = /\.(?:fluid|loop|wbtx|whiteboard)$/i;
+
+// The file an attachment carries, when it carries one: an embedded email or a link to a shared file
+// has no bytes here and stays with the Graph command that knows how to read it.
+export const fileAttachmentOf = (value: unknown): { readonly bytes: Uint8Array; readonly name: string } | undefined => {
+  const base64 = readString(value, 'base64');
+  if (readString(value, '@odata.type') !== '#microsoft.graph.fileAttachment' || base64 === undefined) return undefined;
+  return { bytes: new Uint8Array(Buffer.from(base64, 'base64')), name: readString(value, 'name') ?? '' };
+};
+
+// What a conversion in a child process answered, read the way an answer from Graph is.
+export const textFrom = (raw: Result<unknown, GraphErrorShape>): Result<string, DriveReaderError> => (raw.ok ? ok(readString(raw.value, 'text') ?? '') : err(translate(raw.error)));
 
 // A document embedding no pictures answers `{ count: 0, media: [] }`, which is an answer and not a
 // failure, so an absent or unreadable entry is dropped rather than ending the conversion.
@@ -261,7 +282,17 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
       const page = parseDriveDelta(raw.value);
       return page.ok ? ok(page.value) : err({ kind: 'permanent', message: page.error.message });
     },
-    markdown: async (ref, options) => markdownOf('download-drive-item-as-markdown', { driveId: ref.driveId, itemId: ref.itemId, includeMetadata: 'true', ...picturesOf(options) }),
+    markdown: async (ref, options) => {
+      const asked = { includeMetadata: 'true', ...picturesOf(options) };
+      const convert = api.convertBytes;
+      if (convert === undefined) return markdownOf('download-drive-item-as-markdown', { driveId: ref.driveId, itemId: ref.itemId, ...asked });
+      const item = await call('get-drive-item', { driveId: ref.driveId, itemId: ref.itemId });
+      if (!item.ok) return item;
+      const name = readString(item.value, 'name') ?? '';
+      if (RENDERED_BY_GRAPH.test(name)) return markdownOf('download-drive-item-as-markdown', { driveId: ref.driveId, itemId: ref.itemId, ...asked });
+      const raw = await bytesOf('download-drive-item-content', ref);
+      return raw.ok ? textFrom(await convert(raw.value, name, asked)) : raw;
+    },
     pdf: async (ref) => bytesOf('download-drive-item-as-pdf', ref),
     bytes: async (ref) => bytesOf('download-drive-item-content', ref),
     images: async (ref) => {

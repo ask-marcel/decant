@@ -10,6 +10,8 @@ export type Config = {
   readonly ocr: boolean;
   readonly interactive: boolean;
   readonly timezone: string;
+  // How long one file may take to convert before it is stopped.
+  readonly convertTimeoutSeconds: number;
 };
 
 export type ConfigInput = {
@@ -30,7 +32,12 @@ export type ConfigInput = {
   readonly timezone: string;
   readonly storedTimezone?: string;
   readonly machineTimezone: string;
+  readonly convertTimeoutSeconds?: number;
 };
+
+// How long one file may take to convert when the run named no limit: long enough for a workbook of
+// a few hundred thousand cells, short enough that a stalled one costs minutes of a run and not hours.
+const CONVERT_TIMEOUT_SECONDS = 120;
 
 // Every path under the knowledge base is joined with `/`. Windows accepts that separator, so a
 // folder named there with `\` is spelled with `/` too, and no path holds both. Elsewhere a backslash
@@ -65,5 +72,6 @@ export const readConfig = (input: ConfigInput): Config => {
     ocr: input.ocr ?? true,
     interactive: input.interactive,
     timezone: input.timezone === '' ? (input.storedTimezone ?? input.machineTimezone) : input.timezone,
+    convertTimeoutSeconds: input.convertTimeoutSeconds ?? CONVERT_TIMEOUT_SECONDS,
   };
 };

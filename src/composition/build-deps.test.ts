@@ -30,7 +30,7 @@ const configFor = (env: Readonly<Record<string, string | undefined>>): ReturnTyp
 
 describe('reading the run configuration', () => {
   it('an empty environment writes to the default knowledge base folder and stays quiet', () => {
-    expect(configFor({})).toEqual({ logLevel: 'error', kbRoot: 'kb', ocrLang: 'en', ocr: true, interactive: false, timezone: 'UTC' });
+    expect(configFor({})).toEqual({ logLevel: 'error', kbRoot: 'kb', ocrLang: 'en', ocr: true, interactive: false, timezone: 'UTC', convertTimeoutSeconds: 120 });
   });
 
   it('reading images can be turned off in the configuration', () => {

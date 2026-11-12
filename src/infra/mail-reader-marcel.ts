@@ -6,8 +6,8 @@ import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import { compareText } from '../domain/utilities/compare-text.ts';
 import type { AttachmentKind, LinkedFile, MailAttachment, MailReader, MailReaderError } from '../use-cases/ports/mail-reader.ts';
-import { mediaOf } from './drive-reader-marcel.ts';
-import type { MarcelCall } from './drive-reader-marcel.ts';
+import { fileAttachmentOf, mediaOf, textFrom } from './drive-reader-marcel.ts';
+import type { ConvertBytes, MarcelCall } from './drive-reader-marcel.ts';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 
@@ -100,7 +100,9 @@ const SWEEP_FIELDS = 'id,conversationId,subject,receivedDateTime,hasAttachments,
 // show besides. Kept off the sweep, which reads every message of every folder on a first run.
 const THREAD_FIELDS = `${SWEEP_FIELDS},ccRecipients,internetMessageId,isDraft,bodyPreview`;
 
-export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
+// `convertBytes` converts a file attachment in a child process with a time limit. Absent, the library
+// converts it inside this process.
+export const createMailReaderFromCall = (call: MarcelCall, convertBytes?: ConvertBytes): MailReader => {
   const delta = async (name: string, params: Record<string, string>): Promise<Result<MailDeltaPage, MailReaderError>> => {
     const raw = await call(name, params);
     if (!raw.ok) return raw;
@@ -179,7 +181,14 @@ export const createMailReaderFromCall = (call: MarcelCall): MailReader => {
       const raw = await call('list-mail-attachments', { messageId, select: ATTACHMENT_FIELDS });
       return raw.ok ? ok(listOf(raw.value).flatMap(toAttachment)) : raw;
     },
-    attachmentMarkdown: async (messageId, attachmentId) => textOf('convert-mail-attachment-to-markdown', { messageId, attachmentId, includeMetadata: 'true' }),
+    attachmentMarkdown: async (messageId, attachmentId) => {
+      if (convertBytes === undefined) return textOf('convert-mail-attachment-to-markdown', { messageId, attachmentId, includeMetadata: 'true' });
+      const raw = await call('get-mail-attachment', { messageId, attachmentId });
+      if (!raw.ok) return raw;
+      const file = fileAttachmentOf(raw.value);
+      if (file === undefined) return textOf('convert-mail-attachment-to-markdown', { messageId, attachmentId, includeMetadata: 'true' });
+      return textFrom(await convertBytes(file.bytes, file.name, { includeMetadata: 'true' }));
+    },
     attachmentPdf: async (messageId, attachmentId) => bytesOf('convert-mail-attachment-to-pdf', { messageId, attachmentId }),
     attachmentBytes: async (messageId, attachmentId) => bytesOf('get-mail-attachment', { messageId, attachmentId }),
     attachmentImages: async (messageId, attachmentId) => {
