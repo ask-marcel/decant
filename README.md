@@ -146,11 +146,28 @@ decant update --since 2024-06-01
 
 Moving the day earlier fetches what the narrower reach left out, on each source's next run: a source
 that keeps a cursor reads it out first, so nothing deleted since the last run goes unnoticed, then
-reads the whole source once and writes only what it had left out. Moving the day later deletes
+reads the source again once (the mailbox and a Teams channel from the new day, the other sources
+whole) and writes only what it had left out. Moving the day later deletes
 nothing: what is already in `kb/` stays. `update` and a run that names a source by flag never ask;
 with no day kept yet, they reach everything. Clearing `kb/` clears the day with it, and the next run
 asks again. A day that cannot be read, mistyped by hand in `kb/.decant.json`, stops the run rather
 than syncing everything; `--since` sets it again.
+
+For the mailbox and for Teams channels, decant sends the day to Microsoft Graph. Thus a first run
+reads only the mail and the posts from that day on, and a first run with the day of today is short.
+For the other sources, decant reads the full list from Graph and then applies the day.
+
+Graph returns a maximum of 5,000 messages for a mail folder that is read from a day. decant counts
+the messages that each such folder returns. Before a folder gets to that limit (at 4,000 messages),
+decant reads that folder whole one time. Thus no mail is lost.
+
+A mail folder that is read from a day has one limit. If you change the flag or the category of a
+message that arrived before the day, it is possible that Graph does not report the change. The note
+of that thread then keeps the earlier mark until decant writes the thread again.
+
+A run that stops can leave a queue of library files for the next run. If the next run has a later
+day, decant removes from that queue each file that is not in `kb/` and that was last edited before
+the day. A return to the earlier day reads the library whole, and these files then come back.
 
 ### Time zone
 
