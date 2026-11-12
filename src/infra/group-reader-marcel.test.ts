@@ -60,16 +60,24 @@ describe('reading a group inbox through the ask-marcel library', () => {
 
   it('a truncated listing is followed to its end, so a long-lived group is read whole', async () => {
     const { reader, recorded } = readerFor({
-      'list-group-threads': [
-        ok({ value: [THREAD], '@odata.nextLink': 'https://graph.microsoft.com/v1.0/groups/0d3b/threads?$skip=50' }),
-        ok({ value: [{ ...THREAD, id: 'AAQkAD-second' }] }),
-      ],
+      'list-group-threads': [ok({ value: [THREAD], '@odata.nextLink': 'https://graph.microsoft.com/v1.0/groups/0d3b/threads?$skip=50' })],
+      'next-page': [ok({ value: [{ ...THREAD, id: 'AAQkAD-second' }] })],
     });
 
     const threads = await reader.threads('0d3b-group');
 
     expect(threads.ok && threads.value.map((thread) => thread.id)).toEqual(['AAQkAD-thread', 'AAQkAD-second']);
-    expect(recorded[1]?.params).toEqual({ url: 'https://graph.microsoft.com/v1.0/groups/0d3b/threads?$skip=50' });
+    expect(recorded[1]).toEqual({ name: 'next-page', params: { url: 'https://graph.microsoft.com/v1.0/groups/0d3b/threads?$skip=50' } });
+  });
+
+  it('a next link pointing back at itself ends the paging rather than looping on it forever', async () => {
+    const looping = ok({ value: [THREAD], '@odata.nextLink': 'https://graph.microsoft.com/v1.0/groups/0d3b/threads?$skip=50' });
+    const { reader, recorded } = readerFor({ 'list-group-threads': [looping], 'next-page': [looping] });
+
+    const threads = await reader.threads('0d3b-group');
+
+    expect(threads.ok && threads.value).toHaveLength(2);
+    expect(recorded.filter((entry) => entry.name === 'next-page')).toHaveLength(1);
   });
 
   it('the posts of a thread come back as messages, named by the person who wrote them', async () => {

@@ -51,8 +51,11 @@ export const createGroupReaderFromCall = (call: MarcelCall, convertBytes?: Conve
   // leaves the post unnamed rather than failing, and the thread's own folder still names it.
   const topics = new Map<string, GroupThread>();
 
-  const threadsPage = async (params: Record<string, string>): Promise<Result<{ readonly threads: ReadonlyArray<GroupThread>; readonly next?: string }, MailReaderError>> => {
-    const raw = await call('list-group-threads', params);
+  const threadsPage = async (
+    name: string,
+    params: Record<string, string>
+  ): Promise<Result<{ readonly threads: ReadonlyArray<GroupThread>; readonly next?: string }, MailReaderError>> => {
+    const raw = await call(name, params);
     if (!raw.ok) return raw;
     const threads = listOf(raw.value).flatMap((entry: unknown) => {
       const thread = parseGroupThread(entry);
@@ -91,14 +94,23 @@ export const createGroupReaderFromCall = (call: MarcelCall, convertBytes?: Conve
       const raw = await call('list-my-memberships', {});
       return raw.ok ? ok(groupsOf(raw.value)) : raw;
     },
+    // The first page is asked of the listing, and each page after it of `next-page`, which is the one
+    // command that takes a next link: the listing refuses it. The `seen` set is the guard the other
+    // sweeps keep, since a link pointing at itself would otherwise page forever.
     threads: async (groupId) => {
       const found: GroupThread[] = [];
-      let params: Record<string, string> | undefined = { groupId, orderby: NEWEST_FIRST, top: PAGE_SIZE };
-      while (params !== undefined) {
-        const page: Result<{ readonly threads: ReadonlyArray<GroupThread>; readonly next?: string }, MailReaderError> = await threadsPage(params);
+      const seen = new Set<string>();
+      let next: { readonly name: string; readonly params: Record<string, string> } | undefined = {
+        name: 'list-group-threads',
+        params: { groupId, orderby: NEWEST_FIRST, top: PAGE_SIZE },
+      };
+      while (next !== undefined) {
+        const page: Result<{ readonly threads: ReadonlyArray<GroupThread>; readonly next?: string }, MailReaderError> = await threadsPage(next.name, next.params);
         if (!page.ok) return page;
         found.push(...page.value.threads);
-        params = page.value.next === undefined ? undefined : { url: page.value.next };
+        const link = page.value.next;
+        next = link === undefined || seen.has(link) ? undefined : { name: 'next-page', params: { url: link } };
+        if (link !== undefined) seen.add(link);
       }
       return ok(found);
     },
