@@ -41,6 +41,8 @@ describe('reading what the operator asked for', () => {
         mailbox: false,
         people: false,
         calendar: false,
+        onedrive: false,
+        every: [],
         help: false,
         refresh: false,
         timezone: '',
@@ -141,6 +143,20 @@ describe('reading what the operator asked for', () => {
   it('a team can be named outright, and a team named with no value is refused', () => {
     expect(parse('--team team-1')).toMatchObject({ value: { teamId: 'team-1' } });
     expect(parse('--team')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--team expects a value' } });
+  });
+
+  it('every source of a kind can be taken whole', () => {
+    expect(parse('--sites all --loop all --teams all --groups all --todo-lists all --notebooks all --plans all --onedrive')).toMatchObject({
+      value: { every: ['site', 'loop', 'team', 'group', 'todo', 'notebook', 'plan'], onedrive: true },
+    });
+  });
+
+  it('a group flag with anything but all is refused, naming the flag', () => {
+    expect(parse('--teams Leadership')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--teams expects all, got: Leadership' } });
+  });
+
+  it('a group asked for twice is taken once', () => {
+    expect(parse('--teams all --sites all --teams all')).toMatchObject({ value: { every: ['team', 'site'] } });
   });
 
   it('a To Do list named with no value is refused rather than syncing everything', () => {

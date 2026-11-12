@@ -72,6 +72,22 @@ also takes your mailbox, your calendar and the people directory, after the numbe
 more than one site takes every library in each without asking, since the point of choosing them
 together is not being asked once per site. Each site is summarised as it finishes.
 
+To sync groups of sources without the picker, give a flag for each group. You can give many flags in
+one command, and decant syncs all of them in one run:
+
+```bash
+decant --since 2026-11-12 --teams all --sites all --mailbox --calendar
+```
+
+`--sites all` takes every SharePoint site with all its libraries. It does not take the Loop
+workspaces or your OneDrive: use `--loop all` and `--onedrive` for them. A Team takes all its
+channels. If two flags name the same source, decant syncs it one time.
+
+decant gets the list of each group before it syncs a source. If it cannot get a list, the run stops
+before it writes anything. The sources sync in the order of the picker, and the mailbox, the calendar
+and the people directory sync last. When one source fails, the run stops there, as with `all` at the
+picker.
+
 To refresh everything already synced, without being asked anything:
 
 ```bash
@@ -161,6 +177,8 @@ A dry run keeps nothing. The change does not move a thread folder that is alread
 
 ### Options
 
+You can give many source flags in one command. decant syncs all the sources that they name.
+
 | Option | Meaning |
 |---|---|
 | `--site-id <id>` | Sync this site without showing the picker |
@@ -175,6 +193,14 @@ A dry run keeps nothing. The change does not move a thread folder that is alread
 | `--notebook <name>` | Sync one OneNote notebook without the picker, by its name or its id |
 | `--lists <site>` | Sync the lists of one SharePoint site without the picker, by its name, its id or its address |
 | `--plan <title>` | Sync one Planner plan without the picker, by its title among the plans listed or by its id |
+| `--sites all` | Sync every SharePoint site with all its libraries, without the picker. Loop workspaces and your OneDrive are not included |
+| `--loop all` | Sync every Loop workspace without the picker |
+| `--onedrive` | Sync your OneDrive without the picker |
+| `--teams all` | Sync every Team with all its channels, without the picker |
+| `--groups all` | Sync every group inbox without the picker |
+| `--todo-lists all` | Sync every To Do list without the picker |
+| `--notebooks all` | Sync every OneNote notebook without the picker |
+| `--plans all` | Sync every Planner plan without the picker |
 | `--max-age <minutes>` | Only with `update`: do nothing if the last update started less than this number of minutes before |
 | `--since <day\|all>` | Reach back to this day (`2026-01-31`), or through everything, and keep it for every later run (see How far back) |
 | `--out <folder>` | Write the knowledge base to this folder (default `kb`). This option has priority over `KB_ROOT`. Use the same folder for each run, because the sync state is in that folder |

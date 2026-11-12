@@ -1761,3 +1761,78 @@ describe('handing the reach to every source that keeps a history', () => {
     expect(reached).toEqual([{ kind: 'notebook', since: '2025-01-01' }]);
   });
 });
+
+describe('taking whole groups of sources from the command line', () => {
+  const LOOP = { id: 'loop,1,2', name: 'Roadmap', webUrl: 'https://tenant.sharepoint.com/contentstorage/CSP_1' };
+  const ONEDRIVE = { id: 'me,1,2', name: 'jdoe@example.com', webUrl: 'https://tenant-my.sharepoint.com/personal/jdoe' };
+  const EVERY_SITE = { reader: { sites: [...sites, LOOP, ONEDRIVE] } };
+  const GROUPS = [{ id: 'g1', name: 'Leadership', mail: 'lead@example.com' }];
+  const TODO_LISTS = [{ id: 'list-1', name: 'Tasks' }];
+  const TEAMS = [
+    { id: 't1', name: 'Leadership' },
+    { id: 't2', name: 'Sales' },
+  ];
+  const NOTEBOOKS = [{ id: 'nb1', name: 'Leadership Notebook', webUrl: '', site: undefined }];
+  const PLANS = [{ id: 'plan-1', title: 'Offsite 2026', groupId: 'g1' }];
+
+  it('--sites all syncs every SharePoint site with every library, and no Loop workspace or OneDrive, without the picker', async () => {
+    const { calls, prompt } = await run([], { every: ['site'] }, EVERY_SITE);
+
+    expect(calls.map((call) => call.site.id)).toEqual(['contoso,1,2', 'contoso,3,4']);
+    expect(calls.map((call) => call.drives)).toEqual([drives, drives]);
+    expect(prompt.asked).toStrictEqual([]);
+  });
+
+  it('--loop all and --onedrive take the Loop workspaces and the OneDrive', async () => {
+    const { calls, prompt } = await run([], { every: ['loop'], onedrive: true }, EVERY_SITE);
+
+    expect(calls.map((call) => call.site.id)).toEqual([LOOP.id, ONEDRIVE.id]);
+    expect(prompt.asked).toStrictEqual([]);
+  });
+
+  it('--teams, --groups, --todo-lists, --notebooks and --plans all sync every one listed, each team with every channel, and ask nothing', async () => {
+    const { teamRuns, groupRuns, todoRuns, notebookRuns, planRuns, calls, prompt } = await run(
+      [],
+      { every: ['team', 'group', 'todo', 'notebook', 'plan'] },
+      { groups: GROUPS, todoLists: TODO_LISTS, teams: TEAMS, notebooks: NOTEBOOKS, plans: PLANS }
+    );
+
+    expect(teamRuns).toEqual([
+      { team: 'Leadership', channels: ['General', 'Planning'] },
+      { team: 'Sales', channels: ['General', 'Planning'] },
+    ]);
+    expect([groupRuns, todoRuns, notebookRuns, planRuns]).toEqual([['Leadership'], ['Tasks'], ['Leadership Notebook'], ['Offsite 2026']]);
+    expect(calls).toStrictEqual([]);
+    expect(prompt.asked).toStrictEqual([]);
+  });
+
+  it('several source flags combine into one run: --teams all --sites all --mailbox --calendar syncs sites, then teams, then mailbox and calendar', async () => {
+    const { ok: succeeded, summaries, peopleRuns } = await run([], { every: ['team', 'site'], mailbox: true, calendar: true }, { teams: TEAMS });
+
+    expect(succeeded).toBe(true);
+    expect(summaries?.map((summary) => summary.id)).toEqual(['site!one', 'site!one', 't1', 't2', 'me', 'calendar']);
+    expect(peopleRuns).toStrictEqual([]);
+  });
+
+  it('a site named by id and taken again by --sites all is synced once', async () => {
+    const { calls } = await run([], { siteId: 'contoso,1,2', every: ['site'] });
+
+    expect(calls.map((call) => call.site.id)).toEqual(['contoso,1,2', 'contoso,3,4']);
+  });
+
+  it('a group whose listing is refused stops the run naming the step, before any source syncs', async () => {
+    const { ok: succeeded, step, mailboxRuns } = await run([], { every: ['team'], mailbox: true }, { failTeams: true });
+
+    expect(succeeded).toBe(false);
+    expect(step).toBe('listTeams');
+    expect(mailboxRuns).toStrictEqual([]);
+  });
+
+  it('a group with nothing in it syncs nothing and draws no picker', async () => {
+    const { ok: succeeded, summaries, prompt } = await run([], { every: ['loop'] });
+
+    expect(succeeded).toBe(true);
+    expect(summaries).toStrictEqual([]);
+    expect(prompt.asked).toStrictEqual([]);
+  });
+});

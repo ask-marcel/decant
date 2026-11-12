@@ -1,6 +1,7 @@
 import type { PickerRow, Selection, SyncedMark } from '../domain/picker.ts';
 import { annotate, parseSelection } from '../domain/picker.ts';
 import { kindOf, orderByKind } from '../domain/address-kind.ts';
+import type { AddressKind } from '../domain/address-kind.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { SiteRef } from '../domain/site-state.ts';
@@ -89,6 +90,10 @@ export type RunSyncDeps = {
   readonly writeGlobalReport: WriteGlobalReport;
 };
 
+// A kind of source the command line can take whole, every one of it: a site's lists are named one
+// site at a time, and the OneDrive is one, so neither is here.
+export type WholeKind = 'site' | 'loop' | 'team' | 'group' | 'todo' | 'notebook' | 'plan';
+
 export type RunSyncInput = {
   readonly command: 'sync' | 'update';
   readonly siteId?: string;
@@ -100,6 +105,8 @@ export type RunSyncInput = {
   readonly mailbox?: boolean;
   readonly people?: boolean;
   readonly calendar?: boolean;
+  readonly onedrive?: boolean;
+  readonly every?: ReadonlyArray<WholeKind>;
   readonly groupId?: string;
   readonly todoListId?: string;
   readonly teamId?: string;
@@ -419,13 +426,14 @@ type Sources = {
   // The sites whose lists were chosen, apart from the sites whose libraries were.
   readonly lists: ReadonlyArray<SiteRef>;
   readonly plans: ReadonlyArray<Plan>;
-  // The mailbox, the calendar and the people, taken by `all` beside every numbered row.
-  readonly standing: boolean;
+  // Which of the mailbox, the calendar and the people to take: all three with `all` beside every
+  // numbered row, or each one its flag names.
+  readonly standing: ReadonlyArray<SourceKind>;
 };
 
 type Chosen = Sources | 'update-all' | 'quit' | 'mailbox' | 'people' | 'calendar';
 
-const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [], notebooks: [], lists: [], plans: [], standing: false };
+const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [], notebooks: [], lists: [], plans: [], standing: [] };
 
 const oneSite = (found: Result<SiteRef, StepError>): Result<Chosen, StepError> => (found.ok ? ok({ ...NOTHING, sites: [found.value] }) : found);
 
@@ -439,7 +447,7 @@ const countOf = (sources: Sources): number =>
   sources.notebooks.length +
   sources.lists.length +
   sources.plans.length +
-  (sources.standing ? STANDING.length : 0);
+  sources.standing.length;
 
 const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Omit<Sources, 'standing'>): Promise<Result<Chosen, StepError>> => {
   if (choice.kind === 'quit') return ok('quit');
@@ -459,7 +467,7 @@ const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Omit<Sourc
   const notebooks = offered.notebooks.filter((_notebook, index) => choice.indices.includes(before + index));
   const lists = offered.lists.filter((_site, index) => choice.indices.includes(before + offered.notebooks.length + index));
   const plans = offered.plans.filter((_plan, index) => choice.indices.includes(before + offered.notebooks.length + offered.lists.length + index));
-  const chosen = { sites, groups, todoLists, teams, notebooks, lists, plans, standing: choice.everything === true };
+  const chosen = { sites, groups, todoLists, teams, notebooks, lists, plans, standing: choice.everything === true ? STANDING.map(({ kind }) => kind) : [] };
   return countOf(chosen) === 0 ? failed('pickSite', 'bad-choice', 'choose at least one source') : ok(chosen);
 };
 
@@ -602,9 +610,9 @@ const oneSummary = (summary: Result<SourceRun, StepError>): Result<ReadonlyArray
 // Each site is summarised as it lands, so a run over many of them reports along the way. A site that
 // fails stops the run there rather than burying the reason under the ones after it; every site
 // finished before it keeps what it wrote, and a re-run resumes from its own checkpoint.
-const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources): Promise<RunOutcome> => {
-  const alone = countOf(chosen) === 1;
-  return runInTurn([
+// `alone` decides whether a site is asked about its libraries and a team about its channels.
+const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources, alone = countOf(chosen) === 1): Promise<RunOutcome> =>
+  runInTurn([
     ...chosen.sites.map((site) => () => siteWithLibraries(deps, input, site, alone)),
     ...chosen.groups.map((group) => () => syncTheGroup(deps, input, group)),
     ...chosen.todoLists.map((list) => () => syncTheTodoList(deps, input, list)),
@@ -614,12 +622,11 @@ const runMany = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Sources):
     ...chosen.plans.map((plan) => () => syncThePlan(deps, input, plan)),
     ...standingSteps(deps, input, chosen.standing),
   ]);
-};
 
-// The mailbox, the calendar and the people when `all` took them, after the numbered rows, as the
-// picker draws them.
-const standingSteps = (deps: RunSyncDeps, input: RunSyncInput, taken: boolean): ReadonlyArray<Step> =>
-  taken ? STANDING.map((source) => async () => source.refresh(deps, input)) : [];
+// The mailbox, the calendar and the people that were taken, after the numbered rows, as the picker
+// draws them.
+const standingSteps = (deps: RunSyncDeps, input: RunSyncInput, taken: ReadonlyArray<SourceKind>): ReadonlyArray<Step> =>
+  STANDING.filter(({ kind }) => taken.includes(kind)).map((source) => async () => source.refresh(deps, input));
 
 const siteWithLibraries = async (deps: RunSyncDeps, input: RunSyncInput, site: SiteRef, alone: boolean): Promise<Result<SourceRun, StepError>> => {
   const drives = await librariesFor(deps, site, input.driveIds, alone);
@@ -667,46 +674,111 @@ const namedNotebook = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Re
   return notebookFromOptions(deps, input, listing.value.sites);
 };
 
-const runNamedTeam = async (deps: RunSyncDeps, input: RunSyncInput, team: TeamSummary): Promise<Result<ReadonlyArray<SourceRun>, RunFailure>> => {
-  const channels = await channelsFor(deps, team, false);
-  if (!channels.ok) return channels;
-  return oneSummary(await syncOneTeam(deps, input, team, channels.value));
-};
+// A run `update` settles on its own.
+const updateRun = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome | undefined> => (input.command === 'update' ? updateEverything(deps, input) : undefined);
 
-// A run the command line settles on its own: `update`, or one of the sources that stand alone.
-const standingRun = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome | undefined> => {
-  if (input.command === 'update') return updateEverything(deps, input);
-  if (input.mailbox === true) return oneSummary(await syncTheMailbox(deps, input));
-  if (input.people === true) return oneSummary(await syncThePeople(deps, input));
-  if (input.calendar === true) return oneSummary(await syncTheCalendar(deps, input));
-  return undefined;
-};
+// What looking up sources the command line names came to: nothing named, a refusal, or the part of
+// the run they add.
+type Found = Result<Partial<Sources>, StepError>;
 
-// What looking up a source named on the command line came to: nothing named, a refusal, or its run.
-const settle = async <T>(found: Result<T, StepError> | undefined, run: (value: T) => Promise<RunOutcome>): Promise<RunOutcome | undefined> => {
+const part = <T>(found: Result<T, StepError> | undefined, into: (value: T) => Partial<Sources>): Found | undefined => {
   if (found === undefined) return undefined;
-  return found.ok ? run(found.value) : found;
+  return found.ok ? ok(into(found.value)) : found;
 };
 
-// The sources the command line can name, looked up in this order: the first one named is the one
-// run, and the picker is never drawn.
-const NAMED: ReadonlyArray<(deps: RunSyncDeps, input: RunSyncInput) => Promise<RunOutcome | undefined>> = [
-  async (deps, input) => settle(await siteFromOptions(deps, input), (site) => runMany(deps, input, { ...NOTHING, sites: [site] })),
-  async (deps, input) => settle(await groupFromOptions(deps, input), (group) => runMany(deps, input, { ...NOTHING, groups: [group] })),
-  async (deps, input) => settle(await todoFromOptions(deps, input), (list) => runMany(deps, input, { ...NOTHING, todoLists: [list] })),
-  // Every channel, without the picker: a team named on the command line is a team meant for a script.
-  async (deps, input) => settle(await teamFromOptions(deps, input), (team) => runNamedTeam(deps, input, team)),
-  async (deps, input) => settle(await namedNotebook(deps, input), async (notebook) => oneSummary(await syncTheNotebook(deps, input, notebook))),
-  async (deps, input) => settle(await listsSiteFromOptions(deps, input), async (site) => oneSummary(await syncTheLists(deps, input, site))),
-  async (deps, input) => settle(await planFromOptions(deps, input), async (plan) => oneSummary(await syncThePlan(deps, input, plan))),
+// A listing asked for by name is a listing the run needs: one that fails stops the run, where the
+// picker would draw without it.
+const listedOrStop = <T>(listed: Result<T, { readonly kind: string; readonly message: string }>, step: string, into: (value: T) => Partial<Sources>): Found =>
+  listed.ok ? ok(into(listed.value)) : failed(step, listed.error.kind, listed.error.message);
+
+const namedStanding = (input: RunSyncInput): Found | undefined => {
+  const named: Readonly<Record<string, boolean | undefined>> = { mailbox: input.mailbox, calendar: input.calendar, people: input.people };
+  const standing = STANDING.map(({ kind }) => kind).filter((kind) => named[kind] === true);
+  return standing.length === 0 ? undefined : ok({ standing });
+};
+
+// Every site of one kind, off the same listing the picker draws: a Loop workspace and a OneDrive are
+// sites underneath, and only their address says which they are.
+const wholeSites = async (deps: RunSyncDeps, input: RunSyncInput, kind: AddressKind): Promise<Found> => {
+  const listing = await listedSites(deps, input);
+  return listing.ok ? ok({ sites: listing.value.sites.filter((site) => kindOf(site) === kind) }) : listing;
+};
+
+const wholeNotebooks = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Found> => {
+  const listing = await listedSites(deps, input);
+  return listing.ok ? listedOrStop(await deps.notebooks.listNotebooks(listing.value.sites), 'listNotebooks', (notebooks) => ({ notebooks })) : listing;
+};
+
+const wholePlans = async (deps: RunSyncDeps): Promise<Found> => {
+  const groups = await deps.groups.listGroups();
+  return groups.ok ? listedOrStop(await deps.plans.listPlans(groups.value), 'listPlans', (plans) => ({ plans })) : failed('listGroups', groups.error.kind, groups.error.message);
+};
+
+type Lookup = (deps: RunSyncDeps, input: RunSyncInput) => Promise<Found | undefined>;
+
+// What each kind taken whole comes to: every one its listing holds.
+const WHOLE: Readonly<Record<WholeKind, Lookup>> = {
+  site: async (deps, input) => wholeSites(deps, input, 'site'),
+  loop: async (deps, input) => wholeSites(deps, input, 'loop'),
+  team: async (deps) => listedOrStop(await deps.teams.listTeams(), 'listTeams', (teams) => ({ teams })),
+  group: async (deps) => listedOrStop(await deps.groups.listGroups(), 'listGroups', (groups) => ({ groups })),
+  todo: async (deps) => listedOrStop(await deps.todo.taskLists(), 'listTaskLists', (todoLists) => ({ todoLists })),
+  notebook: wholeNotebooks,
+  plan: async (deps) => wholePlans(deps),
+};
+
+// The sources the command line can name one by one, and the OneDrive and the sources that stand
+// alone, which are one each.
+const NAMED: ReadonlyArray<Lookup> = [
+  async (deps, input) => part(await siteFromOptions(deps, input), (site) => ({ sites: [site] })),
+  async (deps, input) => part(await groupFromOptions(deps, input), (group) => ({ groups: [group] })),
+  async (deps, input) => part(await todoFromOptions(deps, input), (list) => ({ todoLists: [list] })),
+  async (deps, input) => part(await teamFromOptions(deps, input), (team) => ({ teams: [team] })),
+  async (deps, input) => part(await namedNotebook(deps, input), (notebook) => ({ notebooks: [notebook] })),
+  async (deps, input) => part(await listsSiteFromOptions(deps, input), (site) => ({ lists: [site] })),
+  async (deps, input) => part(await planFromOptions(deps, input), (plan) => ({ plans: [plan] })),
+  async (deps, input) => (input.onedrive === true ? wholeSites(deps, input, 'onedrive') : undefined),
+  async (_deps, input) => namedStanding(input),
 ];
 
-const namedRun = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome | undefined> => {
-  for (const lookup of NAMED) {
-    const ran = await lookup(deps, input);
-    if (ran !== undefined) return ran;
+// A source named twice, by its own flag and again by its kind taken whole, runs once.
+const unique = <T extends { readonly id: string }>(items: ReadonlyArray<T>): ReadonlyArray<T> =>
+  items.filter((item, index) => items.findIndex((other) => other.id === item.id) === index);
+
+const joined = (left: Sources, right: Partial<Sources>): Sources => {
+  const added = { ...NOTHING, ...right };
+  return {
+    sites: orderByKind(unique([...left.sites, ...added.sites])),
+    groups: unique([...left.groups, ...added.groups]),
+    todoLists: unique([...left.todoLists, ...added.todoLists]),
+    teams: unique([...left.teams, ...added.teams]),
+    notebooks: unique([...left.notebooks, ...added.notebooks]),
+    lists: unique([...left.lists, ...added.lists]),
+    plans: unique([...left.plans, ...added.plans]),
+    standing: [...left.standing, ...added.standing],
+  };
+};
+
+// Every source the command line names, gathered before any of them runs, so a name nobody answers
+// to stops the run before it writes anything. Undefined when it names none.
+const gathered = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<Sources, StepError> | undefined> => {
+  const lookups = [...NAMED, ...(input.every ?? []).map((kind) => WHOLE[kind])];
+  let sources: Sources | undefined;
+  for (const lookup of lookups) {
+    const found = await lookup(deps, input);
+    if (found !== undefined && !found.ok) return found;
+    if (found !== undefined) sources = joined(sources ?? NOTHING, found.value);
   }
-  return undefined;
+  return sources === undefined ? undefined : ok(sources);
+};
+
+// Only a site named by itself is asked which libraries to take. A team named on the command line is
+// a team meant for a script, and a kind taken whole is taken whole, so neither asks.
+const namedRun = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome | undefined> => {
+  const sources = await gathered(deps, input);
+  if (sources === undefined || !sources.ok) return sources;
+  const alone = countOf(sources.value) === 1 && (input.siteId !== undefined || input.siteUrl !== undefined);
+  return runMany(deps, input, sources.value, alone);
 };
 
 const pickAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome> => {
@@ -724,9 +796,9 @@ const pickAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunO
   return chosenSummaries;
 };
 
-// The command line first, then a source it names, then the picker.
+// `update` first, then the sources the command line names, then the picker.
 const chooseAndSync = async (deps: RunSyncDeps, input: RunSyncInput): Promise<RunOutcome> =>
-  (await standingRun(deps, input)) ?? (await namedRun(deps, input)) ?? pickAndSync(deps, input);
+  (await updateRun(deps, input)) ?? (await namedRun(deps, input)) ?? pickAndSync(deps, input);
 
 // `--since` first, kept for the runs after it unless this is a dry run, which keeps nothing; then
 // whatever an earlier run kept. Neither leaves the reach undefined: the picker answers that by

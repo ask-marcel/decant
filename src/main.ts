@@ -55,6 +55,8 @@ const run = async (): Promise<number> => {
     mailbox: options.value.mailbox,
     people: options.value.people,
     calendar: options.value.calendar,
+    onedrive: options.value.onedrive,
+    every: options.value.every,
     since: options.value.since,
     maxAgeMinutes: options.value.maxAgeMinutes,
     refresh: options.value.refresh,

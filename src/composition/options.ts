@@ -2,6 +2,7 @@ import type { Result } from '../domain/result.ts';
 import { isKnownZone } from '../domain/zoned-day.ts';
 import { SINCE_SHAPE, parseSince } from '../domain/sync-window.ts';
 import { err, ok } from '../domain/result.ts';
+import type { WholeKind } from '../use-cases/run-sync.ts';
 
 export type Command = 'sync' | 'update';
 
@@ -28,6 +29,9 @@ export type Options = {
   readonly mailbox: boolean;
   readonly people: boolean;
   readonly calendar: boolean;
+  readonly onedrive: boolean;
+  // The kinds of source taken whole, every one of each, in the order the flags came.
+  readonly every: ReadonlyArray<WholeKind>;
   // Asked for the usage and nothing else. A flag rather than a command, because it can be asked
   // beside real work and has to win there: printing the usage and doing nothing is the safe reading
   // of `decant --mailbox --help`, where the alternative is a sync nobody meant to start.
@@ -59,6 +63,8 @@ const DEFAULTS: Options = {
   mailbox: false,
   people: false,
   calendar: false,
+  onedrive: false,
+  every: [],
   help: false,
   timezone: '',
 };
@@ -67,6 +73,18 @@ const DEFAULTS: Options = {
 // typo is refused at the command line: an unknown language reaches Python, throws once per image,
 // and turns a whole sync into "no text" notes while still reporting itself as a success.
 const OCR_LANGUAGES = ['auto', 'ch', 'ch_doc', 'en', 'arabic', 'chinese_cht', 'cyrillic', 'devanagari', 'japan', 'korean', 'ka', 'latin', 'ta', 'te', 'eslav', 'th', 'el'];
+
+// The flags that take a whole kind of source, and the kind each takes. Each takes `all` and nothing
+// else for now: a value leaves room for names later, where a bare flag would not.
+const WHOLE_FLAGS: ReadonlyMap<string, WholeKind> = new Map<string, WholeKind>([
+  ['--sites', 'site'],
+  ['--loop', 'loop'],
+  ['--teams', 'team'],
+  ['--groups', 'group'],
+  ['--todo-lists', 'todo'],
+  ['--notebooks', 'notebook'],
+  ['--plans', 'plan'],
+]);
 
 const FLAGS_WITH_VALUE = new Set([
   '--site-id',
@@ -77,6 +95,7 @@ const FLAGS_WITH_VALUE = new Set([
   '--notebook',
   '--lists',
   '--plan',
+  ...WHOLE_FLAGS.keys(),
   '--drive-id',
   '--max-size-mb',
   '--ocr-lang',
@@ -139,6 +158,15 @@ const withOut = (options: Options, value: string): Result<Options, OptionsError>
 
 type ValueFlag = (options: Options, value: string) => Result<Options, OptionsError>;
 
+// A kind asked for twice is taken once.
+const withWhole = (flag: string, kind: WholeKind): [string, ValueFlag] => [
+  flag,
+  (options, value) => {
+    if (value !== 'all') return err({ kind: 'bad-option', message: `${flag} expects all, got: ${value}` });
+    return ok({ ...options, every: options.every.includes(kind) ? options.every : [...options.every, kind] });
+  },
+];
+
 // What each flag that takes a value does with it, one row a flag. `--max-size-mb` is the one left
 // out: a flag that takes a value and has no row here takes a size.
 const VALUE_FLAGS: ReadonlyMap<string, ValueFlag> = new Map<string, ValueFlag>([
@@ -150,6 +178,7 @@ const VALUE_FLAGS: ReadonlyMap<string, ValueFlag> = new Map<string, ValueFlag>([
   ['--notebook', (options, value) => ok({ ...options, notebookId: value })],
   ['--lists', (options, value) => ok({ ...options, listsSite: value })],
   ['--plan', (options, value) => ok({ ...options, planId: value })],
+  ...[...WHOLE_FLAGS].map(([flag, kind]) => withWhole(flag, kind)),
   ['--drive-id', (options, value) => ok({ ...options, driveIds: [...options.driveIds, value] })],
   ['--ocr-lang', withOcrLang],
   ['--concurrency', withConcurrency],
@@ -170,6 +199,7 @@ const FLAGS: ReadonlyMap<string, Partial<Options>> = new Map<string, Partial<Opt
   ['--mailbox', { mailbox: true }],
   ['--people', { people: true }],
   ['--calendar', { calendar: true }],
+  ['--onedrive', { onedrive: true }],
   ['--yes', { assumeYes: true }],
   ['-y', { assumeYes: true }],
   ['--help', { help: true }],
@@ -230,6 +260,15 @@ export const USAGE = [
   '  --notebook <name>   sync one OneNote notebook, by its name or its id, without the picker',
   '  --lists <site>      sync the lists of one SharePoint site, by its name, id or address, without the picker',
   '  --plan <title>      sync one Planner plan, by its title or its id, without the picker',
+  '  --sites all         sync every SharePoint site with all its libraries (not Loop, not OneDrive)',
+  '  --loop all          sync every Loop workspace',
+  '  --onedrive          sync your OneDrive',
+  '  --teams all         sync every Team with all its channels',
+  '  --groups all        sync every group inbox',
+  '  --todo-lists all    sync every To Do list',
+  '  --notebooks all     sync every OneNote notebook',
+  '  --plans all         sync every Planner plan',
+  '                      source flags combine: decant --teams all --sites all --mailbox syncs all three',
   '  --refresh           list the sites afresh instead of showing the ones last seen',
   '  --ocr-lang <code>   force one language for images and scanned PDFs (default auto, per image)',
   '  --timezone <zone>   IANA zone the knowledge base counts its days in, and keep it for every later run',
