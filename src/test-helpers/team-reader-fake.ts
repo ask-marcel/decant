@@ -19,12 +19,20 @@ export type TeamReaderSeed = {
   readonly failPosts?: ReadonlyArray<string>;
 };
 
-export type TeamReaderFake = TeamReader & { readonly calls: Array<string> };
+// `days` is the day each read from the start was asked from, `all` when none: kept beside the calls,
+// so a test about the day reads it here and every other test reads the calls as before.
+export type TeamReaderFake = TeamReader & { readonly calls: Array<string>; readonly days: Array<string> };
+
+// A read from a cursor is asked from no day: the cursor holds where it stands.
+const dayAsked = (channelId: string, cursor: string | undefined, since: string | undefined): ReadonlyArray<string> =>
+  cursor === undefined ? [`${channelId}:${since ?? 'all'}`] : [];
 
 export const createTeamReaderFake = (seed: TeamReaderSeed = {}): TeamReaderFake => {
   const calls: string[] = [];
+  const days: string[] = [];
   return {
     calls,
+    days,
     listTeams: async () => {
       calls.push('listTeams');
       return seed.failTeams === undefined ? ok(seed.teams ?? []) : err(seed.failTeams);
@@ -33,8 +41,9 @@ export const createTeamReaderFake = (seed: TeamReaderSeed = {}): TeamReaderFake 
       calls.push(`listChannels:${teamId}`);
       return seed.failChannels === undefined ? ok(seed.channels?.[teamId] ?? []) : err(seed.failChannels);
     },
-    postsDelta: async (teamId, channelId, cursor) => {
+    postsDelta: async (teamId, channelId, cursor, since) => {
       calls.push(`postsDelta:${channelId}:${cursor ?? 'fresh'}`);
+      days.push(...dayAsked(channelId, cursor, since));
       if (seed.failDelta !== undefined) return err(seed.failDelta);
       const deltaLink = seed.deltaLinks?.[channelId];
       const posts = (cursor === undefined ? undefined : seed.postsFrom?.[cursor]) ?? seed.posts?.[channelId] ?? [];

@@ -55,6 +55,21 @@ describe('reading a Microsoft Team through the ask-marcel library', () => {
     expect(recorded[0]).toEqual({ name: 'list-team-channels', params: { teamId: 'team-1' } });
   });
 
+  // Graph takes only "changed after" on this delta, so the instant sent is the last one before the day:
+  // a post changed at the first instant of the day is then still in.
+  it('a first read from a day asks for the posts changed after the last instant before it, and a read from a cursor sends no day', async () => {
+    const { reader, recorded } = readerFor({
+      'list-team-channel-messages-delta': [ok({ value: [], '@odata.deltaLink': 'https://graph.microsoft.com/v1.0/x?$deltatoken=abc' })],
+      'next-page': [ok({ value: [], '@odata.deltaLink': 'https://graph.microsoft.com/v1.0/x?$deltatoken=def' })],
+    });
+
+    await reader.postsDelta('team-1', 'c', undefined, '2026-11-12');
+    await reader.postsDelta('team-1', 'c', 'https://graph.microsoft.com/v1.0/x?$deltatoken=abc', '2026-11-12');
+
+    expect(recorded[0]).toEqual({ name: 'list-team-channel-messages-delta', params: { teamId: 'team-1', channelId: 'c', top: '50', since: '2026-11-11T23:59:59.999Z' } });
+    expect(recorded[1]).toEqual({ name: 'next-page', params: { url: 'https://graph.microsoft.com/v1.0/x?$deltatoken=abc' } });
+  });
+
   it('a first read asks the channel for everything, fifty posts a page, and a later one follows the saved cursor instead', async () => {
     const { reader, recorded } = readerFor({
       'list-team-channel-messages-delta': [ok({ value: [POST], '@odata.deltaLink': 'https://graph.microsoft.com/v1.0/teams/t/channels/c/messages/delta?%24deltatoken=abc' })],

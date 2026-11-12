@@ -244,12 +244,12 @@ const cursorAfter = (before: Progressing, after: Progressing, deltaLink: string 
 
 // A day earlier than the one the cursor was taken under: what the cursor passed over never comes back
 // through it. It is read out first all the same, so a post deleted since the last run is still put
-// aside, then the channel is read whole for what the narrower reach passed over; a post already
-// filed is left as it is.
+// aside, then the channel is read again from the new day for what the narrower reach passed over; a
+// post already filed is left as it is.
 const postsFor = async (deps: SyncTeamDeps, input: SyncTeamInput, channel: ChannelSummary, known: ChannelState | undefined): Promise<Result<PostsDelta, TeamReaderError>> => {
-  const drained = await deps.reader.postsDelta(input.team.id, channel.id, known?.deltaLink);
+  const drained = await deps.reader.postsDelta(input.team.id, channel.id, known?.deltaLink, input.since);
   if (!drained.ok || !widens(known?.since, input.since)) return drained;
-  const whole = await deps.reader.postsDelta(input.team.id, channel.id, undefined);
+  const whole = await deps.reader.postsDelta(input.team.id, channel.id, undefined, input.since);
   return whole.ok ? ok({ ...whole.value, posts: latestById([...drained.value.posts, ...whole.value.posts]) }) : whole;
 };
 

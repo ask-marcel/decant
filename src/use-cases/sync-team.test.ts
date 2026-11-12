@@ -442,6 +442,28 @@ describe('reaching back only as far as the day', () => {
     ]);
   });
 
+  it('a channel with no cursor and a day asks Graph only for the posts changed from that day on', async () => {
+    const done = await run({ reader: POSTS, since: '2025-01-01' });
+
+    expect(done.reader.days).toEqual([`${GENERAL.id}:2025-01-01`]);
+  });
+
+  it('a channel with no cursor that reaches everything sends no day, and a channel with a cursor reads on from it', async () => {
+    const everything = await run({ reader: POSTS });
+    const later = await run({ files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } }, reader: POSTS, since: '2025-06-01' });
+
+    expect(everything.reader.days).toEqual([`${GENERAL.id}:all`]);
+    expect(later.reader.days).toHaveLength(0);
+    expect(later.reader.calls).toContain(`postsDelta:${GENERAL.id}:https://graph/delta?token=1`);
+  });
+
+  it('a day moved earlier reads the cursor out, then reads the channel again from the new day and not from its first post', async () => {
+    const done = await run({ files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } }, reader: POSTS, since: '2025-01-01' });
+
+    expect(done.reader.calls.slice(0, 2)).toEqual([`postsDelta:${GENERAL.id}:https://graph/delta?token=1`, `postsDelta:${GENERAL.id}:fresh`]);
+    expect(done.reader.days).toEqual([`${GENERAL.id}:2025-01-01`]);
+  });
+
   it('moving the day earlier reads the channel from the start again, and writes only the posts it had left out', async () => {
     const done = await run({ files: { texts: { [STATE_PATH]: cursoredUnder('2025-06-01') } }, reader: POSTS, since: '2025-01-01' });
 

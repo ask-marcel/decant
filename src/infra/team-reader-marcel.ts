@@ -26,6 +26,10 @@ const namedOf = (raw: unknown): ReadonlyArray<{ readonly id: string; readonly na
     return found === undefined ? [] : [found];
   });
 
+// The one filter this delta takes is "last changed after an instant", where the run keeps a post last
+// changed on or after a day. The last instant before the day says the same thing to Graph.
+const changedFrom = (since: string | undefined): { readonly since?: string } => (since === undefined ? {} : { since: new Date(Date.parse(since) - 1).toISOString() });
+
 export const createTeamReaderFromCall = (call: MarcelCall): TeamReader => {
   const page = async (name: string, params: Record<string, string>): Promise<Result<PostsDeltaPage, TeamReaderError>> => {
     const raw = await call(name, params);
@@ -44,12 +48,14 @@ export const createTeamReaderFromCall = (call: MarcelCall): TeamReader => {
     // Followed to its end before anything is handed back: a delta cut short would hand over a cursor
     // standing past posts nobody has read. The `seen` set is the guard the other sweeps keep, since
     // a cursor pointing at itself would otherwise page forever.
-    postsDelta: async (teamId, channelId, cursor) => {
+    postsDelta: async (teamId, channelId, cursor, since) => {
       const posts: ChannelPost[] = [];
       const seen = new Set<string>();
       let deltaLink: string | undefined;
       let next: { readonly name: string; readonly params: Record<string, string> } | undefined =
-        cursor === undefined ? { name: 'list-team-channel-messages-delta', params: { teamId, channelId, top: PAGE_SIZE } } : { name: 'next-page', params: { url: cursor } };
+        cursor === undefined
+          ? { name: 'list-team-channel-messages-delta', params: { teamId, channelId, top: PAGE_SIZE, ...changedFrom(since) } }
+          : { name: 'next-page', params: { url: cursor } };
       while (next !== undefined) {
         const answered: Result<PostsDeltaPage, TeamReaderError> = await page(next.name, next.params);
         if (!answered.ok) return answered;

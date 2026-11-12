@@ -20,6 +20,8 @@ export type PostsDelta = { readonly posts: ReadonlyArray<ChannelPost>; readonly 
 export type TeamReader = {
   readonly listTeams: () => Promise<Result<ReadonlyArray<TeamSummary>, TeamReaderError>>;
   readonly listChannels: (teamId: string) => Promise<Result<ReadonlyArray<ChannelSummary>, TeamReaderError>>;
-  readonly postsDelta: (teamId: string, channelId: string, cursor: string | undefined) => Promise<Result<PostsDelta, TeamReaderError>>;
+  // With no cursor and a day, Graph is asked only for the posts last changed on or after it. A cursor
+  // already holds where it stands, so the day is not sent with one.
+  readonly postsDelta: (teamId: string, channelId: string, cursor: string | undefined, since?: string) => Promise<Result<PostsDelta, TeamReaderError>>;
   readonly postMarkdown: (teamId: string, channelId: string, postId: string) => Promise<Result<string, TeamReaderError>>;
 };
