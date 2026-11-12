@@ -43,6 +43,10 @@ export const isBefore = (moment: string, day: string | undefined): boolean => mo
 // day recorded was taken reaching everything, which nothing can widen.
 export const widens = (recorded: string | undefined, day: string | undefined): boolean => recorded !== undefined && (day === undefined || day < recorded);
 
+// Whether a run reaching back to `day` reaches less far than the one a cursor was taken under. A
+// cursor with no day recorded was taken reaching everything, which any day narrows.
+export const narrows = (recorded: string | undefined, day: string | undefined): boolean => day !== undefined && (recorded === undefined || recorded < day);
+
 // What a cursor read out and a whole read say together: one entry per id, the whole read's where both
 // have it, since it is the later of the two. What only the cursor saw, a deletion, stays.
 export const latestById = <T extends { readonly id: string }>(items: ReadonlyArray<T>): ReadonlyArray<T> => [...new Map(items.map((item) => [item.id, item])).values()];

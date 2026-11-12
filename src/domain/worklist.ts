@@ -47,6 +47,12 @@ const retriedWork = (owed: RetryLedger, items: ReadonlyArray<DriveItem>): Readon
     .map((entry) => ({ kind: 'convert', item: listed.get(entry.item.id) ?? entry.item }));
 };
 
+// What a queue taken under an earlier day still holds under a later one: a file never filed that was
+// last edited before the day is dropped, as a sweep under that day would have left it out. A file
+// already filed and a file to put aside stay, whatever their day.
+export const withinReach = (pending: ReadonlyArray<WorkItem>, manifest: Manifest, since: string | undefined): ReadonlyArray<WorkItem> =>
+  pending.filter((work) => work.kind !== 'convert' || manifest[work.item.id] !== undefined || !isBefore(work.item.lastModified, since));
+
 const sortKey = (work: WorkItem): string => (work.kind === 'archive' ? ` ${work.itemId}` : `${work.item.lastModified} ${work.item.id}`);
 
 // Oldest change first, so a run stopped halfway resumes exactly where it left off, with the id as

@@ -29,8 +29,8 @@ import {
 import { parseJson } from '../domain/utilities/parse-json.ts';
 import { forgetSwept, givenUp, nextFailure } from '../domain/retry-policy.ts';
 import type { RetryEntry } from '../domain/retry-policy.ts';
-import { latestById, widens } from '../domain/sync-window.ts';
-import { buildWorklist, goneFromListing } from '../domain/worklist.ts';
+import { latestById, narrows, widens } from '../domain/sync-window.ts';
+import { buildWorklist, goneFromListing, withinReach } from '../domain/worklist.ts';
 import type { ArchiveCut, ReportEntry, ReportNotes, ReportRun } from '../domain/report.ts';
 import { appendReportRun, cutArchiveEntry, hasSomethingToReport, skipReason } from '../domain/report.ts';
 import type { ManifestEntry, WorkItem } from '../domain/worklist.ts';
@@ -300,12 +300,32 @@ const gaveUpNotes = (before: DriveState | undefined, after: DriveState | undefin
     .map(noteOf);
 };
 
+// A queue an earlier run left, under the day this run reaches back to. A later day than the one the
+// queue was taken under drops what that day leaves out, and is recorded in its place: a return to
+// the earlier day then reads the library whole, which brings back what was dropped.
+const queueUnder = (held: DriveState, since: string | undefined): DriveState =>
+  held.pending.length === 0 || !narrows(held.since, since) ? held : { ...held, since, pending: withinReach(held.pending, held.items, since) };
+
+// The queue goes on as it stands, with no question to Graph. One the day cut down is saved first, so
+// a run stopped again resumes the shorter queue.
+const resumeQueue = async (
+  deps: SyncSiteDeps,
+  input: SyncSiteInput,
+  state: SiteState,
+  statePath: string,
+  queue: { readonly driveId: string; readonly held: DriveState; readonly known: DriveState }
+): Promise<Result<{ state: SiteState }, StepError>> => {
+  deps.logger.info('sync.resuming', { driveId: queue.driveId, pending: queue.known.pending.length });
+  if (queue.known === queue.held) return ok({ state });
+  const next = withDrive(state, queue.driveId, queue.known);
+  const saved = await save(deps.files, statePath, next, input.dryRun);
+  return saved.ok ? ok({ state: next }) : saved;
+};
+
 const queueWork = async (deps: SyncSiteDeps, input: SyncSiteInput, drive: DriveSummary, state: SiteState, statePath: string): Promise<Result<{ state: SiteState }, StepError>> => {
-  const known: DriveState = state.drives[drive.id] ?? { name: drive.name, pending: [], items: {}, retry: {} };
-  if (known.pending.length > 0) {
-    deps.logger.info('sync.resuming', { driveId: drive.id, pending: known.pending.length });
-    return ok({ state });
-  }
+  const held: DriveState = state.drives[drive.id] ?? { name: drive.name, pending: [], items: {}, retry: {} };
+  const known = queueUnder(held, input.since);
+  if (known.pending.length > 0) return resumeQueue(deps, input, state, statePath, { driveId: drive.id, held, known });
   const swept = await sweepFor(deps, drive.id, known, input.since);
   if (!swept.ok) return { ok: false, error: { step: 'enumerate', cause: swept.error.kind, message: swept.error.message } };
   deps.logger.info('sync.enumerated', { driveId: drive.id, items: swept.value.items.length, skipped: swept.value.skipped });

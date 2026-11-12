@@ -1958,3 +1958,111 @@ describe('an archive the library read in part', () => {
     expect(done.notes?.skipped).toEqual([{ path: 'Projets/Livraison.zip, file 2', reason: 'the converter reads the first 1 files of an archive' }]);
   });
 });
+
+// A run stopped part way keeps its queue, and the next run goes on with it. Under a later day the
+// queue would otherwise bring in every file the earlier, wider day had reached.
+describe('a queue resumed under a later day', () => {
+  const DOCS = 'kb/SharePoint sites/Espace Contoso/Documents';
+  const OLD = item({ id: '01OLD', name: 'Old.docx', path: 'Old.docx', lastModified: '2026-10-20T09:00:00Z' });
+  const NEW = item({ id: '01NEW', name: 'New.docx', path: 'New.docx', lastModified: '2026-11-12T09:00:00Z' });
+  const queuedUnder = (since: string, drive: Partial<DriveState>): string =>
+    serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-10-21T09:00:00Z',
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', since, pending: [], items: {}, retry: {}, folders: {}, ...drive } },
+    });
+  const both = [
+    { kind: 'convert' as const, item: OLD },
+    { kind: 'convert' as const, item: NEW },
+  ];
+  const sinceAfter = (files: FilesFake): unknown => JSON.parse(files.written.get(STATE_PATH) ?? '{}').drives['b!one'].since;
+
+  it('a queue continued with a later day drops the files never filed and last edited before that day, and records the later day', async () => {
+    const { summary, files } = await run({ files: { texts: { [STATE_PATH]: queuedUnder('2026-10-12', { pending: both }) } }, since: '2026-11-12' });
+
+    expect(summary.converted).toBe(1);
+    expect(files.written.has(`${DOCS}/New.docx.md`)).toBe(true);
+    expect(files.written.has(`${DOCS}/Old.docx.md`)).toBe(false);
+    expect(sinceAfter(files)).toBe('2026-11-12');
+  });
+
+  it('a file already filed and a file to put aside stay in the queue, whatever their day', async () => {
+    const filed = item({ id: '01FILED', name: 'Filed.docx', path: 'Filed.docx', lastModified: '2026-10-20T09:00:00Z', cTag: 'c2' });
+    const pending = [
+      { kind: 'convert' as const, item: filed },
+      { kind: 'archive' as const, itemId: '01GONE', outputs: [`${DOCS}/Gone.docx.md`] },
+      { kind: 'convert' as const, item: OLD },
+    ];
+    const items = {
+      '01FILED': { path: 'Filed.docx', cTag: 'c1', outputs: [`${DOCS}/Filed.docx.md`] },
+      '01GONE': { path: 'Gone.docx', cTag: 'c1', outputs: [`${DOCS}/Gone.docx.md`] },
+    };
+
+    const { summary, files } = await run({
+      files: { texts: { [STATE_PATH]: queuedUnder('2026-10-12', { pending, items }), [`${DOCS}/Filed.docx.md`]: 'the first version', [`${DOCS}/Gone.docx.md`]: 'the gone one' } },
+      since: '2026-11-12',
+    });
+
+    expect(summary).toMatchObject({ converted: 1, archived: 1 });
+    expect(files.written.has(`${DOCS}/Old.docx.md`)).toBe(false);
+  });
+
+  it('a queue that the later day empties lets the run sweep the library in the same run', async () => {
+    const { summary, reader, files } = await run({
+      files: { texts: { [STATE_PATH]: queuedUnder('2026-10-12', { pending: [{ kind: 'convert', item: OLD }] }) } },
+      reader: { pages: [{ items: [NEW], skipped: 0, deltaLink: 'cursor-2' }] },
+      since: '2026-11-12',
+    });
+
+    expect(reader.calls).toContain('deltaFrom:cursor-1');
+    expect(summary.converted).toBe(1);
+    expect(files.written.has(`${DOCS}/New.docx.md`)).toBe(true);
+    expect(stateAfter(files).drives['b!one']?.deltaLink).toBe('cursor-2');
+  });
+
+  it('a return to the earlier day then reads the library whole, and converts what the later day dropped', async () => {
+    const narrowed = await run({ files: { texts: { [STATE_PATH]: queuedUnder('2026-10-12', { pending: both }) } }, since: '2026-11-12' });
+
+    const widened = await run({
+      files: { texts: Object.fromEntries(narrowed.files.written) },
+      reader: {
+        pages: [
+          { items: [], skipped: 0, deltaLink: 'cursor-2' },
+          { items: [OLD, NEW], skipped: 0, deltaLink: 'cursor-3' },
+        ],
+      },
+      since: '2026-10-12',
+    });
+
+    expect(widened.reader.calls.filter((call) => call === 'delta' || call.startsWith('deltaFrom'))).toEqual(['deltaFrom:cursor-1', 'delta']);
+    expect(widened.files.written.has(`${DOCS}/Old.docx.md`)).toBe(true);
+    expect(sinceAfter(widened.files)).toBe('2026-10-12');
+  });
+
+  it('a queue taken reaching everything drops the old files under a day, and a queue continued reaching everything does not change', async () => {
+    const reachedAll = serializeSiteState({
+      version: 1,
+      source: { kind: 'site', ...site },
+      lastRun: '2026-10-21T09:00:00Z',
+      drives: { 'b!one': { name: 'Documents', deltaLink: 'cursor-1', pending: both, items: {}, retry: {}, folders: {} } },
+    });
+
+    const underADay = await run({ files: { texts: { [STATE_PATH]: reachedAll } }, since: '2026-11-12' });
+    const everything = await run({ files: { texts: { [STATE_PATH]: queuedUnder('2026-10-12', { pending: both }) } } });
+
+    expect(underADay.summary.converted).toBe(1);
+    expect(sinceAfter(underADay.files)).toBe('2026-11-12');
+    expect(everything.summary.converted).toBe(2);
+    expect(sinceAfter(everything.files)).toBe('2026-10-12');
+  });
+
+  it('a queue continued with the same day or an earlier day does not change', async () => {
+    for (const since of ['2026-10-12', '2026-09-01']) {
+      const { summary, files } = await run({ files: { texts: { [STATE_PATH]: queuedUnder('2026-10-12', { pending: both }) } }, since });
+
+      expect(summary.converted).toBe(2);
+      expect(sinceAfter(files)).toBe('2026-10-12');
+    }
+  });
+});
