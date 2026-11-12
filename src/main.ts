@@ -32,6 +32,7 @@ const run = async (): Promise<number> => {
       ocr: options.value.ocr,
       interactive: options.value.command === 'sync',
       timezone: options.value.timezone,
+      convertTimeoutSeconds: options.value.convertTimeoutSeconds,
       machineTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     },
     createBunFiles()

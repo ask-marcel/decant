@@ -555,6 +555,14 @@ describe('keeping what was attached to a mail', () => {
     expect(outcome).toEqual({ kind: 'failed', reason: 'transient: timed out' });
   });
 
+  it('a workbook whose conversion was stopped at the time limit fails alone with that reason, and nothing is written for it', async () => {
+    const stopped = { kind: 'permanent', message: 'the conversion took longer than 120 s and was stopped' } as const;
+    const { outcome, files } = await run({ name: 'Raw Data.xlsx' }, { reader: { failCalls: { attachmentMarkdown: stopped } } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'permanent: the conversion took longer than 120 s and was stopped' });
+    expect([...files.written.keys()]).toHaveLength(0);
+  });
+
   it('a meeting invitation is read down to the meeting, not kept as the file it came in', async () => {
     const { outcome, files } = await run({ name: 'invite.ics', contentType: 'text/calendar' }, { reader: { attachmentTexts: { att1: ICS } } });
     const written = files.written.get(`${FOLDER}/invite.ics.md`) ?? '';

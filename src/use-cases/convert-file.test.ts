@@ -215,6 +215,14 @@ describe('converting one document out of a library', () => {
     expect(files.written.get('kb/Espace Contoso/Documents/Projets/Budget.xlsx.md')).toContain(NO_TEXT_NOTE);
   });
 
+  it('a workbook in a library whose conversion was stopped at the time limit fails alone with that reason, and nothing is written for it', async () => {
+    const stopped = { kind: 'permanent', message: 'the conversion took longer than 120 s and was stopped' } as const;
+    const { outcome, files } = await run({ name: 'Raw Data.xlsx', path: 'Projets/Raw Data.xlsx' }, { reader: { failMarkdown: stopped } });
+
+    expect(outcome).toEqual({ kind: 'failed', reason: 'permanent: the conversion took longer than 120 s and was stopped' });
+    expect([...files.written.keys()]).toHaveLength(0);
+  });
+
   it('a workbook in a library that cannot be written is reported rather than left as text alone', async () => {
     const { outcome } = await run({ name: 'Budget.xlsx' }, { files: { failWritesMatching: 'Budget.xlsx' } });
 
