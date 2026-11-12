@@ -12,4 +12,5 @@ export type PickerView = {
   readonly reportPointer: (left: { readonly skipped: number; readonly failed: number }, path: string) => string;
   readonly sinceQuestion: () => string;
   readonly sinceRefused: (answer: string) => string;
+  readonly stillFresh: (minutesAgo: number, maxAgeMinutes: number) => string;
 };

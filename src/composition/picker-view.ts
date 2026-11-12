@@ -6,6 +6,7 @@ import {
   renderSinceRefused,
   renderSitePicker,
   renderSourceFailed,
+  renderStillFresh,
   renderSummary,
 } from '../presenter/render-picker.ts';
 import type { PickerView } from '../use-cases/ports/picker-view.ts';
@@ -20,4 +21,5 @@ export const pickerView: PickerView = {
   reportPointer: renderReportPointer,
   sinceQuestion: renderSinceQuestion,
   sinceRefused: renderSinceRefused,
+  stillFresh: renderStillFresh,
 };

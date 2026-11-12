@@ -509,20 +509,20 @@ describe('a run that finds nothing new', () => {
   };
 
   // The first run with nothing new still says so: the report names what the last run did, and the
-  // run before it converted a file. From the second on, the cursor alone moves.
-  it('a second update in a row with nothing new at the source changes no file but the cursor beside the state', async () => {
+  // run before it converted a file. From the second on, only the cursor and the time of the last update move.
+  it('a second update in a row with nothing new at the source changes no file but the cursor beside the state and the time of the last update', async () => {
     const files = createFilesFake({ directories: { kb: ['SharePoint sites'], 'kb/SharePoint sites': ['Espace Contoso'] }, texts: { [STATE]: seeded } });
     await updateAt(files, [{ items: [contract], skipped: 0, deltaLink: 'cursor-1' }], '2026-10-12T08:00:00Z');
     const converted = new Map(files.written);
     await updateAt(files, [{ items: [], skipped: 0, deltaLink: 'cursor-2' }], '2026-10-13T08:00:00Z');
     const changedBy = (before: ReadonlyMap<string, string>): ReadonlyArray<string> => [...files.written].filter(([path, text]) => before.get(path) !== text).map(([path]) => path);
 
-    expect(changedBy(converted)).toEqual(['kb/SharePoint sites/Espace Contoso/.sync-cursor.json', 'kb/_sync-report.md']);
+    expect(changedBy(converted)).toEqual(['kb/SharePoint sites/Espace Contoso/.sync-cursor.json', 'kb/_sync-report.md', 'kb/.last-update.json']);
 
     const quiet = new Map(files.written);
     await updateAt(files, [{ items: [], skipped: 0, deltaLink: 'cursor-3' }], '2026-10-14T08:00:00Z');
 
-    expect(changedBy(quiet)).toEqual(['kb/SharePoint sites/Espace Contoso/.sync-cursor.json']);
+    expect(changedBy(quiet)).toEqual(['kb/SharePoint sites/Espace Contoso/.sync-cursor.json', 'kb/.last-update.json']);
   });
 });
 

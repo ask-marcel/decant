@@ -48,6 +48,8 @@ import type { Ocr } from '../use-cases/ports/ocr.ts';
 import type { Progress } from '../use-cases/ports/progress.ts';
 import type { Prompt } from '../use-cases/ports/prompt.ts';
 import { createRunSync } from '../use-cases/run-sync.ts';
+import { createUpdateWhenStale } from '../use-cases/update-when-stale.ts';
+import type { UpdateWhenStale } from '../use-cases/update-when-stale.ts';
 import type { RunSync } from '../use-cases/run-sync.ts';
 import { createRenderThread } from '../use-cases/render-thread.ts';
 import { createSyncGroup } from '../use-cases/sync-group.ts';
@@ -73,7 +75,7 @@ import { SETTINGS_FILE, keepZone } from './kept-zone.ts';
 import { pickerView } from './picker-view.ts';
 
 export type BuiltDeps = {
-  readonly runSync: RunSync;
+  readonly runSync: UpdateWhenStale;
   readonly logger: Logger;
 };
 
@@ -328,10 +330,11 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // Kept before the run starts, so a knowledge base made before the zone was kept keeps it from the
   // next run on, whatever that run does. The files that would not move under the archive are moved
   // again before any source writes. A dry run keeps and moves nothing.
-  const runSync: RunSync = async (input) => {
+  const runAll: RunSync = async (input) => {
     if (!input.dryRun) await keepZone(files, logger, config.kbRoot, config.timezone);
     if (!input.dryRun) await ledger.retry();
     return run(input);
   };
+  const runSync = createUpdateWhenStale({ runSync: runAll, files, clock, logger, prompt, view: pickerView, kbRoot: config.kbRoot });
   return { logger, runSync };
 };

@@ -83,3 +83,6 @@ export const renderSinceQuestion = (): string =>
   ].join('\n');
 
 export const renderSinceRefused = (answer: string): string => `Not a day: ${answer}. Answer with ${SINCE_SHAPE}.`;
+
+export const renderStillFresh = (minutesAgo: number, maxAgeMinutes: number): string =>
+  `The last update started ${minutesAgo} min ago, within --max-age ${maxAgeMinutes}: nothing to do.`;
