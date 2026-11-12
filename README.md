@@ -95,6 +95,20 @@ The exit code tells a script how the run ended:
 A script that copies the knowledge base after each run (a backup, or a commit to git) can continue
 after 0 and after 3.
 
+An agent can start an update before each question, and use `--max-age` to prevent too many updates:
+
+```bash
+decant update --max-age 60
+```
+
+If the last update started less than 60 minutes before, decant does nothing and ends with code 0. It
+does not connect to Microsoft 365 and does not change `kb/_sync-report.md`. Each update that gets to
+the end writes its start time in `kb/.last-update.json`, also an update with failed items (code 3)
+and an update with no `--max-age`. A stopped update and a dry run do not write it. Thus a scheduled
+`update` early in the day lets the checks of the agent find a recent update. If
+`kb/.last-update.json` is missing, cannot be read, or gives a time after the time of the machine,
+the update runs.
+
 ### How far back
 
 The first run that has something to sync asks how far back to reach: a day such as `2025-01-01`, or
@@ -161,6 +175,7 @@ A dry run keeps nothing. The change does not move a thread folder that is alread
 | `--notebook <name>` | Sync one OneNote notebook without the picker, by its name or its id |
 | `--lists <site>` | Sync the lists of one SharePoint site without the picker, by its name, its id or its address |
 | `--plan <title>` | Sync one Planner plan without the picker, by its title among the plans listed or by its id |
+| `--max-age <minutes>` | Only with `update`: do nothing if the last update started less than this number of minutes before |
 | `--since <day\|all>` | Reach back to this day (`2026-01-31`), or through everything, and keep it for every later run (see How far back) |
 | `--out <folder>` | Write the knowledge base to this folder (default `kb`). This option has priority over `KB_ROOT`. Use the same folder for each run, because the sync state is in that folder |
 | `--dry-run` | Report what would be done and write nothing |
@@ -176,6 +191,7 @@ A dry run keeps nothing. The change does not move a thread folder that is alread
 ```
 kb/
   .decant.json                      how far back the runs reach (a day, or all), and the time zone
+  .last-update.json                 the start time of the last update that got to the end
   _sync-report.md                   what the last run left behind, every source in one file
   .sync-aside.json                  files let go that did not move to _archive/ (see Re-running)
   _archive/2026-10-13/...           the earlier copy of each file, under the day of the run that
@@ -1320,9 +1336,10 @@ decant does not read, write or move a file outside the folder of the kb. An entr
 `kb/.sync-aside.json` that points outside this folder stays in the list, and the report names it.
 Move that file to `_archive/` yourself, or remove the entry from the list.
 
-A run that finds nothing new at the source changes no file in `kb/`, with one exception: the
-`.sync-cursor.json` beside each `.sync-state.json`. That file holds the time of the last run and the
-delta cursors, which change on each run. If the cursor file is lost or does not agree with the
+A run that finds nothing new at the source changes no file in `kb/`, with two exceptions. The first
+is the `.sync-cursor.json` beside each `.sync-state.json`. That file holds the time of the last run
+and the delta cursors, which change on each run. The second is `kb/.last-update.json`, which each
+`update` that gets to the end writes (see Run). If the cursor file is lost or does not agree with the
 state, the next run reads the source whole one time. For a library, decant then also moves to
 `_archive/` each recorded document that is not in the new list.
 

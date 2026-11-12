@@ -31,6 +31,8 @@ export type Options = {
   // of `decant --mailbox --help`, where the alternative is a sync nobody meant to start.
   readonly help: boolean;
   readonly since?: string;
+  // An update that finished less than this many minutes ago makes this one do nothing.
+  readonly maxAgeMinutes?: number;
   // The folder the knowledge base is written to. None means the configuration decides, which reads
   // `KB_ROOT` and falls back to `kb`.
   readonly out?: string;
@@ -78,6 +80,7 @@ const FLAGS_WITH_VALUE = new Set([
   '--ocr-lang',
   '--concurrency',
   '--since',
+  '--max-age',
   '--timezone',
   '--out',
 ]);
@@ -102,6 +105,12 @@ const withConcurrency = (options: Options, value: string): Result<Options, Optio
   const count = Number(value);
   if (!Number.isInteger(count) || count < 1) return err({ kind: 'bad-option', message: `--concurrency expects a whole number of at least 1, got: ${value}` });
   return ok({ ...options, concurrency: count });
+};
+
+const withMaxAge = (options: Options, value: string): Result<Options, OptionsError> => {
+  const minutes = Number(value);
+  if (!Number.isInteger(minutes) || minutes < 1) return err({ kind: 'bad-option', message: `--max-age expects a whole number of minutes, at least 1, got: ${value}` });
+  return ok({ ...options, maxAgeMinutes: minutes });
 };
 
 // A day, not a moment, or all: what the run reaches back to, kept for every run after it.
@@ -136,6 +145,7 @@ const VALUE_FLAGS: ReadonlyMap<string, ValueFlag> = new Map<string, ValueFlag>([
   ['--ocr-lang', withOcrLang],
   ['--concurrency', withConcurrency],
   ['--since', withSince],
+  ['--max-age', withMaxAge],
   ['--timezone', withTimezone],
   ['--out', withOut],
 ]);
@@ -168,6 +178,10 @@ const parseToken = (options: Options, token: string, value: string | undefined):
   return value === undefined ? err({ kind: 'bad-option', message: `${token} expects a value` }) : withValue(options, token, value);
 };
 
+// Checked once every token is read, since `--max-age 60 update` names the command after the flag.
+const checked = (options: Options): Result<Options, OptionsError> =>
+  options.maxAgeMinutes !== undefined && options.command !== 'update' ? err({ kind: 'bad-option', message: '--max-age works only with update' }) : ok(options);
+
 export const parseOptions = (argv: ReadonlyArray<string>): Result<Options, OptionsError> => {
   let options = DEFAULTS;
   for (let index = 0; index < argv.length; index += 1) {
@@ -177,7 +191,7 @@ export const parseOptions = (argv: ReadonlyArray<string>): Result<Options, Optio
     options = parsed.value;
     if (FLAGS_WITH_VALUE.has(token)) index += 1;
   }
-  return ok(options);
+  return checked(options);
 };
 
 export const USAGE = [
@@ -192,6 +206,7 @@ export const USAGE = [
   '  --calendar          sync your Outlook calendar without showing the picker',
   '  --since <day|all>   reach back to this day, or through everything, and keep it for every later run',
   '                      a date as YYYY-MM-DD, not a count of days: --since 2026-01-31, or --since all',
+  '  --max-age <minutes> with update: do nothing if the last update started less than this many minutes ago',
   '  --out <folder>      write the knowledge base to this folder (default kb, or KB_ROOT)',
   '  --dry-run           show what would be done, write nothing',
   '  --max-size-mb <n>   skip files larger than this (default 50)',

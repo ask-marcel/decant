@@ -55,6 +55,7 @@ const run = async (): Promise<number> => {
     people: options.value.people,
     calendar: options.value.calendar,
     since: options.value.since,
+    maxAgeMinutes: options.value.maxAgeMinutes,
     refresh: options.value.refresh,
   });
   if (!summaries.ok) printLine(`failed at ${summaries.error.step}: ${summaries.error.message}`);

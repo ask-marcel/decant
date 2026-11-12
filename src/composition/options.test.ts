@@ -202,3 +202,23 @@ describe('reading what the operator asked for', () => {
     expect(parse('--max-size-mb -5').ok).toBe(false);
   });
 });
+
+describe('skipping an update that ran a short time ago', () => {
+  it('an update with a max age of 60 skips a run less than 60 minutes after the last one', () => {
+    expect(parse('update --max-age 60')).toMatchObject({ ok: true, value: { command: 'update', maxAgeMinutes: 60 } });
+  });
+
+  it('a max age that is not a whole number of minutes, at least 1, is refused', () => {
+    for (const value of ['0', '1.5', 'soon']) {
+      expect(parse(`update --max-age ${value}`)).toEqual({
+        ok: false,
+        error: { kind: 'bad-option', message: `--max-age expects a whole number of minutes, at least 1, got: ${value}` },
+      });
+    }
+  });
+
+  // The picker asks before it syncs, so a run that skipped it would skip a question, not a sync.
+  it('a max age without update is refused, since only an update can be skipped', () => {
+    expect(parse('--max-age 60 --mailbox')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--max-age works only with update' } });
+  });
+});
