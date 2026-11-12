@@ -63,6 +63,12 @@ describe('reading what the operator asked for', () => {
     expect(parse('--concurrency lots').ok).toBe(false);
   });
 
+  it('how long one file may take to convert can be set in seconds, and anything but a positive number is refused', () => {
+    expect(parse('--convert-timeout 30')).toMatchObject({ value: { convertTimeoutSeconds: 30 } });
+    expect(parse('--convert-timeout 0')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--convert-timeout expects a positive number of seconds, got: 0' } });
+    expect(parse('--convert-timeout abc').ok).toBe(false);
+  });
+
   it('the mailbox can be named outright, so the picker is not shown', () => {
     expect(parse('--mailbox')).toMatchObject({ value: { mailbox: true } });
   });

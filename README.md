@@ -181,6 +181,7 @@ A dry run keeps nothing. The change does not move a thread folder that is alread
 | `--dry-run` | Report what would be done and write nothing |
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
 | `--concurrency <n>` | How many items to convert at once (default 4); `1` is strictly sequential |
+| `--convert-timeout <seconds>` | Stop the conversion of one file after this time (default 120). decant tries the file again on the next run (see Time limit of a conversion) |
 | `--no-ocr` | Do not read text out of images or scanned PDFs |
 | `--refresh` | List the sites afresh instead of drawing the picker from the ones last seen |
 | `--ocr-lang <code>` | Force one language for images and scanned PDFs (default `auto`, chosen per image) |
@@ -480,6 +481,27 @@ Loop workspaces and OneDrives do not get this page, because they have no Microso
 Graph does not give the data, the run keeps the old page and continues. If the answer does not
 change, the run does not write the page again. If the site gives an empty answer, the run moves
 the old page to `_archive/`.
+
+### Time limit of a conversion
+
+decant converts each file in a child process of its own. One file cannot stop the run: a workbook
+of millions of cells can take many minutes and a lot of memory to read. When a conversion takes
+longer than `--convert-timeout` (default 120 seconds), decant stops the child process. The file then
+fails with the reason `the conversion took longer than 120 s and was stopped`, and the other files
+continue. When the child process stops on its own, for example because it has no more memory, the
+reason gives the exit code and the last line of the error.
+
+This failure is the same as other failures. decant tries the file again on the next run, three runs
+in all (see What did not make it in). If a file always needs more time, set a longer limit for one
+run:
+
+```bash
+decant update --convert-timeout 900
+```
+
+The limit applies to the conversion only. The download of a file has its own limit of 5 minutes.
+Loop pages, Whiteboard files, and the PDF of a deck come from Microsoft Graph, not from a child
+process, so the limit does not apply to them. It also does not apply to OCR.
 
 ### What did not make it in
 
@@ -1438,7 +1460,8 @@ they exercise the config, not a line of `src/`.
 src/
   domain/        pure logic: paths, front matter, conversion planning, delta diffing, state
   use-cases/     orchestration against ports; ports/ holds the port types
-  infra/         adapters: the Graph library, Bun filesystem, RapidOCR, Winston, stdin, stdout
+  infra/         adapters: the Graph library, the conversion child process, Bun filesystem, RapidOCR,
+                 Winston, stdin, stdout
   presenter/     pure renderers, handed to the use cases through a port
   composition/   option parsing, configuration, dependency wiring
   test-helpers/  hand-written fakes and builders

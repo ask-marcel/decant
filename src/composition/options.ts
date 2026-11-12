@@ -22,6 +22,8 @@ export type Options = {
   readonly refresh: boolean;
   readonly ocrLang: string;
   readonly concurrency: number;
+  // How long one file may take to convert before it is stopped. None means the composition decides.
+  readonly convertTimeoutSeconds?: number;
   readonly assumeYes: boolean;
   readonly mailbox: boolean;
   readonly people: boolean;
@@ -79,6 +81,7 @@ const FLAGS_WITH_VALUE = new Set([
   '--max-size-mb',
   '--ocr-lang',
   '--concurrency',
+  '--convert-timeout',
   '--since',
   '--max-age',
   '--timezone',
@@ -113,6 +116,12 @@ const withMaxAge = (options: Options, value: string): Result<Options, OptionsErr
   return ok({ ...options, maxAgeMinutes: minutes });
 };
 
+const withConvertTimeout = (options: Options, value: string): Result<Options, OptionsError> => {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return err({ kind: 'bad-option', message: `--convert-timeout expects a positive number of seconds, got: ${value}` });
+  return ok({ ...options, convertTimeoutSeconds: seconds });
+};
+
 // A day, not a moment, or all: what the run reaches back to, kept for every run after it.
 const withSince = (options: Options, value: string): Result<Options, OptionsError> => {
   const since = parseSince(value);
@@ -144,6 +153,7 @@ const VALUE_FLAGS: ReadonlyMap<string, ValueFlag> = new Map<string, ValueFlag>([
   ['--drive-id', (options, value) => ok({ ...options, driveIds: [...options.driveIds, value] })],
   ['--ocr-lang', withOcrLang],
   ['--concurrency', withConcurrency],
+  ['--convert-timeout', withConvertTimeout],
   ['--since', withSince],
   ['--max-age', withMaxAge],
   ['--timezone', withTimezone],
@@ -211,6 +221,8 @@ export const USAGE = [
   '  --dry-run           show what would be done, write nothing',
   '  --max-size-mb <n>   skip files larger than this (default 50)',
   '  --concurrency <n>   how many items to convert at once (default 4)',
+  '  --convert-timeout <seconds>',
+  '                      stop the conversion of one file after this time, and try it again next run (default 120)',
   '  --no-ocr            do not read text out of images or scanned PDFs',
   '  --group-id <id>     sync one group inbox, by its id or its address, without the picker',
   '  --todo-list <name>  sync one To Do list, by its name or its id, without the picker',
