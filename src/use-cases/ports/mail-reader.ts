@@ -58,7 +58,9 @@ export type MailSweep = {
   readonly listChildFolders: (folderId: string) => Promise<Result<ReadonlyArray<MailFolder>, MailReaderError>>;
   // No page size is asked for: Outlook's message delta truncates when given one, answering with a
   // "you are up to date" cursor and dropping the rest of the folder.
-  readonly folderDelta: (folderId: string) => Promise<Result<MailDeltaPage, MailReaderError>>;
+  // With a day, Graph is asked only for the messages received on or after it. The cursor that closes
+  // such a sweep keeps the day, and Graph answers it with 5,000 messages at most.
+  readonly folderDelta: (folderId: string, since?: string) => Promise<Result<MailDeltaPage, MailReaderError>>;
   readonly deltaFrom: (cursor: string) => Promise<Result<MailDeltaPage, MailReaderError>>;
   // The RFC headers Graph leaves out of every default projection, which is where `References` lives
   // and so where a thread's root is. Asked for one message per conversation, not one per message.

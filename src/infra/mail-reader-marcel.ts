@@ -156,7 +156,15 @@ export const createMailReaderFromCall = (call: MarcelCall, convertBytes?: Conver
     // page-size hint that pages correctly, not the `$top` that used to read as "sync complete" and
     // drop the rest of the folder. A page of 100 cuts round trips on a large folder while keeping
     // each response small; paging continues through `nextLink` if Graph caps the page lower.
-    folderDelta: async (folderId) => delta('list-mail-folder-messages-delta', { mailFolderId: folderId, top: DELTA_PAGE_SIZE, select: SWEEP_FIELDS }),
+    // The day goes as the one filter this delta takes, on the day a message was received, counted in
+    // UTC as the run counts it. Sent once: Graph keeps it in the cursors it hands back.
+    folderDelta: async (folderId, since) =>
+      delta('list-mail-folder-messages-delta', {
+        mailFolderId: folderId,
+        top: DELTA_PAGE_SIZE,
+        select: SWEEP_FIELDS,
+        ...(since === undefined ? {} : { filter: `receivedDateTime ge ${since}T00:00:00Z` }),
+      }),
     // The same size again on every page after the first. Graph honours a page-size preference only on
     // the request that carries it, so a cursor followed bare comes back ten messages at a time: a
     // sweep of a large folder took ten times the round trips it asked for. Ignored before 2.8.0.

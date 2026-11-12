@@ -38,10 +38,13 @@ export type MailReaderSeed = {
   readonly failCalls?: Readonly<Record<string, MailReaderError>>;
 };
 
-export type MailReaderFake = MailReader & { readonly calls: Array<string> };
+// `days` is the day each sweep from the start was asked from, `all` when none: kept beside the calls,
+// so a test about the day reads it here and every other test reads the calls as before.
+export type MailReaderFake = MailReader & { readonly calls: Array<string>; readonly days: Array<string> };
 
 export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake => {
   const calls: string[] = [];
+  const days: string[] = [];
   let pageIndex = 0;
   const nextPage = (): MailDeltaPage => {
     const page = seed.pages?.[pageIndex];
@@ -55,13 +58,15 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
   };
   return {
     calls,
+    days,
     listFolders: async () => (seed.failWith ? err(seed.failWith) : ok(seed.folders ?? [])),
     listChildFolders: async (folderId) => {
       const refused = seed.failCalls?.['listChildFolders'] ?? seed.failWith;
       return refused ? err(refused) : ok(seed.children?.[folderId] ?? []);
     },
-    folderDelta: async (folderId) => {
+    folderDelta: async (folderId, since) => {
       calls.push(`folderDelta:${folderId}`);
+      days.push(`${folderId}:${since ?? 'all'}`);
       const refused = seed.failCalls?.['folderDelta'] ?? seed.failWith;
       return refused ? err(refused) : ok(nextPage());
     },

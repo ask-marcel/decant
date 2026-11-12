@@ -185,20 +185,27 @@ const messagesRead = (count: number): string => (count === 1 ? '1 message read' 
 // A cursor Outlook has expired is worth nothing, and nothing but reading the folder from the start
 // brings the folder back. What is already filed stays as it is: a conversation is written again only
 // when it holds a message the state has not seen, so the cost is the read, not the writing.
-const firstPage = async (deps: SyncMailboxDeps, folder: MailFolder, cursor: string | undefined): Promise<Result<MailDeltaPage, MailReaderError>> => {
-  if (cursor === undefined) return deps.reader.folderDelta(folder.id);
+// `followed` says the read went on from the saved cursor, so the day was not sent again.
+type Opened = { readonly page: MailDeltaPage; readonly followed: boolean };
+
+const opened = (page: Result<MailDeltaPage, MailReaderError>, followed: boolean): Result<Opened, MailReaderError> => (page.ok ? ok({ page: page.value, followed }) : page);
+
+const firstPage = async (deps: SyncMailboxDeps, folder: MailFolder, cursor: string | undefined, since: string | undefined): Promise<Result<Opened, MailReaderError>> => {
+  if (cursor === undefined) return opened(await deps.reader.folderDelta(folder.id, since), false);
   const resumed = await deps.reader.deltaFrom(cursor);
-  if (resumed.ok || !expiredCursor(resumed.error)) return resumed;
+  if (resumed.ok || !expiredCursor(resumed.error)) return opened(resumed, true);
   deps.logger.warn('mail.cursor-expired', { folderId: folder.id });
-  return deps.reader.folderDelta(folder.id);
+  return opened(await deps.reader.folderDelta(folder.id, since), false);
 };
 
-const sweepFolder = async (deps: SyncMailboxDeps, state: MailboxState, folder: MailFolder): Promise<Result<Swept, MailReaderError>> => {
-  const first = await firstPage(deps, folder, state.folders[folder.id]?.deltaLink);
-  if (!first.ok) return first;
-  const messages: MailMessage[] = [...first.value.messages];
+// What reading a folder to the end of its delta brought back. `filtered` counts what a cursor taken
+// under a day has returned, and is absent for a cursor that reaches everything.
+type FolderRead = { readonly messages: ReadonlyArray<MailMessage>; readonly deltaLink?: string; readonly filtered?: number };
+
+const pagedOut = async (deps: SyncMailboxDeps, folder: MailFolder, first: MailDeltaPage): Promise<Result<FolderRead, MailReaderError>> => {
+  const messages: MailMessage[] = [...first.messages];
   const seen = new Set<string>();
-  let page = first.value;
+  let page = first;
   while (page.nextLink !== undefined && !seen.has(page.nextLink)) {
     seen.add(page.nextLink);
     const next = await deps.reader.deltaFrom(page.nextLink);
@@ -207,7 +214,57 @@ const sweepFolder = async (deps: SyncMailboxDeps, state: MailboxState, folder: M
     deps.progress.detail(folder.name, messagesRead(messages.length));
     page = next.value;
   }
-  return ok({ state: withFolderCursor(state, folder.id, folder.name, page.deltaLink), messages });
+  return ok({ messages, deltaLink: page.deltaLink });
+};
+
+// Graph answers a delta filtered by day with 5,000 messages at most, and does not say when it has
+// left some out. A cursor taken under a day is followed only while it has returned fewer than this:
+// past it, the folder is read whole, and the cursor that closes that read reaches everything.
+export const FILTERED_CEILING = 4000;
+
+// What the cursor had returned before this read: nothing yet for a sweep from a day, the count kept
+// with a cursor taken under one, and no count at all for a read that reaches everything.
+const countBefore = (followed: boolean, kept: number | undefined, since: string | undefined): number | undefined => {
+  if (followed) return kept;
+  return since === undefined ? undefined : 0;
+};
+
+const counted = (before: number | undefined, messages: ReadonlyArray<MailMessage>): number | undefined =>
+  before === undefined ? undefined : before + messages.filter((message) => !message.isDeleted).length;
+
+// The whole folder, after a read under a day that returned too much to trust. What that read said was
+// removed is kept: only a cursor reports a removal, and the whole read starts from none.
+const readWhole = async (deps: SyncMailboxDeps, folder: MailFolder, removed: ReadonlyArray<MailMessage>): Promise<Result<FolderRead, MailReaderError>> => {
+  deps.logger.info('mail.filter-outgrown', { folderId: folder.id });
+  const first = await deps.reader.folderDelta(folder.id);
+  if (!first.ok) return first;
+  const whole = await pagedOut(deps, folder, first.value);
+  return whole.ok ? ok({ messages: [...removed, ...whole.value.messages], deltaLink: whole.value.deltaLink }) : whole;
+};
+
+const readFolder = async (
+  deps: SyncMailboxDeps,
+  folder: MailFolder,
+  known: MailboxState['folders'][string] | undefined,
+  since: string | undefined
+): Promise<Result<FolderRead, MailReaderError>> => {
+  const first = await firstPage(deps, folder, known?.deltaLink, since);
+  if (!first.ok) return first;
+  const read = await pagedOut(deps, folder, first.value.page);
+  if (!read.ok) return read;
+  const filtered = counted(countBefore(first.value.followed, known?.filtered, since), read.value.messages);
+  if (filtered === undefined || filtered < FILTERED_CEILING) return ok({ ...read.value, filtered });
+  return readWhole(
+    deps,
+    folder,
+    read.value.messages.filter((message) => message.isDeleted)
+  );
+};
+
+const sweepFolder = async (deps: SyncMailboxDeps, state: MailboxState, folder: MailFolder, since: string | undefined): Promise<Result<Swept, MailReaderError>> => {
+  const read = await readFolder(deps, folder, state.folders[folder.id], since);
+  if (!read.ok) return read;
+  return ok({ state: withFolderCursor(state, folder.id, folder.name, read.value.deltaLink, read.value.filtered), messages: read.value.messages });
 };
 
 // `subject` is the oldest message's, which is what the thread's document is titled after. `marks` is how
@@ -294,7 +351,7 @@ const queueWork = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: 
   const addressed = await ownAddressesRead(deps, state);
   deps.progress.start(folders.value.swept.length, SWEEPING);
   const named = withUnsweptFolders(sweptFrom(deps, addressed, input.since), folders.value.unswept);
-  const swept = await sweepFolders(deps, named, folders.value.swept);
+  const swept = await sweepFolders(deps, named, folders.value.swept, input.since);
   deps.progress.done();
   if (!swept.ok) return stepFailure('sweepFolder', swept.error);
   // A folder renamed at the source changes the line under every message in it, and no delta says so:
@@ -318,12 +375,12 @@ const ownAddressesRead = async (deps: SyncMailboxDeps, state: MailboxState): Pro
   return state;
 };
 
-const sweepFolders = async (deps: SyncMailboxDeps, state: MailboxState, folders: ReadonlyArray<MailFolder>): Promise<Result<Swept, MailReaderError>> => {
+const sweepFolders = async (deps: SyncMailboxDeps, state: MailboxState, folders: ReadonlyArray<MailFolder>, since: string | undefined): Promise<Result<Swept, MailReaderError>> => {
   let current = state;
   const messages: MailMessage[] = [];
   for (const folder of folders) {
     deps.progress.begin(folder.name);
-    const swept = await sweepFolder(deps, current, folder);
+    const swept = await sweepFolder(deps, current, folder, since);
     if (!swept.ok) return swept;
     deps.progress.step(folder.name);
     current = swept.value.state;

@@ -59,6 +59,16 @@ describe('reading a mailbox through the ask-marcel library', () => {
     expect(recorded[0]?.params).toMatchObject({ mailFolderId: 'AAMk1' });
   });
 
+  it('a sweep from a day asks Graph only for the messages received from that day on, and a sweep with no day sends no filter', async () => {
+    const { reader, recorded } = readerFor({ 'list-mail-folder-messages-delta': ok({ value: [] }) });
+
+    await reader.folderDelta('AAMk1', '2026-11-12');
+    await reader.folderDelta('AAMk1');
+
+    expect(recorded[0]?.params['filter']).toBe('receivedDateTime ge 2026-11-12T00:00:00Z');
+    expect('filter' in (recorded[1]?.params ?? {})).toBe(false);
+  });
+
   it('a sweep asks only for the fields the run needs', async () => {
     const { reader, recorded } = readerFor({ 'list-mail-folder-messages-delta': ok({ value: [] }) });
 

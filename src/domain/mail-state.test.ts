@@ -68,6 +68,15 @@ describe('remembering where a mailbox sync got to', () => {
     expect(before.ok && before.value.ownAddresses).toStrictEqual([]);
   });
 
+  it('the count of a cursor taken under a day reads back, and a state from before it holds none', () => {
+    const state = withFolderCursor(emptyMailboxState(), 'AAMk-inbox', 'Inbox', 'c1', 12);
+    const before = parseMailboxState({ version: 2, source: { kind: 'mailbox' }, folders: { 'AAMk-inbox': { name: 'Inbox', deltaLink: 'c1' } } });
+
+    expect(parseMailboxState(JSON.parse(serializeMailboxState(state)))).toEqual({ ok: true, value: state });
+    expect(state.folders['AAMk-inbox']).toEqual({ name: 'Inbox', deltaLink: 'c1', filtered: 12 });
+    expect(before.ok && before.value.folders['AAMk-inbox']).toEqual({ name: 'Inbox', deltaLink: 'c1' });
+  });
+
   it('the subjects kept for queued conversations read back, and a state from before them has none', () => {
     const written = serializeMailboxState({ ...emptyMailboxState(), pending: ['thread-1'], titles: { 'thread-1': 'Budget review' } });
     const notText = parseMailboxState({ version: 2, source: { kind: 'mailbox' }, titles: { 'thread-1': 42 } });

@@ -104,7 +104,10 @@ export type MailboxState = {
   readonly version: typeof STATE_VERSION;
   readonly source: { readonly kind: 'mailbox'; readonly id: string; readonly name: string };
   readonly lastRun: string;
-  readonly folders: Readonly<Record<string, { readonly name: string; readonly deltaLink?: string }>>;
+  // `filtered` is how many messages a cursor taken under a day has returned so far, absent for a
+  // cursor that reaches everything. Graph answers a filtered delta with 5,000 messages at most, so
+  // the count says when the folder must be read whole. Additive: a file from before holds none.
+  readonly folders: Readonly<Record<string, { readonly name: string; readonly deltaLink?: string; readonly filtered?: number }>>;
   readonly threads: Readonly<Record<string, ThreadRecord>>;
   readonly conversations: Readonly<Record<string, ConversationRecord>>;
   readonly linked: Readonly<Record<string, LinkedRecord>>;
@@ -207,6 +210,12 @@ export const retryOf = (entry: Record<string, unknown>): RetryRecord => ({
   reason: readString(entry, 'reason') ?? '',
 });
 
+const folderOf = (entry: Record<string, unknown>): MailboxState['folders'][string] => ({
+  name: readString(entry, 'name') ?? '',
+  deltaLink: readString(entry, 'deltaLink'),
+  ...(typeof entry['filtered'] === 'number' ? { filtered: entry['filtered'] } : {}),
+});
+
 export const mapOf = <T>(raw: unknown, parse: (entry: Record<string, unknown>) => T): Readonly<Record<string, T>> => {
   if (!isRecord(raw)) return {};
   return Object.fromEntries(Object.entries(raw).flatMap(([key, entry]) => (isRecord(entry) ? [[key, parse(entry)] as const] : [])));
@@ -220,7 +229,7 @@ export const parseMailboxState = (raw: unknown): Result<MailboxState, MailStateE
     version: STATE_VERSION,
     source: { kind: 'mailbox', id: readString(raw['source'], 'id') ?? MAILBOX_ID, name: readString(raw['source'], 'name') ?? MAILBOX_NAME },
     lastRun: readString(raw, 'lastRun') ?? '',
-    folders: mapOf(raw['folders'], (entry) => ({ name: readString(entry, 'name') ?? '', deltaLink: readString(entry, 'deltaLink') })),
+    folders: mapOf(raw['folders'], folderOf),
     threads: mapOf(raw['threads'], threadOf),
     conversations: mapOf(raw['conversations'], (entry) => ({ threadId: readString(entry, 'threadId') ?? '', root: readString(entry, 'root') ?? '' })),
     linked: mapOf(raw['linked'], linkedOf),
@@ -246,9 +255,9 @@ export const keptTitles = (state: MailboxState): MailboxState => ({
 
 export const withTitles = (state: MailboxState, titles: Readonly<Record<string, string>>): MailboxState => keptTitles({ ...state, titles: { ...state.titles, ...titles } });
 
-export const withFolderCursor = (state: MailboxState, folderId: string, name: string, deltaLink: string | undefined): MailboxState => ({
+export const withFolderCursor = (state: MailboxState, folderId: string, name: string, deltaLink: string | undefined, filtered?: number): MailboxState => ({
   ...state,
-  folders: { ...state.folders, [folderId]: { name, ...(deltaLink === undefined ? {} : { deltaLink }) } },
+  folders: { ...state.folders, [folderId]: { name, ...(deltaLink === undefined ? {} : { deltaLink }), ...(filtered === undefined ? {} : { filtered }) } },
 });
 
 // The folders this sweep passed over, as the listing named them, in place of the ones before. By id,

@@ -130,7 +130,7 @@ const run = async (
 const stateAfter = (
   files: FilesFake
 ): {
-  folders: Record<string, { name: string; deltaLink?: string }>;
+  folders: Record<string, { name: string; deltaLink?: string; filtered?: number }>;
   threads: Record<string, unknown>;
   conversations: Record<string, { threadId: string; root: string }>;
   pending: string[];
@@ -1748,5 +1748,123 @@ describe('a thread that renders while one of its files does not', () => {
     expect(report).toContain('Failed 3 times, and will not be tried again unless the file changes:');
     expect(report).toContain('- threads/2026-05-12/thread.md: c.docx: locked');
     expect(report).not.toContain(`- thread ${THREAD}`);
+  });
+});
+
+// Graph filters a folder's delta by the day a message was received, so a first sweep under a day reads
+// only that much. It answers a filtered delta with 5,000 messages at most, which is why a cursor taken
+// under a day counts what it returned, and gives way to a whole read before that many.
+describe('asking Graph only for the mail from the day on', () => {
+  const INBOX = 'AAMk-inbox';
+  const cursored = (over: Partial<MailboxState>, record: { deltaLink: string; filtered?: number }): string =>
+    serializeMailboxState({ ...emptyMailboxState(), ...over, folders: { [INBOX]: { name: 'Inbox', ...record } } });
+  const many = (count: number): MailMessage[] => Array.from({ length: count }, (_unused, index) => message({ id: `m${index}` }));
+
+  it('a first sweep with a day asks Graph only for the messages received from that day on, in each folder', async () => {
+    const { reader, files } = await run({
+      reader: {
+        folders: [folder(), folder({ id: 'AAMk-projects', name: 'Projects' })],
+        pages: [
+          { messages: [message()], skipped: 0, deltaLink: 'c-inbox' },
+          { messages: [], skipped: 0, deltaLink: 'c-projects' },
+        ],
+      },
+      since: '2026-01-01',
+    });
+
+    expect(reader.days).toEqual([`${INBOX}:2026-01-01`, 'AAMk-projects:2026-01-01']);
+    expect(stateAfter(files).folders).toEqual({
+      [INBOX]: { name: 'Inbox', deltaLink: 'c-inbox', filtered: 1 },
+      'AAMk-projects': { name: 'Projects', deltaLink: 'c-projects', filtered: 0 },
+    });
+  });
+
+  it('a first sweep that reaches everything sends no day', async () => {
+    const { reader, files } = await run({ reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] } });
+
+    expect(reader.days).toEqual([`${INBOX}:all`]);
+    expect(stateAfter(files).folders[INBOX]).toEqual({ name: 'Inbox', deltaLink: 'c1' });
+  });
+
+  it('a later run reads from its cursor, sends no day, and adds what the cursor returned to its count, a removed message left out', async () => {
+    const { reader, files } = await run({
+      files: { texts: { [STATE_PATH]: cursored({ since: '2026-01-01' }, { deltaLink: 'c1', filtered: 10 }) } },
+      reader: { folders: [folder()], pages: [{ messages: [message(), message({ id: 'gone', conversationId: '', isDeleted: true })], skipped: 0, deltaLink: 'c2' }] },
+      since: '2026-01-01',
+    });
+
+    expect(reader.calls).toContain('deltaFrom:c1');
+    expect(reader.days).toHaveLength(0);
+    expect(stateAfter(files).folders[INBOX]).toEqual({ name: 'Inbox', deltaLink: 'c2', filtered: 11 });
+  });
+
+  it('a day moved earlier sweeps each folder again from the new day', async () => {
+    const { reader } = await run({
+      files: { texts: { [STATE_PATH]: cursored({ since: '2026-01-01' }, { deltaLink: 'c1', filtered: 10 }) } },
+      reader: { folders: [folder()], pages: [{ messages: [], skipped: 0, deltaLink: 'c2' }] },
+      since: '2025-01-01',
+    });
+
+    expect(reader.days).toEqual([`${INBOX}:2025-01-01`]);
+  });
+
+  it('a folder whose filtered sweep returns 4,000 messages is swept again whole, so the limit of Graph hides no mail', async () => {
+    const { reader, files, logger } = await run({
+      reader: {
+        folders: [folder()],
+        pages: [
+          { messages: many(4000), skipped: 0, deltaLink: 'c-filtered' },
+          { messages: many(4001), skipped: 0, deltaLink: 'c-whole' },
+        ],
+      },
+      since: '2026-01-01',
+    });
+
+    expect(reader.days).toEqual([`${INBOX}:2026-01-01`, `${INBOX}:all`]);
+    expect(stateAfter(files).folders[INBOX]).toEqual({ name: 'Inbox', deltaLink: 'c-whole' });
+    expect(logger.calls).toContainEqual({ level: 'info', event: 'mail.filter-outgrown', meta: { folderId: INBOX } });
+  });
+
+  it('a filtered cursor that reaches 4,000 messages over several runs gives way to a whole sweep, and a message it said was removed still counts', async () => {
+    const held = withConversation(emptyMailboxState(), 'conv-gone', { threadId: 'thread-gone', root: '<gone@example.com>' });
+    const filed = withThread(held, 'thread-gone', {
+      folder: '2026-05-12-thread-gone',
+      conversationIds: ['conv-gone'],
+      file: 'threads/2026-05-12-thread-gone/x.md',
+      messageIds: ['gone', 'kept'],
+      lastMessage: '2026-05-12T09:31:00Z',
+      attachments: [],
+      inlineImages: [],
+    });
+
+    const { reader, files, asked } = await run({
+      files: { texts: { [STATE_PATH]: cursored({ ...filed, since: '2026-01-01' }, { deltaLink: 'c1', filtered: 3999 }) } },
+      reader: {
+        folders: [folder()],
+        pages: [
+          { messages: [message({ id: 'fresh', conversationId: 'conv-fresh' }), message({ id: 'gone', conversationId: '', isDeleted: true })], skipped: 0, deltaLink: 'c2' },
+          { messages: [message({ id: 'fresh', conversationId: 'conv-fresh' })], skipped: 0, deltaLink: 'c-whole' },
+        ],
+      },
+      since: '2026-01-01',
+    });
+
+    expect(reader.calls.filter((call) => call.startsWith('deltaFrom') || call.startsWith('folderDelta'))).toEqual(['deltaFrom:c1', `folderDelta:${INBOX}`]);
+    expect(reader.days).toEqual([`${INBOX}:all`]);
+    expect(stateAfter(files).folders[INBOX]).toEqual({ name: 'Inbox', deltaLink: 'c-whole' });
+    expect(new Set(asked)).toEqual(new Set(['conv-fresh', 'conv-gone']));
+  });
+
+  it('an expired cursor sweeps the folder again from the day', async () => {
+    const expired = { kind: 'permanent' as const, status: 410, message: 'SyncStateNotFound: The sync state generation is not found' };
+
+    const { reader, files } = await run({
+      files: { texts: { [STATE_PATH]: cursored({ since: '2026-01-01' }, { deltaLink: 'c-old' }) } },
+      reader: { folders: [folder()], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c-new' }], failCalls: { deltaFrom: expired } },
+      since: '2026-01-01',
+    });
+
+    expect(reader.days).toEqual([`${INBOX}:2026-01-01`]);
+    expect(stateAfter(files).folders[INBOX]).toEqual({ name: 'Inbox', deltaLink: 'c-new', filtered: 1 });
   });
 });
