@@ -69,7 +69,7 @@ export const readConfig = (input: ConfigInput): Config => {
     kbRoot,
     pathBudget: pathBudgetFor(kbRoot, input.resolvePath),
     ocrLang: input.ocrLang,
-    ocr: input.ocr ?? true,
+    ocr: input.ocr ?? false,
     interactive: input.interactive,
     timezone: input.timezone === '' ? (input.storedTimezone ?? input.machineTimezone) : input.timezone,
     convertTimeoutSeconds: input.convertTimeoutSeconds ?? CONVERT_TIMEOUT_SECONDS,

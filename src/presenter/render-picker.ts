@@ -86,3 +86,23 @@ export const renderSinceRefused = (answer: string): string => `Not a day: ${answ
 
 export const renderStillFresh = (minutesAgo: number, maxAgeMinutes: number): string =>
   `The last update started ${minutesAgo} min ago, within --max-age ${maxAgeMinutes}: nothing to do.`;
+
+const OCR_PACKAGES = 'rapidocr onnxruntime';
+const WITHOUT_OCR = 'Start decant again. To run with no OCR, remove --ocr.';
+
+// What a run that asked for OCR is told on a machine that cannot do it: `python` is the command of a
+// Python that starts and lacks the packages, and none means there is no Python to install them into.
+export const renderOcrGuide = (python: string | undefined): string =>
+  python === undefined
+    ? [
+        'OCR is on (--ocr), but decant found no Python 3 on this computer.',
+        '1. Install Python 3: https://www.python.org/downloads/',
+        `2. Install the OCR packages: python3 -m pip install ${OCR_PACKAGES}`,
+        `3. ${WITHOUT_OCR}`,
+      ].join('\n')
+    : [
+        `OCR is on (--ocr), but Python (${python}) cannot load rapidocr and onnxruntime.`,
+        `1. Install the OCR packages: ${python} -m pip install ${OCR_PACKAGES}`,
+        `2. ${WITHOUT_OCR}`,
+        'The first run with OCR downloads the models, so it needs an internet connection.',
+      ].join('\n');

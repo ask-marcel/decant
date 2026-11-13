@@ -13,4 +13,5 @@ export type PickerView = {
   readonly sinceQuestion: () => string;
   readonly sinceRefused: (answer: string) => string;
   readonly stillFresh: (minutesAgo: number, maxAgeMinutes: number) => string;
+  readonly ocrGuide: (python: string | undefined) => string;
 };

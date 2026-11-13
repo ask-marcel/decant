@@ -30,7 +30,7 @@ const configFor = (env: Readonly<Record<string, string | undefined>>): ReturnTyp
 
 describe('reading the run configuration', () => {
   it('an empty environment writes to the default knowledge base folder and stays quiet', () => {
-    expect(configFor({})).toEqual({ logLevel: 'error', kbRoot: 'kb', ocrLang: 'en', ocr: true, interactive: false, timezone: 'UTC', convertTimeoutSeconds: 120 });
+    expect(configFor({})).toEqual({ logLevel: 'error', kbRoot: 'kb', ocrLang: 'en', ocr: false, interactive: false, timezone: 'UTC', convertTimeoutSeconds: 120 });
   });
 
   it('reading images can be turned off in the configuration', () => {
@@ -782,5 +782,55 @@ describe('a knowledge base copied to another folder', () => {
     expect(touchedOutside(files)).toStrictEqual([]);
     expect(Object.keys(JSON.parse(files.written.get(`${COPY}/.sync-aside.json`) ?? '{}'))).toEqual([held]);
     expect(files.written.get(`${COPY}/_sync-report.md`)).toContain(`- ${held}: write-failed: EBUSY (since 2026-10-20)`);
+  });
+});
+
+// A run that asked for OCR on a machine that cannot do it would read every source and no picture, and
+// say so nowhere. It stops before the first source instead, with what to install.
+describe('asking for OCR on a machine that cannot do it', () => {
+  const runWith = async (
+    ocr: ReturnType<typeof createOcrFake>
+  ): Promise<{ outcome: Awaited<ReturnType<ReturnType<typeof buildDeps>['runSync']>>; mail: ReturnType<typeof createMailReaderFake> }> => {
+    const mail = createMailReaderFake();
+    const deps = buildDeps(configFor({}), {
+      files: createFilesFake({ directories: { kb: [] } }),
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake(),
+      mail,
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
+      people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
+      notebook: createNotebookReaderFake(),
+      list: createListReaderFake(),
+      plan: createPlanReaderFake(),
+      ocr,
+      prompt: createPromptFake(),
+      clock: createClockFake(),
+    });
+    const outcome = await deps.runSync({ command: 'sync', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false, mailbox: true });
+    return { outcome, mail };
+  };
+
+  it('a run with OCR that is not installed syncs no source and ends with what to install', async () => {
+    const { outcome, mail } = await runWith(createOcrFake({ missing: { kind: 'no-packages', python: 'python3' } }));
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.ok === false && outcome.error.step).toBe('checkOcr');
+    expect(outcome.ok === false && outcome.error.message).toContain('python3 -m pip install rapidocr onnxruntime');
+    expect(mail.calls).toHaveLength(0);
+  });
+
+  it('a run with no Python at all is told where to get it', async () => {
+    const { outcome } = await runWith(createOcrFake({ missing: { kind: 'no-python' } }));
+
+    expect(outcome.ok === false && outcome.error.message).toContain('https://www.python.org/downloads/');
+  });
+
+  it('a run with OCR that is ready, or with no OCR, reads its sources', async () => {
+    const { outcome } = await runWith(createOcrFake());
+
+    expect(outcome.ok).toBe(true);
   });
 });

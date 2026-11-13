@@ -1,6 +1,7 @@
 import {
   renderChannelPicker,
   renderLibraryPicker,
+  renderOcrGuide,
   renderReportPointer,
   renderSinceQuestion,
   renderSinceRefused,
@@ -22,4 +23,5 @@ export const pickerView: PickerView = {
   sinceQuestion: renderSinceQuestion,
   sinceRefused: renderSinceRefused,
   stillFresh: renderStillFresh,
+  ocrGuide: renderOcrGuide,
 };

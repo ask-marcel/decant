@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { renderChannelPicker, renderLibraryPicker, renderSitePicker, renderSourceFailed, renderSummary } from './render-picker.ts';
+import { renderChannelPicker, renderLibraryPicker, renderOcrGuide, renderSitePicker, renderSourceFailed, renderSummary } from './render-picker.ts';
 
 const rows = [
   { id: 'a', name: 'Espace Contoso', webUrl: 'https://x', synced: { lastRun: '2026-07-22T09:00:00Z', fileCount: 143 } },
@@ -113,5 +113,29 @@ describe('telling the operator what happened', () => {
     const summary = { converted: 0, moved: 0, archived: 0, skipped: 0, failed: 0, queued: 0 };
 
     expect(renderSummary('Espace Contoso', summary, true)).toBe('Espace Contoso: 0 to do (nothing written, this was a dry run).');
+  });
+});
+
+describe('telling the operator what OCR needs', () => {
+  it('a machine with no Python is told where to get it, then what to install into it', () => {
+    expect(renderOcrGuide(undefined)).toBe(
+      [
+        'OCR is on (--ocr), but decant found no Python 3 on this computer.',
+        '1. Install Python 3: https://www.python.org/downloads/',
+        '2. Install the OCR packages: python3 -m pip install rapidocr onnxruntime',
+        '3. Start decant again. To run with no OCR, remove --ocr.',
+      ].join('\n')
+    );
+  });
+
+  it('a Python with no OCR packages is told the one command that installs them, for that Python', () => {
+    expect(renderOcrGuide('python')).toBe(
+      [
+        'OCR is on (--ocr), but Python (python) cannot load rapidocr and onnxruntime.',
+        '1. Install the OCR packages: python -m pip install rapidocr onnxruntime',
+        '2. Start decant again. To run with no OCR, remove --ocr.',
+        'The first run with OCR downloads the models, so it needs an internet connection.',
+      ].join('\n')
+    );
   });
 });

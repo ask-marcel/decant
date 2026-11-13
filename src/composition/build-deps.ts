@@ -50,6 +50,7 @@ import type { Logger } from '../use-cases/ports/logger.ts';
 import type { Ocr } from '../use-cases/ports/ocr.ts';
 import type { Progress } from '../use-cases/ports/progress.ts';
 import type { Prompt } from '../use-cases/ports/prompt.ts';
+import type { StepError } from '../use-cases/ports/step-error.ts';
 import { createRunSync } from '../use-cases/run-sync.ts';
 import { createUpdateWhenStale } from '../use-cases/update-when-stale.ts';
 import type { UpdateWhenStale } from '../use-cases/update-when-stale.ts';
@@ -206,6 +207,14 @@ const sinceAt = (files: Files, logger: Logger, kbRoot: string, zone: string): Pi
   };
 };
 
+// A run that asked for OCR on a machine that cannot do it stops before its first source, with what to
+// install: it would otherwise read every source and no picture, and say so nowhere.
+const ocrLacking = async (ocr: Ocr): Promise<StepError | undefined> => {
+  const ready = await ocr.ready?.();
+  if (ready === undefined || ready.ok) return undefined;
+  return { step: 'checkOcr', cause: ready.error.kind, message: pickerView.ocrGuide(ready.error.kind === 'no-packages' ? ready.error.python : undefined) };
+};
+
 // The part a test handed in, or the real one, built only when none was: every part of the run
 // takes the same choice, so it is made in one place rather than once a part.
 const given = <T>(override: T | undefined, build: () => T): T => override ?? build();
@@ -343,6 +352,8 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // next run on, whatever that run does. The files that would not move under the archive are moved
   // again before any source writes. A dry run keeps and moves nothing.
   const runAll: RunSync = async (input) => {
+    const lacking = await ocrLacking(ocr);
+    if (lacking !== undefined) return err(lacking);
     if (!input.dryRun) await keepZone(files, logger, config.kbRoot, config.timezone);
     if (!input.dryRun) await ledger.retry();
     return run(input);
