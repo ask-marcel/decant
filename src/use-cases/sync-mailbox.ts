@@ -53,6 +53,7 @@ import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { Clock } from './ports/clock.ts';
 import { expiredCursor } from './graph-status.ts';
+import { inPool } from './in-pool.ts';
 import type { RenderThread, RenderedThread } from './render-thread.ts';
 import { folderFor, threadFoldersOn, writtenBefore } from './thread-folders.ts';
 import type { FoldersOnDisk } from './thread-folders.ts';
@@ -644,37 +645,47 @@ const abandonedNotes = (notes: RunNotes, before: MailboxState, finished: Mailbox
   return withGaveUp({ ...notes, givenUp: [...notes.givenUp, ...abandoned.map(named)] }, [...notes.givenUp, ...gaveUp]);
 };
 
+// The queue without the thread that ended: its first entry only, since a thread queued twice is
+// written twice.
+const withoutFirst = (pending: ReadonlyArray<string>, threadId: string): ReadonlyArray<string> => {
+  const at = pending.indexOf(threadId);
+  return at < 0 ? pending : [...pending.slice(0, at), ...pending.slice(at + 1)];
+};
+
 const drainQueue = async (deps: SyncMailboxDeps, input: SyncMailboxInput, state: MailboxState, statePath: string): Promise<Result<SourceRun, StepError>> => {
   let current = state;
   let summary = EMPTY;
   let notes: RunNotes = NO_NOTES;
+  let unsaved: Result<never, StepError> | undefined;
   const onDisk = await threadFoldersOn(deps.files, mailboxRoot(deps.kbRoot));
   deps.progress.start(current.pending.length, MAILBOX_NAME);
-  for (;;) {
-    if (current.pending.length === 0) break;
-    const window = current.pending.slice(0, input.concurrency);
-    const results = await Promise.all(
-      window.map((threadId) => {
-        const shown = shownAs(current.titles, threadId);
-        deps.progress.begin(shown);
-        return renderOne(deps, input, current, threadId, shown, onDisk).then((outcome) => {
-          deps.progress.step(shown);
-          return outcome;
-        });
-      })
-    );
-    const folded = results.reduce((carried, done) => done.apply(carried), current);
-    const advanced = keptTitles(withPending(folded, current.pending.slice(window.length)));
-    const saved = await save(deps.files, statePath, advanced, input.dryRun);
-    if (!saved.ok) {
-      deps.progress.done();
-      return saved;
+  // A thread leaves the queue when it ends, and the state is saved then: a run stopped part way
+  // writes again only the threads that were in progress.
+  await inPool(
+    current.pending,
+    input.concurrency,
+    async (threadId) => {
+      const shown = shownAs(current.titles, threadId);
+      deps.progress.begin(shown);
+      const outcome = await renderOne(deps, input, current, threadId, shown, onDisk);
+      deps.progress.step(shown);
+      return outcome;
+    },
+    async (threadId, done) => {
+      const advanced = keptTitles(withPending(done.apply(current), withoutFirst(current.pending, threadId)));
+      const saved = await save(deps.files, statePath, advanced, input.dryRun);
+      if (!saved.ok) {
+        unsaved = saved;
+        return false;
+      }
+      current = advanced;
+      summary = tallied(summary, [done]);
+      notes = noted(notes, [done]);
+      return true;
     }
-    current = advanced;
-    summary = tallied(summary, results);
-    notes = noted(notes, results);
-  }
+  );
   deps.progress.done();
+  if (unsaved !== undefined) return unsaved;
   const finished = { ...current, lastRun: deps.clock.nowIso() };
   const saved = await save(deps.files, statePath, finished, input.dryRun);
   if (!saved.ok) return saved;

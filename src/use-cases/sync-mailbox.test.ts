@@ -69,6 +69,8 @@ const run = async (
     concurrency?: number;
     outcome?: (input: RenderThreadInput) => RenderThreadOutcome;
     failThread?: string;
+    // Awaited while a conversation is written, so a test can keep one in progress and say when it ends.
+    hold?: (input: RenderThreadInput, files: FilesFake) => Promise<void>;
   } = {}
 ): Promise<{
   summary: RunSummary;
@@ -102,6 +104,7 @@ const run = async (
       asked.push(input.conversationIds.join(','));
       labels.push(input.label);
       inputs.push(input);
+      await seeds.hold?.(input, files);
       if (seeds.failThread === input.conversationIds.join(',')) return err({ kind: 'permanent' as const, message: 'thread refused' });
       return ok(seeds.outcome === undefined ? rendered() : seeds.outcome(input));
     },
@@ -402,6 +405,29 @@ describe('syncing a mailbox into the knowledge base', () => {
     });
 
     expect(folders).toEqual(['']);
+  });
+
+  describe('a queue whose state cannot be saved', () => {
+    const queued = (count: number): string => {
+      const ids = Array.from({ length: count }, (_unused, index) => index + 1);
+      const held = ids.reduce((state, id) => withConversation(state, `conv-${id}`, { threadId: `thread-${id}`, root: `<r${id}@example.com>` }), emptyMailboxState());
+      return serializeMailboxState({ ...held, pending: ids.map((id) => `thread-${id}`) });
+    };
+    const unwritable = (count: number): FilesFakeSeed => ({ texts: { [STATE_PATH]: queued(count) }, failWriteWith: { kind: 'write-failed', path: 'kb', message: 'disk full' } });
+
+    it('with one place, the first conversation that cannot be recorded starts no other', async () => {
+      const { asked, error } = await run({ files: unwritable(3), reader: { folders: [folder()] }, concurrency: 1 });
+
+      expect(asked).toEqual(['conv-1']);
+      expect(error?.step).toBe('saveMailState');
+    });
+
+    it('with two places, the conversations in progress end, and the run still names the save step', async () => {
+      const { asked, error } = await run({ files: unwritable(3), reader: { folders: [folder()] }, concurrency: 2 });
+
+      expect(asked).toEqual(['conv-1', 'conv-2']);
+      expect(error?.step).toBe('saveMailState');
+    });
   });
 
   it('a window whose state cannot be saved ends the run naming the save step', async () => {
@@ -1527,14 +1553,67 @@ describe('rendering several conversations at once', () => {
     expect(files.written.has('kb/Mailbox/_index.md')).toBe(false);
   });
 
-  it('a window of conversations saves the state once, not once per conversation', async () => {
+  it('each conversation that ends saves the state, however many are written at one time', async () => {
     const wide = await run({ reader: threeConversations, concurrency: 3 });
     const narrow = await run({ reader: threeConversations, concurrency: 1 });
     const savesAt = (files: FilesFake): number => files.writeLog.filter((path) => path === STATE_PATH).length;
 
-    expect(savesAt(wide.files)).toBe(3);
-    expect(savesAt(wide.files)).toBeLessThan(savesAt(narrow.files));
+    // The queue, then one save a conversation, then the end of the run.
+    expect(savesAt(wide.files)).toBe(5);
+    expect(savesAt(narrow.files)).toBe(5);
   });
+
+  // The first conversation to start is kept in progress until the third has started. A run that waits
+  // for a whole batch to end before it starts the next never starts the third, and stands still.
+  const firstWaitsForThird = (seen: (order: number, files: FilesFake) => void): ((input: RenderThreadInput, files: FilesFake) => Promise<void>) => {
+    let started = 0;
+    let release = (): void => undefined;
+    const third = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return async (_input, files) => {
+      started += 1;
+      const mine = started;
+      seen(mine, files);
+      if (mine === 1) await third;
+      if (mine === 3) release();
+      seen(-mine, files);
+    };
+  };
+
+  it('a conversation that ends frees its place at once: the third starts while the first is still in progress', async () => {
+    const events: number[] = [];
+
+    const { summary } = await run({ reader: threeConversations, concurrency: 2, hold: firstWaitsForThird((order) => events.push(order)) });
+
+    expect(events).toEqual([1, 2, -2, 3, -3, -1]);
+    expect(summary.converted).toBe(3);
+  }, 2000);
+
+  it('no more conversations are in progress at one time than the limit', async () => {
+    let inProgress = 0;
+    let most = 0;
+    const hold = async (): Promise<void> => {
+      inProgress += 1;
+      most = Math.max(most, inProgress);
+      await Promise.resolve();
+      inProgress -= 1;
+    };
+
+    await run({ reader: threeConversations, concurrency: 2, hold });
+
+    expect(most).toBe(2);
+  });
+
+  it('a conversation that ends leaves the queue at once, so a run stopped there writes again only the ones in progress', async () => {
+    const queued: string[][] = [];
+
+    await run({ reader: threeConversations, concurrency: 2, hold: firstWaitsForThird((order, files) => queued.push(order === 1 || order === 3 ? stateAfter(files).pending : [])) });
+
+    const [whole = [], , , atThird = []] = queued;
+    expect(whole).toHaveLength(3);
+    expect(atThird).toEqual([whole[0] ?? '', whole[2] ?? '']);
+  }, 2000);
 
   const twoConversations: MailReaderSeed = {
     folders: [folder()],
