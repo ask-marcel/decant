@@ -38,6 +38,7 @@ import type { RunSummary } from '../domain/run-summary.ts';
 import type { ConvertFile } from './convert-file.ts';
 import { sweepDrive } from './enumerate-drive.ts';
 import { expiredCursor, notFound } from './graph-status.ts';
+import { inPool } from './in-pool.ts';
 import type { DriveSweep } from './enumerate-drive.ts';
 import type { Clock } from './ports/clock.ts';
 import type { DriveReader, DriveReaderError, DriveSummary } from './ports/drive-reader.ts';
@@ -432,42 +433,45 @@ const followMoves = async (
 // What the moving counter names for each item: the path it sits at, or the id of one being archived.
 const labelOf = (work: WorkItem): string => (work.kind === 'archive' ? work.itemId : work.item.path);
 
+// A library the state names no more: nothing is queued for it, and nothing is recorded.
+const EMPTY_DRIVE: DriveState = { name: '', pending: [], items: {}, retry: {} };
+
 const processQueue = async (deps: SyncSiteDeps, input: ResolvedInput, drive: DriveSummary, state: SiteState, statePath: string): Promise<Result<DriveOutcome, StepError>> => {
   let current = state;
   let summary = EMPTY;
   let notes = NO_NOTES;
   // Named for the source rather than the verb: `all` works through twenty-odd sites in one run, and
   // a path alone never says which of them a file came from.
-  deps.progress.start(current.drives[drive.id]?.pending.length ?? 0, `${input.site.name} / ${drive.name}`);
-  for (;;) {
-    const driveState = current.drives[drive.id];
-    if (driveState === undefined || driveState.pending.length === 0) {
-      deps.progress.done();
-      return ok({ state: current, summary, notes });
-    }
-    const window = driveState.pending.slice(0, input.concurrency);
-    const results = await Promise.all(
-      window.map((work) => {
-        deps.progress.begin(labelOf(work));
-        return applyWork(deps, input, drive, driveState, work).then((outcome) => {
-          deps.progress.step(labelOf(work));
-          return outcome;
-        });
-      })
-    );
-    const folded = results.reduce((manifest, done) => done.update(manifest), driveState);
-    const advanced = withDrive(current, drive.id, { ...folded, pending: driveState.pending.slice(window.length) });
-    const saved = await save(deps.files, statePath, advanced, input.dryRun);
-    if (!saved.ok) {
-      deps.progress.done();
-      return saved;
-    }
-    current = advanced;
-    for (const done of results) {
+  const queue = current.drives[drive.id]?.pending ?? [];
+  let unsaved: Result<never, StepError> | undefined;
+  deps.progress.start(queue.length, `${input.site.name} / ${drive.name}`);
+  // A document leaves the queue when it ends, and the state is saved then: a run stopped part way
+  // converts again only the documents that were in progress.
+  await inPool(
+    queue,
+    input.concurrency,
+    async (work) => {
+      deps.progress.begin(labelOf(work));
+      const outcome = await applyWork(deps, input, drive, current.drives[drive.id] ?? EMPTY_DRIVE, work);
+      deps.progress.step(labelOf(work));
+      return outcome;
+    },
+    async (work, done) => {
+      const held = current.drives[drive.id] ?? EMPTY_DRIVE;
+      const advanced = withDrive(current, drive.id, { ...done.update(held), pending: held.pending.filter((queued) => queued !== work) });
+      const saved = await save(deps.files, statePath, advanced, input.dryRun);
+      if (!saved.ok) {
+        unsaved = saved;
+        return false;
+      }
+      current = advanced;
       summary = add(summary, done.counted);
       notes = mergeNotes(notes, done.notes ?? {});
+      return true;
     }
-  }
+  );
+  deps.progress.done();
+  return unsaved ?? ok({ state: current, summary, notes });
 };
 
 // The same three lists the reports draw, named in the domain so both reports share the shape.

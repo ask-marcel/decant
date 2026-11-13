@@ -34,13 +34,24 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 });
 
 const run = async (
-  seeds: { reader?: DriveReaderSeed; files?: FilesFakeSeed; dryRun?: boolean; concurrency?: number; drives?: typeof drives; site?: typeof site; since?: string } = {}
+  seeds: {
+    reader?: DriveReaderSeed;
+    files?: FilesFakeSeed;
+    dryRun?: boolean;
+    concurrency?: number;
+    drives?: typeof drives;
+    site?: typeof site;
+    since?: string;
+    // Awaited before a document is converted, so a test can keep one in progress and say when it ends.
+    hold?: (files: FilesFake) => Promise<void>;
+  } = {}
 ): Promise<{ summary: RunSummary; notes?: RunNotes; files: FilesFake; logger: LoggerFake; progress: ProgressFake; reader: DriveReaderFake; ok: boolean }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
   const progress = createProgressFake();
   const reader = createDriveReaderFake(seeds.reader);
   const clock = createClockFake();
+  const convertFile = createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() });
   const syncSite = createSyncSite({
     reader,
     files,
@@ -49,7 +60,10 @@ const run = async (
     clock,
     kbRoot: 'kb',
     timezone: 'UTC',
-    convertFile: createConvertFile({ reader, files, ocr: createOcrFake(), clock, logger: createLoggerFake(), progress: createProgressFake() }),
+    convertFile: async (input) => {
+      await seeds.hold?.(files);
+      return convertFile(input);
+    },
   });
   const result = await syncSite({
     site: seeds.site ?? site,
@@ -674,14 +688,67 @@ describe('converting several items at once', () => {
     expect([...progress.begins].sort((left, right) => left.localeCompare(right))).toEqual(['A.docx', 'B.docx', 'C.docx']);
   });
 
-  it('a window of items saves the state once, not once per item', async () => {
+  it('each document that ends saves the state, however many are converted at one time', async () => {
     const wide = await run({ reader: threeItems, concurrency: 3 });
     const narrow = await run({ reader: threeItems, concurrency: 1 });
     const savesAt = (files: FilesFake): number => files.writeLog.filter((path) => path === STATE_PATH).length;
 
-    expect(savesAt(wide.files)).toBe(3);
-    expect(savesAt(wide.files)).toBeLessThan(savesAt(narrow.files));
+    // The queue, then one save a document, then the end of the run.
+    expect(savesAt(wide.files)).toBe(5);
+    expect(savesAt(narrow.files)).toBe(5);
   });
+
+  // The first document to start is kept in progress until the third has started. A run that waits for
+  // a whole batch to end before it starts the next never starts the third, and stands still.
+  const firstWaitsForThird = (seen: (order: number, files: FilesFake) => void): ((files: FilesFake) => Promise<void>) => {
+    let started = 0;
+    let release = (): void => undefined;
+    const third = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return async (files) => {
+      started += 1;
+      const mine = started;
+      seen(mine, files);
+      if (mine === 1) await third;
+      if (mine === 3) release();
+      seen(-mine, files);
+    };
+  };
+
+  it('a document that ends frees its place at once: the third starts while the first is still in progress', async () => {
+    const events: number[] = [];
+
+    const { summary } = await run({ reader: threeItems, concurrency: 2, hold: firstWaitsForThird((order) => events.push(order)) });
+
+    expect(events).toEqual([1, 2, -2, 3, -3, -1]);
+    expect(summary.converted).toBe(3);
+  }, 2000);
+
+  it('no more documents are in progress at one time than the limit', async () => {
+    let inProgress = 0;
+    let most = 0;
+    const hold = async (): Promise<void> => {
+      inProgress += 1;
+      most = Math.max(most, inProgress);
+      await Promise.resolve();
+      inProgress -= 1;
+    };
+
+    await run({ reader: threeItems, concurrency: 2, hold });
+
+    expect(most).toBe(2);
+  });
+
+  it('a document that ends leaves the queue at once, so a run stopped there converts again only the ones in progress', async () => {
+    const queued: string[][] = [];
+    const queueOf = (files: FilesFake): string[] => (stateAfter(files).drives['b!one']?.pending ?? []).map((work) => (work as { item: { id: string } }).item.id);
+
+    await run({ reader: threeItems, concurrency: 2, hold: firstWaitsForThird((order, files) => queued.push(order === 1 || order === 3 ? queueOf(files) : [])) });
+
+    expect(queued[0]).toEqual(['a', 'b', 'c']);
+    expect(queued[3]).toEqual(['a', 'c']);
+  }, 2000);
 
   it('the same items converted at any width land the identical manifest', async () => {
     const wide = stateAfter((await run({ reader: threeItems, concurrency: 3 })).files).drives['b!one']?.items;
