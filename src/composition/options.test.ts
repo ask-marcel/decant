@@ -34,8 +34,8 @@ describe('reading what the operator asked for', () => {
         driveIds: [],
         dryRun: false,
         maxSizeMb: 50,
-        ocr: true,
-        ocrLang: 'auto',
+        ocr: false,
+        ocrLang: 'latin',
         concurrency: 4,
         assumeYes: false,
         mailbox: false,
@@ -201,6 +201,14 @@ describe('reading what the operator asked for', () => {
 
     expect(refused.ok).toBe(false);
     expect(refused.ok === false && refused.error.message).toContain('Asia/Shanghai');
+  });
+
+  it('reading images is asked for with --ocr, in the Latin model unless a language is named', () => {
+    expect(parse('--ocr')).toMatchObject({ value: { ocr: true, ocrLang: 'latin' } });
+  });
+
+  it('naming a language asks for the reading too', () => {
+    expect(parse('--ocr-lang ch')).toMatchObject({ value: { ocr: true, ocrLang: 'ch' } });
   });
 
   it('reading images can be turned off for a run', () => {

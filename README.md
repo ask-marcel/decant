@@ -27,7 +27,7 @@ used as a library, which owns authentication, paging and document conversion. Se
 
 - [Bun](https://bun.sh) 1.2 or newer
 - A Microsoft 365 account. If you are not signed in, `decant` opens a browser where you sign in
-- Python 3 with [`rapidocr`](https://pypi.org/project/rapidocr/) installed, to read text out of images and scanned PDFs (optional; without it the files are still copied). It fetches the models it needs on first use, one per language it reads in
+- Optional, only for `--ocr`: Python 3 with [`rapidocr`](https://pypi.org/project/rapidocr/) and `onnxruntime` (`python3 -m pip install rapidocr onnxruntime`). OCR reads the text out of images and scanned PDFs. RapidOCR downloads the models that it needs on first use, one for each language
 
 ## Install
 
@@ -225,9 +225,9 @@ You can give many source flags in one command. decant syncs all the sources that
 | `--max-size-mb <n>` | Skip files larger than this (default 50) |
 | `--concurrency <n>` | How many items to convert at once (default 4); `1` is strictly sequential |
 | `--convert-timeout <seconds>` | Stop the conversion of one file after this time (default 120). decant tries the file again on the next run (see Time limit of a conversion) |
-| `--no-ocr` | Do not read text out of images or scanned PDFs |
+| `--ocr` | Read the text out of images and scanned PDFs (off by default; see Reading the text of pictures) |
 | `--refresh` | List the sites afresh instead of drawing the picker from the ones last seen |
-| `--ocr-lang <code>` | Force one language for images and scanned PDFs (default `auto`, chosen per image) |
+| `--ocr-lang <code>` | Turn `--ocr` on with this language (default `latin`; `auto` chooses for each image) |
 | `--timezone <zone>` | IANA zone of the knowledge base, for example `Asia/Shanghai`. decant keeps it for all later runs (see Time zone). Default: the kept zone, or the zone of this machine |
 
 ## What lands in `kb/`
@@ -425,7 +425,30 @@ the location, the organiser, everyone asked, the recurrence rule, and whether th
 cancellation. What goes is the block of daylight-saving rules, the vendor properties, and the
 description, which repeats the mail the invitation rode in on.
 
-The language an image is read in is chosen per image, not per run. Nothing about a file says which
+### Reading the text of pictures
+
+OCR is off by default. decant always keeps each picture and each scanned PDF as a file, and the
+markdown has a link to it. Thus an agent that can read pictures can open the file from the link.
+Turn OCR on with `--ocr` when you want the text of pictures in the markdown, for example for a text
+search:
+
+```bash
+decant update --ocr
+```
+
+OCR needs Python 3 with the packages `rapidocr` and `onnxruntime`. A run with `--ocr` first makes
+sure that Python can load them. decant looks for `python3`, and then for `python`. If Python or a
+package is missing, decant shows what to install and stops with exit code 1, and it syncs nothing:
+
+```bash
+python3 -m pip install rapidocr onnxruntime
+```
+
+With `--ocr`, decant reads each picture one time with the `latin` model, which reads English and
+keeps the accents of Dutch, French and German. `--ocr-lang <code>` turns OCR on with a different
+language. `--ocr-lang auto` chooses the language for each picture, as follows.
+
+With `auto`, the language an image is read in is chosen per image, not per run. Nothing about a file says which
 language it holds, so the run finds out by reading it twice. The first reading uses the widest
 dictionary RapidOCR ships, which holds ideographs, both Japanese syllabaries and accented Latin at
 once, so it can say what the image is written in. That reading is then thrown away and the image is
@@ -444,10 +467,10 @@ itself. Only successful readings are kept, since a failure says something about 
 than about the image.
 
 Pass `--ocr-lang` with a RapidOCR language (`ch`, `en`, `japan`, `korean`, `cyrillic`, ...) to force
-one for the whole run and skip the deciding pass. A language RapidOCR does not have is refused
+one for the whole run. A language RapidOCR does not have is refused
 straight away, with the accepted ones listed, rather than failing once per image.
 
-Korean is the one script the deciding pass cannot recognise: no model that reads Korean also reads
+Korean is the one script the deciding pass of `auto` cannot recognise: no model that reads Korean also reads
 anything else, so the first reading returns Chinese-looking nonsense for a Korean page instead of
 returning nothing. Sync a Korean source with `--ocr-lang korean` and it reads correctly.
 
@@ -463,7 +486,7 @@ reads goes in the section `## Text in the pictures` at the end of the markdown. 
 link to its picture. A picture without text has no entry.
 
 This text is not in the middle of the document, because there it can break a table or a list. With
-`--no-ocr`, decant keeps the pictures, but does not read them.
+OCR off, which is the default, decant keeps the pictures, but does not read them.
 
 An Excel workbook does not give the position of its pictures. Thus decant gets the pictures of a
 workbook as a different step, and writes them in the section `## Images` at the end of the markdown.
@@ -1255,8 +1278,8 @@ one mailbox, everything OCR found real words in was 64 KB or more and everything
 logo, so the threshold costs no content and saves a twenty-second pass per logo.
 
 decant keeps a picture of a message body one time for the mailbox, also when OCR reads no words from
-it. A picture of less than 10 KB and a picture in a run with `--no-ocr` are also kept one time. A subsequent
-run does not read such a picture again. If OCR cannot start, or has an error on the picture, the next
+it. A picture of less than 10 KB and a picture in a run with OCR off are also kept one time. A subsequent
+run does not read such a picture again, also when that run has `--ocr`. If OCR cannot start, or has an error on the picture, the next
 run reads it again. When threads of one run show the same new picture, decant converts it one time.
 This is also correct for the threads of a group inbox.
 

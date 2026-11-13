@@ -55,9 +55,9 @@ const DEFAULTS: Options = {
   driveIds: [],
   dryRun: false,
   maxSizeMb: 50,
-  ocr: true,
+  ocr: false,
   refresh: false,
-  ocrLang: 'auto',
+  ocrLang: 'latin',
   concurrency: 4,
   assumeYes: false,
   mailbox: false,
@@ -69,6 +69,10 @@ const DEFAULTS: Options = {
   timezone: '',
 };
 
+// Reading the text out of images and scanned PDFs is asked for, with `--ocr` or by naming a language:
+// it needs Python and two packages a machine may not have, and an agent that reads a picture can
+// follow the link to it instead. `latin` is the model for a run that names none, since it keeps the
+// accents and the spaces between words; `auto` still settles the language image by image.
 // RapidOCR's recognizer catalogue, plus the `auto` that picks from it per image. Kept here so a
 // typo is refused at the command line: an unknown language reaches Python, throws once per image,
 // and turns a whole sync into "no text" notes while still reporting itself as a success.
@@ -108,7 +112,9 @@ const FLAGS_WITH_VALUE = new Set([
 ]);
 
 const withOcrLang = (options: Options, value: string): Result<Options, OptionsError> =>
-  OCR_LANGUAGES.includes(value) ? ok({ ...options, ocrLang: value }) : err({ kind: 'bad-option', message: `--ocr-lang expects one of ${OCR_LANGUAGES.join(', ')}, got: ${value}` });
+  OCR_LANGUAGES.includes(value)
+    ? ok({ ...options, ocr: true, ocrLang: value })
+    : err({ kind: 'bad-option', message: `--ocr-lang expects one of ${OCR_LANGUAGES.join(', ')}, got: ${value}` });
 
 // Refused here rather than at the first message, the way an OCR language is. A tenant reports its
 // zone in Windows spelling ("China Standard Time") unless it is set to IANA, and that spelling
@@ -194,6 +200,7 @@ const withValue = (options: Options, flag: string, value: string): Result<Option
 // What each flag that takes no value sets, one row a flag and one for each short form.
 const FLAGS: ReadonlyMap<string, Partial<Options>> = new Map<string, Partial<Options>>([
   ['--dry-run', { dryRun: true }],
+  ['--ocr', { ocr: true }],
   ['--no-ocr', { ocr: false }],
   ['--refresh', { refresh: true }],
   ['--mailbox', { mailbox: true }],
@@ -253,7 +260,7 @@ export const USAGE = [
   '  --concurrency <n>   how many items to convert at once (default 4)',
   '  --convert-timeout <seconds>',
   '                      stop the conversion of one file after this time, and try it again next run (default 120)',
-  '  --no-ocr            do not read text out of images or scanned PDFs',
+  '  --ocr               read the text out of images and scanned PDFs (needs Python 3 with rapidocr and onnxruntime)',
   '  --group-id <id>     sync one group inbox, by its id or its address, without the picker',
   '  --todo-list <name>  sync one To Do list, by its name or its id, without the picker',
   '  --team <name>       sync every channel of one Team, by its name or its id, without the picker',
@@ -270,7 +277,7 @@ export const USAGE = [
   '  --plans all         sync every Planner plan',
   '                      source flags combine: decant --teams all --sites all --mailbox syncs all three',
   '  --refresh           list the sites afresh instead of showing the ones last seen',
-  '  --ocr-lang <code>   force one language for images and scanned PDFs (default auto, per image)',
+  '  --ocr-lang <code>   turn --ocr on with this language (default latin; auto chooses for each image)',
   '  --timezone <zone>   IANA zone the knowledge base counts its days in, and keep it for every later run',
   "                      (default the zone an earlier run kept, else this machine's)",
   '  --yes, -y           take the saved choices instead of asking',
