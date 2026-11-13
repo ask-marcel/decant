@@ -4,7 +4,7 @@ import { scriptOf } from '../domain/ocr-language.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import { formatError } from '../domain/utilities/format-error.ts';
-import type { Ocr, OcrError, OcrReading } from '../use-cases/ports/ocr.ts';
+import type { Ocr, OcrError, OcrMissing, OcrReading } from '../use-cases/ports/ocr.ts';
 
 // RapidOCR's own CLI prints a free-text dataclass repr and its `--lang_type` flag only feeds
 // visualisation, never the recognizer (confirmed by reading its source), so this drives the Python
@@ -53,6 +53,44 @@ const FOR_SCRIPT: Record<ReadingScript, Model> = {
 };
 const NAMED_VERSION = 'PP-OCRv4';
 
+// A run that names the Latin model gets the one `auto` picks for a Latin image, for the same reason.
+const namedModel = (lang: string): Model => (lang === FOR_SCRIPT.latin.lang ? FOR_SCRIPT.latin : { lang, version: NAMED_VERSION });
+
+// Python goes by either name: `python3` everywhere but Windows, where an install often puts only
+// `python` on the path.
+const PYTHONS = ['python3', 'python'];
+const IMPORT_CHECK = 'import rapidocr, onnxruntime';
+
+type Found = 'ready' | 'no-packages' | 'absent';
+
+// A Python that starts and cannot import says which module it lacks. Anything else, a command that
+// is not there or the stub Windows ships in place of Python, is no Python.
+const probe = async (shell: Shell, python: string): Promise<Found> => {
+  try {
+    const run = await shell([python, '-c', IMPORT_CHECK]);
+    if (run.exitCode === 0) return 'ready';
+    return /ModuleNotFoundError|ImportError/.test(run.stderr) ? 'no-packages' : 'absent';
+  } catch {
+    return 'absent';
+  }
+};
+
+type Looked = { readonly python?: string; readonly lacking?: string };
+
+// The first Python that can do OCR, or failing that the first one that starts, which is the one to
+// install the packages into.
+const lookFor = async (shell: Shell, candidates: ReadonlyArray<string>): Promise<Looked> => {
+  let lacking: string | undefined;
+  for (const candidate of candidates) {
+    const found = await probe(shell, candidate);
+    if (found === 'ready') return { python: candidate };
+    if (found === 'no-packages') lacking ??= candidate;
+  }
+  return lacking === undefined ? {} : { lacking };
+};
+
+const missingOf = (looked: Looked): OcrMissing => (looked.lacking === undefined ? { kind: 'no-python' } : { kind: 'no-packages', python: looked.lacking });
+
 const lastLine = (text: string): string => text.trim().split('\n').slice(-1)[0] ?? '';
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
@@ -78,7 +116,7 @@ const readWith = async (options: RapidOptions, path: string, model: Model): Prom
 // mailbox is full of signature pictures that would otherwise pay for a second pass saying nothing.
 // A probe that failed is reported rather than retried, since the second read would fail alike.
 const reading = async (options: RapidOptions, path: string): Promise<Result<OcrReading, OcrError>> => {
-  if (options.lang !== AUTO) return readWith(options, path, { lang: options.lang, version: NAMED_VERSION });
+  if (options.lang !== AUTO) return readWith(options, path, namedModel(options.lang));
   const probe = await readWith(options, path, PROBE);
   if (!probe.ok || probe.value.text.trim().length === 0) return probe;
   return readWith(options, path, FOR_SCRIPT[scriptOf(probe.value.text)]);
@@ -103,15 +141,25 @@ const cached = async (options: RapidOptions, path: string): Promise<Result<OcrRe
   return read;
 };
 
-export const createRapidOcr = (options: RapidOptions): Ocr => ({
-  read: async (path): Promise<Result<OcrReading, OcrError>> => {
-    try {
-      return await cached(options, path);
-    } catch (error) {
-      return err({ kind: 'unavailable', message: formatError(error) });
-    }
-  },
-});
+export const createRapidOcr = (options: RapidOptions): Ocr => {
+  // The Python the check found, which every read after it starts.
+  let python = options.binary;
+  return {
+    ready: async (): Promise<Result<void, OcrMissing>> => {
+      const looked = await lookFor(options.shell, options.binary === undefined ? PYTHONS : [options.binary]);
+      if (looked.python === undefined) return err(missingOf(looked));
+      python = looked.python;
+      return ok(undefined);
+    },
+    read: async (path): Promise<Result<OcrReading, OcrError>> => {
+      try {
+        return await cached({ ...options, binary: python }, path);
+      } catch (error) {
+        return err({ kind: 'unavailable', message: formatError(error) });
+      }
+    },
+  };
+};
 
 // Chosen when the run turned OCR off (`--no-ocr`): every read reports "unavailable", so an image or
 // a scanned PDF falls back to its note and no `ocr:` line ever claims text was read. It says it is

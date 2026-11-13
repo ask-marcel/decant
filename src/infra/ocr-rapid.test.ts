@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createFileOcrCache, createNoOcr, createRapidOcr } from './ocr-rapid.ts';
-import type { OcrCache, ShellRun } from './ocr-rapid.ts';
+import type { OcrCache, Shell, ShellRun } from './ocr-rapid.ts';
 import type { OcrReading } from '../use-cases/ports/ocr.ts';
 
 // Trimmed from a real `en_PP-OCRv4` run against a live image this session: to_json() gives one
@@ -185,6 +185,78 @@ describe('a run that named its own language', () => {
 
     expect(read).toEqual({ ok: true, value: { text: RUN_TOGETHER, label: 'rapidocr (ch)' } });
     expect(capture).toHaveLength(1);
+  });
+});
+
+describe('a run that named the Latin model', () => {
+  // The Latin model of PP-OCRv5 keeps the spaces between words and the accents; the one before it
+  // runs the words together.
+  it('reads the image once with the Latin model of PP-OCRv5, where any other named language keeps PP-OCRv4', async () => {
+    const latin: string[][] = [];
+    const chinese: string[][] = [];
+
+    const read = await readerFor({ stdout: linesOf(SPACED) }, latin, 'latin').read('kb/Site/Nota.png');
+    await readerFor({ stdout: linesOf(CHINESE) }, chinese, 'ch').read('kb/Site/Nota.png');
+
+    expect(read).toEqual({ ok: true, value: { text: SPACED, label: 'rapidocr (latin)' } });
+    expect(latin.map((command) => command.slice(3))).toEqual([['latin', 'PP-OCRv5']]);
+    expect(chinese.map((command) => command.slice(3))).toEqual([['ch', 'PP-OCRv4']]);
+  });
+});
+
+// Asked once before a run that wants OCR, so a machine that cannot do it says so before the first
+// source and not once a picture, in a note nobody reads.
+describe('finding out whether this machine can do OCR', () => {
+  const NO_MODULE = { exitCode: 1, stderr: "ModuleNotFoundError: No module named 'rapidocr'" };
+  // The `python3` Windows puts on the path when no Python is installed: it starts, and says so.
+  const STORE_STUB = { exitCode: 9009, stderr: 'Python was not found; run without arguments to install from the Microsoft Store' };
+  const createMachine =
+    (pythons: Readonly<Record<string, Partial<ShellRun>>>, capture: string[][] = []): Shell =>
+    async (command) => {
+      capture.push([...command]);
+      const answer = pythons[command[0] ?? ''];
+      if (answer === undefined) throw new Error(`spawn ${command[0]} ENOENT`);
+      return { exitCode: 0, stdout: '', stderr: '', ...answer };
+    };
+
+  it('a python3 that loads rapidocr and onnxruntime is ready, and reads the images', async () => {
+    const capture: string[][] = [];
+    const ocr = createRapidOcr({ lang: 'latin', shell: createMachine({ python3: { stdout: linesOf(SPACED) } }, capture) });
+
+    expect(await ocr.ready?.()).toEqual({ ok: true, value: undefined });
+    await ocr.read('photo.jpg');
+
+    expect(capture[0]).toEqual(['python3', '-c', 'import rapidocr, onnxruntime']);
+    expect(capture[1]?.[0]).toBe('python3');
+  });
+
+  it('a machine with no python3 and a python that loads them is ready, and reads the images with python', async () => {
+    const capture: string[][] = [];
+    const ocr = createRapidOcr({ lang: 'latin', shell: createMachine({ python: { stdout: linesOf(SPACED) } }, capture) });
+
+    expect(await ocr.ready?.()).toEqual({ ok: true, value: undefined });
+    const read = await ocr.read('photo.jpg');
+
+    expect(read.ok && read.value.text).toBe(SPACED);
+    expect(capture.at(-1)?.[0]).toBe('python');
+  });
+
+  it('a Python that cannot load them is named, so the guide can say which one to install into', async () => {
+    const ocr = createRapidOcr({ lang: 'latin', shell: createMachine({ python3: STORE_STUB, python: NO_MODULE }) });
+
+    expect(await ocr.ready?.()).toEqual({ ok: false, error: { kind: 'no-packages', python: 'python' } });
+  });
+
+  it('a machine with no Python, or only the stub Windows ships, has none', async () => {
+    const none = createRapidOcr({ lang: 'latin', shell: createMachine({}) });
+    const stub = createRapidOcr({ lang: 'latin', shell: createMachine({ python3: STORE_STUB }) });
+
+    expect(await none.ready?.()).toEqual({ ok: false, error: { kind: 'no-python' } });
+    expect(await stub.ready?.()).toEqual({ ok: false, error: { kind: 'no-python' } });
+  });
+
+  it('OCR that is off is asked nothing', () => {
+    expect(createNoOcr().ready).toBeUndefined();
   });
 });
 
