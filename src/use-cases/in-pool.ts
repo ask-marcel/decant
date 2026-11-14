@@ -25,3 +25,20 @@ export const inPool = async <T, R>(items: ReadonlyArray<T>, places: number, work
   };
   await Promise.all(Array.from({ length: places }, place));
 };
+
+// Hands `landed` the results in the order of the queue, whatever order they end in: a result waits
+// until every item before it has landed. For a source whose state says how far it got, where a
+// later item recorded before an earlier one would step over it.
+export const inOrder = <T, R>(items: ReadonlyArray<T>, landed: Landed<T, R>): Landed<T, R> => {
+  const ended = new Map<T, R>();
+  let at = 0;
+  return async (item, result) => {
+    ended.set(item, result);
+    while (at < items.length && ended.has(items[at] as T)) {
+      const next = items[at] as T;
+      at += 1;
+      if (!(await landed(next, ended.get(next) as R))) return false;
+    }
+    return true;
+  };
+};

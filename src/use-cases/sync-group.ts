@@ -26,6 +26,7 @@ import { parseJson } from '../domain/utilities/parse-json.ts';
 import { isBefore, widens } from '../domain/sync-window.ts';
 import type { GroupReader, GroupSummary } from './ports/group-reader.ts';
 import type { Clock } from './ports/clock.ts';
+import { inOrder, inPool } from './in-pool.ts';
 import type { Files } from './ports/files.ts';
 import type { Logger } from './ports/logger.ts';
 import type { Progress } from './ports/progress.ts';
@@ -293,30 +294,37 @@ const render = async (
   current = gone.reduce((carried, done) => done.apply(carried), current);
   summary = counted(summary, gone);
   notes = noted(notes, gone);
+  let unsaved: Result<never, StepError> | undefined;
   deps.progress.start(threads.length, `${input.group.name} (group inbox)`);
-  for (let at = 0; at < threads.length; at += input.concurrency) {
-    const window = threads.slice(at, at + input.concurrency);
-    const results = await Promise.all(
-      window.map((thread) => {
-        deps.progress.begin(thread.topic);
-        return renderOne(deps, input, current, place, thread).then((outcome) => {
-          deps.progress.step(thread.topic);
-          return outcome;
-        });
-      })
-    );
-    current = results.reduce((carried, done) => done.apply(carried), current);
-    const saved = await save(deps, `${root}/${GROUP_STATE_FILE}`, current);
-    if (!saved.ok) {
-      deps.progress.done();
-      return saved;
-    }
-    summary = counted(summary, results);
-    notes = noted(notes, results);
-  }
+  // Every place of the limit stays busy, and the threads are recorded oldest first all the same: the
+  // next run starts from the newest thread recorded, so one recorded while an older thread was still
+  // in progress would leave that older thread behind the mark if the run stopped there.
+  await inPool(
+    threads,
+    input.concurrency,
+    async (thread) => {
+      deps.progress.begin(thread.topic);
+      const outcome = await renderOne(deps, input, current, place, thread);
+      deps.progress.step(thread.topic);
+      return outcome;
+    },
+    inOrder(threads, async (_thread, done) => {
+      const advanced = done.apply(current);
+      const saved = await save(deps, `${root}/${GROUP_STATE_FILE}`, advanced);
+      if (!saved.ok) {
+        unsaved = saved;
+        return false;
+      }
+      current = advanced;
+      summary = counted(summary, [done]);
+      notes = noted(notes, [done]);
+      return true;
+    })
+  );
   deps.progress.done();
-  // Saved once at the end as well as per window, which is what the other two sources do. A group
-  // that gained nothing renders nothing, so the window loop never runs and never saved: its state
+  if (unsaved !== undefined) return unsaved;
+  // Saved once at the end as well as per thread, which is what the other two sources do. A group
+  // that gained nothing renders nothing, so nothing is recorded as it goes and nothing saved: its state
   // then carried the date of the last run that happened to find work, and the run report called it
   // stale on the strength of that.
   // The day is kept only here, once every thread in reach has been tried: kept any earlier, a run

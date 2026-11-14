@@ -57,6 +57,8 @@ const run = async (
     // The thread whose render refuses, by id, so one thread can fail while another lands beside it.
     failThread?: string;
     since?: string;
+    // Awaited while a thread is written, so a test can keep one in progress and say when it ends.
+    hold?: (files: FilesFake) => Promise<void>;
   } = {}
 ): Promise<{
   summary: RunSummary;
@@ -88,6 +90,7 @@ const run = async (
       names.push(name);
       asked.push(input);
       roots.push(root);
+      await seeds.hold?.(files);
       if (seeds.failThread !== undefined && input.conversationIds.includes(threadRef(GROUP.id, seeds.failThread)))
         return err({ kind: 'permanent' as const, message: 'thread refused' });
       return ok(seeds.outcome === undefined ? rendered() : seeds.outcome(input));
@@ -700,4 +703,71 @@ describe('the renderer of a group inbox', () => {
     expect(done.ok && done.value.summary.converted).toBe(2);
     expect(built).toStrictEqual(['kb/Group inboxes/Northwind Leadership Team']);
   });
+});
+
+describe('writing several group threads at one time', () => {
+  // Listed newest first, as Graph lists them, and written oldest first.
+  const three: GroupReaderSeed = {
+    threads: {
+      '0d3b-group': [
+        thread({ id: 'newest', lastDelivered: '2026-08-10T05:40:15Z' }),
+        thread({ id: 'middle', lastDelivered: '2026-07-20T10:45:14Z' }),
+        thread({ id: 'oldest', lastDelivered: '2026-06-16T06:45:11Z' }),
+      ],
+    },
+  };
+  const recordedIn = (files: FilesFake): string[] => Object.keys((stateAfter(files) as { threads?: Record<string, unknown> }).threads ?? {});
+
+  // The first thread to start is kept in progress until the third has started. A run that waits for a
+  // whole batch to end before it starts the next never starts the third, and stands still.
+  const firstWaitsForThird = (seen: (order: number, files: FilesFake) => void): ((files: FilesFake) => Promise<void>) => {
+    let started = 0;
+    let release = (): void => undefined;
+    const third = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return async (files) => {
+      started += 1;
+      const mine = started;
+      seen(mine, files);
+      if (mine === 1) await third;
+      if (mine === 3) release();
+      seen(-mine, files);
+    };
+  };
+
+  it('a thread that ends frees its place at once: the third starts while the first is still in progress', async () => {
+    const events: number[] = [];
+
+    const { summary } = await run({ reader: three, concurrency: 2, hold: firstWaitsForThird((order) => events.push(order)) });
+
+    expect(events).toEqual([1, 2, -2, 3, -3, -1]);
+    expect(summary.converted).toBe(3);
+  }, 2000);
+
+  it('no more threads are in progress at one time than the limit', async () => {
+    let inProgress = 0;
+    let most = 0;
+    const hold = async (): Promise<void> => {
+      inProgress += 1;
+      most = Math.max(most, inProgress);
+      await Promise.resolve();
+      inProgress -= 1;
+    };
+
+    await run({ reader: three, concurrency: 2, hold });
+
+    expect(most).toBe(2);
+  });
+
+  // The next run starts from the newest thread recorded. A newer thread recorded while an older one
+  // is still in progress would put the older one behind that mark for good, if the run stopped there.
+  it('a thread that ends before an older one is not recorded before it, so a run stopped there loses no thread', async () => {
+    const recorded: string[][] = [];
+
+    const { files } = await run({ reader: three, concurrency: 2, hold: firstWaitsForThird((order, held) => recorded.push(order === 3 ? recordedIn(held) : [])) });
+
+    expect(recorded[3]).toHaveLength(0);
+    expect(recordedIn(files)).toHaveLength(3);
+  }, 2000);
 });
