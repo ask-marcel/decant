@@ -252,3 +252,43 @@ describe('skipping an update that ran a short time ago', () => {
     expect(parse('--max-age 60 --mailbox')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--max-age works only with update' } });
   });
 });
+
+describe('asking for one thing', () => {
+  it('get with the address of a file asks for that file', () => {
+    expect(parse('get https://contoso.sharepoint.com/sites/Pepco/Shared%20Documents/QBR.pptx')).toMatchObject({
+      ok: true,
+      value: { command: 'get', target: { kind: 'file', url: 'https://contoso.sharepoint.com/sites/Pepco/Shared%20Documents/QBR.pptx' } },
+    });
+  });
+
+  it('get with the id of a message, or the address of a mail, asks for its conversation', () => {
+    expect(parse('get AAMkAGI2TG93AAA=')).toMatchObject({ value: { command: 'get', target: { kind: 'mail', id: 'AAMkAGI2TG93AAA=' } } });
+    expect(parse('get https://outlook.office365.com/owa/?ItemID=AAMkAGI%3D')).toMatchObject({ value: { target: { kind: 'mail-link' } } });
+  });
+
+  it('get takes the folder and the size limit a sync takes', () => {
+    expect(parse('get AAMkAGI= --out export --max-size-mb 5')).toMatchObject({ value: { command: 'get', out: 'export', maxSizeMb: 5 } });
+  });
+
+  it('get with nothing to get is refused, with what it takes', () => {
+    expect(parse('get')).toEqual({ ok: false, error: { kind: 'bad-option', message: 'get expects the address of a file, or the id or the address of a mail' } });
+  });
+
+  it('get with an address that is neither a file nor a mail is refused, naming where it points', () => {
+    expect(parse('get https://example.com/file.docx')).toEqual({
+      ok: false,
+      error: { kind: 'bad-option', message: 'get does not know the address at example.com: give an address on SharePoint or OneDrive, or of a mail in Outlook on the web' },
+    });
+  });
+
+  it('get takes one thing: a second one, or a source beside it, is refused', () => {
+    expect(parse('get AAMkAGI= AAMkAGJ=')).toEqual({ ok: false, error: { kind: 'bad-option', message: 'unexpected argument: AAMkAGJ=' } });
+    for (const source of ['--mailbox', '--calendar', '--people', '--onedrive', '--teams all', '--site-id contoso,1,2', '--drive-id b!one']) {
+      expect(parse(`get AAMkAGI= ${source}`)).toEqual({ ok: false, error: { kind: 'bad-option', message: 'get takes one address or id, and no source' } });
+    }
+  });
+
+  it('a value with no get before it is still an argument nobody expected', () => {
+    expect(parse('AAMkAGI=')).toEqual({ ok: false, error: { kind: 'bad-option', message: 'unexpected argument: AAMkAGI=' } });
+  });
+});

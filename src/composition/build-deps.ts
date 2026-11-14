@@ -53,6 +53,10 @@ import type { Prompt } from '../use-cases/ports/prompt.ts';
 import type { StepError } from '../use-cases/ports/step-error.ts';
 import { createRunSync } from '../use-cases/run-sync.ts';
 import { createUpdateWhenStale } from '../use-cases/update-when-stale.ts';
+import { createGetFile } from '../use-cases/get-file.ts';
+import { PICKED_MAILBOX, createGetMail } from '../use-cases/get-mail.ts';
+import { createGetOne } from '../use-cases/get-one.ts';
+import type { GetOne } from '../use-cases/get-one.ts';
 import type { UpdateWhenStale } from '../use-cases/update-when-stale.ts';
 import type { RunSync } from '../use-cases/run-sync.ts';
 import { createRenderThread } from '../use-cases/render-thread.ts';
@@ -80,6 +84,7 @@ import { pickerView } from './picker-view.ts';
 
 export type BuiltDeps = {
   readonly runSync: UpdateWhenStale;
+  readonly getOne: GetOne;
   readonly logger: Logger;
 };
 
@@ -271,6 +276,28 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     timezone: config.timezone,
     pathBudget,
   });
+  // One conversation fetched by `get` is written the way the mailbox writes a thread, under a root of
+  // its own that holds no state, so no later update reads it as a synced mailbox.
+  const pickedRoot = `${config.kbRoot}/${PICKED_MAILBOX}`;
+  const renderPicked = createRenderThread({
+    reader: mail,
+    drive: reader,
+    files,
+    ocrOff: ocr.off === true,
+    convertAttachment,
+    convertFile,
+    clock,
+    logger,
+    progress,
+    mailboxRoot: pickedRoot,
+    sourceName: MAILBOX_NAME,
+    timezone: config.timezone,
+    pathBudget,
+  });
+  const fetchOne = createGetOne({
+    getFile: createGetFile({ drive: reader, convertFile, kbRoot: config.kbRoot }),
+    getMail: createGetMail({ reader: mail, renderThread: renderPicked, mailboxRoot: pickedRoot }),
+  });
   const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone, writeDown });
   // A group inbox reads through its own commands but renders through the same path, so it gets the
   // same converters with the group reader underneath them, and a renderer per group because each
@@ -360,6 +387,10 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     if (!input.dryRun) await ledger.retry();
     return run(input);
   };
+  const getOne: GetOne = async (input) => {
+    const lacking = await ocrLacking(ocr);
+    return lacking === undefined ? fetchOne(input) : err(lacking);
+  };
   const runSync = createUpdateWhenStale({ runSync: runAll, files, clock, logger, prompt, view: pickerView, kbRoot: config.kbRoot });
-  return { logger, runSync };
+  return { logger, runSync, getOne };
 };

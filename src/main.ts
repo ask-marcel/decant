@@ -38,8 +38,15 @@ const run = async (): Promise<number> => {
     createBunFiles()
   );
   const deps = buildDeps(config);
+  // One thing fetched: the path of its note is the whole answer, alone on stdout for a caller to read.
+  if (options.value.command === 'get' && options.value.target !== undefined) {
+    const got = await deps.getOne({ target: options.value.target, maxBytes: options.value.maxSizeMb * MB });
+    printLine(got.ok ? got.value.path : `failed at ${got.error.step}: ${got.error.message}`);
+    return got.ok ? EXIT_DONE : EXIT_STOPPED;
+  }
+  const command = options.value.command === 'update' ? 'update' : 'sync';
   const summaries = await deps.runSync({
-    command: options.value.command,
+    command,
     siteId: options.value.siteId,
     siteUrl: options.value.siteUrl,
     groupId: options.value.groupId,

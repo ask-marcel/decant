@@ -125,6 +125,37 @@ and an update with no `--max-age`. A stopped update and a dry run do not write i
 `kb/.last-update.json` is missing, cannot be read, or gives a time after the time of the machine,
 the update runs.
 
+### Get one file or one mail conversation
+
+`decant get` gets one item, not a full source. It takes one value:
+
+```bash
+decant get "https://contoso.sharepoint.com/sites/Pepco/Shared Documents/QBR.pptx"
+decant get AAMkAGI2TG93AAA=
+```
+
+| Value | What decant gets |
+|---|---|
+| The address of a file on SharePoint or OneDrive | That file. This can be the `webUrl` of the file, or a link from "Copy link". decant finds the library and the file from the address, so you do not give two ids |
+| The id of a mail message | The full conversation of that message, with its attachments and its linked files |
+| The address of a mail in Outlook on the web | The same conversation |
+
+decant prints the path of the markdown file on the standard output, and nothing else there. Thus a
+script or an agent can read the file immediately. The exit code is 0 for success. If decant cannot
+get the item, it prints the cause and the exit code is 1.
+
+The item goes in `kb/Picked/`, with the same files as a sync writes:
+
+```
+kb/Picked/
+  Files/<Site>/<Library>/<folders>/QBR.pptx.md      the text, with the original and the PDF adjacent
+  Mailbox/threads/<day>-<id>-<subject>/<subject>.md the conversation, with its attachments
+```
+
+`kb/Picked/` has no state file. Thus `update` does not refresh these items, and it does not start to
+sync the source that an item came from. To refresh an item, get it again. `get` accepts `--out`,
+`--max-size-mb`, `--ocr` and `--convert-timeout`, and it does not accept a source flag.
+
 ### How far back
 
 The first run that has something to sync asks how far back to reach: a day such as `2025-01-01`, or
@@ -238,6 +269,8 @@ kb/
   .last-update.json                 the start time of the last update that got to the end
   _sync-report.md                   what the last run left behind, every source in one file
   .sync-aside.json                  files let go that did not move to _archive/ (see Re-running)
+  Picked/...                        the items that `decant get` fetched one at a time (see Get one
+                                    file or one mail conversation)
   _archive/2026-10-13/...           the earlier copy of each file, under the day of the run that
                                     moved it: deleted at the source, renamed, moved, or replaced by
                                     an edit (a second copy of one path that day goes under 2026-10-13-2/)

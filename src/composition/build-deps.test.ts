@@ -834,3 +834,75 @@ describe('asking for OCR on a machine that cannot do it', () => {
     expect(outcome.ok).toBe(true);
   });
 });
+
+describe('getting one thing through the wired command', () => {
+  const LINK = 'https://contoso.sharepoint.com/sites/Pepco/Shared%20Documents/QBR.docx';
+  const qbr = { id: '01QBR', name: 'QBR.docx', kind: 'file' as const, size: 4096, path: 'QBR.docx', lastModified: '2026-11-12T09:31:00Z', cTag: 'c1', webUrl: LINK };
+  const library = { ...qbr, id: 'root', name: 'root', kind: 'folder' as const, path: '', webUrl: 'https://contoso.sharepoint.com/sites/Pepco/Shared%20Documents' };
+  const first: MailMessage = {
+    id: 'AAMk-first',
+    conversationId: 'AAQk-conv',
+    subject: 'Contrat Contoso',
+    received: '2026-11-10T09:31:00Z',
+    hasAttachments: false,
+    from: { name: 'Jane Doe', address: 'jane@example.com' },
+    to: [],
+    isDeleted: false,
+  };
+  const wired = (ocr: ReturnType<typeof createOcrFake> = createOcrFake()): { deps: ReturnType<typeof buildDeps>; files: ReturnType<typeof createFilesFake> } => {
+    const files = createFilesFake({ directories: { kb: [] } });
+    const deps = buildDeps(configFor({}), {
+      files,
+      logger: createLoggerFake(),
+      reader: createDriveReaderFake({
+        links: { [LINK]: { driveId: 'b!one', itemId: '01QBR' } },
+        items: { '01QBR': qbr, root: library },
+        markdown: { '01QBR': '# Quarterly review' },
+      }),
+      mail: createMailReaderFake({ conversations: { 'AAQk-conv': [first] }, bodies: { 'AAMk-first': 'Bonjour' } }),
+      group: createGroupReaderFake(),
+      todo: createTodoReaderFake(),
+      team: createTeamReaderFake(),
+      people: createPeopleReaderFake(),
+      calendar: createCalendarReaderFake(),
+      notebook: createNotebookReaderFake(),
+      list: createListReaderFake(),
+      plan: createPlanReaderFake(),
+      ocr,
+      prompt: createPromptFake(),
+      clock: createClockFake(),
+    });
+    return { deps, files };
+  };
+  const stateFiles = (files: ReturnType<typeof createFilesFake>): string[] =>
+    [...files.written.keys()].filter((path) => path.endsWith('.sync-state.json') || path.endsWith('.decant.json'));
+
+  it('one file lands under Picked, its note is named, and nothing a later update reads is written', async () => {
+    const { deps, files } = wired();
+
+    const got = await deps.getOne({ target: { kind: 'file', url: LINK }, maxBytes: 50 * 1024 * 1024 });
+
+    expect(got).toEqual({ ok: true, value: { path: 'kb/Picked/Files/Pepco/Shared Documents/QBR.docx.md' } });
+    expect(files.written.get('kb/Picked/Files/Pepco/Shared Documents/QBR.docx.md')).toContain('# Quarterly review');
+    expect(stateFiles(files)).toHaveLength(0);
+  });
+
+  it('one conversation lands under Picked, written the way the mailbox writes a thread', async () => {
+    const { deps, files } = wired();
+
+    const got = await deps.getOne({ target: { kind: 'mail', id: 'AAMk-first' }, maxBytes: 50 * 1024 * 1024 });
+
+    expect(got.ok && got.value.path).toMatch(/^kb\/Picked\/Mailbox\/threads\/2026-11-10-[0-9a-f]+-contrat-contoso\/contrat-contoso\.md$/);
+    expect(got.ok && files.written.get(got.value.path)).toContain('Bonjour');
+    expect(stateFiles(files)).toHaveLength(0);
+  });
+
+  it('a get with OCR that is not installed stops with what to install, as a sync does', async () => {
+    const { deps, files } = wired(createOcrFake({ missing: { kind: 'no-python' } }));
+
+    const got = await deps.getOne({ target: { kind: 'file', url: LINK }, maxBytes: 1000 });
+
+    expect(got.ok === false && got.error.step).toBe('checkOcr');
+    expect(files.written.size).toBe(0);
+  });
+});

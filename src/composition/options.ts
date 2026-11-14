@@ -1,13 +1,17 @@
 import type { Result } from '../domain/result.ts';
 import { isKnownZone } from '../domain/zoned-day.ts';
 import { SINCE_SHAPE, parseSince } from '../domain/sync-window.ts';
+import { parseGetTarget } from '../domain/get-target.ts';
+import type { GetTarget } from '../domain/get-target.ts';
 import { err, ok } from '../domain/result.ts';
 import type { WholeKind } from '../use-cases/run-sync.ts';
 
-export type Command = 'sync' | 'update';
+export type Command = 'sync' | 'update' | 'get';
 
 export type Options = {
   readonly command: Command;
+  // The one thing `get` was asked for: a file by its address, or a mail by its id or its address.
+  readonly target?: GetTarget;
   readonly siteId?: string;
   readonly siteUrl?: string;
   readonly groupId?: string;
@@ -218,16 +222,47 @@ const withFlag = (options: Options, flag: string): Result<Options, OptionsError>
   return set === undefined ? err({ kind: 'bad-option', message: `unknown option: ${flag}` }) : ok({ ...options, ...set });
 };
 
+const GET_TAKES = 'get expects the address of a file, or the id or the address of a mail';
+
+// The one value after `get`. An address that is neither a file nor a mail is refused here, by where
+// it points, rather than tried as the id of a mail and reported as a mail nobody found.
+const withTarget = (options: Options, token: string): Result<Options, OptionsError> => {
+  const target = parseGetTarget(token);
+  if (target.ok) return ok({ ...options, target: target.value });
+  const where = target.error.kind === 'unknown-address' ? target.error.host : '';
+  return err({ kind: 'bad-option', message: `get does not know the address at ${where}: give an address on SharePoint or OneDrive, or of a mail in Outlook on the web` });
+};
+
+const takesTarget = (options: Options): boolean => options.command === 'get' && options.target === undefined;
+
+const parseWord = (options: Options, token: string): Result<Options, OptionsError> => {
+  if (token === 'update' || token === 'sync' || token === 'get') return ok({ ...options, command: token });
+  return takesTarget(options) ? withTarget(options, token) : err({ kind: 'bad-option', message: `unexpected argument: ${token}` });
+};
+
 const parseToken = (options: Options, token: string, value: string | undefined): Result<Options, OptionsError> => {
-  if (token === 'update' || token === 'sync') return ok({ ...options, command: token });
-  if (!token.startsWith('-')) return err({ kind: 'bad-option', message: `unexpected argument: ${token}` });
+  if (!token.startsWith('-')) return parseWord(options, token);
   if (!FLAGS_WITH_VALUE.has(token)) return withFlag(options, token);
   return value === undefined ? err({ kind: 'bad-option', message: `${token} expects a value` }) : withValue(options, token, value);
 };
 
 // Checked once every token is read, since `--max-age 60 update` names the command after the flag.
-const checked = (options: Options): Result<Options, OptionsError> =>
-  options.maxAgeMinutes !== undefined && options.command !== 'update' ? err({ kind: 'bad-option', message: '--max-age works only with update' }) : ok(options);
+// Whether the line names a source to sync, which `get` does not take: it fetches one thing.
+const namesSource = (options: Options): boolean =>
+  [options.mailbox, options.people, options.calendar, options.onedrive, options.every.length > 0, options.driveIds.length > 0].includes(true) ||
+  [options.siteId, options.siteUrl, options.groupId, options.todoListId, options.teamId, options.notebookId, options.listsSite, options.planId].some(
+    (named) => named !== undefined
+  );
+
+const checkedGet = (options: Options): Result<Options, OptionsError> => {
+  if (options.target === undefined) return err({ kind: 'bad-option', message: GET_TAKES });
+  return namesSource(options) ? err({ kind: 'bad-option', message: 'get takes one address or id, and no source' }) : ok(options);
+};
+
+const checked = (options: Options): Result<Options, OptionsError> => {
+  if (options.maxAgeMinutes !== undefined && options.command !== 'update') return err({ kind: 'bad-option', message: '--max-age works only with update' });
+  return options.command === 'get' ? checkedGet(options) : ok(options);
+};
 
 export const parseOptions = (argv: ReadonlyArray<string>): Result<Options, OptionsError> => {
   let options = DEFAULTS;
@@ -243,8 +278,12 @@ export const parseOptions = (argv: ReadonlyArray<string>): Result<Options, Optio
 
 export const USAGE = [
   'Usage: decant [update] [options]',
+  '       decant get <address or id> [--out <folder>]',
   '',
   '  update              sync every source already in the export folder, without asking anything',
+  '  get <address|id>    fetch one thing into the Picked folder and print the path of its note:',
+  '                      the address of one file on SharePoint or OneDrive, or the id of a mail',
+  '                      message or its address in Outlook on the web (the whole conversation)',
   '  --site-id <id>      sync this site without showing the picker',
   '  --site-url <url>    sync the site at this address (for sites the search index misses)',
   '  --drive-id <id>     sync only this library; repeat for several',
