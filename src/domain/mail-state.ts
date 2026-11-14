@@ -124,7 +124,7 @@ export type MailboxState = {
   // queue or tries a thread again names it on the counter as the sweep that queued it did. Kept for
   // those threads only and dropped once one is written. Additive: a file from before holds none.
   readonly titles: Readonly<Record<string, string>>;
-  // The folders the sweep passes over (Deleted Items, Junk Email, Drafts, Outbox), by name only: a
+  // The folders the sweep passes over (the outbox), by name only: a
   // conversation holds messages in them too, and each message says which folder it sits in. Kept so
   // a run that resumes its queue, and lists no folders, can still name them. Additive.
   readonly unsweptFolders: Readonly<Record<string, string>>;

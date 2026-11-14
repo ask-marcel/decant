@@ -5,27 +5,15 @@ export type MailFolder = {
   readonly itemCount: number;
 };
 
-// Graph v1.0 does not tell us which folder is which well-known one (there is no `wellKnownName` on
-// the v1.0 mailFolder), so the four folders that hold no correspondence worth keeping are matched
-// by the name Outlook shows, in English and in French. Add a locale here if a mailbox in another
-// language starts syncing its bin.
+// Every folder is read, the bin, the junk and the drafts included: what a mailbox holds is for its
+// owner to say, and a draft or a deleted mail is still something they wrote or were sent. The one
+// folder passed over is the outbox, the queue a message sits in for the seconds before delivery:
+// anything there reappears in Sent Items on its own.
 //
-// Sent mail is NOT excluded: "Sent Items" / "Éléments envoyés" is where a message lands once it has
-// gone out, and those are worth keeping. "Outbox" / "Boîte d'envoi" is the queue a message sits in
-// for the seconds before delivery, so anything there reappears in Sent Items on its own.
-const EXCLUDED = new Set([
-  'deleted items',
-  'éléments supprimés',
-  'elements supprimes',
-  'junk email',
-  'courrier indésirable',
-  'courrier indesirable',
-  'drafts',
-  'brouillons',
-  'outbox',
-  "boîte d'envoi",
-  "boite d'envoi",
-]);
+// Graph v1.0 does not tell us which folder is which well-known one (there is no `wellKnownName` on
+// the v1.0 mailFolder), so the outbox is matched by the name Outlook shows, in English and in French.
+// Add a locale here if a mailbox in another language starts syncing its outbox.
+const EXCLUDED = new Set(['outbox', "boîte d'envoi", "boite d'envoi"]);
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null;
 

@@ -37,28 +37,28 @@ describe('reading the folders of a mailbox', () => {
 });
 
 describe('deciding which folders hold correspondence worth keeping', () => {
-  it('the bin, the junk, the drafts and the outbox are left alone', () => {
-    expect(isExcludedFolder('Deleted Items')).toBe(true);
-    expect(isExcludedFolder('Junk Email')).toBe(true);
-    expect(isExcludedFolder('Drafts')).toBe(true);
+  it('only the outbox is left alone: the bin, the junk and the drafts are read like any folder', () => {
     expect(isExcludedFolder('Outbox')).toBe(true);
+    expect(isExcludedFolder('Deleted Items')).toBe(false);
+    expect(isExcludedFolder('Junk Email')).toBe(false);
+    expect(isExcludedFolder('Drafts')).toBe(false);
   });
 
-  it('the same folders are left alone in a French mailbox', () => {
-    expect(isExcludedFolder('Éléments supprimés')).toBe(true);
-    expect(isExcludedFolder('Courrier indésirable')).toBe(true);
-    expect(isExcludedFolder('Brouillons')).toBe(true);
+  it('the same holds in a French mailbox', () => {
     expect(isExcludedFolder("Boîte d'envoi")).toBe(true);
+    expect(isExcludedFolder('Éléments supprimés')).toBe(false);
+    expect(isExcludedFolder('Courrier indésirable')).toBe(false);
+    expect(isExcludedFolder('Brouillons')).toBe(false);
   });
 
   it('a French mailbox that stores its folder names without accents is recognised too', () => {
-    expect(isExcludedFolder('Elements supprimes')).toBe(true);
-    expect(isExcludedFolder('Courrier indesirable')).toBe(true);
     expect(isExcludedFolder("Boite d'envoi")).toBe(true);
+    expect(isExcludedFolder('Elements supprimes')).toBe(false);
+    expect(isExcludedFolder('Courrier indesirable')).toBe(false);
   });
 
   it('a name Outlook padded or capitalised differently is still recognised', () => {
-    expect(isExcludedFolder('  DELETED ITEMS ')).toBe(true);
+    expect(isExcludedFolder('  OUTBOX ')).toBe(true);
   });
 
   it('the folders that do hold correspondence are kept, sent mail included', () => {
@@ -74,16 +74,17 @@ describe('deciding which folders hold correspondence worth keeping', () => {
   });
 
   it('a folder whose name merely contains an excluded word is still synced', () => {
-    expect(isExcludedFolder('Drafts of contracts')).toBe(false);
+    expect(isExcludedFolder('Outbox of the fair')).toBe(false);
   });
 
   it('a whole listing is filtered down to what is worth sweeping', () => {
     const folders = [
       { id: 'a', name: 'Inbox', childCount: 0, itemCount: 67 },
-      { id: 'b', name: 'Deleted Items', childCount: 2, itemCount: 36 },
+      { id: 'b', name: 'Outbox', childCount: 0, itemCount: 1 },
       { id: 'c', name: 'Sent Items', childCount: 0, itemCount: 2405 },
+      { id: 'd', name: 'Deleted Items', childCount: 2, itemCount: 36 },
     ];
 
-    expect(syncableFolders(folders).map((folder) => folder.name)).toEqual(['Inbox', 'Sent Items']);
+    expect(syncableFolders(folders).map((folder) => folder.name)).toEqual(['Inbox', 'Sent Items', 'Deleted Items']);
   });
 });

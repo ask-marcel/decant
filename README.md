@@ -654,8 +654,8 @@ sender.
 The line of data gives the addresses, the folder of the message, the flag (`open` or `complete`),
 the importance and the categories. It has only the parts that have a value, and it shows the
 importance only when it is high or low. For a draft, the line has `not sent` after the folder.
-decant does not know the name of a subfolder of Deleted Items, Junk Email, Drafts or Outbox. Thus a
-message in such a subfolder has no folder in its line.
+decant does not know the name of a subfolder of Outbox. Thus a message in such a subfolder has no
+folder in its line.
 
 `_meta/messages.jsonl` has one line for each message of each thread, in the sequence of the time of
 the messages. Each run writes the file again from the state. The fields are:
@@ -690,14 +690,13 @@ a message of the thread gets a new flag, category, importance or folder. When a 
 name, decant writes again each thread with a message in that folder. When you only read a message,
 decant does not write its thread again.
 
-decant does not read Deleted Items, Junk Email, Drafts and Outbox for changes. Thus a new flag on a
-message in these folders does not write its thread again.
+decant does not read Outbox for changes. Thus a new flag on a message in that folder does not
+write its thread again.
 
 When a message is deleted, or moved out of a folder that decant reads, the next run writes its
 thread again. A message that you move to Deleted Items stays in the note, and its line names Deleted
 Items. A message that the mailbox no longer holds goes out of the note. When you delete a message
-from Deleted Items, decant does not see it, because it does not read that folder. The note changes
-at the next write of the thread.
+from Deleted Items, the next run writes its thread again without it.
 
 When decant writes a thread again, each file that the thread no longer holds goes to
 `kb/_archive/<day of the run>/`, at the path that it had in `kb/`. An example is the attachment of a
@@ -1238,9 +1237,11 @@ The day is the day in the zone of the knowledge base (see Time zone). Every
 timestamp Graph returns is UTC, so a message received at 16:40Z is the next day in a UTC+8 tenant,
 and the folder name is written once.
 
-Every folder is swept except Junk, Deleted Items, Drafts and Outbox, which means **the mail you
-sent is included**: Sent Items is a folder like any other, and a conversation is assembled from
-every folder its messages landed in. Quoted reply chains are stripped, since the message being
+Every folder is swept except Outbox, which means **the mail you sent is included**: Sent Items is
+a folder like any other, and a conversation is assembled from every folder its messages landed in.
+Drafts, Deleted Items and Junk Email are read too. Junk Email can hold mail that tries to mislead a
+reader, and a note of such a mail looks like each other note. decant finds Outbox by its name in
+English and in French. Quoted reply chains are stripped, since the message being
 quoted is already its own section.
 
 A SharePoint file a mail merely points at is pulled too, into the thread's own `_linked/`, flat,

@@ -236,14 +236,14 @@ describe('syncing a mailbox into the knowledge base', () => {
     expect(asked).toStrictEqual([]);
   });
 
-  it('the bin and the drafts are never swept at all', async () => {
+  it('the bin and the drafts are swept like any folder, and the outbox is not', async () => {
     const reader = {
-      folders: [folder(), folder({ id: 'AAMk-bin', name: 'Deleted Items' }), folder({ id: 'AAMk-drafts', name: 'Drafts' })],
+      folders: [folder(), folder({ id: 'AAMk-bin', name: 'Deleted Items' }), folder({ id: 'AAMk-drafts', name: 'Drafts' }), folder({ id: 'AAMk-outbox', name: 'Outbox' })],
       pages: [{ messages: [], skipped: 0, deltaLink: 'c1' }],
     };
     const { files } = await run({ reader });
 
-    expect(Object.keys(stateAfter(files).folders)).toEqual(['AAMk-inbox']);
+    expect(Object.keys(stateAfter(files).folders)).toEqual(['AAMk-inbox', 'AAMk-bin', 'AAMk-drafts']);
   });
 
   it('a conversation spanning several folders is written once, not once per folder', async () => {
@@ -606,11 +606,11 @@ describe('writing a thread again when one of its messages is marked', () => {
 
 describe('naming the folder each message sits in', () => {
   it('the folders the sweep passes over are named for the messages a thread holds in them', async () => {
-    const reader = { folders: [folder(), folder({ id: 'AAMk-bin', name: 'Deleted Items' })], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] };
+    const reader = { folders: [folder(), folder({ id: 'AAMk-outbox', name: 'Outbox' })], pages: [{ messages: [message()], skipped: 0, deltaLink: 'c1' }] };
     const { files, inputs } = await run({ reader });
 
-    expect(JSON.parse(files.written.get(STATE_PATH) ?? '{}').unsweptFolders).toEqual({ 'AAMk-bin': 'Deleted Items' });
-    expect(inputs[0]?.folders).toEqual({ 'AAMk-bin': 'Deleted Items', 'AAMk-inbox': 'Inbox' });
+    expect(JSON.parse(files.written.get(STATE_PATH) ?? '{}').unsweptFolders).toEqual({ 'AAMk-outbox': 'Outbox' });
+    expect(inputs[0]?.folders).toEqual({ 'AAMk-inbox': 'Inbox', 'AAMk-outbox': 'Outbox' });
   });
 
   // A run that resumes a queue lists no folders, so the names come from what the last sweep kept.
@@ -618,12 +618,12 @@ describe('naming the folder each message sits in', () => {
     const held = withConversation(emptyMailboxState(), 'conv-9', { threadId: 'thread-9', root: '<r@example.com>' });
     const halfDone = serializeMailboxState({
       ...withFolderCursor(held, 'AAMk-inbox', 'Inbox', 'c1'),
-      unsweptFolders: { 'AAMk-bin': 'Deleted Items' },
+      unsweptFolders: { 'AAMk-outbox': 'Outbox' },
       pending: ['thread-9'],
     });
     const { inputs } = await run({ files: { texts: { [STATE_PATH]: halfDone } }, reader: { folders: [folder()] } });
 
-    expect(inputs[0]?.folders).toEqual({ 'AAMk-bin': 'Deleted Items', 'AAMk-inbox': 'Inbox' });
+    expect(inputs[0]?.folders).toEqual({ 'AAMk-inbox': 'Inbox', 'AAMk-outbox': 'Outbox' });
   });
 
   describe('a folder renamed at the source', () => {

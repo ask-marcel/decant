@@ -151,7 +151,7 @@ const stepFailure = (step: string, error: MailReaderError): Result<never, StepEr
 
 // Every folder that holds correspondence, including the ones nested inside another, and the top-level
 // ones the sweep passes over. Those are named and never read: a conversation can hold a message in
-// Deleted Items or Drafts all the same, and the listing that named them is already in hand.
+// the outbox all the same, and the listing that named it is already in hand.
 type FolderTree = { readonly swept: ReadonlyArray<MailFolder>; readonly unswept: ReadonlyArray<MailFolder> };
 
 const folderTree = async (deps: SyncMailboxDeps): Promise<Result<FolderTree, MailReaderError>> => {
