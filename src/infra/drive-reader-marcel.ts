@@ -157,6 +157,13 @@ export const createMarcelCall = (api: MarcelApi): MarcelCall => {
   };
 };
 
+// A search hit as the drive and the item it names. One that names either not at all is passed over.
+const toItemRef = (hit: unknown): ReadonlyArray<ItemRef> => {
+  const itemId = readString(hit, 'id');
+  const driveId = isRecord(hit) ? readString(hit['parentReference'], 'driveId') : undefined;
+  return itemId === undefined || driveId === undefined ? [] : [{ driveId, itemId }];
+};
+
 export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
   const call = createMarcelCall(api);
   const say = api.notify ?? ((): void => undefined);
@@ -274,6 +281,18 @@ export const createDriveReaderFromApi = (api: MarcelApi): DriveReader => {
       if (!raw.ok) return raw;
       const parsed = parseItem(raw.value);
       return parsed === undefined ? missing('drive item') : ok(parsed);
+    },
+    fromLink: async (url) => {
+      const raw = await call('resolve-drive-share-link', { url });
+      if (!raw.ok) return raw;
+      const driveId = readString(raw.value, 'driveId');
+      const itemId = readString(raw.value, 'itemId');
+      return driveId === undefined || itemId === undefined ? missing('file for this address') : ok({ driveId, itemId });
+    },
+    // The name in quotes, so the search takes it whole and not word by word.
+    filesNamed: async (name) => {
+      const raw = await call('search-all-files', { query: `"${name}"` });
+      return raw.ok ? ok(listOf(raw.value).flatMap(toItemRef)) : raw;
     },
     delta: async (ref) => delta({ driveId: ref.driveId, itemId: ref.itemId, top: '1000' }),
     deltaFrom: async (cursor) => {

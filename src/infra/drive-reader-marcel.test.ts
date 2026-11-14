@@ -39,6 +39,7 @@ const registry = (
     'list-accessible-drives',
     'get-drive-item',
     'extract-drive-item-images',
+    'resolve-drive-share-link',
   ];
   return Object.fromEntries(names.map((name) => [name, command(name)]));
 };
@@ -490,6 +491,48 @@ describe('reading SharePoint through the ask-marcel library', () => {
     const { reader } = readerFor({ 'get-drive-item': [ok({ id: '01ITEM' })] });
 
     expect(await reader.item({ driveId: 'b!one', itemId: '01ITEM' })).toEqual({ ok: false, error: { kind: 'permanent', message: 'Graph returned no drive item' } });
+  });
+});
+
+describe('finding the file an address points at', () => {
+  it('the address of a file comes back as its drive and its item, so one value names the file', async () => {
+    const { reader, recorded } = readerFor({ 'resolve-drive-share-link': [ok({ driveId: 'b!one', itemId: '01ITEM', name: 'QBR.pptx' })] });
+
+    const found = await reader.fromLink('https://contoso.sharepoint.com/sites/Pepco/Shared%20Documents/QBR.pptx');
+
+    expect(found).toEqual({ ok: true, value: { driveId: 'b!one', itemId: '01ITEM' } });
+    expect(recorded[0]).toMatchObject({ name: 'resolve-drive-share-link', params: { url: 'https://contoso.sharepoint.com/sites/Pepco/Shared%20Documents/QBR.pptx' } });
+  });
+
+  it('an answer that names no drive or no item is refused clearly', async () => {
+    const { reader } = readerFor({ 'resolve-drive-share-link': [ok({ driveId: 'b!one' })] });
+
+    expect(await reader.fromLink('https://contoso.sharepoint.com/x')).toEqual({ ok: false, error: { kind: 'permanent', message: 'Graph returned no file for this address' } });
+  });
+
+  it('the files of one name come back as their drive and their item, to look among', async () => {
+    const hits = [
+      { id: '01A', name: 'QBR.docx', parentReference: { driveId: 'b!one' } },
+      { id: '01B', name: 'QBR.docx', parentReference: { driveId: 'b!two' } },
+      { name: 'no id' },
+      { id: '01C' },
+    ];
+    const { reader, recorded } = readerFor({ 'search-all-files': [ok({ value: hits })] });
+
+    expect(await reader.filesNamed('QBR.docx')).toEqual({
+      ok: true,
+      value: [
+        { driveId: 'b!one', itemId: '01A' },
+        { driveId: 'b!two', itemId: '01B' },
+      ],
+    });
+    expect(recorded[0]).toMatchObject({ name: 'search-all-files', params: { query: '"QBR.docx"' } });
+  });
+
+  it('an address Graph cannot resolve fails with what Graph said', async () => {
+    const { reader } = readerFor({ 'resolve-drive-share-link': [err({ type: 'api_error', status: 404, message: 'The sharing link no longer exists' })] });
+
+    expect(await reader.fromLink('https://contoso.sharepoint.com/x')).toMatchObject({ ok: false, error: { kind: 'permanent', message: 'The sharing link no longer exists' } });
   });
 });
 

@@ -51,6 +51,12 @@ export type DriveReader = {
   // One item on its own, for a file reached by a link rather than by sweeping a library: the name,
   // size and date decide where it is filed and whether it is converted at all.
   readonly item: (ref: ItemRef) => Promise<Result<DriveItem, DriveReaderError>>;
+  // The file an address points at, a sharing link or the address of the file itself: one value names
+  // the file, where its drive and its item are two.
+  readonly fromLink: (url: string) => Promise<Result<ItemRef, DriveReaderError>>;
+  // Every file of this name the user can open, across every drive: where to look for a document that
+  // is known by its name and not by its place.
+  readonly filesNamed: (name: string) => Promise<Result<ReadonlyArray<ItemRef>, DriveReaderError>>;
   readonly delta: (ref: ItemRef) => Promise<Result<DriveDeltaPage, DriveReaderError>>;
   readonly deltaFrom: (cursor: string) => Promise<Result<DriveDeltaPage, DriveReaderError>>;
   readonly markdown: (ref: ItemRef, options?: MarkdownOptions) => Promise<Result<string, DriveReaderError>>;

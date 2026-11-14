@@ -16,6 +16,8 @@ export type MailReaderSeed = {
   // Delta pages served in order across every folder, the way a run consumes them.
   readonly pages?: ReadonlyArray<MailDeltaPage>;
   readonly conversations?: Readonly<Record<string, ReadonlyArray<MailMessage>>>;
+  // The message each address in Outlook on the web points at.
+  readonly messageLinks?: Readonly<Record<string, string>>;
   readonly bodies?: Readonly<Record<string, string>>;
   // The RFC headers one message carries. A message with none named here carries none, which is what
   // a thread's own root message looks like.
@@ -112,6 +114,16 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
     ownAddresses: async () => {
       const refused = seed.failCalls?.['ownAddresses'];
       return refused ? err(refused) : ok(seed.own ?? []);
+    },
+    messageOfLink: async (url) => {
+      const found = seed.messageLinks?.[url];
+      return found === undefined ? err({ kind: 'permanent', message: 'the address names no message' }) : ok(found);
+    },
+    conversationOf: async (messageId) => {
+      calls.push(`conversationOf:${messageId}`);
+      if (seed.failWith) return err(seed.failWith);
+      const found = Object.entries(seed.conversations ?? {}).find(([, messages]) => messages.some((held) => held.id === messageId));
+      return found === undefined ? err({ kind: 'permanent', status: 404, message: 'The specified object was not found in the store.' }) : ok(found[0]);
     },
     messageHeaders: async (messageId) => {
       const refused = seed.failCalls?.['messageHeaders'];

@@ -308,6 +308,29 @@ describe('reading a mailbox through the ask-marcel library', () => {
   });
 });
 
+describe('finding one conversation from what a person holds of it', () => {
+  it('the address of a mail in Outlook on the web gives the id of the message', async () => {
+    const { reader, recorded } = readerFor({ 'resolve-mail-link': ok({ messageId: 'AAMkAGI=' }) });
+
+    expect(await reader.messageOfLink('https://outlook.office365.com/owa/?ItemID=AAMkAGI%3D')).toEqual({ ok: true, value: 'AAMkAGI=' });
+    expect(recorded[0]).toEqual({ name: 'resolve-mail-link', params: { url: 'https://outlook.office365.com/owa/?ItemID=AAMkAGI%3D' } });
+  });
+
+  it('the id of a message gives the conversation it belongs to, asked for alone', async () => {
+    const { reader, recorded } = readerFor({ 'get-mail-message': ok({ id: 'AAMkAGI=', conversationId: 'AAQkAD-conv' }) });
+
+    expect(await reader.conversationOf('AAMkAGI=')).toEqual({ ok: true, value: 'AAQkAD-conv' });
+    expect(recorded[0]).toEqual({ name: 'get-mail-message', params: { messageId: 'AAMkAGI=', select: 'conversationId' } });
+  });
+
+  it('an answer that names no message or no conversation is refused clearly', async () => {
+    const { reader } = readerFor({ 'resolve-mail-link': ok({}), 'get-mail-message': ok({ id: 'AAMkAGI=' }) });
+
+    expect(await reader.messageOfLink('https://outlook.office.com/mail/x')).toEqual({ ok: false, error: { kind: 'permanent', message: 'the address names no message' } });
+    expect(await reader.conversationOf('AAMkAGI=')).toEqual({ ok: false, error: { kind: 'permanent', message: 'the message names no conversation' } });
+  });
+});
+
 // What tells a message the mailbox sent from one it received: the address it went out from.
 describe('reading the addresses the mailbox sends from', () => {
   it('the mail address and the sign-in name come back in lower case, each one once', async () => {

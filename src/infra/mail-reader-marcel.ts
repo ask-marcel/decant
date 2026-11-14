@@ -180,6 +180,18 @@ export const createMailReaderFromCall = (call: MarcelCall, convertBytes?: Conver
       const raw = await call('get-mail-message', { messageId, select: 'internetMessageHeaders' });
       return raw.ok ? ok(headersOf(raw.value)) : raw;
     },
+    messageOfLink: async (url) => {
+      const raw = await call('resolve-mail-link', { url });
+      if (!raw.ok) return raw;
+      const messageId = readString(raw.value, 'messageId');
+      return messageId === undefined ? err({ kind: 'permanent', message: 'the address names no message' }) : ok(messageId);
+    },
+    conversationOf: async (messageId) => {
+      const raw = await call('get-mail-message', { messageId, select: 'conversationId' });
+      if (!raw.ok) return raw;
+      const conversationId = readString(raw.value, 'conversationId');
+      return conversationId === undefined ? err({ kind: 'permanent', message: 'the message names no conversation' }) : ok(conversationId);
+    },
     ownAddresses: async () => {
       const raw = await call('get-current-user', { select: 'mail,userPrincipalName' });
       return raw.ok ? ok(addressesOf(raw.value)) : raw;

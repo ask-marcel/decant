@@ -70,4 +70,11 @@ export type MailSweep = {
   readonly ownAddresses: () => Promise<Result<ReadonlyArray<string>, MailReaderError>>;
 };
 
-export type MailReader = ThreadReader & MailSweep;
+// Finding one conversation from what a person holds of it: the address of a mail in Outlook on the
+// web, or the id of one of its messages.
+export type MailLookup = {
+  readonly messageOfLink: (url: string) => Promise<Result<string, MailReaderError>>;
+  readonly conversationOf: (messageId: string) => Promise<Result<string, MailReaderError>>;
+};
+
+export type MailReader = ThreadReader & MailSweep & MailLookup;

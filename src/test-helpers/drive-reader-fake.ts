@@ -15,6 +15,11 @@ export type DriveReaderSeed = {
   readonly members?: Readonly<Record<string, SiteMembers>>;
   readonly failMembers?: DriveReaderError;
   readonly rootItemId?: string;
+  // The file each address points at. An address not named here points at nothing.
+  readonly links?: Readonly<Record<string, ItemRef>>;
+  // The files of each name, as a search finds them, and a search that fails.
+  readonly named?: Readonly<Record<string, ReadonlyArray<ItemRef>>>;
+  readonly failNamed?: DriveReaderError;
   // Items answered for by id, for the single-item read a linked file uses. An id with no entry is
   // reported missing, the way Graph answers for a file the caller cannot reach.
   readonly items?: Readonly<Record<string, DriveItem>>;
@@ -89,6 +94,17 @@ export const createDriveReaderFake = (seed: DriveReaderSeed = {}): DriveReaderFa
       calls.push(`images:${ref.itemId}`);
       const failure = seed.failImages ?? seed.failWith;
       return failure ? err(failure) : ok(seed.images?.[ref.itemId] ?? []);
+    },
+    fromLink: async (url) => {
+      calls.push(`fromLink:${url}`);
+      if (seed.failWith) return err(seed.failWith);
+      const found = seed.links?.[url];
+      return found === undefined ? err({ kind: 'permanent', status: 404, message: `no file at ${url}` }) : ok(found);
+    },
+    filesNamed: async (name) => {
+      calls.push(`filesNamed:${name}`);
+      const refused = seed.failNamed ?? seed.failWith;
+      return refused ? err(refused) : ok(seed.named?.[name] ?? []);
     },
     item: async (ref) => {
       calls.push(`item:${ref.itemId}`);
