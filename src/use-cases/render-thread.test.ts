@@ -299,6 +299,20 @@ describe('writing one conversation as one file', () => {
     expect(progress.details).toEqual([{ label: 'Contrat Contoso', what: 'reading rack.jpg' }]);
   });
 
+  // With OCR off a picture is kept and linked and nothing reads it, so the row does not say it is read.
+  it('a run with OCR off names a picture as saved, and a document still as read', async () => {
+    const carried = {
+      m1: [
+        { id: 'att1', name: 'rack.jpg', contentType: 'image/jpeg', size: 12, isInline: false },
+        { id: 'att2', name: 'Devis.docx', contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size: 12, isInline: false },
+      ],
+    };
+
+    const { progress } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: carried }, ocrOff: true });
+
+    expect(progress.details.map((detail) => detail.what)).toEqual(['saving rack.jpg', 'reading Devis.docx']);
+  });
+
   it('a file kept whole as well as read names both copies in its card', async () => {
     const picture = { m1: [{ id: 'att1', name: 'rack.jpg', contentType: 'image/jpeg', size: 12, isInline: false }] };
     const { files } = await run({ reader: { conversations: { [CONV]: [message({ hasAttachments: true })] }, attachments: picture } });

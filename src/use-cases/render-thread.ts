@@ -51,6 +51,9 @@ export type RenderThreadDeps = {
   readonly progress: Progress;
   // How long a path may be as decant writes it. Absent, names are not cut for length.
   readonly pathBudget?: number;
+  // Set when the run reads no picture (OCR is off): a picture is then kept and linked, and the
+  // counter says so.
+  readonly ocrOff?: boolean;
 };
 
 export type RenderThreadInput = {
@@ -223,8 +226,10 @@ const placeOf = (deps: RenderThreadDeps, input: RenderThreadInput, first: MailMe
 
 // Each file is named on the conversation's row as it is converted: a thread carrying a dozen
 // screenshots spends minutes reading them, and a row that never changes looks like a run that stopped.
+// With OCR off a picture is kept and nothing reads it, so its row says it is saved.
 const announced = async (deps: RenderThreadDeps, label: string, converting: ConvertAttachmentInput): Promise<AttachmentOutcome> => {
-  deps.progress.detail(label, `reading ${converting.attachment.name}`);
+  const kept = deps.ocrOff === true && converting.attachment.contentType.startsWith('image/');
+  deps.progress.detail(label, `${kept ? 'saving' : 'reading'} ${converting.attachment.name}`);
   return deps.convertAttachment(converting);
 };
 

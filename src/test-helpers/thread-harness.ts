@@ -76,6 +76,8 @@ export const run = async (
     linked?: Record<string, { paths: string[] }>;
     attachments?: Record<string, AttachmentRecord>;
     ocr?: OcrSeed;
+    // The run reads no picture, as one with OCR off does.
+    ocrOff?: boolean;
     // What the source is called, so a test can render a thread as a group inbox rather than the mailbox.
     sourceName?: string;
     // How long a path may be as decant writes it, so a test can put the knowledge base deep on a disk.
@@ -109,6 +111,7 @@ export const run = async (
     mailboxRoot: 'kb/Mailbox',
     timezone: 'Europe/Paris',
     pathBudget: seeds.pathBudget,
+    ocrOff: seeds.ocrOff,
     convertAttachment: createConvertAttachment({ reader, files, ocr: createOcrFake(seeds.ocr), logger, unpackArchive: drive.localArchive, convertLocal: drive.localMarkdown }),
     convertFile: createConvertFile({ reader: drive, files, ocr: createOcrFake(), clock: createClockFake(), logger, progress: createProgressFake(), pathBudget: seeds.pathBudget }),
   });
