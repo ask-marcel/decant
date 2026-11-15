@@ -482,3 +482,11 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   (`ErrorInvalidOperation: ConversationId isn't supported`), not a 404. An unknown id in the
   conversation filter also gives a 400 (`ErrorInvalidValueForFilter`). Code that tries an id as a
   message, then as a conversation, must accept a 400 and a 404 for both (`get-mail.ts`).
+- [mistake] Do not run `bunx prettier --write` directly: the project keeps its prettier options in
+  `eslint.config.js`, so prettier alone used double quotes and 80 columns on 10 files, and
+  `eslint --fix` did not undo the line breaks. Package B had to restore the files from `HEAD` and
+  apply its edits again. To format, use only `bunx eslint --fix`.
+
+- [gotcha] In Git Bash, a heredoc that writes Python or a regex into a file can change `\\1` to a
+  control byte and `\\r\\n` to real line breaks. For exact swaps in source files, use a Bun
+  script that reads the file, swaps each text exactly once, and keeps its line endings.
