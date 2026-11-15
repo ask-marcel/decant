@@ -1260,6 +1260,11 @@ downloads it and converts it as it does for a file linked from a mail: the origi
 card go in `<day>/_linked/`, and the note links to the card. A file that you cannot open is named in
 the note and in `kb/Chats/_sync-report.md`, and the note is written.
 
+The text of a message is markdown. A reply that quotes a message shows the quote as a markdown
+quote, and bold text, lists, tables and code keep their format. decant converts the messages of one
+chat together, in one conversion for each read. If the conversion fails or takes too long, the
+messages of that read keep their words, links and line breaks, with no other format.
+
 A picture pasted in a message is saved in `<day>/_inline/`, and the note shows it at its position.
 With `--ocr`, the text that OCR reads is below the message. A picture that does not download is
 named in the report.
@@ -1281,8 +1286,8 @@ Limits:
   ends with exit code 3. Run `ask-marcel-office login`, then run decant again.
 - decant does not see an edit or a deletion of a message in a day before the last filed day of its
   chat.
-- The text of a message keeps its words, links, lists and line breaks. Bold text, tables and the
-  marks of a quoted reply are lost (see `docs/request-chat-message-markdown.md`).
+- A pasted picture is at most 800 pixels on its long side, because the library downloads the small
+  view that Teams makes (see `docs/request-teams-chat-library.md`).
 - The `--since` day is counted in UTC for a chat, as for mail.
 
 ### What a group inbox sync writes
