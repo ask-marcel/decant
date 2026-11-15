@@ -274,6 +274,11 @@ describe('asking for one thing', () => {
     expect(parse('get')).toEqual({ ok: false, error: { kind: 'bad-option', message: 'get expects the address of a file, or the id or the address of a mail' } });
   });
 
+  // Help asked beside real work wins, also when get has no address yet: it is the usage that was asked for.
+  it('get with help and no address prints the usage rather than refusing', () => {
+    expect(parse('get --help')).toMatchObject({ ok: true, value: { command: 'get', help: true } });
+  });
+
   it('get with an address that is neither a file nor a mail is refused, naming where it points', () => {
     expect(parse('get https://example.com/file.docx')).toEqual({
       ok: false,
