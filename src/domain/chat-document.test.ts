@@ -143,3 +143,45 @@ describe('sorting the messages of a chat into days', () => {
     expect(byDay([before, after], ZONE)).toEqual([{ day: '2026-11-13', messages: [after] }]);
   });
 });
+
+describe('a message that arrived as markdown', () => {
+  it('a quote, a table and a code block are written as they are under the heading of the message, and a picture marker inside them becomes the link of the picture', () => {
+    const text = [
+      '> **Li Wei**',
+      '> ',
+      '> Can you send the budget?',
+      '',
+      `Yes: ${pictureMarker(0)}`,
+      '',
+      '| Port | ETA |',
+      '| --- | --- |',
+      `| Ningbo | ${pictureMarker(0)} |`,
+      '',
+      '```sql',
+      'select * from t_orders;',
+      '```',
+    ].join('\n');
+    const rich = noted({ text, pictures: 1 }, { pictures: [{ link: '2026-11-13/_inline/1794536130123-1.png' }] });
+
+    const body = renderDayNote(note({ messages: [rich] })).split('### 10:15 · Jane Doe\n\n')[1];
+
+    expect(body).toBe(
+      [
+        '> **Li Wei**',
+        '> ',
+        '> Can you send the budget?',
+        '',
+        'Yes: ![picture](2026-11-13/_inline/1794536130123-1.png)',
+        '',
+        '| Port | ETA |',
+        '| --- | --- |',
+        '| Ningbo | ![picture](2026-11-13/_inline/1794536130123-1.png) |',
+        '',
+        '```sql',
+        'select * from t_orders;',
+        '```',
+        '',
+      ].join('\n')
+    );
+  });
+});
