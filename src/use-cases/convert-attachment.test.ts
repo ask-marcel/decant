@@ -70,7 +70,7 @@ const EML = [
 
 const run = async (
   over: Partial<MailAttachment> = {},
-  seeds: { reader?: MailReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed; drive?: DriveReaderSeed; maxBytes?: number; rendered?: string } = {}
+  seeds: { reader?: MailReaderSeed; files?: FilesFakeSeed; ocr?: OcrSeed; drive?: DriveReaderSeed; maxBytes?: number; rendered?: string; pathBudget?: number } = {}
 ): Promise<{ outcome: AttachmentOutcome; files: FilesFake; logger: LoggerFake }> => {
   const files = createFilesFake(seeds.files);
   const logger = createLoggerFake();
@@ -82,6 +82,7 @@ const run = async (
     logger,
     unpackArchive: drive.localArchive,
     convertLocal: drive.localMarkdown,
+    pathBudget: seeds.pathBudget,
   });
   const outcome = await convert({
     messageId: 'm1',
@@ -351,6 +352,32 @@ describe('keeping what was attached to a mail', () => {
       primary: `${FOLDER}/Fwd/Fwd.eml.md`,
       media: [],
     });
+  });
+
+  // A saved email and an archive unpack into a folder named for the file, and its note or the archive
+  // itself sits inside under the name again, so the name stands in the path twice.
+  it('a saved email attached to a mail is cut until the folder named for it and the note inside it both fit', async () => {
+    const { outcome } = await run({ name: `${'a'.repeat(100)}.eml` }, { reader: { attachmentRaw: { att1: EML } }, pathBudget: 259 });
+    const note = outcome.kind === 'converted' ? (outcome.primary ?? '') : '';
+
+    expect(note.slice(FOLDER.length)).toMatch(/^\/(a{57}-[0-9a-f]{8})\/\1\.eml\.md$/);
+    expect(note.length + '.~000000'.length).toBeLessThanOrEqual(259);
+  });
+
+  it('an archive attached to a mail is cut until the folder named for it and the archive inside it both fit', async () => {
+    const { outcome } = await run({ name: `${'a'.repeat(100)}.zip` }, { drive: { archiveEntries: [{ path: 'notes.docx', text: '# Notes' }] }, pathBudget: 259 });
+
+    expect(outcome.kind === 'converted' && outcome.outputs[0]?.slice(FOLDER.length)).toMatch(/^\/(a{57}-[0-9a-f]{8})\/\1\.zip$/);
+  });
+
+  it('a file a saved email attachment carried is cut to fit its folder, and its text lands beside it under the same name', async () => {
+    const long = EML.replaceAll('Contrat.docx', `${'p'.repeat(150)}.docx`);
+    const { outcome } = await run({ name: 'Fwd.eml' }, { reader: { attachmentRaw: { att1: long } }, pathBudget: 259 });
+
+    expect(outcome.kind === 'converted' && outcome.outputs.slice(1).map((path) => path.slice(FOLDER.length))).toEqual([
+      expect.stringMatching(/^\/Fwd\/p{124}-[0-9a-f]{8}\.docx$/),
+      expect.stringMatching(/^\/Fwd\/p{124}-[0-9a-f]{8}\.docx\.md$/),
+    ]);
   });
 
   // The wiring, not the builder. The document standing for a saved email named none of its parts:

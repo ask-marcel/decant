@@ -101,6 +101,56 @@ describe('converting one document out of a library', () => {
     expect(files.binary.get(`${folder}/x.pdf`)).toEqual(new Uint8Array([65, 66, 67]));
   });
 
+  // The export the check read lost a saved email to a path of 263 characters: the name stands in the
+  // path twice, as the folder and as the note inside it, and only one of them was counted.
+  describe('a file unpacked into a folder named for it, deep in its library', () => {
+    const deep = 'd'.repeat(60);
+    const dir = `kb/Espace Contoso/Documents/${deep}`;
+    const long = 'a'.repeat(60);
+    const carrying = (part: string): Uint8Array =>
+      new TextEncoder().encode(
+        [
+          'Subject: Fwd',
+          'Content-Type: multipart/mixed; boundary="B"',
+          '',
+          '--B',
+          'Content-Type: text/plain',
+          '',
+          'the body',
+          '--B',
+          `Content-Type: application/pdf; name="${part}"`,
+          'Content-Transfer-Encoding: base64',
+          '',
+          'QUJD',
+          '--B--',
+        ].join('\r\n')
+      );
+
+    it('a saved email is cut until the folder named for it and the note inside it both fit', async () => {
+      const { outcome } = await run({ name: `${long}.eml`, path: `${deep}/${long}.eml` }, { reader: { bytes: { '01ABC': carrying('x.pdf') } }, pathBudget: 259 });
+      const note = outcome.kind === 'converted' ? (outcome.outputs[0] ?? '') : '';
+
+      expect(note.slice(dir.length)).toMatch(/^\/(a{44}-[0-9a-f]{8}\.eml)\/\1\.md$/);
+      expect(note.length + '.~000000'.length).toBeLessThanOrEqual(259);
+    });
+
+    it('an archive is cut until the folder named for it and the archive inside it both fit', async () => {
+      const entries = [{ path: 'notes.docx', text: '# Notes' }];
+      const { outcome } = await run({ name: `${long}.zip`, path: `${deep}/${long}.zip` }, { reader: { archiveEntries: entries }, pathBudget: 259 });
+
+      expect(outcome.kind === 'converted' && outcome.outputs[0]?.slice(dir.length)).toMatch(/^\/(a{44}-[0-9a-f]{8}\.zip)\/\1$/);
+    });
+
+    it('a file a saved email carried is cut to fit its folder, and its text lands beside it under the same name', async () => {
+      const { outcome } = await run({ name: 'Fwd.eml', path: `${deep}/Fwd.eml` }, { reader: { bytes: { '01ABC': carrying(`${'p'.repeat(150)}.pdf`) } }, pathBudget: 259 });
+
+      expect(outcome.kind === 'converted' && outcome.outputs.slice(1).map((path) => path.slice(dir.length))).toEqual([
+        expect.stringMatching(/^\/Fwd\.eml\/p{94}-[0-9a-f]{8}\.pdf$/),
+        expect.stringMatching(/^\/Fwd\.eml\/p{94}-[0-9a-f]{8}\.pdf\.md$/),
+      ]);
+    });
+  });
+
   it('a file a saved email carries with no name, and a type that names a property of every object, lands as a file of no known kind', async () => {
     const eml = [
       'Subject: Fwd',
@@ -746,6 +796,7 @@ describe('converting one document out of a library', () => {
     expect(outcome).toEqual({
       kind: 'converted',
       outputs: ['kb/Espace Contoso/Documents/Livraison.zip/Livraison.zip', 'kb/Espace Contoso/Documents/Livraison.zip/notes.docx.md'],
+      primary: 'kb/Espace Contoso/Documents/Livraison.zip',
     });
   });
 });

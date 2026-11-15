@@ -84,7 +84,7 @@ describe('syncing a Microsoft To Do list', () => {
     const done = await run({ reader: { tasks: { 'list-1': [task({ title: 'Book the venue for the offsite in Rotterdam', due: '2026-09-08' })] } }, pathBudget: 100 });
 
     expect([...done.files.written.keys()].filter((path) => path !== STATE_PATH && path !== INDEX_PATH)).toEqual([
-      expect.stringMatching(/^kb\/To Do\/Tasks\/2026-09-08\/Book th-[0-9a-f]{8}\.md$/),
+      expect.stringMatching(/^kb\/To Do\/Tasks\/2026-09-08\/Book the venue f-[0-9a-f]{8}\.md$/),
     ]);
   });
 

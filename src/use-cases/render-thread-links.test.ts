@@ -232,7 +232,7 @@ describe('a thread written again and the documents it links to', () => {
     const files = createFilesFake();
     const once = await write(files, createDriveReaderFake(at()));
     const later = createDriveReaderFake(at());
-    await write(files, later, once?.record, { pathBudget: LINKED.length + 1 + 55 + 8 });
+    await write(files, later, once?.record, { pathBudget: LINKED.length + 1 + 28 + 8 });
 
     expect(later.calls).toContain('markdown:01ABC');
   });

@@ -1,4 +1,4 @@
-import { embedsImages, planFile, worthReading } from '../domain/conversion-plan.ts';
+import { embedsImages, nameCopies, planFile, worthReading } from '../domain/conversion-plan.ts';
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
 import type { DocumentStamp } from '../domain/kb-document.ts';
 import { renderCalendar } from '../domain/icalendar.ts';
@@ -11,7 +11,7 @@ import { unwrapSafelinks } from '../domain/safelink.ts';
 import type { CarriedPart } from '../domain/saved-mail.ts';
 import { savedMailBody } from '../domain/saved-mail.ts';
 import { NO_TEXT_NOTE, SCANNED_PDF_NOTE, VECTOR_NOTE, kbDocument } from '../domain/kb-document.ts';
-import { safeSegment } from '../domain/kb-path.ts';
+import { fitSegment, safeSegment } from '../domain/kb-path.ts';
 import { renderZipManifest } from '../domain/zip-manifest.ts';
 import type { Result } from '../domain/result.ts';
 import { ok } from '../domain/result.ts';
@@ -251,7 +251,7 @@ const writeParts = async (context: Context, folder: string, parts: ReadonlyArray
   const paths: string[] = [];
   const carried: CarriedPart[] = [];
   for (const part of parts) {
-    const name = String(safeSegment(part.name));
+    const name = fitSegment(folder, safeSegment(part.name), context.deps.pathBudget);
     const path = `${folder}/${name}`;
     const wrote = await context.deps.files.writeBytes(path, part.bytes);
     if (!wrote.ok) return wrote;
@@ -375,12 +375,19 @@ const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise
 
 export type ConvertAttachment = (input: ConvertAttachmentInput) => Promise<AttachmentOutcome>;
 
+// The thread fits the name it gives a file for one copy in the folder. A saved email and an archive
+// stand in their path under the name twice, so those two are fitted again for both copies; every
+// other kind keeps the name the thread recorded.
+const nameFor = (deps: ConvertAttachmentDeps, input: ConvertAttachmentInput, route: ConversionRoute): string => {
+  const named = safeSegment(input.asName ?? input.attachment.name);
+  return nameCopies(route) === 1 ? named : fitSegment(input.folder, named, deps.pathBudget, nameCopies(route));
+};
+
 export const createConvertAttachment =
   (deps: ConvertAttachmentDeps): ConvertAttachment =>
   async (input) => {
-    const context = { deps, input, name: safeSegment(input.asName ?? input.attachment.name) };
-    if (input.attachment.kind === 'item') return asEmbeddedMail(context);
+    if (input.attachment.kind === 'item') return asEmbeddedMail({ deps, input, name: safeSegment(input.asName ?? input.attachment.name) });
     const decision = planFile({ name: input.attachment.name, size: input.attachment.size }, input.maxBytes);
     if (decision.kind === 'skip') return { kind: 'skipped', reason: decision.reason };
-    return CONVERTERS[decision.route](context);
+    return CONVERTERS[decision.route]({ deps, input, name: nameFor(deps, input, decision.route) });
   };
