@@ -316,6 +316,28 @@ describe('finding one conversation from what a person holds of it', () => {
     expect(recorded[0]).toEqual({ name: 'resolve-mail-link', params: { url: 'https://outlook.office365.com/owa/?ItemID=AAMkAGI%3D' } });
   });
 
+  // The address holds the id in the form Exchange gives it, and Graph reads `/` in an id as the end of
+  // a segment of the request path.
+  it('the webLink of a message gives its id in the form Graph reads, with - for / and _ for +', async () => {
+    const { reader } = readerFor({ 'resolve-mail-link': ok({ messageId: 'AAMk/ab+cd=' }) });
+
+    expect(await reader.messageOfLink('https://outlook.office365.com/owa/?ItemID=AAMk%2Fab%2Bcd%3D')).toEqual({ ok: true, value: 'AAMk-ab_cd=' });
+  });
+
+  it('an id that is already in the Graph form comes back the same', async () => {
+    const { reader } = readerFor({ 'resolve-mail-link': ok({ messageId: 'AAMk-ab_cd=' }) });
+
+    expect(await reader.messageOfLink('https://outlook.office.com/mail/inbox/id/AAMk-ab_cd%3D')).toEqual({ ok: true, value: 'AAMk-ab_cd=' });
+  });
+
+  it('an address on outlook.cloud.microsoft is read as the same address on outlook.office.com', async () => {
+    const { reader, recorded } = readerFor({ 'resolve-mail-link': ok({ messageId: 'AAMk-ab_cd=' }) });
+
+    await reader.messageOfLink('https://outlook.cloud.microsoft/mail/id/AAMk-ab_cd%3D');
+
+    expect(recorded[0]).toEqual({ name: 'resolve-mail-link', params: { url: 'https://outlook.office.com/mail/id/AAMk-ab_cd%3D' } });
+  });
+
   it('the id of a message gives the conversation it belongs to, asked for alone', async () => {
     const { reader, recorded } = readerFor({ 'get-mail-message': ok({ id: 'AAMkAGI=', conversationId: 'AAQkAD-conv' }) });
 
