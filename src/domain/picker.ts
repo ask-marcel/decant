@@ -16,7 +16,7 @@ export type PickerRow = {
 
 // The sources that stand alone: each is the only thing of its kind, so it gets a letter beside the
 // numbered rows rather than a heading over one row that would say nothing.
-export type StandingRows = { readonly mailbox: PickerRow; readonly people: PickerRow; readonly calendar: PickerRow };
+export type StandingRows = { readonly mailbox: PickerRow; readonly people: PickerRow; readonly calendar: PickerRow; readonly chats: PickerRow };
 
 export type Choosable = { readonly id: string; readonly name: string; readonly webUrl?: string; readonly kind?: AddressKind };
 
@@ -40,6 +40,7 @@ export type Selection =
   | { readonly kind: 'mailbox' }
   | { readonly kind: 'people' }
   | { readonly kind: 'calendar' }
+  | { readonly kind: 'chats' }
   | { readonly kind: 'update-all' }
   | { readonly kind: 'quit' };
 
@@ -91,6 +92,7 @@ export const parseSelection = (input: string, count: number): Result<Selection, 
   if (trimmed === 'm') return ok({ kind: 'mailbox' });
   if (trimmed === 'p') return ok({ kind: 'people' });
   if (trimmed === 'c') return ok({ kind: 'calendar' });
+  if (trimmed === 'h') return ok({ kind: 'chats' });
   if (trimmed === 'all') return ok({ kind: 'rows', indices: [...Array.from({ length: count }, (_unused, index) => index)], everything: true });
   if (trimmed.startsWith('http')) return ok({ kind: 'address', url: trimmed });
   return parseIndices(trimmed, count);

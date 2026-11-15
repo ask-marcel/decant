@@ -8,6 +8,7 @@ import type { SiteRef } from '../domain/site-state.ts';
 import { MAILBOX_ID, MAILBOX_NAME } from '../domain/mail-state.ts';
 import { PEOPLE_ID, PEOPLE_NAME } from '../domain/people-state.ts';
 import { CALENDAR_ID, CALENDAR_NAME } from '../domain/calendar-state.ts';
+import { CHATS_SOURCE } from '../domain/chat-state.ts';
 import { sourceKey, sourceLabel } from '../domain/sync-state.ts';
 import type { SourceKind, SyncedSource } from '../domain/sync-state.ts';
 import { SINCE_SHAPE, dayOf, parseSince } from '../domain/sync-window.ts';
@@ -23,6 +24,7 @@ import type { ChannelSummary, TeamReader, TeamSummary } from './ports/team-reade
 import type { SyncGroup } from './sync-group.ts';
 import type { SyncPeople } from './sync-people.ts';
 import type { SyncCalendar } from './sync-calendar.ts';
+import type { SyncChats } from './sync-chats.ts';
 import type { SyncNotebook } from './sync-notebook.ts';
 import type { SyncLists } from './sync-lists.ts';
 import type { SyncPlan } from './sync-plan.ts';
@@ -61,6 +63,7 @@ export type RunSyncDeps = {
   readonly syncTeam: SyncTeam;
   readonly syncPeople: SyncPeople;
   readonly syncCalendar: SyncCalendar;
+  readonly syncChats: SyncChats;
   readonly syncNotebook: SyncNotebook;
   readonly syncLists: SyncLists;
   readonly syncPlan: SyncPlan;
@@ -105,6 +108,10 @@ export type RunSyncInput = {
   readonly mailbox?: boolean;
   readonly people?: boolean;
   readonly calendar?: boolean;
+  // Follow every Teams chat from this run on.
+  readonly chats?: boolean;
+  // Follow one more Teams chat, named by its topic, by somebody in it, or by its id.
+  readonly chat?: string;
   readonly onedrive?: boolean;
   readonly every?: ReadonlyArray<WholeKind>;
   readonly groupId?: string;
@@ -209,6 +216,16 @@ const syncTheCalendar = async (deps: RunSyncDeps, input: RunSyncInput): Promise<
   return summary;
 };
 
+// The chats follow what an earlier run was told to follow, plus what this run names: every chat, or
+// one more chat. An update names nothing, so it refreshes the chats already followed.
+const syncTheChats = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Result<SourceRun, StepError>> => {
+  deps.logger.info('chats.started', {});
+  const follow = { ...(input.chats === true ? { all: true } : {}), ...(input.chat === undefined ? {} : { chat: input.chat }) };
+  const summary = await deps.syncChats({ concurrency: input.concurrency, dryRun: input.dryRun, maxBytes: input.maxBytes, since: dayOf(input.since), ...follow });
+  if (summary.ok) deps.prompt.show(deps.view.summary(CHATS_SOURCE.name, summary.value.summary, input.dryRun));
+  return summary;
+};
+
 // A run's outcome: what it got through, or where it stopped along with what it got through first.
 type RunOutcome = Result<ReadonlyArray<SourceRun>, RunFailure>;
 
@@ -256,6 +273,7 @@ const STANDING: ReadonlyArray<{ readonly kind: SourceKind; readonly refresh: (de
   { kind: 'mailbox', refresh: syncTheMailbox },
   { kind: 'calendar', refresh: syncTheCalendar },
   { kind: 'people', refresh: syncThePeople },
+  { kind: 'chats', refresh: syncTheChats },
 ];
 
 type Refresh = (deps: RunSyncDeps, input: RunSyncInput, source: SyncedSource) => Promise<Result<SourceRun, StepError>>;
@@ -431,7 +449,7 @@ type Sources = {
   readonly standing: ReadonlyArray<SourceKind>;
 };
 
-type Chosen = Sources | 'update-all' | 'quit' | 'mailbox' | 'people' | 'calendar';
+type Chosen = Sources | 'update-all' | 'quit' | 'mailbox' | 'people' | 'calendar' | 'chats';
 
 const NOTHING: Sources = { sites: [], groups: [], todoLists: [], teams: [], notebooks: [], lists: [], plans: [], standing: [] };
 
@@ -450,11 +468,8 @@ const countOf = (sources: Sources): number =>
   sources.standing.length;
 
 const resolve = async (deps: RunSyncDeps, choice: Selection, offered: Omit<Sources, 'standing'>): Promise<Result<Chosen, StepError>> => {
-  if (choice.kind === 'quit') return ok('quit');
-  if (choice.kind === 'mailbox') return ok('mailbox');
-  if (choice.kind === 'people') return ok('people');
-  if (choice.kind === 'calendar') return ok('calendar');
-  if (choice.kind === 'update-all') return ok('update-all');
+  // A letter is its own answer: quit, update, or one of the sources that stand alone.
+  if (choice.kind !== 'rows' && choice.kind !== 'address') return ok(choice.kind);
   if (choice.kind === 'address') return oneSite(await siteAt(deps, choice.url));
   // Selecting by position rather than by index lookup: `parseSelection` has already refused any
   // number outside the list, so there is no missing-source case left to guard against here. The
@@ -528,6 +543,7 @@ const chooseSite = async (deps: RunSyncDeps, input: RunSyncInput): Promise<Resul
       mailbox: standingRow(MAILBOX_ID, MAILBOX_NAME, marks),
       people: standingRow(PEOPLE_ID, PEOPLE_NAME, marks),
       calendar: standingRow(CALENDAR_ID, CALENDAR_NAME, marks),
+      chats: standingRow(CHATS_SOURCE.id, CHATS_SOURCE.name, marks),
     })
   );
   const chosen = parseSelection(await deps.prompt.ask('Source:'), rows.length);
@@ -657,7 +673,9 @@ const syncChosen = async (deps: RunSyncDeps, input: RunSyncInput, chosen: Exclud
   if (chosen === 'mailbox') return oneSummary(await syncTheMailbox(deps, input));
   if (chosen === 'people') return oneSummary(await syncThePeople(deps, input));
   if (chosen === 'calendar') return oneSummary(await syncTheCalendar(deps, input));
-  return runMany(deps, input, chosen);
+  // The picker offers the chats as one row, which is every chat.
+  if (chosen === 'chats') return oneSummary(await syncTheChats(deps, { ...input, chats: true }));
+  return runMany(deps, { ...input, chats: true }, chosen);
 };
 
 // What a run left behind, across every source it touched: the two numbers a reader wants before
@@ -692,7 +710,8 @@ const listedOrStop = <T>(listed: Result<T, { readonly kind: string; readonly mes
   listed.ok ? ok(into(listed.value)) : failed(step, listed.error.kind, listed.error.message);
 
 const namedStanding = (input: RunSyncInput): Found | undefined => {
-  const named: Readonly<Record<string, boolean | undefined>> = { mailbox: input.mailbox, calendar: input.calendar, people: input.people };
+  const chats = input.chats === true || input.chat !== undefined;
+  const named: Readonly<Record<string, boolean | undefined>> = { mailbox: input.mailbox, calendar: input.calendar, people: input.people, chats };
   const standing = STANDING.map(({ kind }) => kind).filter((kind) => named[kind] === true);
   return standing.length === 0 ? undefined : ok({ standing });
 };

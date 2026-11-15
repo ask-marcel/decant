@@ -6,6 +6,7 @@ import { createTodoReaderFake } from '../test-helpers/todo-reader-fake.ts';
 import { createTeamReaderFake } from '../test-helpers/team-reader-fake.ts';
 import { createPeopleReaderFake } from '../test-helpers/people-reader-fake.ts';
 import { createCalendarReaderFake } from '../test-helpers/calendar-reader-fake.ts';
+import { createChatReaderFake } from '../test-helpers/chat-reader-fake.ts';
 import { createNotebookReaderFake } from '../test-helpers/notebook-reader-fake.ts';
 import { createListReaderFake } from '../test-helpers/list-reader-fake.ts';
 import { createPlanReaderFake } from '../test-helpers/plan-reader-fake.ts';
@@ -111,6 +112,7 @@ describe('wiring the command together', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -143,6 +145,7 @@ describe('wiring the command together', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -181,6 +184,7 @@ describe('wiring the command together', () => {
       team,
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -209,6 +213,7 @@ describe('wiring the command together', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -222,6 +227,47 @@ describe('wiring the command together', () => {
     expect(outcome.ok && outcome.value.map((source) => source.notes.failed)).toEqual([
       [{ path: 'Northwind Leadership', reason: 'failed at sync: no channel chosen for Northwind Leadership' }],
     ]);
+  });
+
+  it('the wired run files the Teams chats with their state and cursor, and an update refreshes them from what the state follows', async () => {
+    const chatId = '19:aaa111@thread.v2';
+    const chat = createChatReaderFake({
+      chats: [{ id: chatId, kind: 'group', topic: 'Budget review', members: ['Jane Doe'], lastMessageAt: '2026-11-13T09:00:00.0000000Z' }],
+      messages: { [chatId]: [{ id: 'm1', author: 'Jane Doe', sent: '2026-11-13T09:00:00.0000000Z', text: 'hello', files: [], pictures: 0, webUrl: '' }] },
+    });
+    const wiredOn = (files: ReturnType<typeof createFilesFake>): ReturnType<typeof buildDeps> =>
+      buildDeps(configFor({}), {
+        files,
+        logger: createLoggerFake(),
+        reader: createDriveReaderFake(),
+        mail: createMailReaderFake(),
+        group: createGroupReaderFake(),
+        todo: createTodoReaderFake(),
+        team: createTeamReaderFake(),
+        people: createPeopleReaderFake(),
+        calendar: createCalendarReaderFake(),
+        chat,
+        notebook: createNotebookReaderFake(),
+        list: createListReaderFake(),
+        plan: createPlanReaderFake(),
+        ocr: createOcrFake(),
+        prompt: createPromptFake(),
+        clock: createClockFake('2026-11-14T01:00:00Z'),
+      });
+    const files = createFilesFake();
+
+    const first = await wiredOn(files).runSync({ command: 'sync', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false, chat: 'budget', since: 'all' });
+
+    expect(first.ok && first.value.map((source) => source.source)).toEqual(['Chats']);
+    expect(files.written.get('kb/Chats/Budget review/2026-11-13.md')).toContain('### 09:00 · Jane Doe\n\nhello\n');
+    expect(JSON.parse(files.written.get('kb/Chats/.sync-state.json') ?? '{}').follow).toEqual([chatId]);
+    expect(JSON.parse(files.written.get('kb/Chats/.sync-cursor.json') ?? '{}').cursor).toEqual({ lastRun: '2026-11-14T01:00:00Z' });
+
+    const later = createFilesFake({ directories: { kb: ['Chats'] }, texts: Object.fromEntries(files.written) });
+    const second = await wiredOn(later).runSync({ command: 'update', driveIds: [], maxBytes: 1000, concurrency: 1, dryRun: false });
+
+    expect(second.ok && second.value.map((source) => [source.source, source.summary.converted])).toEqual([['Chats', 0]]);
+    expect(chat.calls).toEqual(['listChats', `messages:${chatId}`, 'listChats']);
   });
 
   it('two sites sharing a name each refresh their own libraries, not the first one to be filed', async () => {
@@ -249,6 +295,7 @@ describe('wiring the command together', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -274,6 +321,7 @@ describe('wiring the command together', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -302,6 +350,7 @@ describe('wiring the command together', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -334,6 +383,7 @@ describe('wiring the command together', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -362,6 +412,7 @@ describe('wiring the command together', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -389,6 +440,7 @@ describe('keeping how far back the runs reach', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -499,6 +551,7 @@ describe('a run that finds nothing new', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -556,6 +609,7 @@ describe('a file that would not move under the archive', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -634,6 +688,7 @@ describe('a notebook in a folder suffixed with its id', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake({ sections: { 'nb-1': [], 'nb-2': [] } }),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -667,6 +722,7 @@ describe('a plan renamed in Planner', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake({ plans: [{ ...saved, title: 'Offsite 2027' }], buckets: { 'plan-1': [] }, tasks: { 'plan-1': [] } }),
@@ -697,6 +753,7 @@ describe('a knowledge base copied to another folder', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -802,6 +859,7 @@ describe('asking for OCR on a machine that cannot do it', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),
@@ -865,6 +923,7 @@ describe('getting one thing through the wired command', () => {
       team: createTeamReaderFake(),
       people: createPeopleReaderFake(),
       calendar: createCalendarReaderFake(),
+      chat: createChatReaderFake(),
       notebook: createNotebookReaderFake(),
       list: createListReaderFake(),
       plan: createPlanReaderFake(),

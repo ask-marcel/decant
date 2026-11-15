@@ -32,7 +32,7 @@ const SOURCE_RUN = { id: 'site!one', source: 'Espace Contoso', summary: EMPTY_SU
 
 // The sources a test can make fail once begun. Each fails at a step named after it, so a test can
 // tell which one stopped the run.
-type FailingKind = 'calendar' | 'people' | 'group' | 'todo' | 'team' | 'notebook';
+type FailingKind = 'calendar' | 'people' | 'chats' | 'group' | 'todo' | 'team' | 'notebook';
 
 const busy = (kind: FailingKind): Result<never, StepError> => err({ step: kind, cause: 'transient', message: 'Graph is busy' });
 
@@ -83,6 +83,8 @@ const run = async (
   teamRuns: Array<{ team: string; channels: string[] }>;
   peopleRuns: Array<{ concurrency: number; dryRun: boolean }>;
   calendarRuns: Array<{ since?: string }>;
+  // What each run of the chats was told to follow: every chat, one chat, or what it followed before.
+  chatRuns: Array<{ since?: string; all?: boolean; chat?: string }>;
   notebookRuns: string[];
   listsRuns: string[];
   planRuns: string[];
@@ -107,6 +109,7 @@ const run = async (
   const teamRuns: Array<{ team: string; channels: string[] }> = [];
   const peopleRuns: Array<{ concurrency: number; dryRun: boolean }> = [];
   const calendarRuns: Array<{ since?: string }> = [];
+  const chatRuns: Array<{ since?: string; all?: boolean; chat?: string }> = [];
   const notebookRuns: string[] = [];
   const listsRuns: string[] = [];
   const planRuns: string[] = [];
@@ -162,6 +165,11 @@ const run = async (
       calendarRuns.push({ since: input.since });
       if (fails('calendar')) return busy('calendar');
       return ok({ ...SOURCE_RUN, id: 'calendar', source: 'Calendar' });
+    },
+    syncChats: async (input) => {
+      chatRuns.push({ since: input.since, all: input.all, chat: input.chat });
+      if (fails('chats')) return busy('chats');
+      return ok({ ...SOURCE_RUN, id: 'chats', source: 'Chats' });
     },
     syncNotebook: async (input) => {
       notebookRuns.push(input.notebook.name);
@@ -226,6 +234,7 @@ const run = async (
     teamRuns,
     peopleRuns,
     calendarRuns,
+    chatRuns,
     notebookRuns,
     listsRuns,
     planRuns,
@@ -584,6 +593,60 @@ describe('choosing what to sync', () => {
     expect(untouched.calendarRuns).toHaveLength(0);
   });
 
+  it('h syncs the Teams chats, every one of them, offered beside the people and marked when they have been synced, and --since reaches them', async () => {
+    const { chatRuns, prompt, logger } = await run(
+      ['h'],
+      { since: '2026-11-01' },
+      { synced: [{ kind: 'chats', id: 'chats', name: 'Chats', lastRun: '2026-11-14T01:00:00Z', fileCount: 40 }] }
+    );
+
+    expect(prompt.shown.join('\n')).toContain('  h) Teams chats  (synced 2026-11-14, 40 files)');
+    expect(chatRuns).toEqual([{ since: '2026-11-01', all: true, chat: undefined }]);
+    expect(prompt.shown.join('\n')).toContain('Chats: 2 converted');
+    expect(logger.calls.some((entry) => entry.event === 'chats.started')).toBe(true);
+  });
+
+  it('all at the picker takes every chat, as the row for the chats does', async () => {
+    const { chatRuns } = await run(['all']);
+
+    expect(chatRuns).toEqual([{ since: undefined, all: true, chat: undefined }]);
+  });
+
+  it('--chats all follows every chat and --chat follows the one it names, each without drawing the picker', async () => {
+    const whole = await run([], { chats: true });
+    const one = await run([], { chat: 'Budget review' });
+    const beside = await run([], { chat: 'Budget review', mailbox: true });
+
+    expect(whole.chatRuns).toEqual([{ since: undefined, all: true, chat: undefined }]);
+    expect(one.chatRuns).toEqual([{ since: undefined, all: undefined, chat: 'Budget review' }]);
+    expect(one.prompt.asked).toStrictEqual([]);
+    expect(beside.summaries?.map((summary) => summary.id)).toEqual(['me', 'chats']);
+  });
+
+  it('an update refreshes the chats only when they are in the knowledge base, naming none, so they follow what they followed before', async () => {
+    const refreshed = await run([], { command: 'update' }, { synced: [{ kind: 'chats', id: 'chats', name: 'Chats', lastRun: '2026-11-14T01:00:00Z', fileCount: 40 }] });
+    const untouched = await run([], { command: 'update' }, { synced: [] });
+    const viaPicker = await run(['u'], {}, { synced: [{ kind: 'chats', id: 'chats', name: 'Chats', lastRun: '2026-11-14T01:00:00Z', fileCount: 40 }] });
+
+    expect(refreshed.chatRuns).toEqual([{ since: undefined, all: undefined, chat: undefined }]);
+    expect(untouched.chatRuns).toHaveLength(0);
+    expect(viaPicker.chatRuns).toEqual([{ since: undefined, all: undefined, chat: undefined }]);
+  });
+
+  it('an update carries on past the chats when they fail, naming them and counting them failed, and syncs the sources after them', async () => {
+    const synced: ReadonlyArray<SyncedSource> = [
+      { kind: 'chats', id: 'chats', name: 'Chats', lastRun: '2026-11-14T01:00:00Z', fileCount: 40 },
+      { kind: 'site', id: 'contoso,1,2', name: 'Espace Contoso', lastRun: '2026-11-14T01:00:00Z', fileCount: 3 },
+    ];
+
+    const { ok: succeeded, summaries, prompt, calls } = await run([], { command: 'update' }, { synced, failing: ['chats'] });
+
+    expect(succeeded).toBe(true);
+    expect(summaries?.find((summary) => summary.id === 'chats')?.summary.failed).toBe(1);
+    expect(prompt.shown.some((text) => text.endsWith(': failed at chats: Graph is busy'))).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
   it('the notebooks are offered under the teams, found through the sites the picker knows, and a number below them syncs one', async () => {
     const notebook = { id: '1-nb', name: 'Northwind Leadership Notebook', webUrl: '', site: { id: 'contoso,1,2', name: 'Espace Contoso' } };
     const { notebookRuns, prompt, logger } = await run(['3'], {}, { notebooks: [notebook] });
@@ -873,8 +936,8 @@ describe('choosing what to sync', () => {
     const { prompt } = await run(['all']);
 
     // Two sites, each reported once for its libraries and once for its lists, then the mailbox, the
-    // calendar and the people: `all` takes every row and every letter.
-    expect(prompt.shown.filter((text) => text.includes('converted'))).toHaveLength(7);
+    // calendar, the people and the chats: `all` takes every row and every letter.
+    expect(prompt.shown.filter((text) => text.includes('converted'))).toHaveLength(8);
   });
 
   it('pasting a site address reaches a site the list does not show', async () => {
@@ -1065,6 +1128,7 @@ describe('when the knowledge base itself cannot be read', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncChats: async () => ok(SOURCE_RUN),
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
@@ -1107,6 +1171,7 @@ describe('when the knowledge base itself cannot be read', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncChats: async () => ok(SOURCE_RUN),
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
@@ -1171,6 +1236,7 @@ describe('when one site in a refresh fails', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncChats: async () => ok(SOURCE_RUN),
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
@@ -1332,6 +1398,7 @@ describe('when a source run fails after it began', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncChats: async () => ok(SOURCE_RUN),
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
@@ -1376,6 +1443,7 @@ describe('when a source run fails after it began', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncChats: async () => ok(SOURCE_RUN),
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
@@ -1460,6 +1528,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncChats: async () => ok(SOURCE_RUN),
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
@@ -1508,6 +1577,7 @@ describe('pointing a reader at the report a run leaves behind', () => {
       savedChannels: async () => [],
       syncPeople: async () => ok(SOURCE_RUN),
       syncCalendar: async () => ok(SOURCE_RUN),
+      syncChats: async () => ok(SOURCE_RUN),
       syncNotebook: async () => ok(SOURCE_RUN),
       notebooks: { listNotebooks: async () => ok([]) },
       savedNotebook: async () => undefined,
@@ -1562,9 +1632,17 @@ describe('stopping where a source fails, and nowhere else', () => {
   // The runs carried back, in the order an update takes the kinds.
   const UPDATED = ['me', 'calendar', 'people', 'site!one', GROUP.id, TODO.id, TEAM.id, NOTEBOOK.id, 'lists:contoso,3,4', PLAN.id];
   // The runs `all` at the picker carries back: both sites for their libraries, one of every other kind, both sites for their lists,
-  // then the mailbox, the calendar and the people, drawn after the numbered rows.
-  const PICKED = ['site!one', 'site!one', GROUP.id, TODO.id, TEAM.id, NOTEBOOK.id, 'lists:contoso,1,2', 'lists:contoso,3,4', PLAN.id, 'me', 'calendar', 'people'];
-  const RUN_OF: Readonly<Record<FailingKind, string>> = { calendar: 'calendar', people: 'people', group: GROUP.id, todo: TODO.id, team: TEAM.id, notebook: NOTEBOOK.id };
+  // then the mailbox, the calendar, the people and the chats, drawn after the numbered rows.
+  const PICKED = ['site!one', 'site!one', GROUP.id, TODO.id, TEAM.id, NOTEBOOK.id, 'lists:contoso,1,2', 'lists:contoso,3,4', PLAN.id, 'me', 'calendar', 'people', 'chats'];
+  const RUN_OF: Readonly<Record<FailingKind, string>> = {
+    calendar: 'calendar',
+    people: 'people',
+    chats: 'chats',
+    group: GROUP.id,
+    todo: TODO.id,
+    team: TEAM.id,
+    notebook: NOTEBOOK.id,
+  };
   const finishedBefore = (order: ReadonlyArray<string>, kind: FailingKind): string[] => order.slice(0, order.indexOf(RUN_OF[kind]));
 
   it('an update over one source of every kind syncs each once, in a fixed order, and carries every run back', async () => {
@@ -1610,7 +1688,7 @@ describe('stopping where a source fails, and nowhere else', () => {
     });
   }
 
-  for (const kind of ['calendar', 'people'] as const) {
+  for (const kind of ['calendar', 'people', 'chats'] as const) {
     it(`all at the picker stops at a ${kind} that fails, after every numbered source has run`, async () => {
       const { ok: succeeded, step, reported, planRuns } = await run(['all'], {}, { ...ALL_OFFERED, failing: [kind] });
 
