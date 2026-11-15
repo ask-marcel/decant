@@ -15,3 +15,9 @@ export const expiredCursor = (error: DriveReaderError): boolean => statusOf(erro
 const NOT_FOUND = 404;
 
 export const notFound = (error: DriveReaderError): boolean => statusOf(error) === NOT_FOUND;
+
+// What Graph answers for a request it will not run as it was asked: an id of one kind given where
+// an id of another kind goes is one of these.
+const BAD_REQUEST = 400;
+
+export const badRequest = (error: DriveReaderError): boolean => statusOf(error) === BAD_REQUEST;
