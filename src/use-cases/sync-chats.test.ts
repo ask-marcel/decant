@@ -473,3 +473,296 @@ describe('working through the chats with a limit', () => {
     expect(files.writeLog.indexOf(STATE_PATH)).toBeLessThan(files.writeLog.indexOf(`${ROOT}/Jane Doe/2026-11-12.md`));
   });
 });
+
+const XLSX_URL = 'https://contoso-my.sharepoint.com/:x:/g/personal/jane_contoso_com/EaBcD';
+const BUDGET_FILE = { name: 'Budget.xlsx', url: XLSX_URL };
+const BUDGET_ITEM: DriveItem = {
+  id: 'i1',
+  name: 'Budget.xlsx',
+  kind: 'file',
+  size: 1200,
+  path: '/Microsoft Teams Chat Files/Budget.xlsx',
+  lastModified: '2026-11-13T08:00:00Z',
+  cTag: 'c:{i1},7',
+  webUrl: 'https://contoso-my.sharepoint.com/personal/jane_contoso_com/Documents/Microsoft%20Teams%20Chat%20Files/Budget.xlsx',
+  modifiedBy: 'Jane Doe',
+};
+const LINKED = `${ROOT}/Budget review/2026-11-13/_linked`;
+
+const withFile = (over: Partial<ChatReaderSeed> = {}): ChatReaderSeed => ({
+  chats: [BUDGET, JANE],
+  messages: { [BUDGET_ID]: [message('m2', '2026-11-13T09:00:00.0000000Z', { files: [BUDGET_FILE] })], [JANE_ID]: JANE_MESSAGES },
+  links: { [XLSX_URL]: { url: BUDGET_ITEM.webUrl, driveId: 'd1', itemId: 'i1', name: 'Budget.xlsx' } },
+  ...over,
+});
+
+describe('the files shared in a chat', () => {
+  it('a shared file lands beside the note of its day with its text and its card, and the note links to it', async () => {
+    const { summary, files, notes } = await run({ reader: withFile(), drive: { items: { i1: BUDGET_ITEM }, markdown: { i1: '| Line | Amount |' } } });
+
+    expect(summary).toEqual({ ...NOTHING.summary, converted: 2 });
+    expect(notes.failed).toStrictEqual([]);
+    expect(files.written.get(`${LINKED}/Budget.xlsx.md`)).toContain('| Line | Amount |');
+    expect(files.written.get(`${LINKED}/Budget.xlsx.md`)).toContain(`linked_from: ${'Chats/Budget review/2026-11-13.md'}`);
+    expect(files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('message m2\n\n- [Budget.xlsx](2026-11-13/_linked/Budget.xlsx.md)\n');
+    const day = stateOf(files).chats[BUDGET_ID]?.days['2026-11-13'];
+    expect(day?.held).toContain(`${LINKED}/Budget.xlsx.md`);
+    expect(day?.links).toEqual({ 'd1:i1': 'Budget.xlsx' });
+    expect(day?.hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it('each message of a day shows its own files, two files of one name each get a card, and a card says which message pointed at its file', async () => {
+    const planUrl = 'https://contoso.sharepoint.com/sites/Finance/Shared Documents/Plan.docx';
+    const twinUrl = 'https://contoso-my.sharepoint.com/:x:/g/personal/li_contoso_com/EzZz';
+    const messages = [
+      message('m2', '2026-11-13T09:00:00.0000000Z', { files: [BUDGET_FILE] }),
+      message('m4', '2026-11-13T11:00:00.0000000Z', {
+        files: [
+          { name: 'Plan.docx', url: planUrl },
+          { name: 'Budget.xlsx', url: twinUrl },
+        ],
+      }),
+      message('m6', '2026-11-13T12:00:00.0000000Z'),
+    ];
+    const links = {
+      [XLSX_URL]: { url: BUDGET_ITEM.webUrl, driveId: 'd1', itemId: 'i1', name: 'Budget.xlsx' },
+      [planUrl]: { url: planUrl, driveId: 'd1', itemId: 'i2', name: 'Plan.docx' },
+      [twinUrl]: { url: twinUrl, driveId: 'd2', itemId: 'i1', name: 'Budget.xlsx' },
+    };
+    const items = { i1: BUDGET_ITEM, i2: { ...BUDGET_ITEM, id: 'i2', name: 'Plan.docx', path: '/Plan.docx' } };
+
+    const { files, notes } = await run({ reader: { chats: [BUDGET], messages: { [BUDGET_ID]: messages }, links }, drive: { items } });
+
+    const note = files.written.get(`${ROOT}/Budget review/2026-11-13.md`) ?? '';
+    const twin = /- \[Budget\.xlsx\]\(2026-11-13\/_linked\/(Budget[^)]+\.xlsx)\.md\)\n\n### 12:00/.exec(note)?.[1] ?? 'no second card';
+    expect(notes.failed).toStrictEqual([]);
+    expect(note).toContain(
+      'message m2\n\n- [Budget.xlsx](2026-11-13/_linked/Budget.xlsx.md)\n\n### 11:00 · Jane Doe\n\nmessage m4\n\n- [Plan.docx](2026-11-13/_linked/Plan.docx.md)\n- [Budget.xlsx]('
+    );
+    expect(note.endsWith('### 12:00 · Jane Doe\n\nmessage m6\n')).toBe(true);
+    expect(twin).not.toBe('Budget.xlsx');
+    expect(files.written.get(`${LINKED}/${twin}.md`)).toContain('in_message: "2026-11-13T11:00:00.0000000Z"');
+    expect(files.written.get(`${LINKED}/Plan.docx.md`)).toContain('in_message: "2026-11-13T11:00:00.0000000Z"');
+    expect(files.written.get(`${LINKED}/Budget.xlsx.md`)).toContain('in_message: "2026-11-13T09:00:00.0000000Z"');
+    expect(stateOf(files).chats[BUDGET_ID]?.days['2026-11-13']?.links).toEqual({ 'd1:i1': 'Budget.xlsx', 'd1:i2': 'Plan.docx', 'd2:i1': twin });
+  });
+
+  it('a file larger than the cap is left out, named in the report and in the note with why, and the day is not tried again for it', async () => {
+    const big = { ...BUDGET_ITEM, size: 2 * 1024 * 1024 };
+
+    const { summary, notes, files } = await run({ reader: withFile(), drive: { items: { i1: big } }, input: { maxBytes: 1024 * 1024 } });
+
+    expect(summary).toEqual({ ...NOTHING.summary, converted: 2, skipped: 1 });
+    expect(notes.skipped).toEqual([{ path: 'Budget review/2026-11-13: Budget.xlsx', reason: 'larger than the 1 MB cap' }]);
+    expect(notes.failed).toStrictEqual([]);
+    expect(files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('- [Budget.xlsx](2026-11-13/_linked/Budget.xlsx.md): larger than the 1 MB cap\n');
+    expect(stateOf(files).chats[BUDGET_ID]?.days['2026-11-13']?.hash).toMatch(/^[0-9a-f]{64}$/);
+    expect(stateOf(files).retry).toBeUndefined();
+  });
+
+  it('a file the day held that is no longer on disk is passed over when its message goes, with nothing logged', async () => {
+    const drive = { items: { i1: BUDGET_ITEM } };
+    const first = await run({ reader: withFile(), drive });
+    first.files.written.delete(`${LINKED}/Budget.xlsx.md`);
+    const moved = chat({ lastMessageAt: '2026-11-13T11:00:00.0000000Z' });
+
+    const second = await run({ onto: first.files, reader: withFile({ chats: [moved, JANE], messages: { [BUDGET_ID]: [message('m4', '2026-11-13T11:00:00.0000000Z')] } }), drive });
+
+    expect(second.logger.calls.filter((call) => call.level === 'warn')).toStrictEqual([]);
+    expect(stateOf(first.files).chats[BUDGET_ID]?.days['2026-11-13']?.held).toStrictEqual([]);
+  });
+
+  it('a file you cannot open is named in the report and in the note, the note is written, and the other chats land', async () => {
+    const forbidden = { kind: 'permanent' as const, status: 403, message: '403 Forbidden' };
+
+    const { summary, notes, files } = await run({ reader: withFile(), drive: { failItemReads: { i1: forbidden } } });
+
+    expect(summary).toEqual({ ...NOTHING.summary, converted: 2, failed: 1 });
+    expect(notes.failed).toEqual([{ path: 'Budget review/2026-11-13: Budget.xlsx', reason: 'permanent: 403 Forbidden' }]);
+    expect(files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('- [Budget.xlsx](2026-11-13/_linked/Budget.xlsx.md): permanent: 403 Forbidden\n');
+    expect(files.written.has(`${ROOT}/Jane Doe/2026-11-12.md`)).toBe(true);
+    expect(stateOf(files).chats[BUDGET_ID]?.days['2026-11-13']?.hash).toBe('');
+    expect(stateOf(files).retry?.[BUDGET_ID]?.attempts).toBe(1);
+  });
+
+  it('a file the source cannot place is named by its bare name with the reason, and the run after tries the chat again', async () => {
+    const first = await run({ reader: withFile({ links: {} }) });
+
+    expect(first.notes.failed).toEqual([{ path: 'Budget review/2026-11-13: Budget.xlsx', reason: 'permanent: Budget.xlsx is not a file in a library' }]);
+    expect(first.files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('- Budget.xlsx: permanent: Budget.xlsx is not a file in a library\n');
+    expect(first.logger.calls).toContainEqual({ level: 'warn', event: 'chat.file-unresolved', meta: { message: 'm2', cause: 'permanent' } });
+
+    const second = await run({ onto: first.files, reader: withFile(), drive: { items: { i1: BUDGET_ITEM } } });
+
+    expect(second.reader.calls).toContain(`messages:${BUDGET_ID}`);
+    expect(second.notes.failed).toStrictEqual([]);
+    expect(first.files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('- [Budget.xlsx](2026-11-13/_linked/Budget.xlsx.md)\n');
+    expect(stateOf(first.files).retry).toBeUndefined();
+  });
+
+  it('a file the day holds at the version the source still has is not converted again when the day is written again', async () => {
+    const drive = { items: { i1: BUDGET_ITEM } };
+    const first = await run({ reader: withFile(), drive });
+    const moved = chat({ lastMessageAt: '2026-11-13T11:00:00.0000000Z' });
+    const messages = [message('m2', '2026-11-13T09:00:00.0000000Z', { files: [BUDGET_FILE] }), message('m4', '2026-11-13T11:00:00.0000000Z')];
+
+    const second = await run({ onto: first.files, reader: withFile({ chats: [moved, JANE], messages: { [BUDGET_ID]: messages } }), drive });
+
+    expect(first.drive.calls.filter((call) => call.startsWith('markdown:'))).toHaveLength(1);
+    expect(second.drive.calls.filter((call) => call.startsWith('markdown:'))).toStrictEqual([]);
+    expect(first.files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('- [Budget.xlsx](2026-11-13/_linked/Budget.xlsx.md)\n');
+    expect(first.files.written.has(`${LINKED}/Budget.xlsx.md`)).toBe(true);
+    expect(second.progress.details).toStrictEqual([]);
+    expect(first.progress.details).toContainEqual({ label: 'Budget review', what: 'reading Budget.xlsx' });
+  });
+
+  it('a file the source cannot place this time, which the day pulled before, keeps what the day holds of it', async () => {
+    const drive = { items: { i1: BUDGET_ITEM } };
+    const first = await run({ reader: withFile(), drive });
+    const versionsBefore = stateOf(first.files).chats[BUDGET_ID]?.days['2026-11-13']?.versions;
+    const moved = chat({ lastMessageAt: '2026-11-13T11:00:00.0000000Z' });
+    const messages = [message('m2', '2026-11-13T09:00:00.0000000Z', { files: [BUDGET_FILE] }), message('m4', '2026-11-13T11:00:00.0000000Z')];
+
+    const second = await run({ onto: first.files, reader: withFile({ chats: [moved, JANE], messages: { [BUDGET_ID]: messages }, links: {} }), drive });
+
+    expect(second.notes.failed).toHaveLength(1);
+    expect(first.files.written.has(`${LINKED}/Budget.xlsx.md`)).toBe(true);
+    const day = stateOf(first.files).chats[BUDGET_ID]?.days['2026-11-13'];
+    expect(day?.held).toContain(`${LINKED}/Budget.xlsx.md`);
+    expect(day?.links).toEqual({ 'd1:i1': 'Budget.xlsx' });
+    expect(Object.keys(versionsBefore ?? {})).toEqual(['d1:i1']);
+    expect(day?.versions).toEqual(versionsBefore);
+  });
+
+  it('a file whose message is gone from the day goes under the archive with its card', async () => {
+    const drive = { items: { i1: BUDGET_ITEM } };
+    const first = await run({ reader: withFile(), drive });
+    const moved = chat({ lastMessageAt: '2026-11-13T11:00:00.0000000Z' });
+
+    await run({ onto: first.files, reader: withFile({ chats: [moved, JANE], messages: { [BUDGET_ID]: [message('m4', '2026-11-13T11:00:00.0000000Z')] } }), drive });
+
+    expect(first.files.written.has(`${LINKED}/Budget.xlsx.md`)).toBe(false);
+    expect(first.files.written.has('kb/_archive/2026-11-14/Chats/Budget review/2026-11-13/_linked/Budget.xlsx.md')).toBe(true);
+    expect(stateOf(first.files).chats[BUDGET_ID]?.days['2026-11-13']?.held).toStrictEqual([]);
+  });
+});
+
+const PICTURE = `${ROOT}/Budget review/2026-11-13/_inline/m2-1.png`;
+
+const withPicture = (over: Partial<ChatReaderSeed> = {}): ChatReaderSeed => ({
+  chats: [BUDGET],
+  messages: { [BUDGET_ID]: [message('m2', '2026-11-13T09:00:00.0000000Z', { text: `Look ${pictureMarker(0)}`, pictures: 1 })] },
+  pictures: { m2: [{ path: 'image-1.png', bytes: new Uint8Array([1, 2, 3]) }] },
+  ...over,
+});
+
+describe('the pictures pasted in a chat', () => {
+  it('a pasted picture is saved beside the note of its day, and the note shows it where it stood', async () => {
+    const { files, notes } = await run({ reader: withPicture(), ocr: 'off' });
+
+    expect(notes.failed).toStrictEqual([]);
+    expect(files.binary.get(PICTURE)).toEqual(new Uint8Array([1, 2, 3]));
+    expect(files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('Look ![picture](2026-11-13/_inline/m2-1.png)\n');
+    expect(stateOf(files).chats[BUDGET_ID]?.days['2026-11-13']?.held).toEqual([PICTURE]);
+  });
+
+  it('with OCR on, what it read is under the message, and the progress line says the picture is read', async () => {
+    const { files, progress } = await run({ reader: withPicture(), ocr: { texts: { [PICTURE]: ' Total 42 \n' } } });
+
+    expect(files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('Look ![picture](2026-11-13/_inline/m2-1.png)\n\nText in picture 1:\n\n> Total 42\n');
+    expect(progress.details).toEqual([{ label: 'Budget review', what: 'reading m2-1.png' }]);
+  });
+
+  it('with OCR off, the picture is saved and linked with no reading, and the progress line says it is saved', async () => {
+    const { files, progress } = await run({ reader: withPicture(), ocr: 'off' });
+
+    expect(files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).not.toContain('Text in picture');
+    expect(progress.details).toEqual([{ label: 'Budget review', what: 'saving m2-1.png' }]);
+  });
+
+  it('a picture the day holds is not fetched again when the day is written again, and a picture with no extension is saved without one', async () => {
+    const bare = withPicture({ pictures: { m2: [{ path: 'image-1', bytes: new Uint8Array([7]) }] } });
+    const first = await run({ reader: bare, ocr: 'off' });
+    const moved = chat({ lastMessageAt: '2026-11-13T11:00:00.0000000Z' });
+    const messages = [...(bare.messages?.[BUDGET_ID] ?? []), message('m4', '2026-11-13T11:00:00.0000000Z')];
+
+    const second = await run({ onto: first.files, reader: { ...bare, chats: [moved], messages: { [BUDGET_ID]: messages } }, ocr: 'off' });
+
+    expect(first.files.binary.has(`${ROOT}/Budget review/2026-11-13/_inline/m2-1`)).toBe(true);
+    expect(second.reader.calls.filter((call) => call.startsWith('pictures:'))).toStrictEqual([]);
+    expect(first.files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('Look ![picture](2026-11-13/_inline/m2-1)\n');
+  });
+
+  it('a message id or a picture extension that holds a path separator names a file inside the folder of the day, never one outside it', async () => {
+    const odd = message('../../outside', '2026-11-13T09:00:00.0000000Z', { text: pictureMarker(0), pictures: 1 });
+    const seed = withPicture({ messages: { [BUDGET_ID]: [odd] }, pictures: { '../../outside': [{ path: 'image-1.p/ng', bytes: new Uint8Array([1]) }] } });
+
+    const { files } = await run({ reader: seed, ocr: 'off' });
+
+    const inline = `${ROOT}/Budget review/2026-11-13/_inline/`;
+    const saved = [...files.binary.keys()];
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.startsWith(inline)).toBe(true);
+    expect(saved[0]?.slice(inline.length)).not.toContain('/');
+  });
+
+  it('two messages of a day each keep their own picture, and neither is fetched again when the day is written again', async () => {
+    const both = [
+      message('m2', '2026-11-13T09:00:00.0000000Z', { text: `First ${pictureMarker(0)}`, pictures: 1 }),
+      message('m3', '2026-11-13T10:00:00.0000000Z', { text: `Second ${pictureMarker(0)}`, pictures: 1 }),
+    ];
+    const pictures = { m2: [{ path: 'image-1.png', bytes: new Uint8Array([2]) }], m3: [{ path: 'image-1.jpg', bytes: new Uint8Array([3]) }] };
+    const first = await run({ reader: { chats: [BUDGET], messages: { [BUDGET_ID]: both }, pictures }, ocr: 'off' });
+    const moved = chat({ lastMessageAt: '2026-11-13T11:00:00.0000000Z' });
+
+    const second = await run({
+      onto: first.files,
+      reader: { chats: [moved], messages: { [BUDGET_ID]: [...both, message('m4', '2026-11-13T11:00:00.0000000Z')] }, pictures },
+      ocr: 'off',
+    });
+
+    const note = first.files.written.get(`${ROOT}/Budget review/2026-11-13.md`) ?? '';
+    expect(first.reader.calls.filter((call) => call.startsWith('pictures:'))).toEqual(['pictures:m2', 'pictures:m3']);
+    expect(second.reader.calls.filter((call) => call.startsWith('pictures:'))).toStrictEqual([]);
+    expect(note).toContain('First ![picture](2026-11-13/_inline/m2-1.png)\n');
+    expect(note).toContain('Second ![picture](2026-11-13/_inline/m3-1.jpg)\n');
+    expect(stateOf(first.files).chats[BUDGET_ID]?.days['2026-11-13']?.held).toEqual([PICTURE, `${ROOT}/Budget review/2026-11-13/_inline/m3-1.jpg`]);
+  });
+
+  it('a day whose messages are all gone goes under the archive with the pictures it kept', async () => {
+    const first = await run({ reader: withPicture(), ocr: 'off' });
+    const moved = chat({ lastMessageAt: '2026-11-14T00:30:00.0000000Z' });
+
+    await run({ onto: first.files, reader: withPicture({ chats: [moved], messages: { [BUDGET_ID]: [message('m5', '2026-11-14T00:30:00.0000000Z')] } }), ocr: 'off' });
+
+    expect(first.files.binary.has(PICTURE)).toBe(false);
+    expect(first.files.binary.has('kb/_archive/2026-11-14/Chats/Budget review/2026-11-13/_inline/m2-1.png')).toBe(true);
+    expect(first.files.written.has('kb/_archive/2026-11-14/Chats/Budget review/2026-11-13.md')).toBe(true);
+  });
+
+  it('a picture that does not download is named in the report and in the note, the note is written, and the next run fetches it', async () => {
+    const first = await run({ reader: withPicture({ failPicturesOf: ['m2'] }), ocr: 'off' });
+
+    expect(first.summary).toEqual({ ...NOTHING.summary, converted: 1, failed: 1 });
+    expect(first.notes.failed).toEqual([{ path: 'Budget review/2026-11-13: a picture of Jane Doe', reason: 'transient: cannot fetch the pictures of m2' }]);
+    expect(first.files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('Look \\[picture not saved\\]\n');
+    expect(first.logger.calls).toContainEqual({ level: 'warn', event: 'chat.picture-failed', meta: { message: 'm2' } });
+
+    const second = await run({ onto: first.files, reader: withPicture(), ocr: 'off' });
+
+    expect(second.notes.failed).toStrictEqual([]);
+    expect(first.files.binary.has(PICTURE)).toBe(true);
+    expect(first.files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('Look ![picture](2026-11-13/_inline/m2-1.png)\n');
+  });
+
+  it('a picture the source does not hand back, or the disk refuses, is named with why, and the others of the message are kept', async () => {
+    const two = message('m2', '2026-11-13T09:00:00.0000000Z', { text: `${pictureMarker(0)} and ${pictureMarker(1)}`, pictures: 2 });
+    const short = await run({ reader: withPicture({ messages: { [BUDGET_ID]: [two] } }), ocr: 'off' });
+    const refused = await run({ reader: withPicture(), ocr: 'off', files: { failByteWritesMatching: '_inline' } });
+
+    expect(short.notes.failed).toEqual([{ path: 'Budget review/2026-11-13: a picture of Jane Doe', reason: 'the source did not hand it back' }]);
+    expect(short.files.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toContain('![picture](2026-11-13/_inline/m2-1.png) and \\[picture not saved\\]\n');
+    expect(stateOf(short.files).chats[BUDGET_ID]?.days['2026-11-13']?.held).toEqual([PICTURE]);
+    expect(refused.notes.failed).toEqual([{ path: 'Budget review/2026-11-13: a picture of Jane Doe', reason: `cannot write ${PICTURE}` }]);
+  });
+});
