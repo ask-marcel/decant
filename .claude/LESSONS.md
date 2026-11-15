@@ -467,3 +467,8 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   then `conversion-plan.ts`, where `x.constructor` stopped the whole run, and `mime.ts` (45a2135),
   then `html-text.ts`, `channel-post.ts` and `sharepoint-list.ts`, where a value read as
   `function Object() { [native code] }`.
+
+- [gotcha] In a worktree on this Windows PC, the files have CRLF line ends (`core.autocrlf=true`).
+  A script that edits a file by an exact replace must match `\r\n`, or the replace finds nothing.
+  Read the line ends with `git ls-files --eol <path>` before the script, and write the file back
+  with the same line ends.
