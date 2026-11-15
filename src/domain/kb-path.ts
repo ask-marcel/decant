@@ -104,17 +104,35 @@ export const idHash = (id: string): string => new Bun.CryptoHasher('sha256').upd
 export const WINDOWS_PATH_LIMIT = 259;
 
 // What decant can still add below a name it plans: `.md` (3), a picture under `<name>.media/` (20),
-// the `_archive/<day>/` an old copy moves under (20), a namesake's suffix (9), and 3 to spare.
+// the `_archive/<day>/` an old copy moves under (20), a namesake's suffix (9), and 3 to spare. The
+// 8 characters a write puts after a name until it renames the file into place need no room of
+// their own: they come only on a write, the `_archive/` folder only on a move, and 20 holds 8.
 const ROOM_FOR_LATER = 55;
+
+// What a name written now must leave room for at the least: a picture under `<name>.media/` (20)
+// and the 8 characters of the write. The room for a later move and for a namesake is given up.
+const ROOM_TO_WRITE = 28;
+
+// How much of a name stays readable ahead of its hash when the usual room leaves less.
+const READABLE = 16;
+
+// The characters each copy of a name can take in a folder, a separator in front of each copy.
+const roomPerCopy = (folder: string, budget: number, copies: number, reserve: number): number => Math.floor((budget - folder.length - reserve) / copies) - 1;
 
 // A name cut until its path fits, its extension kept and 8 characters of a hash of the whole name
 // added, so two names cut alike stay apart. The budget counts the path as decant writes it: what
 // stands in front of the knowledge base on disk is taken off it already. With no budget, nothing
-// is cut, which is how a caller that was never told one keeps working as it did.
-export const fitSegment = (folder: string, segment: string, budget: number | undefined): string => {
+// is cut, which is how a caller that was never told one keeps working as it did. `copies` counts a
+// name that stands in its path more than once: a saved email is a folder named for it, with its note
+// inside it under the name again. In a folder so deep that the usual room leaves almost nothing, the
+// name keeps its first letters while the path can still be written: a name that is only a hash is
+// the last choice.
+export const fitSegment = (folder: string, segment: string, budget: number | undefined, copies = 1): string => {
   if (budget === undefined) return segment;
-  const over = folder.length + 1 + segment.length + ROOM_FOR_LATER - budget;
-  return over <= 0 ? segment : disambiguateSegment(segment, idHash(segment), segment.length - over);
+  const tail = SUFFIX_LENGTH + 1 + segment.length - extensionStart(segment);
+  const readable = Math.min(roomPerCopy(folder, budget, copies, ROOM_TO_WRITE), tail + READABLE);
+  const limit = Math.max(roomPerCopy(folder, budget, copies, ROOM_FOR_LATER), readable);
+  return segment.length <= limit ? segment : disambiguateSegment(segment, idHash(segment), limit);
 };
 
 // A namesake's suffix is cut from a hash of its id, never from the id itself: ids often open alike

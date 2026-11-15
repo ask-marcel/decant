@@ -1,5 +1,5 @@
 import type { ConversionRoute } from '../domain/conversion-plan.ts';
-import { embedsImages, picturesInText, planFile } from '../domain/conversion-plan.ts';
+import { embedsImages, nameCopies, picturesInText, planFile } from '../domain/conversion-plan.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { renderCalendar } from '../domain/icalendar.ts';
 import { shortcutLink } from '../domain/internet-shortcut.ts';
@@ -38,9 +38,10 @@ export type ConvertFileDeps = {
 // thread pulling one document names the folder outright: it sits beside the card standing for it,
 // and a library tree rebuilt inside a thread folder would bury it four levels down. Written as a
 // choice rather than an override so neither caller has to pass a root the other one ignores.
-type Placement =
+export type Placement =
   | { readonly libraryRoot: string; readonly into?: undefined; readonly asName?: undefined }
-  // `asName` is given when two documents one thread linked share a name, so both are kept.
+  // `asName` is given when two documents one thread linked share a name, so both are kept, and when a
+  // picked file too deep in its library lands directly under it.
   | { readonly libraryRoot?: undefined; readonly into: string; readonly asName?: string };
 
 export type ConvertFileInput = {
@@ -54,9 +55,10 @@ export type ConvertFileInput = {
 // `lost` names what a conversion had to go without, a part of the document that would not read: the
 // document landed without it. A library sync tries such a document again for the rest; a mail thread
 // keeps what landed. `leftOut` says how much of an archive the library read when it read it in part,
-// which no run reads more of.
+// which no run reads more of. `primary` names what stands for the whole file when no note does: the
+// folder an archive unpacked into, since each note in it stands for one member only.
 export type ConvertOutcome =
-  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly lost?: string; readonly leftOut?: ArchiveCut }
+  | { readonly kind: 'converted'; readonly outputs: ReadonlyArray<string>; readonly primary?: string; readonly lost?: string; readonly leftOut?: ArchiveCut }
   | { readonly kind: 'skipped'; readonly reason: SkipReason }
   | { readonly kind: 'failed'; readonly reason: string };
 
@@ -273,7 +275,7 @@ const convertVector = async (context: Context): Promise<ConvertOutcome> => {
 const writeParts = async (context: Context, folder: string, parts: ReadonlyArray<MimePart>): Promise<Result<ReadonlyArray<string>, FilesError>> => {
   const written: string[] = [];
   for (const part of parts) {
-    const name = safeSegment(part.name);
+    const name = fitSegment(folder, safeSegment(part.name), context.deps.pathBudget);
     const wrote = await context.deps.files.writeBytes(`${folder}/${name}`, part.bytes);
     if (!wrote.ok) return wrote;
     written.push(`${folder}/${name}`);
@@ -334,7 +336,7 @@ const writeArchiveEntries = async (context: Context, folder: string, archivePath
     if (!written.ok) return failure(written.error);
     outputs.push(file);
   }
-  return { kind: 'converted', outputs, ...leftOutOf(entries) };
+  return { kind: 'converted', outputs, primary: folder, ...leftOutOf(entries) };
 };
 
 const CONVERTERS: Readonly<Record<ConversionRoute, (context: Context) => Promise<ConvertOutcome>>> = {
@@ -360,7 +362,8 @@ export const createConvertFile =
     if (decision.kind === 'skip') return { kind: 'skipped', reason: decision.reason };
     const dir = targetDir(input);
     const lost: string[] = [];
-    const context = { deps, input, dir, name: fitSegment(dir, safeSegment(input.asName ?? input.item.name), deps.pathBudget), stamp: stampFor(input, deps.clock), lost };
+    const name = fitSegment(dir, safeSegment(input.asName ?? input.item.name), deps.pathBudget, nameCopies(decision.route));
+    const context = { deps, input, dir, name, stamp: stampFor(input, deps.clock), lost };
     const outcome = await CONVERTERS[decision.route](context);
     return outcome.kind === 'converted' && lost.length > 0 ? { ...outcome, lost: lost.join('; ') } : outcome;
   };

@@ -207,6 +207,28 @@ describe('keeping a path short enough for Windows', () => {
     expect(freePath(folder, `${'a'.repeat(150)}.md`, 'id-1', new Set(), undefined, 259)).toHaveLength(204);
     expect(freePath(folder, `${'a'.repeat(150)}.md`, 'id-1', new Set())).toBe(`${folder}/${'a'.repeat(150)}.md`);
   });
+
+  // A saved email and an archive unpack into a folder named for the file, with the file or its note
+  // inside it under the name again: `Fwd.eml/Fwd.eml.md`.
+  it('a name written two times along its path is cut until both copies fit, and kept when they do', () => {
+    expect(fitSegment(folder, `${'a'.repeat(60)}.eml`, 259)).toBe(`${'a'.repeat(60)}.eml`);
+    expect(fitSegment(folder, `${'a'.repeat(60)}.eml`, 259, 2)).toMatch(/^a{38}-[0-9a-f]{8}\.eml$/);
+    expect(fitSegment(folder, `${'a'.repeat(40)}.eml`, 259, 2)).toBe(`${'a'.repeat(40)}.eml`);
+  });
+
+  it('in a folder so deep that the usual room leaves no letter of a name, the name keeps its first 16 while the path can still be written', () => {
+    const deep = `kb/${'f'.repeat(197)}`;
+
+    expect(fitSegment(deep, `${'a'.repeat(40)}.pdf`, 259)).toMatch(/^a{16}-[0-9a-f]{8}\.pdf$/);
+    expect(fitSegment(deep, 'Q3 review.pdf', 259)).toBe('Q3 review.pdf');
+  });
+
+  it('a name is only its hash when the path has no room left for one letter of it', () => {
+    const deepest = `kb/${'f'.repeat(227)}`;
+
+    expect(fitSegment(deepest, `${'a'.repeat(40)}.pdf`, 259)).toMatch(/^-[0-9a-f]{8}\.pdf$/);
+    expect(fitSegment(deepest, 'Q3.pdf', 259)).toMatch(/^-[0-9a-f]{8}\.pdf$/);
+  });
 });
 
 describe('naming the file a zip member lands in', () => {

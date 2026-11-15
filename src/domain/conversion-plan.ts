@@ -104,6 +104,11 @@ const outputsFor = (route: ConversionRoute, name: string): ReadonlyArray<Planned
   ];
 };
 
+// How many times a route writes the name of the file along one path. A saved email and an archive
+// unpack into a folder named for the file, with the note or the archive inside it under the name
+// again, so the room for the name is counted for both.
+export const nameCopies = (route: ConversionRoute): number => (route === 'message' || route === 'archive' ? 2 : 1);
+
 // The kinds whose pictures are worth taking out of them: only the ones that keep no copy you can
 // look at. A Word or Excel file is converted to text alone, so a diagram inside it survives nowhere
 // else. A PDF is written beside its markdown and a deck is rendered to one, so their pictures are
