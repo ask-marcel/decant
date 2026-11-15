@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseOptions } from './options.ts';
+import { parseOptions, USAGE } from './options.ts';
 
 const parse = (line: string): ReturnType<typeof parseOptions> => parseOptions(line.length === 0 ? [] : line.split(' '));
 
@@ -42,6 +42,7 @@ describe('reading what the operator asked for', () => {
         people: false,
         calendar: false,
         onedrive: false,
+        chats: false,
         every: [],
         help: false,
         refresh: false,
@@ -118,6 +119,23 @@ describe('reading what the operator asked for', () => {
   it('the people directory can be asked for outright, so the picker is not shown', () => {
     expect(parse('--people')).toMatchObject({ value: { people: true } });
     expect(parse('')).toMatchObject({ value: { people: false } });
+  });
+
+  it('every Teams chat can be asked for, and one chat can be named, which takes no kind of source whole', () => {
+    expect(parse('--chats all')).toMatchObject({ value: { chats: true, every: [] } });
+    expect(parse('--chat Budget')).toMatchObject({ value: { chat: 'Budget', chats: false } });
+    expect(parseOptions(['--chat', 'Budget review', '--mailbox'])).toMatchObject({ value: { chat: 'Budget review', mailbox: true } });
+  });
+
+  it('--chats takes all and nothing else, and --chat takes a name', () => {
+    expect(parse('--chats Budget')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--chats expects all, got: Budget' } });
+    expect(parse('--chat')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--chat expects a value' } });
+    expect(parse('--chats')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--chats expects a value' } });
+  });
+
+  it('the usage names the two flags for the chats', () => {
+    expect(USAGE).toContain('  --chat <name>       sync one Teams chat, by its topic, by a person in it or by its id, and keep it for update\n');
+    expect(USAGE).toContain('  --chats all         sync every Teams chat: one-to-one, group and meeting chats\n');
   });
 
   it('the calendar can be asked for outright, with a day to start from', () => {

@@ -34,6 +34,10 @@ export type Options = {
   readonly people: boolean;
   readonly calendar: boolean;
   readonly onedrive: boolean;
+  // Follow every Teams chat.
+  readonly chats: boolean;
+  // Follow one more Teams chat, by its topic, by somebody in it, or by its id.
+  readonly chat?: string;
   // The kinds of source taken whole, every one of each, in the order the flags came.
   readonly every: ReadonlyArray<WholeKind>;
   // Asked for the usage and nothing else. A flag rather than a command, because it can be asked
@@ -68,6 +72,7 @@ const DEFAULTS: Options = {
   people: false,
   calendar: false,
   onedrive: false,
+  chats: false,
   every: [],
   help: false,
   timezone: '',
@@ -103,6 +108,8 @@ const FLAGS_WITH_VALUE = new Set([
   '--notebook',
   '--lists',
   '--plan',
+  '--chat',
+  '--chats',
   ...WHOLE_FLAGS.keys(),
   '--drive-id',
   '--max-size-mb',
@@ -168,6 +175,9 @@ const withOut = (options: Options, value: string): Result<Options, OptionsError>
 
 type ValueFlag = (options: Options, value: string) => Result<Options, OptionsError>;
 
+// The chats are one source, so `all` here follows every chat of it and lists no kind of source.
+const withChats: ValueFlag = (options, value) => (value === 'all' ? ok({ ...options, chats: true }) : err({ kind: 'bad-option', message: `--chats expects all, got: ${value}` }));
+
 // A kind asked for twice is taken once.
 const withWhole = (flag: string, kind: WholeKind): [string, ValueFlag] => [
   flag,
@@ -188,6 +198,8 @@ const VALUE_FLAGS: ReadonlyMap<string, ValueFlag> = new Map<string, ValueFlag>([
   ['--notebook', (options, value) => ok({ ...options, notebookId: value })],
   ['--lists', (options, value) => ok({ ...options, listsSite: value })],
   ['--plan', (options, value) => ok({ ...options, planId: value })],
+  ['--chat', (options, value) => ok({ ...options, chat: value })],
+  ['--chats', withChats],
   ...[...WHOLE_FLAGS].map(([flag, kind]) => withWhole(flag, kind)),
   ['--drive-id', (options, value) => ok({ ...options, driveIds: [...options.driveIds, value] })],
   ['--ocr-lang', withOcrLang],
@@ -326,6 +338,7 @@ export const USAGE = [
   '  --notebook <name>   sync one OneNote notebook, by its name or its id, without the picker',
   '  --lists <site>      sync the lists of one SharePoint site, by its name, id or address, without the picker',
   '  --plan <title>      sync one Planner plan, by its title or its id, without the picker',
+  '  --chat <name>       sync one Teams chat, by its topic, by a person in it or by its id, and keep it for update',
   '  --sites all         sync every SharePoint site with all its libraries (not Loop, not OneDrive)',
   '  --loop all          sync every Loop workspace',
   '  --onedrive          sync your OneDrive',
@@ -334,6 +347,7 @@ export const USAGE = [
   '  --todo-lists all    sync every To Do list',
   '  --notebooks all     sync every OneNote notebook',
   '  --plans all         sync every Planner plan',
+  '  --chats all         sync every Teams chat: one-to-one, group and meeting chats',
   '                      source flags combine: decant --teams all --sites all --mailbox syncs all three',
   '  --refresh           list the sites afresh instead of showing the ones last seen',
   '  --ocr-lang <code>   turn --ocr on with this language (default latin; auto chooses for each image)',
