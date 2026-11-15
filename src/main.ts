@@ -63,6 +63,8 @@ const run = async (): Promise<number> => {
     people: options.value.people,
     calendar: options.value.calendar,
     onedrive: options.value.onedrive,
+    chats: options.value.chats,
+    chat: options.value.chat,
     every: options.value.every,
     since: options.value.since,
     maxAgeMinutes: options.value.maxAgeMinutes,
