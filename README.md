@@ -149,9 +149,25 @@ The item goes in `kb/Picked/`, with the same files as a sync writes:
 
 ```
 kb/Picked/
-  Files/<Site>/<Library>/<folders>/QBR.pptx.md      the text, with the original and the PDF adjacent
+  Files/<Site>/<Library>/<folders>/QBR.pptx.md      the text of the file
   Mailbox/threads/<day>-<id>-<subject>/<subject>.md the conversation, with its attachments
 ```
+
+The kind of the file sets the files that decant writes adjacent to the text:
+
+| Kind | Files that decant writes |
+|---|---|
+| Document (`.docx`, `.txt`, `.html` and the other text kinds), invitation (`.ics`), shortcut (`.url`) | Only the text, `QBR.docx.md` |
+| Presentation (`.pptx`, `.ppt`) and `.rtf` | The text and a PDF of the slides, `QBR.pptx.md` and `QBR.pptx.pdf` |
+| Workbook, PDF, picture and `.svg` | The text and the original file, `Budget.xlsx.md` and `Budget.xlsx` |
+| Saved email (`.eml`) | A folder `Fwd.eml/` that holds the text `Fwd.eml.md` and each file that the email carried |
+| Archive (`.zip`) | A folder `Pack.zip/` that holds the archive and one text file for each file in it. For an archive, decant prints the path of this folder |
+
+The pictures of a Word document or a workbook go in the folder `<name>.media/`, adjacent to the
+text. If the folders of the file are too deep for the path limit of Windows, the file goes directly
+in `Files/<Site>/<Library>/`. Then its name has a hash of its folders, for example
+`QBR-1a2b3c4d.pptx.md`, and the folder of a saved email or an archive has the name without the
+extension.
 
 `kb/Picked/` has no state file. Thus `update` does not refresh these items, and it does not start to
 sync the source that an item came from. To refresh an item, get it again. `get` accepts only `--out`,

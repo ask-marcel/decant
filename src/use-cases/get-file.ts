@@ -1,11 +1,12 @@
+import { nameCopies, planFile } from '../domain/conversion-plan.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { libraryFolderOf, officeDocumentOf } from '../domain/get-target.ts';
 import type { OfficeDocument } from '../domain/get-target.ts';
-import { idHash } from '../domain/kb-path.ts';
+import { disambiguateSegment, fitSegment, idHash, safeRelPath, safeSegment } from '../domain/kb-path.ts';
 import { skipReason } from '../domain/report.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
-import type { ConvertFile } from './convert-file.ts';
+import type { ConvertFile, Placement } from './convert-file.ts';
 import type { DriveReader, ItemRef } from './ports/drive-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 
@@ -21,6 +22,8 @@ export type GetFileDeps = {
   readonly drive: Pick<DriveReader, 'fromLink' | 'filesNamed' | 'item'>;
   readonly convertFile: ConvertFile;
   readonly kbRoot: string;
+  // How long a path may be as decant writes it. Absent, a file keeps its folders whatever their depth.
+  readonly pathBudget?: number;
 };
 
 export type GetFileInput = { readonly url: string; readonly maxBytes: number };
@@ -41,8 +44,27 @@ const folderOf = async (deps: GetFileDeps, driveId: string): Promise<string> => 
   return (top.ok ? libraryFolderOf(top.value.webUrl) : undefined) ?? `drive-${idHash(driveId).slice(0, HASH_LENGTH)}`;
 };
 
-// The markdown among what the conversion wrote, or the first file when it wrote none.
-const noteOf = (outputs: ReadonlyArray<string>): string => outputs.find((path) => path.endsWith('.md')) ?? outputs[0] ?? '';
+// What stands for the whole file when the conversion names it (the folder of an archive), else the
+// markdown among what the conversion wrote, or the first file when it wrote none.
+const noteOf = (primary: string | undefined, outputs: ReadonlyArray<string>): string => primary ?? outputs.find((path) => path.endsWith('.md')) ?? outputs[0] ?? '';
+
+// How many times the kind of the file writes its name along one path. The size plays no part: a file
+// too large is refused by the conversion, which says so.
+const copiesOf = (item: DriveItem): number => {
+  const decision = planFile({ name: item.name, size: 0 }, 0);
+  return decision.kind === 'process' ? nameCopies(decision.route) : 1;
+};
+
+// Under its folders, as a sync puts it, while the name goes there whole. In folders so deep that the
+// name would be cut, directly under the library folder: the name is what a reader looks for. It is
+// marked with a hash of its folders there, so two files of one name from two folders stay apart.
+const placementOf = (deps: GetFileDeps, item: DriveItem, libraryRoot: string): Placement => {
+  const folders = item.path.split('/').slice(0, -1);
+  const dir = folders.length === 0 ? libraryRoot : `${libraryRoot}/${safeRelPath(folders)}`;
+  const name = safeSegment(item.name);
+  if (fitSegment(dir, name, deps.pathBudget, copiesOf(item)) === name) return { libraryRoot };
+  return { into: libraryRoot, asName: disambiguateSegment(name, idHash(folders.join('/'))) };
+};
 
 type Found = { readonly ref: ItemRef; readonly item: DriveItem };
 
@@ -81,15 +103,9 @@ export const createGetFile =
     const { ref, item } = located.value;
     if (item.kind !== 'file') return failed('readFile', 'not-a-file', 'this address is a folder: give the address of one file');
     const folder = await folderOf(deps, ref.driveId);
-    const outcome = await deps.convertFile({
-      item,
-      driveId: ref.driveId,
-      site: 'Picked',
-      library: folder,
-      maxBytes: input.maxBytes,
-      libraryRoot: `${deps.kbRoot}/${PICKED_FILES}/${folder}`,
-    });
+    const placed = placementOf(deps, item, `${deps.kbRoot}/${PICKED_FILES}/${folder}`);
+    const outcome = await deps.convertFile({ item, driveId: ref.driveId, site: 'Picked', library: folder, maxBytes: input.maxBytes, ...placed });
     if (outcome.kind === 'failed') return failed('convert', 'failed', outcome.reason);
     if (outcome.kind === 'skipped') return failed('convert', outcome.reason, skipReason(outcome.reason, input.maxBytes, item.name));
-    return ok({ path: noteOf(outcome.outputs) });
+    return ok({ path: noteOf(outcome.primary, outcome.outputs) });
   };
