@@ -34,12 +34,13 @@ const LIBRARY = item({ id: 'root', name: 'root', kind: 'folder', path: '', webUr
 
 const get = async (
   seed: DriveReaderSeed = {},
-  maxBytes = 50 * 1024 * 1024
+  maxBytes = 50 * 1024 * 1024,
+  pathBudget?: number
 ): Promise<{ got: Result<Got, StepError>; files: FilesFake; reader: ReturnType<typeof createDriveReaderFake> }> => {
   const files = createFilesFake();
   const reader = createDriveReaderFake({ links: { [LINK]: FILE }, items: { '01QBR': item(), root: LIBRARY }, markdown: { '01QBR': '# Quarterly review' }, ...seed });
-  const convertFile = createConvertFile({ reader, files, ocr: createOcrFake(), clock: createClockFake(), logger: createLoggerFake(), progress: createProgressFake() });
-  const getFile = createGetFile({ drive: reader, convertFile, kbRoot: 'kb' });
+  const convertFile = createConvertFile({ reader, files, ocr: createOcrFake(), clock: createClockFake(), logger: createLoggerFake(), progress: createProgressFake(), pathBudget });
+  const getFile = createGetFile({ drive: reader, convertFile, kbRoot: 'kb', pathBudget });
   return { got: await getFile({ url: LINK, maxBytes }), files, reader };
 };
 
@@ -95,6 +96,50 @@ describe('getting one file by its address', () => {
     const { got } = await get({ failItems: { '01QBR': { kind: 'permanent', message: 'locked' } } });
 
     expect(got.ok === false && got.error).toMatchObject({ step: 'convert', cause: 'failed' });
+  });
+});
+
+// A picked file sits under every folder it has in its library. In a folder deep enough that its name
+// would be cut, the folders give way to the name, since the name is what a reader looks for.
+describe('getting one file from deep in its library', () => {
+  const LIBRARY_FOLDER = 'kb/Picked/Files/Pepco/Shared Documents';
+  const DEEP = `${'d'.repeat(100)}/${'e'.repeat(60)}`;
+  const REVIEW = 'Quarterly business review for the board of directors.docx';
+  const deepIn = async (over: Partial<DriveItem>, seed: DriveReaderSeed = {}): Promise<Result<Got, StepError>> =>
+    (await get({ items: { '01QBR': item(over), root: LIBRARY }, ...seed }, 50 * 1024 * 1024, 259)).got;
+
+  it('a file deep in its library lands directly under the library folder, its name whole and marked with a hash of its folders', async () => {
+    const got = await deepIn({ name: REVIEW, path: `${DEEP}/${REVIEW}` });
+
+    expect(got.ok && got.value.path.slice(LIBRARY_FOLDER.length)).toMatch(/^\/Quarterly business review for the board of directors-[0-9a-f]{8}\.docx\.md$/);
+  });
+
+  it('two files of one name in two deep folders land on two paths', async () => {
+    const one = await deepIn({ name: REVIEW, path: `${DEEP}/${REVIEW}` });
+    const other = await deepIn({ name: REVIEW, path: `${DEEP}x/${REVIEW}` });
+
+    expect(one.ok && other.ok && one.value.path !== other.value.path).toBe(true);
+  });
+
+  it('a file whose path fits keeps its folders when a budget is given', async () => {
+    const { got } = await get({}, 50 * 1024 * 1024, 259);
+
+    expect(got).toEqual({ ok: true, value: { path: `${LIBRARY_FOLDER}/Operations/QBR.docx.md` } });
+  });
+
+  it('a saved email deep in its library lands under the library folder as well, its note in the folder named for it', async () => {
+    const name = 'Fwd Quarterly business review.eml';
+    const got = await deepIn({ name, path: `${DEEP}/${name}` }, { bytes: { '01QBR': new TextEncoder().encode('Subject: Fwd\r\n\r\nthe body') } });
+
+    expect(got.ok && got.value.path.slice(LIBRARY_FOLDER.length)).toMatch(/^\/(Fwd Quarterly business review-[0-9a-f]{8})\/\1\.eml\.md$/);
+  });
+
+  // The check read `…/second-brain-wiki.zip/scripts/wiki.mjs.md` back for a zip: the note of one member.
+  it('an archive is answered with the folder it unpacked into, not the note of one member', async () => {
+    const zip = item({ name: 'Livraison.zip', path: 'Operations/Livraison.zip' });
+    const { got } = await get({ items: { '01QBR': zip, root: LIBRARY }, archiveEntries: [{ path: 'scripts/wiki.mjs', text: 'x' }] });
+
+    expect(got).toEqual({ ok: true, value: { path: `${LIBRARY_FOLDER}/Operations/Livraison.zip` } });
   });
 });
 

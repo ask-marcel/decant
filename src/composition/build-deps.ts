@@ -295,7 +295,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     pathBudget,
   });
   const fetchOne = createGetOne({
-    getFile: createGetFile({ drive: reader, convertFile, kbRoot: config.kbRoot }),
+    getFile: createGetFile({ drive: reader, convertFile, kbRoot: config.kbRoot, pathBudget }),
     getMail: createGetMail({ reader: mail, renderThread: renderPicked, mailboxRoot: pickedRoot }),
   });
   const syncMailbox = createSyncMailbox({ reader: mail, files, renderThread, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone, writeDown });
