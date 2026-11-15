@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { parseChatMessage, pictureMarker } from './chat-message.ts';
+import { chatMessageHtml, parseChatMessage, pictureMarker } from './chat-message.ts';
 
 // One entry of `list-teams-chat-history` in its default projection, as the library answers it.
 const substrateMessage = {
@@ -137,5 +137,18 @@ describe('reading a chat message as the Teams substrate answers for it', () => {
 
   it('the time the message arrived stands in when it carries no time it was written', () => {
     expect(parseChatMessage({ ...substrateMessage, composetime: undefined })?.sent).toBe('2026-11-13T02:15:31.4560000Z');
+  });
+  it('a rich message gives its HTML to convert, with the picture markers and the emoji in place, and a message typed plain, an entry of the client or one with no content gives none', () => {
+    const emoji = '<img itemscope itemtype="http://schema.skype.com/Emoji" itemid="smile" src="https://statics.teams.cdn.office.net/evergreen-assets/smile.png" alt="🙂">';
+    const content = `<blockquote itemtype="http://schema.skype.com/Reply"><p>Before</p></blockquote><p><b>Look</b> ${pasted(FIRST)} ${emoji} ${pasted(SECOND)}</p>`;
+
+    expect(chatMessageHtml({ ...substrateMessage, content })).toBe(
+      `<blockquote itemtype="http://schema.skype.com/Reply"><p>Before</p></blockquote><p><b>Look</b> ${pictureMarker(0)} 🙂 ${pictureMarker(1)}</p>`
+    );
+    expect(chatMessageHtml({ ...substrateMessage, messagetype: 'Text', content: 'budget < 5 & rising' })).toBeUndefined();
+    expect(chatMessageHtml({ ...substrateMessage, messagetype: 'Event/Call', event: 'call-started' })).toBeUndefined();
+    expect(chatMessageHtml({ ...substrateMessage, content: '' })).toBeUndefined();
+    expect(chatMessageHtml({ ...substrateMessage, content: undefined })).toBeUndefined();
+    expect(chatMessageHtml('1794536130123')).toBeUndefined();
   });
 });

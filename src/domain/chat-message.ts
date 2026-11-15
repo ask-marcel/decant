@@ -80,6 +80,15 @@ const signedOf = (raw: unknown): Pick<ChatMessage, 'author' | 'sent' | 'webUrl'>
   webUrl: readString(raw, 'webUrl') ?? '',
 });
 
+// The HTML of a rich message as it goes to the markdown conversion: the markers and the emoji in
+// place, since the converter drops a picture it is not told to keep. A message typed plain is the
+// words themselves, and an entry of the client is not a message: neither has HTML to convert.
+export const chatMessageHtml = (raw: unknown): string | undefined => {
+  const content = readString(raw, 'content') ?? '';
+  const plain = readString(raw, 'messagetype') === PLAIN || readString(raw, 'event') !== undefined;
+  return plain || content.length === 0 ? undefined : withMarkers(content).html;
+};
+
 // An entry the client wrote (a call, a member added) carries an `event`. A message deleted in Teams
 // stays in the history with nothing in it, and is left out the same way.
 export const parseChatMessage = (raw: unknown): ChatMessage | undefined => {
