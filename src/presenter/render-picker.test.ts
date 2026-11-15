@@ -12,7 +12,9 @@ const people = { id: 'people', name: 'People', webUrl: '', synced: { lastRun: '2
 
 const calendar = { id: 'calendar', name: 'Calendar', webUrl: '' };
 
-const standing = { mailbox, people, calendar };
+const chats = { id: 'chats', name: 'Chats', webUrl: '' };
+
+const standing = { mailbox, people, calendar, chats };
 
 describe('showing the operator what there is to sync', () => {
   it('each site is numbered, and the ones already synced say when and how much', () => {
@@ -49,11 +51,19 @@ describe('showing the operator what there is to sync', () => {
   });
 
   it('the site picker says that all takes the mailbox, the calendar and the people too', () => {
-    expect(renderSitePicker(rows, standing)).toContain('all for every source above, m, c and p included');
+    expect(renderSitePicker(rows, standing)).toContain('all for every source above, m, c, p and h included');
   });
 
   it('the ways out of the picker are spelled out', () => {
     expect(renderSitePicker(rows, standing)).toContain('u = refresh everything already synced, q = quit.');
+  });
+
+  it('the Teams chats are offered beside the people, marked the same way, and the letter that takes them is spelled out', () => {
+    expect(renderSitePicker(rows, standing)).toContain('  p) People, everyone in your Teams  (synced 2026-09-11, 97 files)\n  h) Teams chats  (new)\n');
+    expect(renderSitePicker(rows, { ...standing, chats: { ...chats, synced: { lastRun: '2026-11-14T01:00:00Z', fileCount: 40 } } })).toContain(
+      '  h) Teams chats  (synced 2026-11-14, 40 files)'
+    );
+    expect(renderSitePicker(rows, standing)).toContain('p for the people, h for your Teams chats,\nall for every source above');
   });
 
   it('the mailbox is offered beside the sites, marked the same way', () => {

@@ -44,8 +44,10 @@ export const renderSitePicker = (rows: ReadonlyArray<PickerRow>, standing: Stand
     `  m) My mailbox  (${mark(standing.mailbox)})`,
     `  c) My calendar  (${mark(standing.calendar)})`,
     `  p) People, everyone in your Teams  (${mark(standing.people)})`,
+    `  h) Teams chats  (${mark(standing.chats)})`,
     '',
-    'Choose one or more numbers (1,3), m for your mailbox, c for your calendar, p for the people, all for every source above, m, c and p included, or paste a site address.',
+    'Choose one or more numbers (1,3), m for your mailbox, c for your calendar, p for the people, h for your Teams chats,',
+    'all for every source above, m, c, p and h included, or paste a site address.',
     'Taking more than one site takes every library in each, without asking.',
     'u = refresh everything already synced, q = quit.',
   ].join('\n');

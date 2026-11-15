@@ -14,6 +14,9 @@ import { createPeopleReaderFromCall } from '../infra/people-reader-marcel.ts';
 import type { PeopleReader } from '../use-cases/ports/people-reader.ts';
 import { createSyncPeople } from '../use-cases/sync-people.ts';
 import { createCalendarReaderFromCall } from '../infra/calendar-reader-marcel.ts';
+import { createChatReaderFromCall } from '../infra/chat-reader-marcel.ts';
+import type { ChatReader } from '../use-cases/ports/chat-reader.ts';
+import { createSyncChats } from '../use-cases/sync-chats.ts';
 import type { CalendarReader } from '../use-cases/ports/calendar-reader.ts';
 import { createSyncCalendar } from '../use-cases/sync-calendar.ts';
 import { createNotebookReaderFromCall } from '../infra/notebook-reader-marcel.ts';
@@ -98,6 +101,7 @@ export type DepOverrides = {
   readonly team?: TeamReader;
   readonly people?: PeopleReader;
   readonly calendar?: CalendarReader;
+  readonly chat?: ChatReader;
   readonly notebook?: NotebookReader;
   readonly list?: ListReader;
   readonly plan?: PlanReader;
@@ -335,6 +339,23 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   // The calendar counts its days where the mailbox counts them.
   const calendar = given(overrides.calendar, () => createCalendarReaderFromCall(createMarcelCall(api)));
   const syncCalendar = createSyncCalendar({ reader: calendar, files, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone, pathBudget, writeDown });
+  // A chat pulls the files its messages shared the way a mail thread pulls a linked file, so it takes
+  // the drive reader and the converter the libraries use.
+  const chat = given(overrides.chat, () => createChatReaderFromCall(createMarcelCall(api)));
+  const syncChats = createSyncChats({
+    reader: chat,
+    drive: reader,
+    convertFile,
+    files,
+    ocr,
+    clock,
+    logger,
+    progress,
+    kbRoot: config.kbRoot,
+    timezone: config.timezone,
+    pathBudget,
+    writeDown,
+  });
   const notebook = given(overrides.notebook, () => createNotebookReaderFromCall(createMarcelCall(api)));
   const syncNotebook = createSyncNotebook({ reader: notebook, files, clock, logger, progress, kbRoot: config.kbRoot, pathBudget, writeDown });
   const list = given(overrides.list, () => createListReaderFromCall(createMarcelCall(api)));
@@ -361,6 +382,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
     syncTeam,
     syncPeople,
     syncCalendar,
+    syncChats,
     syncNotebook,
     syncLists,
     syncPlan,
