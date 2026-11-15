@@ -1712,7 +1712,8 @@ describe('reaching back as far as the first run was told to', () => {
       [
         '',
         'How far back should decant reach? From this day on it syncs mail, group inboxes, Teams posts,',
-        'the calendar, library files and OneNote pages; To Do, Planner, lists and people always come whole.',
+        'Teams chats, the calendar, library files and OneNote pages; To Do, Planner, lists and people',
+        'always come whole.',
         'The answer is kept for every later run; run with --since <day|all> to change it.',
       ].join('\n')
     );
