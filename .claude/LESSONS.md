@@ -472,3 +472,13 @@ A compaction pass retires entries into `lessons.archive.md`, verbatim and with t
   A script that edits a file by an exact replace must match `\r\n`, or the replace finds nothing.
   Read the line ends with `git ls-files --eol <path>` before the script, and write the file back
   with the same line ends.
+- [gotcha] An Outlook address (the `webLink` of a message, `/owa/?ItemID=`) holds the id of the
+  message in the EWS form, which is base64 with `/` and `+`. Graph gives the same id with `-` and
+  `_`, and reads a `/` in an id as the end of a segment of the request path, so `get-mail-message`
+  failed with `Resource not found for the segment`. Change an id from an address to the Graph form
+  before a Graph call (`graphIdOf` in `mail-reader-marcel.ts`).
+
+- [gotcha] Graph refuses the id of a conversation given where the id of a message goes with a 400
+  (`ErrorInvalidOperation: ConversationId isn't supported`), not a 404. An unknown id in the
+  conversation filter also gives a 400 (`ErrorInvalidValueForFilter`). Code that tries an id as a
+  message, then as a conversation, must accept a 400 and a 404 for both (`get-mail.ts`).
