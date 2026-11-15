@@ -89,6 +89,24 @@ const addressesOf = (value: unknown): ReadonlyArray<string> => {
   return [...new Set(named.map((entry) => entry.toLowerCase()))].sort(compareText);
 };
 
+// The new Outlook on the web serves mail from `outlook.cloud.microsoft`, with the same paths as
+// `outlook.office.com`. `resolve-mail-link` 2.8.0 accepts only the older hosts: remove this when the
+// library accepts the new one.
+const NEW_OUTLOOK_HOST = 'outlook.cloud.microsoft';
+
+const libraryHostOf = (url: string): string => {
+  const address = URL.parse(url);
+  if (address?.hostname !== NEW_OUTLOOK_HOST) return url;
+  address.hostname = 'outlook.office.com';
+  return address.href;
+};
+
+// An Outlook address holds the id in the form Exchange gives it, which is base64 with `/` and `+`.
+// Graph gives the same id with `-` and `_`, and reads a `/` as the end of a segment of the request
+// path. An id in the Graph form holds neither character, so it comes back as it came: the library
+// can make this change itself later with no harm.
+const graphIdOf = (messageId: string): string => messageId.replaceAll('/', '-').replaceAll('+', '_');
+
 // How many messages a folder delta asks for on each page, the first and every one after it.
 const DELTA_PAGE_SIZE = '100';
 
@@ -181,10 +199,10 @@ export const createMailReaderFromCall = (call: MarcelCall, convertBytes?: Conver
       return raw.ok ? ok(headersOf(raw.value)) : raw;
     },
     messageOfLink: async (url) => {
-      const raw = await call('resolve-mail-link', { url });
+      const raw = await call('resolve-mail-link', { url: libraryHostOf(url) });
       if (!raw.ok) return raw;
       const messageId = readString(raw.value, 'messageId');
-      return messageId === undefined ? err({ kind: 'permanent', message: 'the address names no message' }) : ok(messageId);
+      return messageId === undefined ? err({ kind: 'permanent', message: 'the address names no message' }) : ok(graphIdOf(messageId));
     },
     conversationOf: async (messageId) => {
       const raw = await call('get-mail-message', { messageId, select: 'conversationId' });
