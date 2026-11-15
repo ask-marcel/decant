@@ -153,8 +153,9 @@ kb/Picked/
 ```
 
 `kb/Picked/` has no state file. Thus `update` does not refresh these items, and it does not start to
-sync the source that an item came from. To refresh an item, get it again. `get` accepts `--out`,
-`--max-size-mb`, `--ocr` and `--convert-timeout`, and it does not accept a source flag.
+sync the source that an item came from. To refresh an item, get it again. `get` accepts only `--out`,
+`--max-size-mb`, `--convert-timeout`, `--ocr`, `--no-ocr`, `--ocr-lang` and `--help`. Each other
+flag stops the run with exit code 2 and a message that names the flag.
 
 ### How far back
 

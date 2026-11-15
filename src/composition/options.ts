@@ -229,11 +229,16 @@ const GET_TAKES = 'get expects the address of a file, or the id or the address o
 const withTarget = (options: Options, token: string): Result<Options, OptionsError> => {
   const target = parseGetTarget(token);
   if (target.ok) return ok({ ...options, target: target.value });
-  const where = target.error.kind === 'unknown-address' ? target.error.host : '';
-  return err({ kind: 'bad-option', message: `get does not know the address at ${where}: give an address on SharePoint or OneDrive, or of a mail in Outlook on the web` });
+  if (target.error.kind === 'empty') return err({ kind: 'bad-option', message: GET_TAKES });
+  return err({
+    kind: 'bad-option',
+    message: `get does not know the address at ${target.error.host}: give an address on SharePoint or OneDrive, or of a mail in Outlook on the web`,
+  });
 };
 
 const takesTarget = (options: Options): boolean => options.command === 'get' && options.target === undefined;
+
+const COMMANDS: ReadonlySet<string> = new Set<Command>(['sync', 'update', 'get']);
 
 const parseWord = (options: Options, token: string): Result<Options, OptionsError> => {
   if (token === 'update' || token === 'sync' || token === 'get') return ok({ ...options, command: token });
@@ -254,31 +259,44 @@ const namesSource = (options: Options): boolean =>
     (named) => named !== undefined
   );
 
-const checkedGet = (options: Options): Result<Options, OptionsError> => {
+// The flags that `get` uses: the folder of the note, and the conversion of the one file. Find the
+// flags by their names, not by their values, because `--concurrency 4` gives the default value.
+const GET_FLAGS: ReadonlySet<string> = new Set(['--out', '--max-size-mb', '--ocr', '--no-ocr', '--ocr-lang', '--convert-timeout', '--help', '-h']);
+
+const checkedGet = (options: Options, named: ReadonlyArray<string>): Result<Options, OptionsError> => {
   if (options.target === undefined) return err({ kind: 'bad-option', message: GET_TAKES });
-  return namesSource(options) ? err({ kind: 'bad-option', message: 'get takes one address or id, and no source' }) : ok(options);
+  if (namesSource(options)) return err({ kind: 'bad-option', message: 'get takes one address or id, and no source' });
+  const unused = named.find((token) => token.startsWith('-') && !GET_FLAGS.has(token));
+  return unused === undefined ? ok(options) : err({ kind: 'bad-option', message: `${unused} does not work with get` });
 };
 
-const checked = (options: Options): Result<Options, OptionsError> => {
+// Before, the last command word replaced the first, and `decant update get <address>` ran a get.
+const checked = (options: Options, named: ReadonlyArray<string>): Result<Options, OptionsError> => {
+  const commands = named.filter((token) => COMMANDS.has(token));
+  if (commands.length > 1) return err({ kind: 'bad-option', message: `give only one command, not ${commands[0]} and ${commands[1]}` });
   if (options.maxAgeMinutes !== undefined && options.command !== 'update') return err({ kind: 'bad-option', message: '--max-age works only with update' });
-  return options.command === 'get' ? checkedGet(options) : ok(options);
+  return options.command === 'get' ? checkedGet(options, named) : ok(options);
 };
 
 export const parseOptions = (argv: ReadonlyArray<string>): Result<Options, OptionsError> => {
   let options = DEFAULTS;
+  // The flags and the command words of the line, in their order. The value of a flag is not in it.
+  const named: string[] = [];
   for (let index = 0; index < argv.length; index += 1) {
     const token = argv[index] ?? '';
     const parsed = parseToken(options, token, argv[index + 1]);
     if (!parsed.ok) return parsed;
     options = parsed.value;
+    if (token.startsWith('-') || COMMANDS.has(token)) named.push(token);
     if (FLAGS_WITH_VALUE.has(token)) index += 1;
   }
-  return checked(options);
+  return checked(options, named);
 };
 
 export const USAGE = [
   'Usage: decant [update] [options]',
-  '       decant get <address or id> [--out <folder>]',
+  '       decant get <address or id> [--out <folder>] [--max-size-mb <n>] [--convert-timeout <seconds>]',
+  '                  [--ocr | --no-ocr] [--ocr-lang <code>]',
   '',
   '  update              sync every source already in the export folder, without asking anything',
   '  get <address|id>    fetch one thing into the Picked folder and print the path of its note:',
@@ -300,6 +318,7 @@ export const USAGE = [
   '  --convert-timeout <seconds>',
   '                      stop the conversion of one file after this time, and try it again next run (default 120)',
   '  --ocr               read the text out of images and scanned PDFs (needs Python 3 with rapidocr and onnxruntime)',
+  '  --no-ocr            do not read the text out of images and scanned PDFs in this run',
   '  --group-id <id>     sync one group inbox, by its id or its address, without the picker',
   '  --todo-list <name>  sync one To Do list, by its name or its id, without the picker',
   '  --team <name>       sync every channel of one Team, by its name or its id, without the picker',

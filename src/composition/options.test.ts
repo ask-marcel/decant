@@ -288,6 +288,42 @@ describe('asking for one thing', () => {
     }
   });
 
+  // Before, each of these flags ran with no effect. With `--dry-run`, get wrote the file.
+  it('get refuses a flag it does not use, and names the flag', () => {
+    for (const [flag, name] of [
+      ['--dry-run', '--dry-run'],
+      ['--refresh', '--refresh'],
+      ['--yes', '--yes'],
+      ['-y', '-y'],
+      ['--since 2026-11-01', '--since'],
+      ['--timezone Asia/Shanghai', '--timezone'],
+      ['--concurrency 2', '--concurrency'],
+    ]) {
+      expect(parse(`get AAMkAGI= ${flag}`)).toEqual({ ok: false, error: { kind: 'bad-option', message: `${name} does not work with get` } });
+    }
+    expect(parse('--dry-run get AAMkAGI=')).toEqual({ ok: false, error: { kind: 'bad-option', message: '--dry-run does not work with get' } });
+  });
+
+  it('get takes the flags of the conversion, and help', () => {
+    expect(parse('get AAMkAGI= --out export --max-size-mb 5 --convert-timeout 30 --ocr-lang latin --no-ocr')).toMatchObject({
+      ok: true,
+      value: { command: 'get', out: 'export', maxSizeMb: 5, convertTimeoutSeconds: 30, ocrLang: 'latin', ocr: false },
+    });
+    expect(parse('get AAMkAGI= --help')).toMatchObject({ ok: true, value: { help: true } });
+  });
+
+  // Before, `decant update get <address>` ran a get: the last command word replaced the first.
+  it('a second command is refused rather than the last one winning', () => {
+    expect(parse('update get AAMkAGI=')).toEqual({ ok: false, error: { kind: 'bad-option', message: 'give only one command, not update and get' } });
+    expect(parse('get update')).toEqual({ ok: false, error: { kind: 'bad-option', message: 'give only one command, not get and update' } });
+  });
+
+  it('get with an empty value is refused with what it takes', () => {
+    for (const value of ['', '  ']) {
+      expect(parseOptions(['get', value])).toEqual({ ok: false, error: { kind: 'bad-option', message: 'get expects the address of a file, or the id or the address of a mail' } });
+    }
+  });
+
   it('a value with no get before it is still an argument nobody expected', () => {
     expect(parse('AAMkAGI=')).toEqual({ ok: false, error: { kind: 'bad-option', message: 'unexpected argument: AAMkAGI=' } });
   });
