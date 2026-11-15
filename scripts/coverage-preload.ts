@@ -16,6 +16,7 @@
 
 // --- src/infra/ ---
 import '../src/infra/calendar-reader-marcel.ts';
+import '../src/infra/chat-reader-marcel.ts';
 import '../src/infra/clock-system.ts';
 import '../src/infra/convert-child.ts';
 import '../src/infra/convert-in-child.ts';
