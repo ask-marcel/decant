@@ -46,6 +46,26 @@ describe('the messages of a chat as one document to convert', () => {
 
     expect(parts[0]?.html).toBe(['<p>decantmessage0boundary</p>', '<p><strong>Agenda</strong></p><p>one</p><p><strong>Top</strong></p>', ''].join('\n'));
   });
+
+  it('a link whose title only repeats its address loses the title, and a title with other words stays', () => {
+    const echoed = 'https://example.com/a?b=1&amp;c=(2)';
+    const parts = conversionParts(
+      [
+        `<a href="${echoed}" title="${echoed}" target="_blank">site</a>` +
+          `<A title="${echoed}" href="${echoed}">again</A>` +
+          '<a href="https://example.com/plan" title="Open the plan">plan</a>',
+      ],
+      LIMIT
+    );
+
+    expect(parts[0]?.html).toBe(
+      [
+        '<p>decantmessage0boundary</p>',
+        `<a href="${echoed}" target="_blank">site</a>` + `<A href="${echoed}">again</A>` + '<a href="https://example.com/plan" title="Open the plan">plan</a>',
+        '',
+      ].join('\n')
+    );
+  });
 });
 
 describe('the markdown of a converted document, given back to its messages', () => {

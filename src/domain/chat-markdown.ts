@@ -20,6 +20,15 @@ const HEADING_END = /<\/h[1-6]>/gi;
 // A heading typed in a message would stand above the heading of the message itself in the note.
 const withoutHeadings = (html: string): string => html.replace(HEADING_START, '<p><strong>').replace(HEADING_END, '</strong></p>');
 
+const LINK_TAG = /<a\b[^<>]*>/gi;
+const TITLE = /\stitle="([^"]*)"/i;
+const HREF = /\shref="([^"]*)"/i;
+
+// Teams gives a link its own address as its title, and the converter would write the address twice.
+const withoutEchoedTitle = (tag: string): string => (TITLE.exec(tag)?.[1] === HREF.exec(tag)?.[1] ? tag.replace(TITLE, '') : tag);
+
+const prepared = (html: string): string => withoutHeadings(html).replace(LINK_TAG, withoutEchoedTitle);
+
 const bytesOf = (text: string): number => new TextEncoder().encode(text).length;
 
 type Section = { readonly at: number; readonly html: string; readonly bytes: number };
@@ -43,7 +52,7 @@ const partOf = (group: Group): ConversionPart => ({
 // `limit` bytes. A message with no HTML, one typed plain, is in no part.
 export const conversionParts = (htmls: ReadonlyArray<string | undefined>, limit: number): ReadonlyArray<ConversionPart> =>
   htmls
-    .flatMap((html, at) => (html === undefined ? [] : [{ at, html: withoutHeadings(html) }]))
+    .flatMap((html, at) => (html === undefined ? [] : [{ at, html: prepared(html) }]))
     .map((section) => ({ ...section, bytes: bytesOf(section.html) }))
     .reduce<ReadonlyArray<Group>>((groups, section) => grouped(groups, section, limit), [])
     .map(partOf);
