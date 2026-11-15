@@ -263,8 +263,9 @@ const namesSource = (options: Options): boolean =>
 // flags by their names, not by their values, because `--concurrency 4` gives the default value.
 const GET_FLAGS: ReadonlySet<string> = new Set(['--out', '--max-size-mb', '--ocr', '--no-ocr', '--ocr-lang', '--convert-timeout', '--help', '-h']);
 
+// With no address, a request for help still wins: `decant get --help` asks for the usage.
 const checkedGet = (options: Options, named: ReadonlyArray<string>): Result<Options, OptionsError> => {
-  if (options.target === undefined) return err({ kind: 'bad-option', message: GET_TAKES });
+  if (options.target === undefined) return options.help ? ok(options) : err({ kind: 'bad-option', message: GET_TAKES });
   if (namesSource(options)) return err({ kind: 'bad-option', message: 'get takes one address or id, and no source' });
   const unused = named.find((token) => token.startsWith('-') && !GET_FLAGS.has(token));
   return unused === undefined ? ok(options) : err({ kind: 'bad-option', message: `${unused} does not work with get` });
