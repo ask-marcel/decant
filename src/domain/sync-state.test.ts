@@ -111,6 +111,16 @@ describe('reading the sync state left by a previous run', () => {
     expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'lists', id: 'site-1', name: 'Espace Contoso', lastRun: '2026-09-12T09:00:00Z', fileCount: 2 } });
   });
 
+  it('the chats are a source like the mailbox, counting the days their chats hold one note each', () => {
+    const state = {
+      source: { kind: 'chats', id: 'chats', name: 'Chats' },
+      lastRun: '2026-11-14T01:00:00Z',
+      chats: { '19:aaa111@thread.v2': { days: { '2026-11-12': {}, '2026-11-13': {} } }, '19:bbb222@thread.v2': { days: { '2026-11-12': {} } }, broken: 'x' },
+    };
+
+    expect(parseSyncedSource(state)).toEqual({ ok: true, value: { kind: 'chats', id: 'chats', name: 'Chats', lastRun: '2026-11-14T01:00:00Z', fileCount: 3 } });
+  });
+
   it('a source naming a kind this tool cannot sync is rejected as malformed', () => {
     const parsed = parseSyncedSource({ source: { kind: 'whiteboard', id: 'x', name: 'y' } });
 

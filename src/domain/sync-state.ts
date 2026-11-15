@@ -1,7 +1,7 @@
 import type { Result } from './result.ts';
 import { err, ok } from './result.ts';
 
-export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo' | 'team' | 'people' | 'calendar' | 'notebook' | 'lists' | 'plan';
+export type SourceKind = 'site' | 'mailbox' | 'group' | 'todo' | 'team' | 'people' | 'calendar' | 'notebook' | 'lists' | 'plan' | 'chats';
 
 export type SyncedSource = {
   readonly kind: SourceKind;
@@ -39,7 +39,7 @@ export const sourceKey = (source: { readonly kind: SourceKind; readonly id: stri
 
 type SourceIdentity = { readonly kind: SourceKind; readonly id: string; readonly name: string };
 
-const KINDS: ReadonlyArray<SourceKind> = ['site', 'mailbox', 'group', 'todo', 'team', 'people', 'calendar', 'notebook', 'lists', 'plan'];
+const KINDS: ReadonlyArray<SourceKind> = ['site', 'mailbox', 'group', 'todo', 'team', 'people', 'calendar', 'notebook', 'lists', 'plan', 'chats'];
 
 const isSourceKind = (value: string | undefined): value is SourceKind => KINDS.some((kind) => kind === value);
 
@@ -57,7 +57,7 @@ const readString = (record: Record<string, unknown>, key: string): string | unde
 const countKeys = (raw: unknown): number => (isRecord(raw) ? Object.keys(raw).length : 0);
 
 // What a container holds, summed over every container: a site's libraries each hold `items`, a
-// team's channels each hold `posts`.
+// team's channels each hold `posts`, the chats each hold `days`.
 const countWithin = (containers: unknown, held: string): number => {
   if (!isRecord(containers)) return 0;
   return Object.values(containers).reduce<number>((total, container) => total + (isRecord(container) ? countKeys(container[held]) : 0), 0);
@@ -75,10 +75,11 @@ const parseIdentity = (source: Record<string, unknown>): Result<SourceIdentity, 
 // A site counts the documents its libraries hold and a team the posts its channels hold; a mailbox
 // and a group inbox count their threads, a To Do list its tasks, the directory its people, the
 // calendar its events, a notebook its pages and a site its lists, each of those being one file in
-// the knowledge base.
+// the knowledge base. The chats count the days their chats hold, one note each.
 const countFiles = (raw: Record<string, unknown>): number =>
   countWithin(raw['drives'], 'items') +
   countWithin(raw['channels'], 'posts') +
+  countWithin(raw['chats'], 'days') +
   ['threads', 'tasks', 'people', 'events', 'pages', 'lists'].reduce((total, held) => total + countKeys(raw[held]), 0);
 
 export const parseSyncedSource = (raw: unknown): Result<SyncedSource, SyncStateError> => {
