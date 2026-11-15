@@ -16,8 +16,10 @@ lists** (one markdown file per task), the **channels of the Teams you belong to*
 file per post, with its replies beneath it), the **people directory** (one markdown file per
 colleague, plus the org chart), your **Outlook calendar** (one markdown file per event, with what
 it carried beside it), the **OneNote notebooks** of your sites and your own (one markdown file
-per page), the **lists of your SharePoint sites** (one markdown table per list) and your
-**Planner plans** (one markdown file per task under its bucket, plus the board as one table).
+per page), the **lists of your SharePoint sites** (one markdown table per list), your
+**Planner plans** (one markdown file per task under its bucket, plus the board as one table) and
+your **Teams chats** (one markdown file for each chat and day, with the files and the pictures of
+its messages beside it).
 
 Graph access goes through [`ask-marcel-office-cli`](https://www.npmjs.com/package/ask-marcel-office-cli)
 used as a library, which owns authentication, paging and document conversion. See
@@ -59,7 +61,8 @@ Teams you are a member of, the OneNote notebooks of those sites and your own, th
 sites, and the Planner plans of the groups you belong to. Each is marked with when it last synced
 and how much it holds. Pick a
 number and one or more libraries (or, for a Team, one or more channels), press `m` for your
-mailbox, `c` for your calendar or `p` for the people directory, and it syncs.
+mailbox, `c` for your calendar, `p` for the people directory or `h` for your Teams chats, and it
+syncs.
 
 Your Loop workspaces are on that list too, shown as `Loop - <workspace>`. A workspace keeps its
 pages in a container no site listing returns, so they are found through the `.pod` manifest each one
@@ -68,7 +71,8 @@ rest. A workspace nobody has opened may be missing from the index for a while: s
 id with `--site-id` when that happens.
 
 Several sites can be taken at once: `1,3` for those two, or `all` for every source on the list. `all`
-also takes your mailbox, your calendar and the people directory, after the numbered sources. Taking
+also takes your mailbox, your calendar, the people directory and your Teams chats, after the
+numbered sources. Taking
 more than one site takes every library in each without asking, since the point of choosing them
 together is not being asked once per site. Each site is summarised as it finishes.
 
@@ -84,8 +88,8 @@ workspaces or your OneDrive: use `--loop all` and `--onedrive` for them. A Team 
 channels. If two flags name the same source, decant syncs it one time.
 
 decant gets the list of each group before it syncs a source. If it cannot get a list, the run stops
-before it writes anything. The sources sync in the order of the picker, and the mailbox, the calendar
-and the people directory sync last. When one source fails, the run stops there, as with `all` at the
+before it writes anything. The sources sync in the order of the picker, and the mailbox, the calendar,
+the people directory and the Teams chats sync last. When one source fails, the run stops there, as with `all` at the
 picker.
 
 To refresh everything already synced, without being asked anything:
@@ -179,8 +183,9 @@ flag stops the run with exit code 2 and a message that names the flag.
 The first run that has something to sync asks how far back to reach: a day such as `2025-01-01`, or
 `all`. The answer is kept in `kb/.decant.json`, and every later run reaches back to the same day
 without asking, `update` included. From that day on, decant syncs mail, group inboxes, Teams posts,
-the calendar, library files and OneNote pages, each by its own date: a message by the day it
-arrived, a group thread by its last post, a post or a page by its last change, a file by its last
+Teams chats, the calendar, library files and OneNote pages, each by its own date: a message by the
+day it arrived, a chat message by the day it was written, a group thread by its last post, a post or
+a page by its last change, a file by its last
 edit, an event by the day it starts (a recurring series is kept whatever day it began, since it may
 be running still). To Do lists, Planner plans, SharePoint lists and the people directory always
 come whole: they say how things stand now, and a board missing its old open tasks would mislead.
@@ -259,6 +264,7 @@ You can give many source flags in one command. decant syncs all the sources that
 | `--notebook <name>` | Sync one OneNote notebook without the picker, by its name or its id |
 | `--lists <site>` | Sync the lists of one SharePoint site without the picker, by its name, its id or its address |
 | `--plan <title>` | Sync one Planner plan without the picker, by its title among the plans listed or by its id |
+| `--chat <name>` | Sync one Teams chat without the picker, by its topic, by the name of a person in it, or by its id. decant keeps the chat for `update` (see What a Teams chats sync writes) |
 | `--sites all` | Sync every SharePoint site with all its libraries, without the picker. Loop workspaces and your OneDrive are not included |
 | `--loop all` | Sync every Loop workspace without the picker |
 | `--onedrive` | Sync your OneDrive without the picker |
@@ -267,6 +273,7 @@ You can give many source flags in one command. decant syncs all the sources that
 | `--todo-lists all` | Sync every To Do list without the picker |
 | `--notebooks all` | Sync every OneNote notebook without the picker |
 | `--plans all` | Sync every Planner plan without the picker |
+| `--chats all` | Sync every Teams chat without the picker: one-to-one chats, group chats and meeting chats |
 | `--max-age <minutes>` | Only with `update`: do nothing if the last update started less than this number of minutes before |
 | `--since <day\|all>` | Reach back to this day (`2026-01-31`), or through everything, and keep it for every later run (see How far back) |
 | `--out <folder>` | Write the knowledge base to this folder (default `kb`). This option has priority over `KB_ROOT`. Use the same folder for each run, because the sync state is in that folder |
@@ -343,6 +350,14 @@ kb/
       _index.md                     every post, the latest activity first
       2026-09-10/                   the day each post was first posted
         Venue for the offsite.md    the post and its replies, as one thread
+  Chats/
+    .sync-state.json                the chats that decant follows, and each day filed
+    _index.md                       every chat, the latest message first
+    <Chat>/                         the topic, the meeting title, or the names of the other people
+      _index.md                     every day of the chat, the latest first
+      2026-11-13.md                 the messages of that day, in order
+      2026-11-13/_linked/           the files shared that day: the original, its text, its card
+      2026-11-13/_inline/           the pictures pasted that day
 ```
 
 Sources are shelved under the same headings the picker offers them under, so a source is found again
@@ -1195,9 +1210,80 @@ it. The other channels and sources continue, and the run ends with exit code 3. 
 that channel again. Only an expired sign-in stops the run.
 
 Only the channels of Teams you are a member of are offered, and only their standard, private and
-shared channels as Graph lists them. Teams chats (one-to-one and group chats) are a different thing
-and are not synced: the library can only reach them through Microsoft-internal endpoints whose token
-expires daily, which would fail every scheduled `update`.
+shared channels as Graph lists them. Teams chats (one-to-one, group and meeting chats) are a
+different source: see What a Teams chats sync writes.
+
+### What a Teams chats sync writes
+
+Your Teams chats are one source, as your mailbox is. Press `h` at the picker, or use `--chats all`,
+to follow each chat: one-to-one chats, group chats and the chats of meetings. Use `--chat <name>` to
+follow one chat. The name is the topic of the chat, the name of a person in it, or its id. If the
+name agrees with more than one chat, decant stops and shows the chats that agree. decant keeps the
+list of followed chats in `kb/Chats/.sync-state.json`, and `update` refreshes those chats.
+
+Each chat has a folder. The folder has the name of the topic, the title of the meeting, or the names
+of the other people in the chat. The folder name does not change when you rename the chat, and the
+`_index.md` files show the new name. Each day of a chat is one markdown file:
+
+```yaml
+---
+source: https://teams.microsoft.com/l/message/19%3Aabc%40thread.v2/1794536130123
+chat: Budget review
+kind: group
+members:
+  - Jane Doe
+  - Li Wei
+day: "2026-11-13"
+messages: 2
+synced_at: "2026-11-14T01:00:00Z"
+---
+
+# Budget review, 2026-11-13
+
+### 10:15 · Jane Doe
+
+Here is the budget.
+
+- [Budget.xlsx](2026-11-13/_linked/Budget.xlsx.md)
+
+### 10:20 · Li Wei
+
+Look: ![picture](2026-11-13/_inline/1794536430123-1.png)
+```
+
+The day and the hour of a message are in the zone of the knowledge base (see Time zone). decant does
+not write the entries that Teams adds (a call, a member added, a topic change). A chat that has only
+these entries gets no file.
+
+A file shared in a chat is in the OneDrive of the person who sent it, or in SharePoint. decant
+downloads it and converts it as it does for a file linked from a mail: the original, its text and a
+card go in `<day>/_linked/`, and the note links to the card. A file that you cannot open is named in
+the note and in `kb/Chats/_sync-report.md`, and the note is written.
+
+A picture pasted in a message is saved in `<day>/_inline/`, and the note shows it at its position.
+With `--ocr`, the text that OCR reads is below the message. A picture that does not download is
+named in the report.
+
+decant tries a chat with a file or a picture that did not arrive again on the next run, three runs
+in all for the same last message. Then the report names it as given up, until the chat gets a new
+message.
+
+Each run reads the list of your chats. It reads the messages only of a chat with a new last message,
+from the day before the last day that it filed. Before decant writes the note of a day again, it
+moves the earlier version to `_archive/<day of the run>/`. A day whose messages are all deleted goes
+to `_archive/` too.
+
+Limits:
+
+- Teams gives chat messages only through an internal service, not Microsoft Graph, and this service
+  can change. The library renews the token of this service without a browser. If the service refuses
+  the sign-in, only the chats fail: the report names them, the other sources continue, and the run
+  ends with exit code 3. Run `ask-marcel-office login`, then run decant again.
+- decant does not see an edit or a deletion of a message in a day before the last filed day of its
+  chat.
+- The text of a message keeps its words, links, lists and line breaks. Bold text, tables and the
+  marks of a quoted reply are lost (see `docs/request-chat-message-markdown.md`).
+- The `--since` day is counted in UTC for a chat, as for mail.
 
 ### What a group inbox sync writes
 
