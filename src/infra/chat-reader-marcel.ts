@@ -1,12 +1,13 @@
 import { parseChat } from '../domain/chat.ts';
 import type { Chat } from '../domain/chat.ts';
-import { parseChatMessage } from '../domain/chat-message.ts';
+import { conversionParts, partMarkdown, withMarkdown } from '../domain/chat-markdown.ts';
+import { chatMessageHtml, parseChatMessage } from '../domain/chat-message.ts';
 import type { ChatMessage } from '../domain/chat-message.ts';
 import type { Result } from '../domain/result.ts';
 import { err, ok } from '../domain/result.ts';
 import type { ChatReader, ChatReaderError } from '../use-cases/ports/chat-reader.ts';
 import type { EmbeddedImage } from '../use-cases/ports/drive-reader.ts';
-import type { MarcelCall } from './drive-reader-marcel.ts';
+import type { ConvertBytes, MarcelCall } from './drive-reader-marcel.ts';
 import { readString } from './mail-reader-marcel.ts';
 
 // Chats read through the Teams substrate, not Graph: the token the library holds has no `Chat.Read`,
@@ -45,10 +46,43 @@ const toPicture = (entry: unknown): ReadonlyArray<EmbeddedImage> => {
   return path === undefined || base64 === undefined ? [] : [{ path, bytes: new Uint8Array(Buffer.from(base64, 'base64')) }];
 };
 
-export const createChatReaderFromCall = (call: MarcelCall): ChatReader => {
+// The library reads an HTML file above 1 MB as plain text, so a read goes to it in parts well under.
+const PART_BYTES = 500_000;
+
+// The library tells the kind of a file by its extension.
+const HTML_NAME = 'chat.html';
+
+// A message as it was read, and the HTML it has to convert, when it has any.
+type ReadMessage = { readonly message: ChatMessage; readonly html: string | undefined };
+
+const readMessage = (entry: unknown): ReadonlyArray<ReadMessage> => {
+  const message = parseChatMessage(entry);
+  return message === undefined ? [] : [{ message, html: chatMessageHtml(entry) }];
+};
+
+// `convertBytes` converts the HTML of the messages to markdown in a child process with a time limit.
+// Absent, as in a test of the calls alone, each message keeps the plain words read off its HTML.
+export const createChatReaderFromCall = (call: MarcelCall, convertBytes?: ConvertBytes): ChatReader => {
   const substrate = async (name: string, params: Record<string, string>): Promise<Result<unknown, ChatReaderError>> => {
     const raw = await call(name, params);
     return raw.ok ? raw : err(chatsOnly(raw.error));
+  };
+
+  // The markdown of each message, in the order asked. A conversion that fails, or hands back a
+  // document that is not the one it was given, leaves its messages with none: they keep their plain
+  // words, and the read is no worse than it was without the conversion.
+  const markdownOf = async (htmls: ReadonlyArray<string | undefined>): Promise<ReadonlyArray<string | undefined>> => {
+    const texts: Array<string | undefined> = htmls.map(() => undefined);
+    if (convertBytes === undefined) return texts;
+    for (const part of conversionParts(htmls, PART_BYTES)) {
+      const raw = await convertBytes(new TextEncoder().encode(part.html), HTML_NAME, {});
+      const markdown = raw.ok ? readString(raw.value, 'text') : undefined;
+      const sections = markdown === undefined ? undefined : partMarkdown(part, markdown);
+      part.at.forEach((at, place) => {
+        texts[at] = sections?.[place];
+      });
+    }
+    return texts;
   };
 
   return {
@@ -73,20 +107,22 @@ export const createChatReaderFromCall = (call: MarcelCall): ChatReader => {
     // The library walks twenty pages a call and says when there is more: the walk goes on from the
     // state it hands back, until it says there is none.
     messages: async (chatId, since) => {
-      const messages: ChatMessage[] = [];
+      const read: ReadMessage[] = [];
       const seen = new Set<string>();
       const always = { chatId, skipSystem: 'true', maxContentChars: WHOLE_MESSAGE };
       let params: Record<string, string> | undefined = since === undefined ? always : { ...always, since: `${since}T00:00:00Z` };
       while (params !== undefined) {
         const page = await substrate('list-teams-chat-history', params);
         if (!page.ok) return page;
-        messages.push(...listAt(page.value, 'messages').flatMap((entry) => parseChatMessage(entry) ?? []));
+        read.push(...listAt(page.value, 'messages').flatMap(readMessage));
         const next = onwardFrom(page.value, 'hasMore', 'nextSyncState', seen);
         params = next === undefined ? undefined : { ...always, syncState: next };
       }
       // Teams also hands back a message written before the day when it changed after it. One message
       // is not its day, so it is left out, as the port says.
-      return ok(since === undefined ? messages : messages.filter((message) => message.sent >= since));
+      const kept = since === undefined ? read : read.filter(({ message }) => message.sent >= since);
+      const texts = await markdownOf(kept.map(({ html }) => html));
+      return ok(kept.map(({ message }, at) => withMarkdown(message, texts[at])));
     },
     pictures: async (chatId, messageId) => {
       const raw = await substrate('extract-teams-chat-message-images', { chatId, messageId });

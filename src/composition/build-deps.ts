@@ -341,7 +341,7 @@ export const buildDeps = (config: Config, overrides: DepOverrides = {}): BuiltDe
   const syncCalendar = createSyncCalendar({ reader: calendar, files, clock, logger, progress, kbRoot: config.kbRoot, timezone: config.timezone, pathBudget, writeDown });
   // A chat pulls the files its messages shared the way a mail thread pulls a linked file, so it takes
   // the drive reader and the converter the libraries use.
-  const chat = given(overrides.chat, () => createChatReaderFromCall(createMarcelCall(api)));
+  const chat = given(overrides.chat, () => createChatReaderFromCall(createMarcelCall(api), child.bytes));
   const syncChats = createSyncChats({
     reader: chat,
     drive: reader,

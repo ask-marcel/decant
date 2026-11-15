@@ -3,6 +3,7 @@ import { err, ok } from '../domain/result.ts';
 import type { Result } from '../domain/result.ts';
 import type { DriveReaderError } from '../use-cases/ports/drive-reader.ts';
 import { createChatReaderFromCall } from './chat-reader-marcel.ts';
+import type { ConvertBytes, GraphErrorShape } from './drive-reader-marcel.ts';
 
 type Recorded = { readonly name: string; readonly params: Record<string, string> };
 
@@ -231,5 +232,108 @@ describe('reading Teams chats through the ask-marcel library', () => {
     expect(await empty.reader.fileLink(file)).toEqual({ ok: false, error: { kind: 'permanent', message: 'the link did not lead to a file in a library' } });
     expect(await empty.reader.fileLink(file)).toEqual({ ok: false, error: { kind: 'permanent', message: 'the link did not lead to a file in a library' } });
     expect(await lapsed.reader.fileLink(file)).toEqual({ ok: false, error: { kind: 'auth', message: 'sign in again' } });
+  });
+});
+
+type Converted = { readonly name: string; readonly html: string };
+
+// A converter that records each document it is handed, and answers its seeded answers in turn.
+const converterOf = (answers: ReadonlyArray<Result<unknown, GraphErrorShape>>): { convert: ConvertBytes; converted: Converted[] } => {
+  const converted: Converted[] = [];
+  const convert: ConvertBytes = async (bytes, name) => {
+    converted.push({ name, html: new TextDecoder().decode(bytes) });
+    return answers[converted.length - 1] ?? ok({});
+  };
+  return { convert, converted };
+};
+
+// A reader whose chat history is these messages, on one page, with the converter given.
+const readerOf = (messages: ReadonlyArray<Record<string, unknown>>, convert: ConvertBytes): ReturnType<typeof createChatReaderFromCall> =>
+  createChatReaderFromCall(async () => ok({ messages, hasMore: false }), convert);
+
+const QUOTE = '<blockquote itemtype="http://schema.skype.com/Reply"><strong>Jane Doe</strong><p>Can you send it?</p></blockquote><p>Yes, <b>here</b>.</p>';
+const TABLE = '<table><tbody><tr><td>Port</td><td>ETA</td></tr></tbody></table>';
+const QUOTE_MARKDOWN = ['> **Jane Doe**', '> ', '> Can you send it?', '', 'Yes, **here**.'].join('\n');
+const TABLE_MARKDOWN = ['| Port | ETA |', '| --- | --- |'].join('\n');
+
+describe('reading Teams chats with the markdown conversion of the library', () => {
+  it('a quoted reply, bold words and a table arrive as markdown, from one conversion of one HTML file for the whole read', async () => {
+    const { convert, converted } = converterOf([
+      ok({ contentType: 'text/markdown', text: ['decantmessage0boundary', '', QUOTE_MARKDOWN, '', 'decantmessage1boundary', '', TABLE_MARKDOWN].join('\n') }),
+    ]);
+    const reader = readerOf(
+      [
+        { ...substrateMessage('0', '<p><i>too early</i></p>'), composetime: '2026-11-08T05:55:32.4400000Z' },
+        substrateMessage('1', QUOTE),
+        { ...substrateMessage('2', 'typed *as it is*'), messagetype: 'Text' },
+        substrateMessage('3', TABLE),
+      ],
+      convert
+    );
+
+    const messages = await reader.messages('19:aaa@thread.v2', '2026-11-10');
+
+    expect(messages.ok && messages.value.map((message) => [message.id, message.text])).toEqual([
+      ['1', QUOTE_MARKDOWN],
+      ['2', 'typed *as it is*'],
+      ['3', TABLE_MARKDOWN],
+    ]);
+    expect(converted).toEqual([{ name: 'chat.html', html: ['<p>decantmessage0boundary</p>', QUOTE, '<p>decantmessage1boundary</p>', TABLE, ''].join('\n') }]);
+  });
+
+  it('a conversion that fails, answers no text, or answers a document with a boundary missing leaves each message with its plain words, and the read succeeds', async () => {
+    const plain = [
+      ['1', 'Jane DoeCan you send it?\nYes, here.'],
+      ['3', 'Port | ETA'],
+    ];
+    const answers: ReadonlyArray<Result<unknown, GraphErrorShape>> = [
+      err({ type: 'api_error', message: 'the conversion took longer than 120 seconds' }),
+      ok({ contentType: 'text/markdown' }),
+      ok({ text: 'decantmessage0boundary\n\nonly one section' }),
+    ];
+
+    for (const answer of answers) {
+      const { convert, converted } = converterOf([answer]);
+      const reader = readerOf([substrateMessage('1', QUOTE), substrateMessage('3', TABLE)], convert);
+
+      const messages = await reader.messages('19:aaa@thread.v2');
+
+      expect(messages.ok && messages.value.map((message) => [message.id, message.text])).toEqual(plain);
+      expect(converted).toHaveLength(1);
+    }
+  });
+
+  it('a read with only messages typed plain, or with no message at all, starts no conversion', async () => {
+    const { convert, converted } = converterOf([]);
+    const typed = readerOf([{ ...substrateMessage('1', 'hello'), messagetype: 'Text' }], convert);
+    const empty = readerOf([], convert);
+
+    const messages = await typed.messages('19:aaa@thread.v2');
+
+    expect(messages.ok && messages.value.map((message) => message.text)).toEqual(['hello']);
+    expect(await empty.messages('19:aaa@thread.v2')).toEqual({ ok: true, value: [] });
+    expect(converted).toStrictEqual([]);
+  });
+
+  it('a message keeps its pictures and its files with the conversion, and its picture marker stands in the markdown', async () => {
+    const pasted = '<img itemtype="http://schema.skype.com/AMSImage" src="https://eu-api.asm.skype.com/v1/objects/0-weu-d1-aaa/views/imgo">';
+    const file = { name: 'Budget.xlsx', shareUrl: 'https://contoso-my.sharepoint.com/:x:/g/personal/jane_contoso_com/EaBcD' };
+    const { convert, converted } = converterOf([ok({ text: ['decantmessage0boundary', '', String.raw`**Look** \[\[picture 1\]\]`].join('\n') })]);
+    const reader = readerOf([{ ...substrateMessage('1', `<p><b>Look</b> ${pasted}</p>`), files: [file] }], convert);
+
+    const messages = await reader.messages('19:aaa@thread.v2');
+
+    expect(messages.ok && messages.value).toEqual([
+      {
+        id: '1',
+        author: 'Jane Doe',
+        sent: '2026-11-13T02:15:30.1230000Z',
+        text: '**Look** [[picture 1]]',
+        files: [{ name: 'Budget.xlsx', url: 'https://contoso-my.sharepoint.com/:x:/g/personal/jane_contoso_com/EaBcD' }],
+        pictures: 1,
+        webUrl: 'https://teams.microsoft.com/l/message/19%3Aabc%40thread.v2/1',
+      },
+    ]);
+    expect(converted[0]?.html).toBe(['<p>decantmessage0boundary</p>', '<p><b>Look</b> [[picture 1]]</p>', ''].join('\n'));
   });
 });
