@@ -11,7 +11,6 @@ import { contentHash } from '../domain/content-hash.ts';
 import { fitSegment, safeSegment, sameIgnoringCase } from '../domain/kb-path.ts';
 import { linkDestination } from '../domain/markdown-link.ts';
 import { freeName } from '../domain/thread-card.ts';
-import type { ThreadPart } from '../domain/thread.ts';
 import type { ConvertFile } from './convert-file.ts';
 import type { DriveItem } from '../domain/drive-item.ts';
 import { versionOf } from '../domain/drive-item.ts';
@@ -40,6 +39,12 @@ export type LinkDeps = {
   // How long a path may be as decant writes it. Absent, names are not cut for length.
   readonly pathBudget?: number;
 };
+
+// What following the links of a message reads of it: which message it is, when it came, and its text.
+// A mail thread hands over its parts whole. A chat, which has no mail, hands over these three.
+type LinkingMessage = Pick<MailMessage, 'id' | 'received'>;
+
+export type LinkingPart = { readonly message: LinkingMessage; readonly body: string };
 
 // The folder a thread keeps what it pointed at in, holding the documents and the cards standing for
 // them together: one entry per thing depended on, whether or not the thing itself could be pulled.
@@ -146,7 +151,7 @@ const pulledOnce = async (deps: LinkDeps, following: Following, link: LinkedFile
   return pulled;
 };
 
-const referenceOf = (link: LinkedFile, message: MailMessage, asName: string, pulled: Pulled): MessageLink => ({
+const referenceOf = (link: LinkedFile, message: LinkingMessage, asName: string, pulled: Pulled): MessageLink => ({
   link,
   messageId: message.id,
   received: message.received,
@@ -202,7 +207,7 @@ const keepVersion = (following: Following, key: string, version: string | undefi
 
 // One document a message pointed at. A document the thread pulled before that cannot be pulled now
 // keeps the card it had, which holds its text, and what it had beside the card is named as unread.
-const followLink = async (deps: LinkDeps, following: Following, message: MailMessage, link: LinkedFile): Promise<void> => {
+const followLink = async (deps: LinkDeps, following: Following, message: LinkingMessage, link: LinkedFile): Promise<void> => {
   const key = `${link.driveId}:${link.itemId}`;
   const asName = linkedName(deps, following, key, link);
   following.names[key] = asName;
@@ -231,7 +236,7 @@ const keepRecorded = (following: Following): void => {
   }
 };
 
-const followMessage = async (deps: LinkDeps, following: Following, part: ThreadPart): Promise<void> => {
+const followMessage = async (deps: LinkDeps, following: Following, part: LinkingPart): Promise<void> => {
   if (!POINTS_SOMEWHERE.test(part.body)) return;
   const found = await deps.reader.sharepointLinks(part.message.id);
   // Named as failed, as a message whose attachments cannot be listed is: the thread is written again
@@ -274,7 +279,7 @@ const heldDocuments = (folder: string, before: LinksHeld): Record<string, HeldDo
   );
 };
 
-export const linkedFiles = async (deps: LinkDeps, place: LinksPlace, parts: ReadonlyArray<ThreadPart>, before: LinksHeld): Promise<LinkedTally> => {
+export const linkedFiles = async (deps: LinkDeps, place: LinksPlace, parts: ReadonlyArray<LinkingPart>, before: LinksHeld): Promise<LinkedTally> => {
   const { here } = place;
   // Within this thread only, the way its attachments are. The same weekly report linked from thirty
   // mails across ten threads is pulled once per thread rather than once for the mailbox: a folder
