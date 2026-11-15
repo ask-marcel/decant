@@ -105,11 +105,25 @@ describe('getting one mail conversation', () => {
     expect(asked[0]?.conversationIds).toEqual([CONV]);
   });
 
-  it('an id nothing answers to fails, saying that no message was found', async () => {
+  it('an id that is neither a message nor a conversation fails, saying so', async () => {
     const { got, asked } = await get({ kind: 'mail', id: 'AAMk-unknown' });
 
-    expect(got).toEqual({ ok: false, error: { step: 'readConversation', cause: 'not-found', message: 'no message was found for AAMk-unknown' } });
+    expect(got).toEqual({ ok: false, error: { step: 'readConversation', cause: 'not-found', message: 'no mail message and no conversation has this id' } });
     expect(asked).toHaveLength(0);
+  });
+
+  it('an id that Graph refuses in the conversation filter fails the same way, saying that nothing has this id', async () => {
+    const refused = { kind: 'permanent', status: 400, message: 'ErrorInvalidValueForFilter: The value in the filter is invalid.' } as const;
+    const { got, asked } = await get({ kind: 'mail', id: 'AAMk-unknown' }, { reader: { failCalls: { conversation: refused } } });
+
+    expect(got).toEqual({ ok: false, error: { step: 'readConversation', cause: 'not-found', message: 'no mail message and no conversation has this id' } });
+    expect(asked).toHaveLength(0);
+  });
+
+  it('a busy Graph while the conversation is read fails at the conversation, and is not taken for an unknown id', async () => {
+    const { got } = await get({ kind: 'mail', id: 'AAMk-reply' }, { reader: { failCalls: { conversation: { kind: 'transient', message: 'Graph is busy' } } } });
+
+    expect(got).toEqual({ ok: false, error: { step: 'readConversation', cause: 'transient', message: 'Graph is busy' } });
   });
 
   it('an address that names no message fails at the address', async () => {

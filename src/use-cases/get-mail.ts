@@ -7,8 +7,8 @@ import { rootMessageId } from '../domain/root-message-id.ts';
 import { threadIdOf } from '../domain/thread-id.ts';
 import { bareSubject } from '../domain/thread-subject.ts';
 import type { Got } from './get-file.ts';
-import { notFound } from './graph-status.ts';
-import type { MailReader } from './ports/mail-reader.ts';
+import { badRequest, notFound } from './graph-status.ts';
+import type { MailReader, MailReaderError } from './ports/mail-reader.ts';
 import type { StepError } from './ports/step-error.ts';
 import type { RenderThread } from './render-thread.ts';
 
@@ -38,20 +38,26 @@ const messageIdOf = async (deps: GetMailDeps, target: MailTarget): Promise<Resul
   return found.ok ? found : failed('resolveAddress', found.error.kind, found.error.message);
 };
 
+// Graph answers 404 for an id it does not have, and 400 for an id of the other kind: the id of a
+// conversation where the id of a message goes, or an id no conversation has in the conversation filter.
+const notThisKind = (error: MailReaderError): boolean => notFound(error) || badRequest(error);
+
+const NOTHING_HAS_IT: Result<never, StepError> = failed('readConversation', 'not-found', 'no mail message and no conversation has this id');
+
 // The conversation a message belongs to. An id no message answers to is tried as the id of a
 // conversation, since a listing hands out both and nothing in an id says which it is.
 const conversationIdOf = async (deps: GetMailDeps, messageId: string): Promise<Result<string, StepError>> => {
   const found = await deps.reader.conversationOf(messageId);
   if (found.ok) return found;
-  return notFound(found.error) ? ok(messageId) : failed('findMessage', found.error.kind, found.error.message);
+  return notThisKind(found.error) ? ok(messageId) : failed('findMessage', found.error.kind, found.error.message);
 };
 
 // The oldest message of the conversation, which is the one that names its thread.
 const oldestOf = async (deps: GetMailDeps, conversationId: string): Promise<Result<MailMessage, StepError>> => {
   const found = await deps.reader.conversation(conversationId);
-  if (!found.ok) return failed('readConversation', found.error.kind, found.error.message);
+  if (!found.ok) return notThisKind(found.error) ? NOTHING_HAS_IT : failed('readConversation', found.error.kind, found.error.message);
   const oldest = inReceivedOrder(found.value)[0];
-  return oldest === undefined ? failed('readConversation', 'not-found', `no message was found for ${conversationId}`) : ok(oldest);
+  return oldest === undefined ? NOTHING_HAS_IT : ok(oldest);
 };
 
 // The thread is named from the oldest message, as a sync names it: a reply carries a later time, and

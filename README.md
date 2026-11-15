@@ -138,7 +138,8 @@ decant get AAMkAGI2TG93AAA=
 |---|---|
 | The address of a file on SharePoint or OneDrive | That file. This can be the `webUrl` of the file, or a link from "Copy link". decant finds the library and the file from the address, so you do not give two ids |
 | The id of a mail message | The full conversation of that message, with its attachments and its linked files |
-| The address of a mail in Outlook on the web | The same conversation |
+| The id of a conversation (the `conversationId` that `ask-marcel` prints) | That conversation |
+| The address of a mail in Outlook on the web, on `outlook.office.com`, `outlook.office365.com` or `outlook.cloud.microsoft`. This can be the `webLink` of the message | The same conversation |
 
 decant prints the path of the markdown file on the standard output, and nothing else there. Thus a
 script or an agent can read the file immediately. The exit code is 0 for success. If decant cannot

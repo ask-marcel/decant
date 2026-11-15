@@ -40,6 +40,12 @@ export type MailReaderSeed = {
   readonly failCalls?: Readonly<Record<string, MailReaderError>>;
 };
 
+const CONVERSATION_ID_REFUSED: MailReaderError = {
+  kind: 'permanent',
+  status: 400,
+  message: "ErrorInvalidOperation: ConversationId isn't supported in the context of this operation.",
+};
+
 // `days` is the day each sweep from the start was asked from, `all` when none: kept beside the calls,
 // so a test about the day reads it here and every other test reads the calls as before.
 export type MailReaderFake = MailReader & { readonly calls: Array<string>; readonly days: Array<string> };
@@ -79,8 +85,8 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
     },
     conversation: async (conversationId) => {
       calls.push(`conversation:${conversationId}`);
-      if (seed.failWith) return err(seed.failWith);
-      return ok(seed.conversations?.[conversationId] ?? []);
+      const refused = seed.failCalls?.['conversation'] ?? seed.failWith;
+      return refused ? err(refused) : ok(seed.conversations?.[conversationId] ?? []);
     },
     messageMarkdown: async (messageId) => {
       const refused = seed.failCalls?.['messageMarkdown'];
@@ -122,6 +128,8 @@ export const createMailReaderFake = (seed: MailReaderSeed = {}): MailReaderFake 
     conversationOf: async (messageId) => {
       calls.push(`conversationOf:${messageId}`);
       if (seed.failWith) return err(seed.failWith);
+      // Graph refuses the id of a conversation where the id of a message goes, with a 400, not a 404.
+      if (Object.hasOwn(seed.conversations ?? {}, messageId)) return err(CONVERSATION_ID_REFUSED);
       const found = Object.entries(seed.conversations ?? {}).find(([, messages]) => messages.some((held) => held.id === messageId));
       return found === undefined ? err({ kind: 'permanent', status: 404, message: 'The specified object was not found in the store.' }) : ok(found[0]);
     },
