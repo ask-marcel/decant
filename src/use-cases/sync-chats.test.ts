@@ -281,3 +281,195 @@ describe('syncing the Teams chats', () => {
     expect(first.files.written.get(`${ROOT}/Budget review/_index.md`)).toContain('# Budget 2027\n');
   });
 });
+
+describe('choosing which chats to follow', () => {
+  it('a chat named by a part of its name is the one chat followed, and the next run refreshes only that chat', async () => {
+    const first = await run({ input: { all: false, chat: 'budget' } });
+
+    expect(first.reader.calls).toEqual(['listChats', `messages:${BUDGET_ID}`]);
+    expect(stateOf(first.files).follow).toEqual([BUDGET_ID]);
+
+    const later = { chats: [BUDGET, chat({ ...JANE, lastMessageAt: '2026-11-13T12:00:00.0000000Z' })], messages: { [JANE_ID]: JANE_MESSAGES } };
+    const second = await run({ onto: first.files, input: { all: false }, reader: later });
+
+    expect(second.reader.calls).toEqual(['listChats']);
+    expect(stateOf(first.files).follow).toEqual([BUDGET_ID]);
+  });
+
+  it('a chat is named by its id, by its whole name before any part of a name, or by somebody in it', async () => {
+    const group = chat({ id: '19:ccc333@thread.v2', topic: 'Offsite', members: ['Sam Roe'] });
+    const seed = { chats: [BUDGET, JANE, group], messages: {} };
+
+    expect(stateOf((await run({ reader: seed, input: { all: false, chat: JANE_ID } })).files).follow).toEqual([JANE_ID]);
+    expect(stateOf((await run({ reader: seed, input: { all: false, chat: 'jane doe' } })).files).follow).toEqual([JANE_ID]);
+    expect(stateOf((await run({ reader: seed, input: { all: false, chat: 'sam' } })).files).follow).toEqual([group.id]);
+  });
+
+  it('a name that fits no chat, or more than one, is refused with the chats it fits, and nothing is read', async () => {
+    const none = await run({ input: { all: false, chat: 'payroll' } });
+    const many = await run({ input: { all: false, chat: 'jane' } });
+
+    expect(none.error).toEqual({ step: 'findChat', cause: 'bad-choice', message: 'no chat of yours is named payroll' });
+    expect(many.error).toEqual({ step: 'findChat', cause: 'bad-choice', message: 'jane names 2 chats, give more of the name or the id: Budget review; Jane Doe' });
+    expect(many.reader.calls).toEqual(['listChats']);
+    expect(many.files.written.size).toBe(0);
+  });
+
+  it('a name that fits many chats is refused with the first ten of them', async () => {
+    const teams = Array.from({ length: 11 }, (_unused, at) => chat({ id: `19:team${at}@thread.v2`, topic: `Team ${String(at + 1).padStart(2, '0')}` }));
+
+    const { error } = await run({ reader: { chats: teams }, input: { all: false, chat: 'team' } });
+
+    expect(error?.message).toBe('team names 11 chats, give more of the name or the id: Team 01; Team 02; Team 03; Team 04; Team 05; Team 06; Team 07; Team 08; Team 09; Team 10');
+  });
+
+  it('a run told to follow every chat does so from then on, whatever was named before', async () => {
+    const first = await run({ input: { all: false, chat: 'budget' } });
+
+    const second = await run({ onto: first.files });
+
+    expect(second.reader.calls).toContain(`messages:${JANE_ID}`);
+    expect(stateOf(first.files).follow).toBe('all');
+  });
+});
+
+describe('when something goes wrong with a chat', () => {
+  it('a chat whose messages cannot be read is named as failed and left as it was, while the other chats land', async () => {
+    const { ok, summary, notes, files, logger } = await run({ reader: { ...TWO_CHATS, failMessagesOf: { [BUDGET_ID]: { kind: 'transient', message: 'timeout' } } } });
+
+    expect(ok).toBe(true);
+    expect(summary).toEqual({ ...NOTHING.summary, converted: 1, failed: 1 });
+    expect(notes.failed).toEqual([{ path: 'Budget review', reason: 'its messages could not be read: timeout' }]);
+    expect(notesWritten(files)).toEqual([`${ROOT}/Jane Doe/2026-11-12.md`]);
+    expect(stateOf(files).chats[BUDGET_ID]).toBeUndefined();
+    expect(stateOf(files).retry?.[BUDGET_ID]).toEqual({ attempts: 1, version: BUDGET.lastMessageAt, name: 'Budget review', reason: 'its messages could not be read: timeout' });
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'chat.unread', meta: { chat: BUDGET_ID, cause: 'transient' } });
+    expect(files.written.get(`${ROOT}/_sync-report.md`)).toContain('Budget review');
+  });
+
+  it('a chat that fails three runs is given up, named so once, and not read again until it has a new message', async () => {
+    const failing = { ...TWO_CHATS, failMessagesOf: { [BUDGET_ID]: { kind: 'transient' as const, message: 'timeout' } } };
+    const first = await run({ reader: failing });
+    await run({ onto: first.files, reader: failing });
+
+    const third = await run({ onto: first.files, reader: failing });
+
+    expect(third.notes.failed).toStrictEqual([]);
+    expect(third.notes.gaveUp).toEqual([{ path: 'Budget review', reason: 'its messages could not be read: timeout' }]);
+
+    const fourth = await run({ onto: first.files, reader: failing });
+
+    expect(fourth.reader.calls).toEqual(['listChats']);
+    expect(fourth.notes.givenUp).toEqual([{ path: 'Budget review', reason: 'its messages could not be read: timeout' }]);
+
+    const fifth = await run({ onto: first.files, reader: { chats: [chat({ lastMessageAt: '2026-11-14T00:30:00.0000000Z' }), JANE], messages: TWO_CHATS.messages } });
+
+    expect(fifth.summary.converted).toBe(2);
+    expect(stateOf(first.files).retry).toBeUndefined();
+  });
+
+  it('the chats that cannot be listed end the run of this source with what the source said', async () => {
+    const { ok, error, files } = await run({ reader: { failChats: { kind: 'permanent', message: 'Teams did not accept the sign-in for chats' } } });
+
+    expect(ok).toBe(false);
+    expect(error).toEqual({ step: 'listChats', cause: 'permanent', message: 'Teams did not accept the sign-in for chats' });
+    expect(files.written.size).toBe(0);
+  });
+
+  it('a note that cannot be written is named as failed, its day is not recorded, and the next run writes it', async () => {
+    const first = await run({ files: { failWritesMatching: 'Budget review/2026-11-13.md' } });
+
+    expect(first.summary).toEqual({ ...NOTHING.summary, converted: 2, failed: 1 });
+    expect(first.notes.failed).toEqual([{ path: 'Budget review/2026-11-13', reason: `cannot write ${ROOT}/Budget review/2026-11-13.md` }]);
+    expect(Object.keys(stateOf(first.files).chats[BUDGET_ID]?.days ?? {})).toEqual(['2026-11-12']);
+
+    const healed = createFilesFake({ texts: Object.fromEntries(first.files.written) });
+    const second = await run({ onto: healed });
+
+    expect(second.reader.days).toEqual([`${BUDGET_ID}:2026-11-11`]);
+    expect(notesWritten(healed)).toContain(`${ROOT}/Budget review/2026-11-13.md`);
+    expect(stateOf(healed).retry).toBeUndefined();
+  });
+
+  it('a note whose earlier version will not move aside waits for a run that can move it, and is left as it was', async () => {
+    const first = await run();
+    const before = first.files.written.get(`${ROOT}/Budget review/2026-11-13.md`);
+    const stuck = createFilesFake({ texts: Object.fromEntries(first.files.written), failMoveWith: { kind: 'write-failed', path: 'x', message: 'the file is open' } });
+    const moved = chat({ lastMessageAt: '2026-11-13T11:00:00.0000000Z' });
+
+    const second = await run({ onto: stuck, reader: { chats: [moved, JANE], messages: { [BUDGET_ID]: [...BUDGET_MESSAGES, message('m4', '2026-11-13T11:00:00.0000000Z')] } } });
+
+    expect(second.notes.failed).toHaveLength(1);
+    expect(second.notes.failed[0]?.reason).toContain('its earlier version would not move to _archive/');
+    expect(stuck.written.get(`${ROOT}/Budget review/2026-11-13.md`)).toBe(before);
+    expect(second.logger.calls).toContainEqual({ level: 'warn', event: 'supersede.failed', meta: { path: `${ROOT}/Budget review/2026-11-13.md`, cause: 'write-failed' } });
+  });
+
+  it('a run with no chat to read that cannot save its state ends saying so', async () => {
+    const first = await run();
+    const readOnly = createFilesFake({ texts: Object.fromEntries(first.files.written), failWritesMatching: '.sync-state.json' });
+
+    const second = await run({ onto: readOnly });
+
+    expect(second.ok).toBe(false);
+    expect(second.error?.step).toBe('saveState');
+    expect(second.reader.calls).toEqual(['listChats']);
+  });
+
+  it('a state that does not save starts no more chats, and ends the run saying so', async () => {
+    const { ok, error, reader } = await run({ files: { failWritesMatching: '.sync-state.json' }, input: { concurrency: 1 } });
+
+    expect(ok).toBe(false);
+    expect(error?.step).toBe('saveState');
+    expect(reader.calls.filter((call) => call.startsWith('messages:'))).toHaveLength(1);
+  });
+
+  it('a state that cannot be read is left alone and the chats are read as never filed, and a page that will not write is only logged', async () => {
+    const { ok, summary, logger } = await run({ files: { texts: { [STATE_PATH]: '{"version": 99}' }, failWritesMatching: '_index.md' } });
+
+    expect(ok).toBe(true);
+    expect(summary.converted).toBe(3);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'chats-state.unreadable', meta: { cause: 'not a chats state of this version' } });
+    expect(logger.calls.filter((call) => call.event === 'index.failed')).toHaveLength(3);
+    expect(logger.calls).toContainEqual({ level: 'warn', event: 'index.failed', meta: { path: `${ROOT}/_index.md`, cause: 'write-failed' } });
+  });
+
+  it('a state file that is not JSON at all is started over the same way', async () => {
+    expect((await run({ files: { texts: { [STATE_PATH]: 'not json' } } })).summary.converted).toBe(3);
+  });
+});
+
+describe('working through the chats with a limit', () => {
+  it('with two places and three chats, the third chat starts when the first one ends, while the second is still open', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const third = chat({ id: '19:ccc333@thread.v2', topic: 'Offsite', lastMessageAt: '2026-11-13T10:00:00.0000000Z' });
+    const seed = { chats: [BUDGET, JANE, third], messages: {}, holdMessagesOf: { [BUDGET_ID]: held } };
+    const files = createFilesFake();
+    const reader = createChatReaderFake(seed);
+    const drive = createDriveReaderFake();
+    const progress = createProgressFake();
+    const deps = { reader, drive, files, ocr: OCR_OFF, clock: createClockFake(), logger: createLoggerFake(), progress, kbRoot: 'kb', timezone: 'UTC' };
+    const convertFile = createConvertFile({ ...deps, reader: drive, progress: createProgressFake() });
+
+    const running = createSyncChats({ ...deps, convertFile })({ dryRun: false, concurrency: 2, maxBytes: 1, all: true });
+    for (let turn = 0; turn < 50 && !reader.calls.includes(`messages:${third.id}`); turn += 1) await Promise.resolve();
+
+    expect(reader.calls).toContain(`messages:${third.id}`);
+    expect(progress.steps).not.toContain('Budget review');
+
+    release();
+    expect((await running).ok).toBe(true);
+    expect(progress.steps.toSorted(compareText)).toEqual(['Budget review', 'Jane Doe', 'Offsite']);
+    expect(progress.dones).toHaveLength(1);
+  });
+
+  it('the state is saved as each chat ends, so a run that stops keeps what it filed', async () => {
+    const { files } = await run({ input: { concurrency: 1 } });
+
+    expect(files.writeLog.filter((path) => path === STATE_PATH)).toHaveLength(3);
+    expect(files.writeLog.indexOf(STATE_PATH)).toBeLessThan(files.writeLog.indexOf(`${ROOT}/Jane Doe/2026-11-12.md`));
+  });
+});
