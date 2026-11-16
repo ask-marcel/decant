@@ -32,6 +32,11 @@ const item = (over: Partial<DriveItem> = {}): DriveItem => ({
 // The root of the library, whose address names the site and the library.
 const LIBRARY = item({ id: 'root', name: 'root', kind: 'folder', path: '', webUrl: 'https://contoso.sharepoint.com/sites/Pepco/Shared%20Documents' });
 
+// The room a path keeps free past the name, for the rest of what a conversion writes there.
+const ROOM_TO_WRITE = 28;
+// A budget that holds this name in this folder, and not one character more.
+const justFits = (folder: string, name: string): number => folder.length + 1 + name.length + ROOM_TO_WRITE;
+
 const get = async (
   seed: DriveReaderSeed = {},
   maxBytes = 50 * 1024 * 1024,
@@ -97,6 +102,19 @@ describe('getting one file by its address', () => {
 
     expect(got.ok === false && got.error).toMatchObject({ step: 'convert', cause: 'failed' });
   });
+
+  it('a spreadsheet is answered with its note, not the copy of the workbook kept beside it', async () => {
+    const book = item({ name: 'Budget.xlsx', path: 'Operations/Budget.xlsx' });
+    const { got } = await get({ items: { '01QBR': book, root: LIBRARY } });
+
+    expect(got).toEqual({ ok: true, value: { path: 'kb/Picked/Files/Pepco/Shared Documents/Operations/Budget.xlsx.md' } });
+  });
+
+  it('the note of a picked file names Picked as its site', async () => {
+    const { files } = await get();
+
+    expect(files.written.get('kb/Picked/Files/Pepco/Shared Documents/Operations/QBR.docx.md')).toContain('\nsite: Picked\n');
+  });
 });
 
 // A picked file sits under every folder it has in its library. In a folder deep enough that its name
@@ -140,6 +158,30 @@ describe('getting one file from deep in its library', () => {
     const { got } = await get({ items: { '01QBR': zip, root: LIBRARY }, archiveEntries: [{ path: 'scripts/wiki.mjs', text: 'x' }] });
 
     expect(got).toEqual({ ok: true, value: { path: `${LIBRARY_FOLDER}/Operations/Livraison.zip` } });
+  });
+
+  it('a file whose path only just fits keeps its place, at the top of its library and in a folder', async () => {
+    const top = await get({ items: { '01QBR': item({ path: 'QBR.docx' }), root: LIBRARY } }, 50 * 1024 * 1024, justFits(LIBRARY_FOLDER, 'QBR.docx'));
+    const inFolder = await get({}, 50 * 1024 * 1024, justFits(`${LIBRARY_FOLDER}/Operations`, 'QBR.docx'));
+
+    expect(top.got).toEqual({ ok: true, value: { path: `${LIBRARY_FOLDER}/QBR.docx.md` } });
+    expect(inFolder.got).toEqual({ ok: true, value: { path: `${LIBRARY_FOLDER}/Operations/QBR.docx.md` } });
+  });
+
+  it('a saved email whose name fits its folder one time but not the two times it is written lands under the library folder', async () => {
+    const folder = 'Operations/Quarterly business reviews 2026';
+    const name = 'Fwd QBR.eml';
+    const seed = { items: { '01QBR': item({ name, path: `${folder}/${name}` }), root: LIBRARY }, bytes: { '01QBR': new TextEncoder().encode('Subject: Fwd\r\n\r\nthe body') } };
+    const { got } = await get(seed, 50 * 1024 * 1024, justFits(`${LIBRARY_FOLDER}/${folder}`, name));
+
+    expect(got.ok && got.value.path.slice(LIBRARY_FOLDER.length)).toMatch(/^\/(Fwd QBR-[0-9a-f]{8})\/\1\.eml\.md$/);
+  });
+
+  it('two files of one name in deep folders whose names join to the same text land on two paths', async () => {
+    const one = await deepIn({ name: REVIEW, path: `${'d'.repeat(100)}/${'e'.repeat(60)}/${REVIEW}` });
+    const other = await deepIn({ name: REVIEW, path: `${'d'.repeat(100)}${'e'.repeat(60)}/${REVIEW}` });
+
+    expect(one.ok && other.ok && one.value.path !== other.value.path).toBe(true);
   });
 });
 
@@ -186,5 +228,20 @@ describe('getting one file by the address Office gives it', () => {
 
     expect(passed.got.ok).toBe(true);
     expect(unsearched.got).toEqual({ ok: false, error: { step: 'resolveAddress', cause: 'transient', message: 'Graph is busy' } });
+  });
+
+  it('only the first 25 files of that name are read, so a file further down the list is not found', async () => {
+    const crowd = [...Array.from({ length: 25 }, () => ({ driveId: 'b!one', itemId: '01OTHER' })), FILE];
+    const { got } = await getOffice({ named: { 'QBR.docx': crowd } });
+
+    expect(got.ok === false && got.error.cause).toBe('not-found');
+  });
+
+  it('a file of that name whose own address carries no document id is passed over', async () => {
+    const plain = item({ id: '01PLAIN', path: 'Archive/QBR.docx', webUrl: 'https://contoso.sharepoint.com/sites/Pepco/Shared%20Documents/Archive/QBR.docx' });
+    const seed = { named: { 'QBR.docx': [{ driveId: 'b!one', itemId: '01PLAIN' }, FILE] }, items: { '01QBR': wanted, '01PLAIN': plain, root: LIBRARY } };
+    const { got } = await getOffice(seed);
+
+    expect(got).toEqual({ ok: true, value: { path: 'kb/Picked/Files/Pepco/Shared Documents/Operations/QBR.docx.md' } });
   });
 });
